@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notice — The Mr West Files</title>
+<style>
+  :root{
+    --ink: #f4ecd8;
+    --paper: #1a1510;
+    --rust: #b6552c;
+    --rust-2: #d97a3f;
+    --line: #6b5a41;
+    --muted: #a89678;
+    --danger: #c23b3b;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body{
+    font-family: 'Courier New', ui-monospace, monospace;
+    background: radial-gradient(ellipse at top, #2a2119 0%, #0d0a07 70%);
+    color: var(--ink);
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    padding: 3rem 1.25rem;
+  }
+
+  .board{
+    position:relative;
+    width:100%;
+    max-width: 560px;
+    background: var(--paper);
+    border: 2px solid var(--line);
+    outline: 1px solid #000;
+    outline-offset: 6px;
+    padding: 3rem 2.25rem;
+    text-align:center;
+    box-shadow: 0 30px 60px rgba(0,0,0,0.6);
+    animation: riseIn 0.7s ease-out;
+  }
+
+  .board::before{
+    content:"";
+    position:absolute; inset:10px;
+    border: 1px solid rgba(214,167,107,0.35);
+    pointer-events:none;
+  }
+
+  .pin{
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #ff8a65, var(--danger));
+    margin: 0 auto 1.6rem;
+    box-shadow: 0 3px 5px rgba(0,0,0,0.5);
+  }
+
+  .eyebrow{
+    letter-spacing: 0.4em;
+    font-size: 0.65rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 0.9rem;
+  }
+
+  h1{
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 2.1rem;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    color: var(--danger);
+    text-shadow: 0 2px 0 #000;
+    line-height: 1.25;
+    margin-bottom: 1.4rem;
+  }
+
+  p{
+    color: var(--muted);
+    font-size: 0.95rem;
+    line-height: 1.7;
+  }
+
+  .stamp-line{
+    margin-top: 2.2rem;
+    padding-top: 1.4rem;
+    border-top: 1px dashed rgba(107,90,65,0.5);
+    font-style: italic;
+    color: var(--rust-2);
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+  }
+
+  .back-link{
+    display:inline-block;
+    margin-top: 2rem;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.8rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 2px;
+    transition: color 0.2s ease, border-color 0.2s ease;
+  }
+  .back-link:hover{
+    color: var(--rust-2);
+    border-color: var(--rust-2);
+  }
+
+  @keyframes riseIn{
+    from{ opacity:0; transform: translateY(24px) scale(0.98); }
+    to{ opacity:1; transform: translateY(0) scale(1); }
+  }
+
+  @media (max-width: 480px){
+    h1{ font-size: 1.6rem; }
+    .board{ padding: 2.25rem 1.5rem; }
+  }
+</style>
+</head>
+<body>
+  <div class="board">
+    <div class="pin"></div>
+    <div class="eyebrow">Official Notice</div>
+    <h1>The Mr West files have been redacted.</h1>
+    <p>For more information, don't contact customer support.</p>
+    <div class="stamp-line">— by order of the district</div>
+    <a href="index.html" class="back-link">Return to the notice board</a>
+  </div>
+</body>
+</html>
