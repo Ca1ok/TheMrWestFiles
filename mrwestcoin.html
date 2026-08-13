@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MrWestCoin Exchange</title>
+<style>
+  :root{
+    --ink: #f4ecd8;
+    --paper: #1a1510;
+    --paper-2: #241c14;
+    --rust: #b6552c;
+    --rust-2: #d97a3f;
+    --line: #6b5a41;
+    --muted: #a89678;
+    --danger: #c23b3b;
+    --gain: #4fae5c;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body{
+    font-family: 'Courier New', ui-monospace, monospace;
+    background: radial-gradient(ellipse at top, #2a2119 0%, #0d0a07 70%);
+    color: var(--ink);
+    min-height:100vh;
+    padding: 2.5rem 1.25rem;
+    display:flex;
+    justify-content:center;
+  }
+  .wrap{
+    width:100%;
+    max-width: 720px;
+  }
+  .back-link{
+    display:inline-block;
+    margin-bottom: 1.5rem;
+    color: var(--muted);
+    text-decoration:none;
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--line);
+  }
+  .back-link:hover{ color: var(--rust-2); border-color: var(--rust-2); }
+
+  .board{
+    background: var(--paper);
+    border: 2px solid var(--line);
+    outline: 1px solid #000;
+    outline-offset: 6px;
+    padding: 2rem;
+    box-shadow: 0 30px 60px rgba(0,0,0,0.6);
+    margin-bottom: 1.5rem;
+  }
+
+  h1{
+    font-family: Georgia, serif;
+    font-size: 1.8rem;
+    color: var(--rust-2);
+    text-align:center;
+    margin-bottom: 0.2rem;
+  }
+  .ticker{
+    text-align:center;
+    color: var(--muted);
+    font-size: 0.7rem;
+    letter-spacing: 0.2em;
+    margin-bottom: 1.6rem;
+  }
+
+  .price-row{
+    display:flex;
+    justify-content:center;
+    align-items:baseline;
+    gap: 0.75rem;
+    margin-bottom: 0.4rem;
+  }
+  .price-row .price{
+    font-size: 2.6rem;
+    font-weight: 700;
+  }
+  .price-row .change{
+    font-size: 1rem;
+  }
+  .change.up{ color: var(--gain); }
+  .change.down{ color: var(--danger); }
+
+  canvas{
+    width:100%;
+    height: 160px;
+    display:block;
+    margin: 1.4rem 0;
+    border: 1px solid var(--line);
+    background: rgba(0,0,0,0.2);
+  }
+
+  .stats{
+    display:grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+    text-align:center;
+    margin-bottom: 1.6rem;
+  }
+  .stat-label{
+    font-size: 0.6rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.3rem;
+  }
+  .stat-value{
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+
+  .trade-panel{
+    display:flex;
+    gap: 0.75rem;
+    align-items:center;
+    justify-content:center;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+  }
+  .trade-panel input{
+    width: 100px;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    font-family: inherit;
+    padding: 0.6rem;
+    text-align:center;
+    border-radius: 3px;
+  }
+  .trade-btn{
+    padding: 0.65rem 1.4rem;
+    font-family: Georgia, serif;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    color: var(--paper);
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+  }
+  .trade-btn:hover{ transform: translateY(-2px); }
+  .trade-btn.buy{ background: linear-gradient(135deg, var(--gain), #2f7a3a); box-shadow: 0 4px 0 #1f5a28; }
+  .trade-btn.sell{ background: linear-gradient(135deg, var(--danger), #7a1f1f); box-shadow: 0 4px 0 #5a1414; }
+
+  .msg{
+    text-align:center;
+    font-size: 0.75rem;
+    color: var(--rust-2);
+    margin-top: 0.9rem;
+    min-height: 1rem;
+  }
+
+  .history{
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  .history h2{
+    font-size: 0.75rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.8rem;
+  }
+  .history-row{
+    display:flex;
+    justify-content:space-between;
+    font-size: 0.8rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px dashed rgba(107,90,65,0.4);
+  }
+  .history-row:last-child{ border-bottom:none; }
+  .history-row.buy .type{ color: var(--gain); }
+  .history-row.sell .type{ color: var(--danger); }
+  .empty-history{
+    color: var(--muted);
+    font-size: 0.8rem;
+    text-align:center;
+    padding: 1rem 0;
+  }
+
+  .reset-link{
+    display:block;
+    text-align:center;
+    margin-top: 1rem;
+    color: var(--muted);
+    font-size: 0.65rem;
+    text-decoration: underline;
+    cursor: pointer;
+    background:none;
+    border:none;
+    font-family: inherit;
+  }
+
+  @media (max-width: 480px){
+    .price-row .price{ font-size: 2rem; }
+    .stats{ grid-template-columns: repeat(3, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a href="index.html" class="back-link">← Back to the notice board</a>
+
+  <div class="board">
+    <h1>MrWestCoin Exchange</h1>
+    <div class="ticker">$WEST — Not real. Not FDIC insured. Not anything.</div>
+
+    <div class="price-row">
+      <span class="price" id="price">$--.--</span>
+      <span class="change" id="change">loading...</span>
+    </div>
+
+    <canvas id="chart"></canvas>
+
+    <div class="stats">
+      <div>
+        <div class="stat-label">Cash</div>
+        <div class="stat-value" id="cash">$0.00</div>
+      </div>
+      <div>
+        <div class="stat-label">$WEST Held</div>
+        <div class="stat-value" id="held">0</div>
+      </div>
+      <div>
+        <div class="stat-label">Portfolio</div>
+        <div class="stat-value" id="total">$0.00</div>
+      </div>
+    </div>
+
+    <div class="trade-panel">
+      <input type="number" id="qty" placeholder="Qty" min="0" step="1" value="1">
+      <button class="trade-btn buy" id="buyBtn">Buy</button>
+      <button class="trade-btn sell" id="sellBtn">Sell</button>
+    </div>
+    <div class="msg" id="msg"></div>
+    <button class="reset-link" id="resetBtn">Reset portfolio</button>
+  </div>
+
+  <div class="board history">
+    <h2>Transaction History</h2>
+    <div id="historyList"><div class="empty-history">No trades yet.</div></div>
+  </div>
+</div>
+
+<script>
+  const SCALE = 1000; // WEST price = dogecoin price * SCALE, for a "readable" number
+  const STORAGE_KEY = 'mrwestcoin_portfolio';
+  const HISTORY_KEY = 'mrwestcoin_price_history';
+
+  function loadPortfolio(){
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw) return JSON.parse(raw);
+    return { cash: 1000, held: 0, trades: [] };
+  }
+  function savePortfolio(p){
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
+  }
+  let portfolio = loadPortfolio();
+  let currentPrice = null;
+  let priceHistory = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+
+  const priceEl = document.getElementById('price');
+  const changeEl = document.getElementById('change');
+  const cashEl = document.getElementById('cash');
+  const heldEl = document.getElementById('held');
+  const totalEl = document.getElementById('total');
+  const msgEl = document.getElementById('msg');
+  const historyListEl = document.getElementById('historyList');
+  const qtyInput = document.getElementById('qty');
+  const canvas = document.getElementById('chart');
+  const ctx = canvas.getContext('2d');
+
+  function renderPortfolio(){
+    cashEl.textContent = '$' + portfolio.cash.toFixed(2);
+    heldEl.textContent = portfolio.held.toFixed(4);
+    if(currentPrice){
+      totalEl.textContent = '$' + (portfolio.cash + portfolio.held * currentPrice).toFixed(2);
+    }
+  }
+
+  function renderHistory(){
+    if(portfolio.trades.length === 0){
+      historyListEl.innerHTML = '<div class="empty-history">No trades yet.</div>';
+      return;
+    }
+    historyListEl.innerHTML = portfolio.trades.slice().reverse().map(t => `
+      <div class="history-row ${t.type}">
+        <span class="type">${t.type.toUpperCase()}</span>
+        <span>${t.qty.toFixed(4)} $WEST @ $${t.price.toFixed(2)}</span>
+        <span>${t.time}</span>
+      </div>
+    `).join('');
+  }
+
+  function drawChart(){
+    const w = canvas.width = canvas.offsetWidth;
+    const h = canvas.height = canvas.offsetHeight;
+    ctx.clearRect(0,0,w,h);
+    if(priceHistory.length < 2) return;
+    const prices = priceHistory.map(p => p.price);
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    const range = (max - min) || 1;
+    ctx.beginPath();
+    ctx.strokeStyle = '#d97a3f';
+    ctx.lineWidth = 2;
+    priceHistory.forEach((p, i) => {
+      const x = (i / (priceHistory.length - 1)) * w;
+      const y = h - ((p.price - min) / range) * (h - 20) - 10;
+      if(i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+
+  async function fetchPrice(){
+    try{
+      const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=dogecoin&vs_currencies=usd&include_24hr_change=true');
+      const data = await res.json();
+      const usd = data.dogecoin.usd;
+      const change = data.dogecoin.usd_24h_change;
+      currentPrice = usd * SCALE;
+
+      priceEl.textContent = '$' + currentPrice.toFixed(2);
+      const isUp = change >= 0;
+      changeEl.textContent = (isUp ? '▲ ' : '▼ ') + Math.abs(change).toFixed(2) + '% (24h)';
+      changeEl.className = 'change ' + (isUp ? 'up' : 'down');
+
+      priceHistory.push({ price: currentPrice, t: Date.now() });
+      if(priceHistory.length > 60) priceHistory.shift();
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(priceHistory));
+
+      drawChart();
+      renderPortfolio();
+    } catch(e){
+      priceEl.textContent = '$--.--';
+      changeEl.textContent = 'market closed';
+    }
+  }
+
+  document.getElementById('buyBtn').addEventListener('click', () => {
+    const qty = parseFloat(qtyInput.value);
+    if(!currentPrice || !qty || qty <= 0){ msgEl.textContent = 'Enter a valid quantity.'; return; }
+    const cost = qty * currentPrice;
+    if(cost > portfolio.cash){ msgEl.textContent = "You can't afford that, champ."; return; }
+    portfolio.cash -= cost;
+    portfolio.held += qty;
+    portfolio.trades.push({ type:'buy', qty, price: currentPrice, time: new Date().toLocaleString() });
+    savePortfolio(portfolio);
+    renderPortfolio();
+    renderHistory();
+    msgEl.textContent = `Bought ${qty} $WEST for $${cost.toFixed(2)}.`;
+  });
+
+  document.getElementById('sellBtn').addEventListener('click', () => {
+    const qty = parseFloat(qtyInput.value);
+    if(!currentPrice || !qty || qty <= 0){ msgEl.textContent = 'Enter a valid quantity.'; return; }
+    if(qty > portfolio.held){ msgEl.textContent = "You don't hold that much $WEST."; return; }
+    const proceeds = qty * currentPrice;
+    portfolio.cash += proceeds;
+    portfolio.held -= qty;
+    portfolio.trades.push({ type:'sell', qty, price: currentPrice, time: new Date().toLocaleString() });
+    savePortfolio(portfolio);
+    renderPortfolio();
+    renderHistory();
+    msgEl.textContent = `Sold ${qty} $WEST for $${proceeds.toFixed(2)}.`;
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    if(!confirm('Reset your portfolio back to $1000 cash?')) return;
+    portfolio = { cash: 1000, held: 0, trades: [] };
+    savePortfolio(portfolio);
+    renderPortfolio();
+    renderHistory();
+    msgEl.textContent = 'Portfolio reset.';
+  });
+
+  window.addEventListener('resize', drawChart);
+
+  renderPortfolio();
+  renderHistory();
+  fetchPrice();
+  setInterval(fetchPrice, 30000);
+</script>
+</body>
+</html>
