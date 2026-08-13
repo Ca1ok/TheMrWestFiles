@@ -499,11 +499,21 @@ function clamp(c, bounds){
   c.y = Math.min(maxY, Math.max(minY, c.y));
   return c;
 }
-function centerOnRegion(id, scale=1){
+function centerOnRegion(id, scale){
   const el = document.getElementById(id);
   const vw = viewport.clientWidth, vh = viewport.clientHeight;
+  if(scale === undefined) scale = fitScaleForRegion(id);
   const rx = el.offsetLeft + el.offsetWidth/2, ry = el.offsetTop + el.offsetHeight/2;
   return clamp({ x: vw/2 - rx*scale, y: vh/2 - ry*scale, scale }, getRegionBounds(id));
+}
+// picks the largest scale that still fits the whole region on screen (with a little breathing room),
+// capped at 1 so desktop keeps its normal 1:1 view — this is what keeps mobile from cutting off content.
+function fitScaleForRegion(id){
+  const el = document.getElementById(id);
+  const vw = viewport.clientWidth, vh = viewport.clientHeight;
+  const margin = 0.9; // use ~90% of the viewport so there's a little padding around the region
+  const fit = Math.min((vw*margin)/el.offsetWidth, (vh*margin)/el.offsetHeight);
+  return Math.min(1, fit);
 }
 function applyTransform(){ world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.scale})`; }
 
@@ -528,7 +538,7 @@ function goToRegion(id){
   animatingBetweenRegions = true;
   updateVideoPopupVisibility(false); // hide popup the instant we leave the hub
   const startCam = { ...cam };
-  const endCam = centerOnRegion(id, 1);
+  const endCam = centerOnRegion(id);
   const t0 = performance.now(), duration = 850;
   function step(now){
     const t = Math.min(1, (now-t0)/duration);
@@ -551,14 +561,14 @@ document.querySelectorAll('[data-goto]').forEach(btn => btn.addEventListener('cl
 
 function initCamera(){
   layoutRegions();
-  cam = centerOnRegion(HUB_ID, 1);
+  cam = centerOnRegion(HUB_ID);
   target = { ...cam };
   applyTransform();
 }
 window.addEventListener('load', initCamera);
 window.addEventListener('resize', () => {
   layoutRegions();
-  cam = centerOnRegion(activeRegionId, cam.scale);
+  cam = centerOnRegion(activeRegionId);
   target = { ...cam };
   positionVideoPopup();
 });
@@ -701,15 +711,19 @@ window.addEventListener('resize', positionVideoPopup);
 
 
 
-/* ================= MrWestCoin (real price via CoinGecko) ================= */
-const SCALE = 1000;
+/* ================= MrWestCoin (simulated random-walk market — no external API) ================= */
 const STORAGE_KEY = 'mrwestcoin_portfolio';
 const HISTORY_KEY = 'mrwestcoin_price_history';
+const SIM_PRICE_KEY = 'mrwestcoin_sim_price';
+
 function loadPortfolio(){ const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : { cash:1000, held:0, trades:[] }; }
 function savePortfolio(p){ localStorage.setItem(STORAGE_KEY, JSON.stringify(p)); }
 let portfolio = loadPortfolio();
-let currentPrice = null;
+
+// price starts wherever it was last left (or $12.50 fresh), then random-walks forever
+let currentPrice = parseFloat(localStorage.getItem(SIM_PRICE_KEY)) || 12.50;
 let priceHistory = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+if(priceHistory.length === 0) priceHistory.push({ price: currentPrice, t: Date.now() });
 
 const priceEl = document.getElementById('price'), changeEl = document.getElementById('change');
 const miniPriceEl = document.getElementById('miniPrice'), miniChangeEl = document.getElementById('miniChange');
@@ -721,7 +735,7 @@ const canvas = document.getElementById('chart'), ctx = canvas.getContext('2d');
 function renderPortfolio(){
   cashEl.textContent = '$' + portfolio.cash.toFixed(2);
   heldEl.textContent = portfolio.held.toFixed(4);
-  if(currentPrice) totalEl.textContent = '$' + (portfolio.cash + portfolio.held*currentPrice).toFixed(2);
+  totalEl.textContent = '$' + (portfolio.cash + portfolio.held*currentPrice).toFixed(2);
 }
 function renderHistory(){
   if(portfolio.trades.length === 0){ historyListEl.innerHTML = '<div class="empty-history">No trades yet.</div>'; return; }
@@ -729,43 +743,129 @@ function renderHistory(){
     <div class="history-row ${t.type}"><span class="type">${t.type.toUpperCase()}</span><span>${t.qty.toFixed(4)} $WEST @ $${t.price.toFixed(2)}</span><span>${t.time}</span></div>`).join('');
 }
 function drawChart(){
-  const w = canvas.width = canvas.offsetWidth, h = canvas.height = canvas.offsetHeight;
-  ctx.clearRect(0,0,w,h);
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.offsetWidth, cssH = canvas.offsetHeight;
+  if(cssW === 0 || cssH === 0) return;
+  canvas.width = cssW * dpr; canvas.height = cssH * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0,0,cssW,cssH);
   if(priceHistory.length < 2) return;
+
+  const LEFT_PAD = 46, RIGHT_PAD = 6, TOP_PAD = 10, BOTTOM_PAD = 10;
+  const plotW = cssW - LEFT_PAD - RIGHT_PAD, plotH = cssH - TOP_PAD - BOTTOM_PAD;
   const prices = priceHistory.map(p => p.price);
-  const min = Math.min(...prices), max = Math.max(...prices), range = (max-min)||1;
-  ctx.beginPath(); ctx.strokeStyle = '#d97a3f'; ctx.lineWidth = 2;
-  priceHistory.forEach((p,i) => {
-    const x = (i/(priceHistory.length-1))*w;
-    const y = h - ((p.price-min)/range)*(h-20) - 10;
-    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-  });
-  ctx.stroke();
-}
-async function fetchPrice(){
-  try{
-    const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=dogecoin&vs_currencies=usd&include_24hr_change=true');
-    const data = await res.json();
-    const usd = data.dogecoin.usd, change = data.dogecoin.usd_24h_change;
-    currentPrice = usd * SCALE;
-    const priceText = '$' + currentPrice.toFixed(2);
-    priceEl.textContent = priceText; miniPriceEl.textContent = priceText;
-    const isUp = change >= 0;
-    const changeText = (isUp?'▲ ':'▼ ') + Math.abs(change).toFixed(2) + '% (24h)';
-    changeEl.textContent = changeText; changeEl.className = 'change ' + (isUp?'up':'down');
-    miniChangeEl.textContent = changeText; miniChangeEl.className = 'change ' + (isUp?'up':'down');
-    priceHistory.push({ price: currentPrice, t: Date.now() });
-    if(priceHistory.length > 60) priceHistory.shift();
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(priceHistory));
-    drawChart(); renderPortfolio();
-  } catch(e){
-    priceEl.textContent = '$--.--'; changeEl.textContent = 'market closed';
-    miniPriceEl.textContent = '$--.--'; miniChangeEl.textContent = 'market closed';
+  const rawMin = Math.min(...prices), rawMax = Math.max(...prices);
+  const pad = (rawMax - rawMin) * 0.12 || rawMax * 0.05 || 1;
+  const min = rawMin - pad, max = rawMax + pad, range = (max - min) || 1;
+  const yOf = v => TOP_PAD + plotH - ((v - min) / range) * plotH;
+  const xOf = i => LEFT_PAD + (i / (priceHistory.length - 1)) * plotW;
+
+  // fake Y-axis gridlines + labels
+  const GRID_LINES = 4;
+  ctx.font = '9px Courier New, monospace';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for(let g = 0; g <= GRID_LINES; g++){
+    const v = min + (range * g / GRID_LINES);
+    const y = yOf(v);
+    ctx.strokeStyle = 'rgba(107,90,65,0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(LEFT_PAD, y);
+    ctx.lineTo(cssW - RIGHT_PAD, y);
+    ctx.stroke();
+    ctx.fillStyle = '#a89678';
+    ctx.fillText('$' + v.toFixed(2), LEFT_PAD - 6, y);
   }
+
+  // smoothed line through the (now denser) price history, using quadratic curves for higher visual resolution
+  ctx.beginPath();
+  ctx.strokeStyle = '#d97a3f';
+  ctx.lineWidth = 1.6;
+  ctx.lineJoin = 'round';
+  priceHistory.forEach((p, i) => {
+    const x = xOf(i), y = yOf(p.price);
+    if(i === 0){ ctx.moveTo(x, y); }
+    else{
+      const prevX = xOf(i-1), prevY = yOf(priceHistory[i-1].price);
+      const midX = (prevX + x) / 2, midY = (prevY + y) / 2;
+      ctx.quadraticCurveTo(prevX, prevY, midX, midY);
+    }
+  });
+  const lastX = xOf(priceHistory.length-1), lastY = yOf(priceHistory[priceHistory.length-1].price);
+  ctx.lineTo(lastX, lastY);
+  ctx.stroke();
+
+  // fill under the line for a bit of depth
+  ctx.lineTo(lastX, TOP_PAD + plotH);
+  ctx.lineTo(LEFT_PAD, TOP_PAD + plotH);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(217,122,63,0.08)';
+  ctx.fill();
+
+  // current price marker
+  ctx.beginPath();
+  ctx.arc(lastX, lastY, 2.6, 0, Math.PI*2);
+  ctx.fillStyle = '#f4ecd8';
+  ctx.fill();
 }
+
+function updatePriceDisplays(){
+  const prevPrice = priceHistory.length > 1 ? priceHistory[priceHistory.length-2].price : currentPrice;
+  const changePct = prevPrice ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
+  const priceText = '$' + currentPrice.toFixed(2);
+  priceEl.textContent = priceText; miniPriceEl.textContent = priceText;
+  const isUp = changePct >= 0;
+  const changeText = (isUp?'▲ ':'▼ ') + Math.abs(changePct).toFixed(2) + '%';
+  changeEl.textContent = changeText; changeEl.className = 'change ' + (isUp?'up':'down');
+  miniChangeEl.textContent = changeText; miniChangeEl.className = 'change ' + (isUp?'up':'down');
+}
+
+// --- realistic-ish price model ---
+// 1) a "fair value" that itself slowly drifts over time (so the market has a real long-term trend, not just a fixed anchor)
+// 2) momentum: today's move is correlated with yesterday's (real markets trend in bursts, not pure independent noise)
+// 3) volatility clustering: big moves tend to follow big moves (calm periods and choppy periods, like a simplified GARCH)
+let fairValue = parseFloat(localStorage.getItem('mrwestcoin_fair_value')) || currentPrice;
+let momentum = parseFloat(localStorage.getItem('mrwestcoin_momentum')) || 0;
+let vol = parseFloat(localStorage.getItem('mrwestcoin_vol')) || 0.012;
+
+function tickPrice(){
+  // fair value itself random-walks slowly, giving the market a long-term direction
+  fairValue *= (1 + (Math.random() - 0.5) * 0.01);
+  localStorage.setItem('mrwestcoin_fair_value', fairValue);
+
+  // volatility clustering: this tick's volatility depends on recent volatility, plus its own random shock
+  const volShock = Math.abs((Math.random() - 0.5)) * 0.03;
+  vol = vol * 0.85 + volShock * 0.15;
+  vol = Math.min(0.06, Math.max(0.004, vol));
+  localStorage.setItem('mrwestcoin_vol', vol);
+
+  // momentum: correlated with the previous move, decaying over time, plus fresh random shock scaled by current volatility
+  const shock = (Math.random() - 0.5) * 2 * vol;
+  momentum = momentum * 0.55 + shock * 0.45;
+  localStorage.setItem('mrwestcoin_momentum', momentum);
+
+  // mean reversion pulls gently toward the drifting fair value, on top of momentum-driven movement
+  const reversion = (fairValue - currentPrice) / currentPrice * 0.03;
+
+  // rare bigger jump (news event), on top of everything else
+  const spike = Math.random() < 0.03 ? (Math.random() - 0.5) * 0.12 : 0;
+
+  currentPrice = Math.max(0.01, currentPrice * (1 + momentum + reversion + spike));
+  localStorage.setItem(SIM_PRICE_KEY, currentPrice);
+
+  priceHistory.push({ price: currentPrice, t: Date.now() });
+  if(priceHistory.length > 150) priceHistory.shift();
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(priceHistory));
+
+  updatePriceDisplays();
+  drawChart();
+  renderPortfolio();
+}
+
 document.getElementById('buyBtn').addEventListener('click', () => {
   const qty = parseFloat(qtyInput.value);
-  if(!currentPrice || !qty || qty<=0){ msgEl.textContent = 'Enter a valid quantity.'; return; }
+  if(!qty || qty<=0){ msgEl.textContent = 'Enter a valid quantity.'; return; }
   const cost = qty*currentPrice;
   if(cost > portfolio.cash){ msgEl.textContent = "You can't afford that, champ."; return; }
   portfolio.cash -= cost; portfolio.held += qty;
@@ -775,7 +875,7 @@ document.getElementById('buyBtn').addEventListener('click', () => {
 });
 document.getElementById('sellBtn').addEventListener('click', () => {
   const qty = parseFloat(qtyInput.value);
-  if(!currentPrice || !qty || qty<=0){ msgEl.textContent = 'Enter a valid quantity.'; return; }
+  if(!qty || qty<=0){ msgEl.textContent = 'Enter a valid quantity.'; return; }
   if(qty > portfolio.held){ msgEl.textContent = "You don't hold that much $WEST."; return; }
   const proceeds = qty*currentPrice;
   portfolio.cash += proceeds; portfolio.held -= qty;
@@ -792,7 +892,8 @@ document.getElementById('resetBtn').addEventListener('click', () => {
 document.getElementById('miniInvest').addEventListener('click', () => goToRegion('region-coin'));
 
 window.addEventListener('resize', drawChart);
-renderPortfolio(); renderHistory(); fetchPrice(); setInterval(fetchPrice, 30000);
+updatePriceDisplays(); renderPortfolio(); renderHistory(); drawChart();
+setInterval(tickPrice, 1200); // market "ticks" ~every 1.2s for a denser, smoother line
 
 /* ================= Databook dropdown ================= */
 const databookToggle = document.getElementById('databookToggle');
