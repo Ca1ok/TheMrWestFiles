@@ -398,7 +398,7 @@
 /* ================= RADIAL AUTO-LAYOUT ================= */
 const HUB_ID = 'region-index';
 const SATELLITE_IDS = ['region-notice', 'region-coin', 'region-periodic', 'region-databook'];
-const RADIUS = 1500;
+const RADIUS = 2300;
 
 function layoutRegions(){
   const hub = document.getElementById(HUB_ID);
@@ -438,8 +438,8 @@ function drawConnectors(hubCx, hubCy, positions){
 /* ================= MAP / CAMERA (clamped PER REGION, smoothed) ================= */
 const viewport = document.getElementById('viewport');
 const world = document.getElementById('world');
-const REGION_PAD = 220;
-const MIN_SCALE = 0.75, MAX_SCALE = 1.35;
+const REGION_PAD = 420;
+const MIN_SCALE = 0.5, MAX_SCALE = 1.5;
 const LERP = 0.16;
 const FRICTION = 0.92;
 
