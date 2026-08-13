@@ -14,22 +14,166 @@
     --line: #6b5a41;
     --muted: #a89678;
     --danger: #c23b3b;
+    --gain: #4fae5c;
   }
 
   * { margin:0; padding:0; box-sizing:border-box; }
 
   body{
     font-family: 'Courier New', ui-monospace, monospace;
-    background:
-      radial-gradient(ellipse at top, #2a2119 0%, #0d0a07 70%);
+    background: radial-gradient(ellipse at top, #2a2119 0%, #0d0a07 70%);
     color: var(--ink);
     min-height:100vh;
     display:flex;
     justify-content:center;
     align-items:center;
     padding: 3rem 1.25rem;
+    position: relative;
+    overflow-x: hidden;
   }
 
+  /* Top-right toggle */
+  .las-toggle{
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 50;
+    background: var(--paper-2);
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 0.55rem 1rem;
+    font-family: 'Courier New', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .las-toggle:hover{
+    color: var(--rust-2);
+    border-color: var(--rust-2);
+  }
+  .las-toggle.active{
+    background: var(--rust);
+    color: var(--ink);
+    border-color: var(--rust-2);
+  }
+
+  /* Side widgets */
+  .side-panel{
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 250px;
+    z-index: 40;
+  }
+  .side-panel.right{
+    right: 1.25rem;
+    display: none;
+  }
+  .side-panel.right.show{
+    display: block;
+  }
+  .side-panel.left{
+    left: 1.25rem;
+  }
+
+  .panel-card{
+    background: var(--paper);
+    border: 1px solid var(--line);
+    outline: 1px solid #000;
+    outline-offset: 4px;
+    padding: 0.9rem;
+    box-shadow: 0 16px 30px rgba(0,0,0,0.55);
+  }
+
+  .panel-label{
+    font-size: 0.6rem;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.6rem;
+    text-align: center;
+  }
+
+  .video-wrap{
+    position: relative;
+    width: 100%;
+    padding-top: 177%; /* vertical-ish aspect for a distracting sidebar */
+    overflow: hidden;
+    border: 1px solid var(--line);
+  }
+  .video-wrap iframe{
+    position: absolute;
+    top: -30%;
+    left: 0;
+    width: 100%;
+    height: 160%;
+    border: 0;
+  }
+
+  /* MrWestCoin widget */
+  .coin-card{
+    text-align: center;
+  }
+  .coin-name{
+    font-family: Georgia, serif;
+    font-weight: 900;
+    font-size: 1.1rem;
+    color: var(--rust-2);
+    margin-bottom: 0.2rem;
+  }
+  .coin-ticker{
+    font-size: 0.65rem;
+    color: var(--muted);
+    letter-spacing: 0.15em;
+    margin-bottom: 0.8rem;
+  }
+  .coin-price{
+    font-size: 1.6rem;
+    font-weight: 700;
+    margin-bottom: 0.15rem;
+  }
+  .coin-change{
+    font-size: 0.8rem;
+    margin-bottom: 1rem;
+  }
+  .coin-change.up{ color: var(--gain); }
+  .coin-change.down{ color: var(--danger); }
+
+  .invest-btn{
+    display:block;
+    width: 100%;
+    padding: 0.65rem;
+    font-family: Georgia, serif;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    color: var(--paper);
+    text-decoration: none;
+    background: linear-gradient(135deg, var(--gain), #2f7a3a);
+    border-radius: 3px;
+    box-shadow: 0 4px 0 #1f5a28;
+    transition: transform 0.15s ease;
+  }
+  .invest-btn:hover{ transform: translateY(-2px); }
+  .invest-btn:active{ transform: translateY(1px); }
+
+  .coin-disclaimer{
+    font-size: 0.55rem;
+    color: var(--muted);
+    margin-top: 0.6rem;
+    line-height: 1.4;
+    opacity: 0.7;
+  }
+
+  @media (max-width: 1150px){
+    .side-panel{ display: none !important; }
+  }
+
+  /* Poster (unchanged) */
   .poster{
     position:relative;
     width:100%;
@@ -243,6 +387,31 @@
 </style>
 </head>
 <body>
+
+  <button class="las-toggle" id="lasToggle">Low Attention Span Mode: Off</button>
+
+  <div class="side-panel right" id="rightPanel">
+    <div class="panel-card">
+      <div class="panel-label">Stay Focused</div>
+      <div class="video-wrap">
+        <iframe src="https://www.youtube.com/embed/vnM6WJrWdkk?autoplay=1&mute=1&loop=1&playlist=vnM6WJrWdkk&controls=0"
+          title="background gameplay" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+      </div>
+    </div>
+  </div>
+
+  <div class="side-panel left">
+    <div class="panel-card coin-card">
+      <div class="panel-label">Market Watch</div>
+      <div class="coin-name">MrWestCoin</div>
+      <div class="coin-ticker">$WEST</div>
+      <div class="coin-price" id="coinPrice">$--.--</div>
+      <div class="coin-change" id="coinChange">loading...</div>
+      <a href="mrwestcoin.html" class="invest-btn">Invest Now</a>
+      <div class="coin-disclaimer">Not a real investment. Not real financial advice. Probably not real money.</div>
+    </div>
+  </div>
+
   <div class="poster">
     <div class="missing-banner">Missing 1 day(s)</div>
     <div class="stamp">FEDERAL<br>NOTICE</div>
@@ -261,7 +430,6 @@
       <li><span class="count">×1</span><span>Accepting bribes</span></li>
       <li><span class="count">×1</span><span>Possession of radioactive material</span></li>
       <li><span class="count">×1</span><span>Error, Skipping and No LP for SAC </span></li>
-
     </ul>
 
     <div class="section-label">Sentence</div>
@@ -279,5 +447,55 @@
       Download Files
     </a>
   </div>
+
+  <script>
+    // Low attention span mode toggle
+    const toggle = document.getElementById('lasToggle');
+    const rightPanel = document.getElementById('rightPanel');
+    let lasOn = localStorage.getItem('lasMode') === 'on';
+
+    function applyLasState(){
+      if(lasOn){
+        rightPanel.classList.add('show');
+        toggle.classList.add('active');
+        toggle.textContent = 'Low Attention Span Mode: On';
+      } else {
+        rightPanel.classList.remove('show');
+        toggle.classList.remove('active');
+        toggle.textContent = 'Low Attention Span Mode: Off';
+      }
+    }
+    applyLasState();
+
+    toggle.addEventListener('click', () => {
+      lasOn = !lasOn;
+      localStorage.setItem('lasMode', lasOn ? 'on' : 'off');
+      applyLasState();
+    });
+
+    // MrWestCoin price ticker, driven by real Dogecoin price via CoinGecko (free, no key)
+    const SCALE = 1000; // makes the tiny doge price look like a "real" coin price
+    const priceEl = document.getElementById('coinPrice');
+    const changeEl = document.getElementById('coinChange');
+
+    async function updateCoinWidget(){
+      try{
+        const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=dogecoin&vs_currencies=usd&include_24hr_change=true');
+        const data = await res.json();
+        const usd = data.dogecoin.usd;
+        const change = data.dogecoin.usd_24h_change;
+        const price = (usd * SCALE).toFixed(2);
+        priceEl.textContent = '$' + price;
+        const isUp = change >= 0;
+        changeEl.textContent = (isUp ? '▲ ' : '▼ ') + Math.abs(change).toFixed(2) + '% (24h)';
+        changeEl.className = 'coin-change ' + (isUp ? 'up' : 'down');
+      } catch(e){
+        priceEl.textContent = '$--.--';
+        changeEl.textContent = 'market closed';
+      }
+    }
+    updateCoinWidget();
+    setInterval(updateCoinWidget, 30000);
+  </script>
 </body>
 </html>
