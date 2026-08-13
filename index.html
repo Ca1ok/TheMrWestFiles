@@ -180,6 +180,21 @@
   .page-sub{ text-align:center; color: var(--muted); font-size:0.75rem; letter-spacing:0.1em; text-transform:uppercase; margin-bottom: 1.6rem; }
 
   /* --- periodic table --- */
+  .pt-controls{ display:flex; gap:0.8rem; flex-wrap:wrap; align-items:center; justify-content:space-between; margin-bottom:1rem; }
+  #ptSearch{
+    flex:1; min-width:200px; background: var(--paper-2); border:1px solid var(--line); color: var(--ink);
+    font-family:inherit; font-size:0.8rem; padding:0.55rem 0.8rem; border-radius:3px;
+  }
+  #ptSearch::placeholder{ color: var(--muted); }
+  .pt-modes{ display:flex; gap:0.4rem; }
+  .pt-mode-btn{
+    background: var(--paper-2); border:1px solid var(--line); color: var(--muted); font-family:inherit;
+    font-size:0.65rem; letter-spacing:0.05em; text-transform:uppercase; padding:0.5rem 0.8rem;
+    border-radius:3px; cursor:pointer; transition: all 0.15s ease;
+  }
+  .pt-mode-btn:hover{ color: var(--rust-2); border-color: var(--rust-2); }
+  .pt-mode-btn.active{ background: var(--rust); color: var(--ink); border-color: var(--rust-2); }
+
   #ptable{
     display:grid;
     grid-template-columns: repeat(18, 1fr);
@@ -189,24 +204,29 @@
   .elem{
     aspect-ratio: 1; background: var(--paper-2); border:1px solid var(--line);
     display:flex; flex-direction:column; align-items:center; justify-content:center;
-    cursor:pointer; transition: transform 0.12s ease, background 0.12s ease; color: var(--ink);
-    padding: 2px; overflow:hidden;
+    cursor:pointer; transition: transform 0.12s ease, background 0.12s ease, opacity 0.15s ease; color: var(--ink);
+    padding: 2px; overflow:hidden; position:relative;
   }
-  .elem .num{ font-size: 0.42rem; color: var(--muted); align-self:flex-start; margin-left:2px; }
+  .elem .num{ font-size: 0.42rem; color: rgba(26,21,16,0.65); align-self:flex-start; margin-left:2px; }
   .elem .sym{ font-size: 0.72rem; font-weight:700; line-height:1; }
-  .elem:hover{ transform: scale(1.18); z-index: 5; box-shadow: 0 6px 14px rgba(0,0,0,0.6); }
+  .elem .mini-mass{ font-size:0.36rem; color: rgba(26,21,16,0.65); margin-top:1px; }
+  .elem:hover{ transform: scale(1.22); z-index: 5; box-shadow: 0 6px 14px rgba(0,0,0,0.6); filter: brightness(1.18); }
   .elem.spacer{ visibility:hidden; }
+  .elem.dimmed{ opacity: 0.18; }
+  .elem.matched{ outline: 2px solid var(--rust-2); outline-offset: 1px; }
+  .elem.selected{ outline: 2px solid var(--ink); outline-offset: 1px; }
 
   #elemInfo{
-    border: 1px solid var(--line); background: var(--paper-2); padding: 1rem 1.2rem;
-    min-height: 70px; display:flex; align-items:center; gap: 1.2rem;
+    border: 1px solid var(--line); background: var(--paper-2); padding: 1.1rem 1.3rem;
+    min-height: 70px; display:flex; align-items:center; gap: 1.4rem;
   }
-  #elemInfo .big-sym{ font-size: 2.4rem; font-weight:900; font-family: Georgia, serif; }
-  #elemInfo .meta{ font-size:0.8rem; color: var(--muted); line-height:1.6; }
-  #elemInfo .meta b{ color: var(--ink); }
+  #elemInfo .big-sym{ font-size: 2.8rem; font-weight:900; font-family: Georgia, serif; line-height:1; }
+  #elemInfo .info-grid{ display:grid; grid-template-columns: repeat(2, auto); gap: 0.2rem 1.6rem; font-size:0.78rem; color: var(--muted); }
+  #elemInfo .info-grid b{ color: var(--ink); }
+  #elemInfo .elem-title{ font-family: Georgia, serif; font-size:1.05rem; color: var(--ink); margin-bottom:0.4rem; }
 
   .legend{ display:flex; flex-wrap:wrap; gap: 0.6rem 1rem; margin-top:1rem; justify-content:center; }
-  .legend-item{ display:flex; align-items:center; gap:0.4rem; font-size:0.65rem; color: var(--muted); text-transform:uppercase; letter-spacing:0.05em; }
+  .legend-item{ display:flex; align-items:center; gap:0.4rem; font-size:0.65rem; color: var(--muted); text-transform:uppercase; letter-spacing:0.05em; cursor:default; }
   .legend-swatch{ width:12px; height:12px; border:1px solid rgba(0,0,0,0.4); }
 
   /* --- databook --- */
@@ -375,6 +395,16 @@
       <div class="region-inner">
         <div class="page-title">Periodic Table</div>
         <div class="page-sub">Hover an element · click for details</div>
+
+        <div class="pt-controls">
+          <input type="text" id="ptSearch" placeholder="Search by name, symbol, or number...">
+          <div class="pt-modes">
+            <button class="pt-mode-btn active" data-mode="category">Category</button>
+            <button class="pt-mode-btn" data-mode="state">State at 25°C</button>
+            <button class="pt-mode-btn" data-mode="block">Block</button>
+          </div>
+        </div>
+
         <div id="ptable"></div>
         <div id="elemInfo"><span class="meta">Hover or click an element to see its details.</span></div>
         <div class="legend" id="legend"></div>
@@ -867,12 +897,37 @@ const ELEMENTS = [
 [118,'Og','Oganesson',294,'noble-gas',7,18]
 ];
 
+// Room-temperature (25°C) state — well-established exceptions; everything else defaults to solid.
+const GAS_AT_25C = new Set([1,2,7,8,9,10,17,18,36,54,86]);
+const LIQUID_AT_25C = new Set([35,80]);
+const UNKNOWN_STATE = new Set([109,110,111,112,113,114,115,116,117,118]); // too unstable/short-lived to measure directly
+
+function stateOf(num){
+  if(UNKNOWN_STATE.has(num)) return 'unknown';
+  if(GAS_AT_25C.has(num)) return 'gas';
+  if(LIQUID_AT_25C.has(num)) return 'liquid';
+  return 'solid';
+}
+function blockOf(num, cat, group){
+  if(cat === 'lanthanide' || cat === 'actinide') return 'f';
+  if(num === 2) return 's'; // helium: s-block by electron configuration despite group 18 placement
+  if(group === 1 || group === 2) return 's';
+  if(group >= 3 && group <= 12) return 'd';
+  return 'p';
+}
+const STATE_COLORS = { solid:'#c9a876', liquid:'#5aa9f0', gas:'#e05a5a', unknown:'#6b5a41' };
+const STATE_LABELS = { solid:'Solid', liquid:'Liquid', gas:'Gas', unknown:'Unknown / too unstable to measure' };
+const BLOCK_COLORS = { s:'#e05a5a', p:'#5aa9f0', d:'#f0c04a', f:'#c77bdb' };
+const BLOCK_LABELS = { s:'s-block', p:'p-block', d:'d-block', f:'f-block' };
+
+let ptMode = 'category';
+let ptSearchTerm = '';
+
 function buildPeriodicTable(){
   const grid = document.getElementById('ptable');
   const legend = document.getElementById('legend');
   const info = document.getElementById('elemInfo');
 
-  // main 7x18 grid, plus 2 extra rows for lanthanides/actinides
   const cells = {};
   ELEMENTS.forEach(e => {
     const [num,sym,name,mass,cat,period,group] = e;
@@ -885,15 +940,15 @@ function buildPeriodicTable(){
 
   let html = '';
   for(let row = 1; row <= 9; row++){
-    if(row === 8 || row === 9){
-      // blank spacer row before lanthanide/actinide block for visual separation
-    }
     for(let col = 1; col <= 18; col++){
       const e = cells[row] && cells[row][col];
       if(e){
-        const [num,sym,name,mass,cat] = e;
-        html += `<div class="elem" data-cat="${cat}" data-num="${num}" data-sym="${sym}" data-name="${name}" data-mass="${mass}">
-          <span class="num">${num}</span><span class="sym">${sym}</span></div>`;
+        const [num,sym,name,mass,cat,period,group] = e;
+        const state = stateOf(num);
+        const block = blockOf(num, cat, group);
+        html += `<div class="elem" data-cat="${cat}" data-state="${state}" data-block="${block}"
+          data-num="${num}" data-sym="${sym}" data-name="${name}" data-mass="${mass}" data-period="${period}" data-group="${group||'—'}">
+          <span class="num">${num}</span><span class="sym">${sym}</span><span class="mini-mass">${mass}</span></div>`;
       } else {
         html += `<div class="elem spacer"></div>`;
       }
@@ -902,24 +957,82 @@ function buildPeriodicTable(){
   grid.innerHTML = html;
 
   grid.querySelectorAll('.elem:not(.spacer)').forEach(cell => {
-    const cat = cell.dataset.cat;
-    cell.addEventListener('mouseenter', () => { cell.style.background = CATEGORY_COLORS[cat]; cell.style.color = '#1a1510'; });
-    cell.addEventListener('mouseleave', () => { cell.style.background = ''; cell.style.color = ''; });
     cell.addEventListener('click', () => {
+      grid.querySelectorAll('.elem.selected').forEach(x => x.classList.remove('selected'));
+      cell.classList.add('selected');
+      const cat = cell.dataset.cat, state = cell.dataset.state, block = cell.dataset.block;
       info.innerHTML = `
         <span class="big-sym" style="color:${CATEGORY_COLORS[cat]}">${cell.dataset.sym}</span>
-        <span class="meta">
-          <b>${cell.dataset.name}</b> — atomic number ${cell.dataset.num}<br>
-          Relative atomic mass: ${cell.dataset.mass}<br>
-          Category: ${CATEGORY_LABELS[cat]}
-        </span>`;
+        <div>
+          <div class="elem-title">${cell.dataset.name} <span style="color:var(--muted); font-size:0.75rem;">— #${cell.dataset.num}</span></div>
+          <div class="info-grid">
+            <span>Relative atomic mass</span><b>${cell.dataset.mass}</b>
+            <span>Category</span><b>${CATEGORY_LABELS[cat]}</b>
+            <span>Period</span><b>${cell.dataset.period}</b>
+            <span>Group</span><b>${cell.dataset.group === '0' || cell.dataset.group === '—' ? '—' : cell.dataset.group}</b>
+            <span>Block</span><b>${BLOCK_LABELS[block]}</b>
+            <span>State at 25°C</span><b>${STATE_LABELS[state]}</b>
+          </div>
+        </div>`;
     });
   });
 
-  legend.innerHTML = Object.keys(CATEGORY_LABELS).map(cat => `
-    <div class="legend-item"><span class="legend-swatch" style="background:${CATEGORY_COLORS[cat]}"></span>${CATEGORY_LABELS[cat]}</div>
+  renderLegend();
+  applyPtFilter();
+  applyPtColors();
+}
+
+function swatchFor(cell){
+  return ptMode === 'state' ? STATE_COLORS[cell.dataset.state] :
+         ptMode === 'block' ? BLOCK_COLORS[cell.dataset.block] :
+         CATEGORY_COLORS[cell.dataset.cat];
+}
+function applyPtColors(){
+  document.querySelectorAll('#ptable .elem:not(.spacer)').forEach(cell => {
+    cell.style.background = swatchFor(cell);
+    cell.style.color = '#1a1510';
+  });
+}
+
+function renderLegend(){
+  const legend = document.getElementById('legend');
+  const map = ptMode === 'state' ? { colors: STATE_COLORS, labels: STATE_LABELS }
+            : ptMode === 'block' ? { colors: BLOCK_COLORS, labels: BLOCK_LABELS }
+            : { colors: CATEGORY_COLORS, labels: CATEGORY_LABELS };
+  legend.innerHTML = Object.keys(map.labels).map(key => `
+    <div class="legend-item"><span class="legend-swatch" style="background:${map.colors[key]}"></span>${map.labels[key]}</div>
   `).join('');
 }
+
+function applyPtFilter(){
+  const term = ptSearchTerm.trim().toLowerCase();
+  document.querySelectorAll('#ptable .elem:not(.spacer)').forEach(cell => {
+    if(!term){
+      cell.classList.remove('dimmed','matched');
+      return;
+    }
+    const matches = cell.dataset.name.toLowerCase().includes(term)
+      || cell.dataset.sym.toLowerCase() === term
+      || cell.dataset.num === term;
+    cell.classList.toggle('matched', matches);
+    cell.classList.toggle('dimmed', !matches);
+  });
+}
+
+document.getElementById('ptSearch').addEventListener('input', (e) => {
+  ptSearchTerm = e.target.value;
+  applyPtFilter();
+});
+document.querySelectorAll('.pt-mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.pt-mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    ptMode = btn.dataset.mode;
+    renderLegend();
+    applyPtColors();
+  });
+});
+
 buildPeriodicTable();
 
 /* ================= CHEMISTRY DATABOOK ================= */
