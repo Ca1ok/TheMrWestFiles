@@ -16,486 +16,984 @@
     --danger: #c23b3b;
     --gain: #4fae5c;
   }
-
   * { margin:0; padding:0; box-sizing:border-box; }
-
-  body{
-    font-family: 'Courier New', ui-monospace, monospace;
-    background: radial-gradient(ellipse at top, #2a2119 0%, #0d0a07 70%);
-    color: var(--ink);
-    min-height:100vh;
-    display:flex;
-    justify-content:center;
-    align-items:center;
-    padding: 3rem 1.25rem;
-    position: relative;
-    overflow-x: hidden;
-  }
-
-  /* Top-right toggle */
-  .las-toggle{
-    position: fixed;
-    top: 1rem;
-    right: 1rem;
-    z-index: 50;
-    background: var(--paper-2);
-    color: var(--muted);
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    padding: 0.55rem 1rem;
-    font-family: 'Courier New', monospace;
-    font-size: 0.7rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-  .las-toggle:hover{
-    color: var(--rust-2);
-    border-color: var(--rust-2);
-  }
-  .las-toggle.active{
-    background: var(--rust);
-    color: var(--ink);
-    border-color: var(--rust-2);
-  }
-
-  /* Side widgets */
-  .side-panel{
-    position: fixed;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 250px;
-    z-index: 40;
-  }
-  .side-panel.right{
-    right: 1.25rem;
-    display: none;
-  }
-  .side-panel.right.show{
-    display: block;
-  }
-  .side-panel.left{
-    left: 1.25rem;
-  }
-
-  .panel-card{
-    background: var(--paper);
-    border: 1px solid var(--line);
-    outline: 1px solid #000;
-    outline-offset: 4px;
-    padding: 0.9rem;
-    box-shadow: 0 16px 30px rgba(0,0,0,0.55);
-  }
-
-  .panel-label{
-    font-size: 0.6rem;
-    letter-spacing: 0.25em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 0.6rem;
-    text-align: center;
-  }
-
-  .video-wrap{
-    position: relative;
-    width: 100%;
-    padding-top: 177%; /* vertical-ish aspect for a distracting sidebar */
+  html, body{
+    width:100%; height:100%;
     overflow: hidden;
-    border: 1px solid var(--line);
-  }
-  .video-wrap iframe{
-    position: absolute;
-    top: -30%;
-    left: 0;
-    width: 100%;
-    height: 160%;
-    border: 0;
+    background: #0d0a07;
+    font-family: 'Courier New', ui-monospace, monospace;
+    color: var(--ink);
   }
 
-  /* MrWestCoin widget */
-  .coin-card{
-    text-align: center;
+  #viewport{
+    position: fixed; inset: 0; overflow: hidden; cursor: grab;
+    background: radial-gradient(ellipse at top, #2a2119 0%, #0d0a07 70%);
+    touch-action: none;
   }
-  .coin-name{
-    font-family: Georgia, serif;
-    font-weight: 900;
-    font-size: 1.1rem;
-    color: var(--rust-2);
-    margin-bottom: 0.2rem;
-  }
-  .coin-ticker{
-    font-size: 0.65rem;
-    color: var(--muted);
-    letter-spacing: 0.15em;
-    margin-bottom: 0.8rem;
-  }
-  .coin-price{
-    font-size: 1.6rem;
-    font-weight: 700;
-    margin-bottom: 0.15rem;
-  }
-  .coin-change{
-    font-size: 0.8rem;
-    margin-bottom: 1rem;
-  }
-  .coin-change.up{ color: var(--gain); }
-  .coin-change.down{ color: var(--danger); }
+  #viewport.grabbing{ cursor: grabbing; }
 
-  .invest-btn{
-    display:block;
-    width: 100%;
-    padding: 0.65rem;
-    font-family: Georgia, serif;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    font-size: 0.8rem;
-    color: var(--paper);
-    text-decoration: none;
-    background: linear-gradient(135deg, var(--gain), #2f7a3a);
-    border-radius: 3px;
-    box-shadow: 0 4px 0 #1f5a28;
-    transition: transform 0.15s ease;
-  }
-  .invest-btn:hover{ transform: translateY(-2px); }
-  .invest-btn:active{ transform: translateY(1px); }
+  #world{ position: absolute; top:0; left:0; transform-origin: 0 0; will-change: transform; }
 
-  .coin-disclaimer{
-    font-size: 0.55rem;
-    color: var(--muted);
-    margin-top: 0.6rem;
-    line-height: 1.4;
-    opacity: 0.7;
+  .region{ position: absolute; width: 620px; }
+  .region-inner{
+    background: var(--paper); border: 2px solid var(--line);
+    outline: 1px solid #000; outline-offset: 6px;
+    padding: 2.75rem 2rem 2.25rem; box-shadow: 0 30px 60px rgba(0,0,0,0.6); position: relative;
   }
+  .region-inner::before{ content:""; position:absolute; inset:10px; border:1px solid rgba(214,167,107,0.35); pointer-events:none; }
 
-  @media (max-width: 1150px){
-    .side-panel{ display: none !important; }
-  }
-
-  /* Poster (unchanged) */
-  .poster{
-    position:relative;
-    width:100%;
-    max-width: 620px;
-    background: var(--paper);
-    border: 2px solid var(--line);
-    outline: 1px solid #000;
-    outline-offset: 6px;
-    padding: 2.75rem 2rem 2.25rem;
-    animation: riseIn 0.7s ease-out;
-    box-shadow: 0 30px 60px rgba(0,0,0,0.6);
-  }
-
-  .poster::before{
-    content:"";
-    position:absolute; inset:10px;
-    border: 1px solid rgba(214,167,107,0.35);
-    pointer-events:none;
+  .connector{
+    position:absolute; height:2px;
+    background: repeating-linear-gradient(90deg, var(--rust-2) 0 10px, transparent 10px 18px);
+    transform-origin: 0 50%; z-index:-1;
   }
 
   .missing-banner{
-    position:absolute;
-    top: -18px;
-    left: 50%;
-    transform: translateX(-50%) rotate(-2deg);
-    background: var(--danger);
-    color: var(--ink);
-    font-family: Georgia, 'Times New Roman', serif;
-    font-weight: 900;
-    font-size: 1.05rem;
-    letter-spacing: 0.3em;
-    text-transform: uppercase;
-    padding: 0.5rem 1.6rem;
-    box-shadow: 0 6px 14px rgba(0,0,0,0.55);
-    border: 1px solid #7a1f1f;
-    z-index: 2;
+    position:absolute; top:-18px; left:50%; transform: translateX(-50%) rotate(-2deg);
+    background: var(--danger); color: var(--ink); font-family: Georgia, 'Times New Roman', serif;
+    font-weight:900; font-size:1.05rem; letter-spacing:0.3em; text-transform:uppercase;
+    padding:0.5rem 1.6rem; box-shadow: 0 6px 14px rgba(0,0,0,0.55); border:1px solid #7a1f1f; z-index:2;
   }
-  .missing-banner::before,
-  .missing-banner::after{
-    content:"";
-    position:absolute;
-    top: 100%;
-    width: 0;
-    height: 0;
-    border-style: solid;
-  }
-  .missing-banner::before{
-    left: 0;
-    border-width: 6px 0 0 10px;
-    border-color: transparent transparent transparent #7a1f1f;
-  }
-  .missing-banner::after{
-    right: 0;
-    border-width: 6px 10px 0 0;
-    border-color: transparent #7a1f1f transparent transparent;
-  }
+  .missing-banner::before, .missing-banner::after{ content:""; position:absolute; top:100%; width:0; height:0; border-style:solid; }
+  .missing-banner::before{ left:0; border-width:6px 0 0 10px; border-color:transparent transparent transparent #7a1f1f; }
+  .missing-banner::after{ right:0; border-width:6px 10px 0 0; border-color:transparent #7a1f1f transparent transparent; }
 
-  .eyebrow{
-    text-align:center;
-    letter-spacing: 0.4em;
-    font-size: 0.65rem;
-    color: var(--muted);
-    text-transform: uppercase;
-    margin-bottom: 0.6rem;
-  }
+  .eyebrow{ text-align:center; letter-spacing:0.4em; font-size:0.65rem; color: var(--muted); text-transform:uppercase; margin-bottom:0.6rem; }
+  h1{ font-family: Georgia, 'Times New Roman', serif; text-align:center; font-size:3.2rem; font-weight:900; letter-spacing:0.12em; color: var(--ink); text-shadow: 0 2px 0 #000; line-height:1; }
+  .subject{ text-align:center; font-family: Georgia, serif; font-style:italic; font-size:1.35rem; color: var(--rust-2); margin-top:0.35rem; margin-bottom:1.6rem; border-bottom:1px solid var(--line); padding-bottom:1.4rem; }
+  .section-label{ display:flex; align-items:center; gap:0.75rem; font-size:0.7rem; letter-spacing:0.25em; text-transform:uppercase; color: var(--muted); margin:1.6rem 0 0.75rem; }
+  .section-label::after{ content:""; flex:1; height:1px; background: var(--line); }
+  .charge-list, .sentence-list{ list-style:none; }
+  .charge-list li, .sentence-list li{ display:flex; gap:0.85rem; padding:0.55rem 0; border-bottom:1px dashed rgba(107,90,65,0.4); font-size:0.92rem; line-height:1.45; }
+  .charge-list li:last-child, .sentence-list li:last-child{ border-bottom:none; }
+  .count{ flex-shrink:0; color: var(--danger); font-weight:700; min-width:2.4rem; }
+  .sentence-list .count{ color: var(--rust-2); }
+  .final-line{ margin-top:1.8rem; text-align:center; font-family: Georgia, serif; font-style:italic; font-size:1.05rem; color: var(--danger); letter-spacing:0.03em; }
+  .stamp{ position:absolute; top:2.1rem; right:1.8rem; width:84px; height:84px; border:3px solid var(--danger); border-radius:50%; display:flex; align-items:center; justify-content:center; text-align:center; color: var(--danger); font-weight:800; font-size:0.7rem; letter-spacing:0.08em; transform: rotate(14deg); opacity:0.85; mix-blend-mode:screen; }
+  p.intro{ text-align:center; color: var(--muted); font-size:0.95rem; margin-bottom:1.9rem; line-height:1.6; }
 
-  h1{
-    font-family: Georgia, 'Times New Roman', serif;
-    text-align:center;
-    font-size: 3.2rem;
-    font-weight: 900;
-    letter-spacing: 0.12em;
-    color: var(--ink);
-    text-shadow: 0 2px 0 #000;
-    line-height: 1;
-  }
-
-  .subject{
-    text-align:center;
-    font-family: Georgia, 'Times New Roman', serif;
-    font-style: italic;
-    font-size: 1.35rem;
-    color: var(--rust-2);
-    margin-top: 0.35rem;
-    margin-bottom: 1.6rem;
-    border-bottom: 1px solid var(--line);
-    padding-bottom: 1.4rem;
-  }
-
-  .section-label{
-    display:flex;
-    align-items:center;
-    gap: 0.75rem;
-    font-size: 0.7rem;
-    letter-spacing: 0.25em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin: 1.6rem 0 0.75rem;
-  }
-  .section-label::after{
-    content:"";
-    flex:1;
-    height:1px;
-    background: var(--line);
-  }
-
-  .charge-list, .sentence-list{
-    list-style: none;
-  }
-
-  .charge-list li, .sentence-list li{
-    display:flex;
-    gap: 0.85rem;
-    padding: 0.55rem 0;
-    border-bottom: 1px dashed rgba(107,90,65,0.4);
-    font-size: 0.92rem;
-    line-height: 1.45;
-  }
-  .charge-list li:last-child, .sentence-list li:last-child{
-    border-bottom: none;
-  }
-
-  .count{
-    flex-shrink:0;
-    color: var(--danger);
-    font-weight:700;
-    min-width: 2.4rem;
-  }
-
-  .sentence-list .count{
-    color: var(--rust-2);
-  }
-
-  .final-line{
-    margin-top: 1.8rem;
-    text-align:center;
-    font-family: Georgia, serif;
-    font-style: italic;
-    font-size: 1.05rem;
-    color: var(--danger);
-    letter-spacing: 0.03em;
-  }
-
-  .stamp{
-    position:absolute;
-    top: 2.1rem;
-    right: 1.8rem;
-    width: 84px;
-    height: 84px;
-    border: 3px solid var(--danger);
-    border-radius: 50%;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    text-align:center;
-    color: var(--danger);
-    font-weight: 800;
-    font-size: 0.7rem;
-    letter-spacing: 0.08em;
-    transform: rotate(14deg);
-    opacity: 0.85;
-    mix-blend-mode: screen;
-  }
-
-  p.intro{
-    text-align:center;
-    color: var(--muted);
-    font-size: 0.95rem;
-    margin-bottom: 1.9rem;
-    line-height:1.6;
-  }
-
-  .download-btn{
-    display:block;
-    width: fit-content;
-    margin: 2.2rem auto 0;
-    padding: 0.95rem 2.4rem;
-    font-family: Georgia, serif;
-    font-size: 1rem;
-    font-weight:700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--paper);
-    text-decoration:none;
+  .nav-btn{
+    display:block; width: fit-content; margin: 2.2rem auto 0; padding: 0.95rem 2.4rem;
+    font-family: Georgia, serif; font-size:1rem; font-weight:700; letter-spacing:0.06em;
+    text-transform: uppercase; color: var(--paper); text-decoration:none; border:none; cursor:pointer;
     background: linear-gradient(135deg, var(--rust-2), var(--rust));
-    border-radius: 3px;
-    box-shadow: 0 6px 0 #7a3c1e, 0 10px 18px rgba(0,0,0,0.5);
+    border-radius:3px; box-shadow: 0 6px 0 #7a3c1e, 0 10px 18px rgba(0,0,0,0.5);
     transition: transform 0.15s ease, box-shadow 0.15s ease;
   }
-  .download-btn:hover{
-    transform: translateY(-2px);
-    box-shadow: 0 8px 0 #7a3c1e, 0 14px 22px rgba(0,0,0,0.55);
+  .nav-btn:hover{ transform: translateY(-2px); box-shadow: 0 8px 0 #7a3c1e, 0 14px 22px rgba(0,0,0,0.55); }
+  .nav-btn:active{ transform: translateY(2px); box-shadow: 0 3px 0 #7a3c1e, 0 6px 10px rgba(0,0,0,0.5); }
+
+  .pin{ width:14px; height:14px; border-radius:50%; background: radial-gradient(circle at 35% 35%, #ff8a65, var(--danger)); margin:0 auto 1.6rem; box-shadow: 0 3px 5px rgba(0,0,0,0.5); }
+  .notice-title{ font-family: Georgia, serif; font-size:2.1rem; font-weight:900; letter-spacing:0.04em; color: var(--danger); text-shadow: 0 2px 0 #000; line-height:1.25; margin-bottom:1.4rem; text-align:center; }
+  .notice-body{ color: var(--muted); font-size:0.95rem; line-height:1.7; text-align:center; }
+
+  .coin-title{ font-family: Georgia, serif; font-size:1.8rem; color: var(--rust-2); text-align:center; margin-bottom:0.2rem; }
+  .coin-ticker{ text-align:center; color: var(--muted); font-size:0.7rem; letter-spacing:0.2em; margin-bottom:1.6rem; }
+  .price-row{ display:flex; justify-content:center; align-items:baseline; gap:0.75rem; margin-bottom:0.4rem; }
+  .price-row .price{ font-size:2.4rem; font-weight:700; }
+  .price-row .change{ font-size:0.95rem; }
+  .change.up{ color: var(--gain); } .change.down{ color: var(--danger); }
+  canvas#chart{ width:100%; height:130px; display:block; margin:1.2rem 0; border:1px solid var(--line); background: rgba(0,0,0,0.2); }
+  .stats{ display:grid; grid-template-columns: repeat(3,1fr); gap:0.75rem; text-align:center; margin-bottom:1.4rem; }
+  .stat-label{ font-size:0.58rem; letter-spacing:0.15em; text-transform:uppercase; color: var(--muted); margin-bottom:0.3rem; }
+  .stat-value{ font-size:1rem; font-weight:700; }
+  .trade-panel{ display:flex; gap:0.6rem; align-items:center; justify-content:center; flex-wrap:wrap; margin-top:0.8rem; }
+  .trade-panel input{ width:90px; background: var(--paper-2); border:1px solid var(--line); color: var(--ink); font-family:inherit; padding:0.55rem; text-align:center; border-radius:3px; }
+  .trade-btn{ padding:0.6rem 1.2rem; font-family: Georgia, serif; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; font-size:0.75rem; color: var(--paper); border:none; border-radius:3px; cursor:pointer; transition: transform 0.15s ease; }
+  .trade-btn:hover{ transform: translateY(-2px); }
+  .trade-btn.buy{ background: linear-gradient(135deg, var(--gain), #2f7a3a); box-shadow: 0 4px 0 #1f5a28; }
+  .trade-btn.sell{ background: linear-gradient(135deg, var(--danger), #7a1f1f); box-shadow: 0 4px 0 #5a1414; }
+  .msg{ text-align:center; font-size:0.72rem; color: var(--rust-2); margin-top:0.7rem; min-height:1rem; }
+  .history{ max-height:150px; overflow-y:auto; margin-top:1rem; border-top:1px solid var(--line); padding-top:0.8rem; }
+  .history-row{ display:flex; justify-content:space-between; font-size:0.72rem; padding:0.4rem 0; border-bottom:1px dashed rgba(107,90,65,0.4); }
+  .history-row.buy .type{ color: var(--gain); } .history-row.sell .type{ color: var(--danger); }
+  .empty-history{ color: var(--muted); font-size:0.72rem; text-align:center; padding:0.5rem 0; }
+  .reset-link{ display:block; text-align:center; margin-top:0.8rem; color: var(--muted); font-size:0.6rem; text-decoration:underline; cursor:pointer; background:none; border:none; font-family:inherit; }
+
+  /* ---------- Widgets LOCKED to the poster (world-space, pan/zoom with it) ---------- */
+  #posterCoin{
+    position:absolute; left: -270px; top: 0; width: 230px; height: 48%; display:flex; flex-direction:column;
   }
-  .download-btn:active{
-    transform: translateY(2px);
-    box-shadow: 0 3px 0 #7a3c1e, 0 6px 10px rgba(0,0,0,0.5);
+  #posterCoin .panel-card{ flex:1; display:flex; flex-direction:column; justify-content:center; }
+  #posterLas{
+    position:absolute; right: -270px; top: 0; width: 230px;
+  }
+  .panel-card{ background: var(--paper); border:1px solid var(--line); outline:1px solid #000; outline-offset:4px; padding:0.7rem; box-shadow: 0 16px 30px rgba(0,0,0,0.55); }
+  .panel-label{ font-size:0.58rem; letter-spacing:0.2em; text-transform:uppercase; color: var(--muted); margin-bottom:0.4rem; text-align:center; }
+  .mini-coin{ text-align:center; }
+  .mini-coin .name{ font-family: Georgia, serif; font-weight:900; font-size:0.95rem; color: var(--rust-2); }
+  .mini-coin .ticker{ font-size:0.55rem; color: var(--muted); letter-spacing:0.12em; margin-bottom:0.4rem; }
+  .mini-coin .price{ font-size:1.25rem; font-weight:700; margin-bottom:0.1rem; }
+  .mini-coin .change{ font-size:0.7rem; margin-bottom:0.5rem; }
+  .mini-invest{ display:block; width:100%; padding:0.5rem; font-family:Georgia,serif; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; font-size:0.68rem; color: var(--paper); border:none; border-radius:3px; cursor:pointer; background: linear-gradient(135deg, var(--gain), #2f7a3a); box-shadow: 0 3px 0 #1f5a28; }
+
+  .las-toggle{
+    display:block; width:100%; background: var(--paper-2); color: var(--muted); border: 1px solid var(--line);
+    border-radius:6px; padding:0.6rem 0.5rem; font-family:inherit; font-size:0.62rem;
+    letter-spacing:0.04em; text-transform:uppercase; cursor:pointer; transition: all 0.2s ease; text-align:center;
+  }
+  .las-toggle:hover{ color: var(--rust-2); border-color: var(--rust-2); }
+  .las-toggle.active{ background: var(--rust); color: var(--ink); border-color: var(--rust-2); }
+
+  /* video popup: screen-fixed, only ever shown while the poster/hub is the active region */
+  #videoPopup{
+    position: fixed; top:50%; right: 1.25rem; transform: translateY(-50%);
+    z-index:60; display:none; border: 1px solid var(--line); outline:1px solid #000; outline-offset:4px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.6); overflow:hidden; background:#000;
+  }
+  #videoPopup.show{ display:block; }
+  #videoPopup iframe{ width:100%; height:100%; border:0; display:block; }
+
+  .side-nav{ margin-top: 0.6rem; display:flex; flex-direction:column; gap: 0.4rem; }
+  .side-nav-btn{ text-align:center; }
+  .dropdown-wrap{ position:relative; }
+  .dropdown-menu{
+    display:none; position:absolute; top: calc(100% + 6px); left:0; width: 100%;
+    min-width: 210px; background: var(--paper-2); border:1px solid var(--line);
+    outline:1px solid #000; outline-offset:2px; box-shadow: 0 12px 24px rgba(0,0,0,0.55);
+    z-index: 70; flex-direction:column; padding: 0.3rem;
+  }
+  .dropdown-menu.open{ display:flex; }
+  .dropdown-menu button{
+    background:none; border:none; color: var(--muted); font-family:inherit; font-size:0.62rem;
+    letter-spacing:0.03em; text-transform:uppercase; text-align:left; padding:0.5rem 0.5rem;
+    cursor:pointer; border-radius:3px; transition: background 0.15s ease, color 0.15s ease;
+  }
+  .dropdown-menu button:hover{ background: rgba(214,167,107,0.12); color: var(--rust-2); }
+
+  /* Periodic table + databook regions are wider than the poster */
+  .region.wide{ width: 1080px; }
+  .page-title{
+    font-family: Georgia, serif; text-align:center; font-size:1.9rem; font-weight:900;
+    color: var(--rust-2); margin-bottom: 0.3rem;
+  }
+  .page-sub{ text-align:center; color: var(--muted); font-size:0.75rem; letter-spacing:0.1em; text-transform:uppercase; margin-bottom: 1.6rem; }
+
+  /* --- periodic table --- */
+  #ptable{
+    display:grid;
+    grid-template-columns: repeat(18, 1fr);
+    gap: 3px;
+    margin-bottom: 1.2rem;
+  }
+  .elem{
+    aspect-ratio: 1; background: var(--paper-2); border:1px solid var(--line);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    cursor:pointer; transition: transform 0.12s ease, background 0.12s ease; color: var(--ink);
+    padding: 2px; overflow:hidden;
+  }
+  .elem .num{ font-size: 0.42rem; color: var(--muted); align-self:flex-start; margin-left:2px; }
+  .elem .sym{ font-size: 0.72rem; font-weight:700; line-height:1; }
+  .elem:hover{ transform: scale(1.18); z-index: 5; box-shadow: 0 6px 14px rgba(0,0,0,0.6); }
+  .elem.spacer{ visibility:hidden; }
+
+  #elemInfo{
+    border: 1px solid var(--line); background: var(--paper-2); padding: 1rem 1.2rem;
+    min-height: 70px; display:flex; align-items:center; gap: 1.2rem;
+  }
+  #elemInfo .big-sym{ font-size: 2.4rem; font-weight:900; font-family: Georgia, serif; }
+  #elemInfo .meta{ font-size:0.8rem; color: var(--muted); line-height:1.6; }
+  #elemInfo .meta b{ color: var(--ink); }
+
+  .legend{ display:flex; flex-wrap:wrap; gap: 0.6rem 1rem; margin-top:1rem; justify-content:center; }
+  .legend-item{ display:flex; align-items:center; gap:0.4rem; font-size:0.65rem; color: var(--muted); text-transform:uppercase; letter-spacing:0.05em; }
+  .legend-swatch{ width:12px; height:12px; border:1px solid rgba(0,0,0,0.4); }
+
+  /* --- databook --- */
+  .db-section{ border-bottom: 1px dashed rgba(107,90,65,0.4); }
+  .db-head{
+    width:100%; background:none; border:none; color: var(--ink); font-family: Georgia, serif;
+    font-size:1rem; text-align:left; padding: 0.9rem 0.2rem; cursor:pointer;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .db-head:hover{ color: var(--rust-2); }
+  .db-body{ display:none; padding: 0 0.2rem 1.2rem; font-size: 0.82rem; line-height:1.6; color: var(--muted); }
+  .db-body.open{ display:block; }
+  .db-body table{ width:100%; border-collapse: collapse; margin-top:0.4rem; font-size:0.78rem; }
+  .db-body th, .db-body td{ border-bottom: 1px dashed rgba(107,90,65,0.35); padding: 0.35rem 0.5rem; text-align:left; }
+  .db-body th{ color: var(--rust-2); text-transform:uppercase; font-size:0.62rem; letter-spacing:0.05em; }
+  .db-body td{ color: var(--ink); }
+  .db-note{ font-size: 0.7rem; color: var(--muted); margin-top: 0.6rem; font-style: italic; }
+
+  @media (max-width: 1150px){
+    .region.wide{ width: 92vw; }
+    #ptable{ gap:2px; }
+    .elem .sym{ font-size: 0.6rem; }
+    #posterCoin{ left: -190px; width: 170px; }
+    #posterLas{ right: -190px; width: 170px; }
+    .panel-card{ padding: 0.5rem; }
+    .mini-coin .price{ font-size: 1.05rem; }
+  }
+  @media (max-width: 820px){
+    #posterCoin{ left: -150px; width: 135px; }
+    #posterLas{ right: -150px; width: 135px; }
+    #videoPopup{ max-width: 42vw; }
+  }
+  @media (max-width: 620px){
+    /* not enough room beside a 620px-wide poster on very small screens */
+    #posterCoin, #posterLas{ display:none !important; }
+    #videoPopup{ display:none !important; }
   }
 
-  @keyframes riseIn{
-    from{ opacity:0; transform: translateY(24px) scale(0.98); }
-    to{ opacity:1; transform: translateY(0) scale(1); }
-  }
-
-  @media (max-width: 480px){
-    h1{ font-size: 2.2rem; }
-    .subject{ font-size: 1.1rem; }
-    .stamp{ width:64px; height:64px; font-size:0.55rem; top:1.3rem; right:1.1rem; }
-    .poster{ padding: 2.75rem 1.25rem 1.75rem; }
-    .missing-banner{ font-size: 0.85rem; padding: 0.4rem 1.1rem; }
+  #hint{
+    position: fixed; bottom: 1rem; left:50%; transform: translateX(-50%); z-index: 55;
+    font-size: 0.65rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+    background: var(--paper-2); border: 1px solid var(--line); padding: 0.5rem 1rem;
+    border-radius: 999px; opacity: 0.85; pointer-events:none;
   }
 </style>
 </head>
 <body>
 
-  <button class="las-toggle" id="lasToggle">Low Attention Span Mode: Off</button>
+<div id="hint">Drag or scroll to look around this area · Buttons take you elsewhere</div>
+<div id="videoPopup"><iframe id="videoFrame" src="" title="background video" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>
 
-  <div class="side-panel right" id="rightPanel">
-    <div class="panel-card">
-      <div class="panel-label">Stay Focused</div>
-      <div class="video-wrap">
-        <iframe src="https://www.youtube.com/embed/vnM6WJrWdkk?autoplay=1&mute=1&loop=1&playlist=vnM6WJrWdkk&controls=0"
-          title="background gameplay" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+<div id="viewport">
+  <div id="world">
+    <div id="connectors"></div>
+
+    <div class="region" id="region-index" data-role="hub">
+      <div class="region-inner">
+
+        <!-- MrWestCoin widget, physically locked beside the poster -->
+        <div id="posterCoin">
+          <div class="panel-card mini-coin">
+            <div class="panel-label">Market Watch</div>
+            <div class="name">MrWestCoin</div>
+            <div class="ticker">$WEST</div>
+            <div class="price" id="miniPrice">$--.--</div>
+            <div class="change" id="miniChange">loading...</div>
+            <button class="mini-invest" id="miniInvest">Invest Now</button>
+          </div>
+        </div>
+
+        <!-- Low Attention Span Mode toggle, physically locked beside the poster -->
+        <div id="posterLas">
+          <div class="panel-card">
+            <div class="panel-label">Attention Span</div>
+            <button class="las-toggle" id="lasToggle">Off</button>
+
+            <div class="side-nav">
+              <button class="las-toggle side-nav-btn" data-goto="region-periodic">Periodic Table</button>
+
+              <div class="dropdown-wrap">
+                <button class="las-toggle side-nav-btn" id="databookToggle">Databook ▾</button>
+                <div class="dropdown-menu" id="databookMenu">
+                  <button data-section="electrochem">Electrochemical Series</button>
+                  <button data-section="relationships">Chemical Relationships</button>
+                  <button data-section="constants">Physical Constants</button>
+                  <button data-section="conversions">Unit Conversions</button>
+                  <button data-section="prefixes">Metric Prefixes</button>
+                  <button data-section="indicators">Acid-Base Indicators</button>
+                  <button data-section="ions">Ion Formulas &amp; Charges</button>
+                  <button data-section="solubility">Solubility Table</button>
+                  <button data-section="organic">Organic Chemistry</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="missing-banner">Missing 1 day(s)</div>
+        <div class="stamp">FEDERAL<br>NOTICE</div>
+        <div class="eyebrow">By order of the court</div>
+        <h1>WANTED</h1>
+        <div class="subject">Colin West</div>
+        <p class="intro">Download the files insecurely below.</p>
+        <div class="section-label">Charges</div>
+        <ul class="charge-list">
+          <li><span class="count">×5</span><span>Skipping class (I'm disappointed)</span></li>
+          <li><span class="count">×2</span><span>Child endangerment</span></li>
+          <li><span class="count">×2</span><span>Treason</span></li>
+          <li><span class="count">×1</span><span>Possession and use of perchlorate</span></li>
+          <li><span class="count">×1</span><span>Accepting bribes</span></li>
+          <li><span class="count">×1</span><span>Possession of radioactive material</span></li>
+          <li><span class="count">×1</span><span>Error, Skipping and No LP for SAC </span></li>
+        </ul>
+        <div class="section-label">Sentence</div>
+        <ul class="sentence-list">
+          <li><span class="count">—</span><span>6 after-school detentions</span></li>
+          <li><span class="count">—</span><span>Tree(3) minutes of community service</span></li>
+          <li><span class="count">—</span><span>28 years in federal prison</span></li>
+          <li><span class="count">—</span><span>The sulfuric acid chair</span></li>
+          <li><span class="count">—</span><span>Body taken down to 195K (−78.5°C) and left for 93 years</span></li>
+        </ul>
+        <p class="final-line">Your days are numbered.</p>
+        <button class="nav-btn" data-goto="region-notice">Download Files</button>
       </div>
     </div>
-  </div>
 
-  <div class="side-panel left">
-    <div class="panel-card coin-card">
-      <div class="panel-label">Market Watch</div>
-      <div class="coin-name">MrWestCoin</div>
-      <div class="coin-ticker">$WEST</div>
-      <div class="coin-price" id="coinPrice">$--.--</div>
-      <div class="coin-change" id="coinChange">loading...</div>
-      <a href="mrwestcoin.html" class="invest-btn">Invest Now</a>
-      <div class="coin-disclaimer">Not a real investment. Not real financial advice. Probably not real money.</div>
+    <div class="region" id="region-notice" data-role="satellite">
+      <div class="region-inner" style="text-align:center;">
+        <div class="pin"></div>
+        <div class="eyebrow">Notice</div>
+        <div class="notice-title">The Mr West files have been redacted.</div>
+        <p class="notice-body">For more information, don't contact customer support.</p>
+        <button class="nav-btn" data-goto="region-index">Return to the board</button>
+      </div>
     </div>
+
+    <div class="region" id="region-coin" data-role="satellite">
+      <div class="region-inner">
+        <div class="coin-title">MrWestCoin Exchange</div>
+        <div class="coin-ticker">$WEST — Not real. Not FDIC insured. Not anything.</div>
+        <div class="price-row"><span class="price" id="price">$--.--</span><span class="change" id="change">loading...</span></div>
+        <canvas id="chart"></canvas>
+        <div class="stats">
+          <div><div class="stat-label">Cash</div><div class="stat-value" id="cash">$0.00</div></div>
+          <div><div class="stat-label">$WEST Held</div><div class="stat-value" id="held">0</div></div>
+          <div><div class="stat-label">Portfolio</div><div class="stat-value" id="total">$0.00</div></div>
+        </div>
+        <div class="trade-panel">
+          <input type="number" id="qty" placeholder="Qty" min="0" step="1" value="1">
+          <button class="trade-btn buy" id="buyBtn">Buy</button>
+          <button class="trade-btn sell" id="sellBtn">Sell</button>
+        </div>
+        <div class="msg" id="msg"></div>
+        <div class="history" id="historyList"><div class="empty-history">No trades yet.</div></div>
+        <button class="reset-link" id="resetBtn">Reset portfolio</button>
+        <button class="nav-btn" data-goto="region-index" style="margin-top:1.2rem;">Back to the board</button>
+      </div>
+    </div>
+    <div class="region wide" id="region-periodic" data-role="satellite">
+      <div class="region-inner">
+        <div class="page-title">Periodic Table</div>
+        <div class="page-sub">Hover an element · click for details</div>
+        <div id="ptable"></div>
+        <div id="elemInfo"><span class="meta">Hover or click an element to see its details.</span></div>
+        <div class="legend" id="legend"></div>
+        <button class="nav-btn" data-goto="region-index" style="margin-top:1.6rem;">Back to the board</button>
+      </div>
+    </div>
+
+    <div class="region wide" id="region-databook" data-role="satellite">
+      <div class="region-inner">
+        <div class="page-title">Chemistry Databook</div>
+        <div class="page-sub">Reference tables · verify against your official data book before an exam</div>
+        <div id="databookAccordion"></div>
+        <button class="nav-btn" data-goto="region-index" style="margin-top:1.2rem;">Back to the board</button>
+      </div>
+    </div>
+
   </div>
+</div>
 
-  <div class="poster">
-    <div class="missing-banner">Missing 1 day(s)</div>
-    <div class="stamp">FEDERAL<br>NOTICE</div>
-    <div class="eyebrow">By order of the court</div>
-    <h1>WANTED</h1>
-    <div class="subject">Colin West</div>
+<script>
+/* ================= RADIAL AUTO-LAYOUT ================= */
+const HUB_ID = 'region-index';
+const SATELLITE_IDS = ['region-notice', 'region-coin', 'region-periodic', 'region-databook'];
+const RADIUS = 1500;
 
-    <p class="intro">Download the files insecurely below.</p>
+function layoutRegions(){
+  const hub = document.getElementById(HUB_ID);
+  hub.style.left = '0px'; hub.style.top = '0px';
+  const hubCx = hub.offsetWidth/2, hubCy = hub.offsetHeight/2;
 
-    <div class="section-label">Charges</div>
-    <ul class="charge-list">
-      <li><span class="count">×5</span><span>Skipping class (I'm disappointed)</span></li>
-      <li><span class="count">×2</span><span>Child endangerment</span></li>
-      <li><span class="count">×2</span><span>Treason</span></li>
-      <li><span class="count">×1</span><span>Possession and use of perchlorate</span></li>
-      <li><span class="count">×1</span><span>Accepting bribes</span></li>
-      <li><span class="count">×1</span><span>Possession of radioactive material</span></li>
-      <li><span class="count">×1</span><span>Error, Skipping and No LP for SAC </span></li>
-    </ul>
+  const posterCoin = document.getElementById('posterCoin');
+  if(posterCoin) posterCoin.style.height = (hub.offsetHeight * 0.5) + 'px';
+  const n = SATELLITE_IDS.length;
+  const positions = {};
+  SATELLITE_IDS.forEach((id, i) => {
+    const angle = (-90 + (360/n)*i) * Math.PI/180;
+    const el = document.getElementById(id);
+    const cx = hubCx + RADIUS*Math.cos(angle), cy = hubCy + RADIUS*Math.sin(angle);
+    el.style.left = (cx - el.offsetWidth/2) + 'px';
+    el.style.top = (cy - el.offsetHeight/2) + 'px';
+    positions[id] = { cx, cy };
+  });
+  drawConnectors(hubCx, hubCy, positions);
+}
+function drawConnectors(hubCx, hubCy, positions){
+  const wrap = document.getElementById('connectors');
+  wrap.innerHTML = '';
+  SATELLITE_IDS.forEach(id => {
+    const p = positions[id];
+    const dx = p.cx - hubCx, dy = p.cy - hubCy;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    const angle = Math.atan2(dy, dx) * 180/Math.PI;
+    const line = document.createElement('div');
+    line.className = 'connector';
+    line.style.left = hubCx + 'px'; line.style.top = hubCy + 'px';
+    line.style.width = dist + 'px'; line.style.transform = `rotate(${angle}deg)`;
+    wrap.appendChild(line);
+  });
+}
 
-    <div class="section-label">Sentence</div>
-    <ul class="sentence-list">
-      <li><span class="count">—</span><span>6 after-school detentions</span></li>
-      <li><span class="count">—</span><span>Tree(3) minutes of community service</span></li>
-      <li><span class="count">—</span><span>28 years in federal prison</span></li>
-      <li><span class="count">—</span><span>The sulfuric acid chair</span></li>
-      <li><span class="count">—</span><span>Body taken down to 195K (−78.5°C) and left for 93 years</span></li>
-    </ul>
+/* ================= MAP / CAMERA (clamped PER REGION, smoothed) ================= */
+const viewport = document.getElementById('viewport');
+const world = document.getElementById('world');
+const REGION_PAD = 220;
+const MIN_SCALE = 0.75, MAX_SCALE = 1.35;
+const LERP = 0.16;
+const FRICTION = 0.92;
 
-    <p class="final-line">Your days are numbered.</p>
+let activeRegionId = HUB_ID;
+let cam = { x:0, y:0, scale:1 };
+let target = { x:0, y:0, scale:1 };
+let velocity = { x:0, y:0 };
+let dragging = false, lastPointer = {x:0,y:0}, animatingBetweenRegions = false;
 
-    <a href="notice.html" class="download-btn">
-      Download Files
-    </a>
-  </div>
+function getRegionBounds(id){
+  const el = document.getElementById(id);
+  return {
+    minX: el.offsetLeft - REGION_PAD, maxX: el.offsetLeft + el.offsetWidth + REGION_PAD,
+    minY: el.offsetTop - REGION_PAD, maxY: el.offsetTop + el.offsetHeight + REGION_PAD,
+  };
+}
+function clamp(c, bounds){
+  const vw = viewport.clientWidth, vh = viewport.clientHeight;
+  c.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, c.scale));
+  const minX = vw - bounds.maxX*c.scale, maxX = -bounds.minX*c.scale;
+  const minY = vh - bounds.maxY*c.scale, maxY = -bounds.minY*c.scale;
+  c.x = Math.min(maxX, Math.max(minX, c.x));
+  c.y = Math.min(maxY, Math.max(minY, c.y));
+  return c;
+}
+function centerOnRegion(id, scale=1){
+  const el = document.getElementById(id);
+  const vw = viewport.clientWidth, vh = viewport.clientHeight;
+  const rx = el.offsetLeft + el.offsetWidth/2, ry = el.offsetTop + el.offsetHeight/2;
+  return clamp({ x: vw/2 - rx*scale, y: vh/2 - ry*scale, scale }, getRegionBounds(id));
+}
+function applyTransform(){ world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.scale})`; }
 
-  <script>
-    // Low attention span mode toggle
-    const toggle = document.getElementById('lasToggle');
-    const rightPanel = document.getElementById('rightPanel');
-    let lasOn = localStorage.getItem('lasMode') === 'on';
+function tick(){
+  if(!animatingBetweenRegions){
+    if(!dragging && (Math.abs(velocity.x) > 0.05 || Math.abs(velocity.y) > 0.05)){
+      target.x += velocity.x; target.y += velocity.y;
+      velocity.x *= FRICTION; velocity.y *= FRICTION;
+      clamp(target, getRegionBounds(activeRegionId));
+    }
+    cam.x += (target.x - cam.x) * LERP;
+    cam.y += (target.y - cam.y) * LERP;
+    cam.scale += (target.scale - cam.scale) * LERP;
+    applyTransform();
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
 
-    function applyLasState(){
-      if(lasOn){
-        rightPanel.classList.add('show');
-        toggle.classList.add('active');
-        toggle.textContent = 'Low Attention Span Mode: On';
+function goToRegion(id){
+  if(animatingBetweenRegions) return;
+  animatingBetweenRegions = true;
+  updateVideoPopupVisibility(false); // hide popup the instant we leave the hub
+  const startCam = { ...cam };
+  const endCam = centerOnRegion(id, 1);
+  const t0 = performance.now(), duration = 850;
+  function step(now){
+    const t = Math.min(1, (now-t0)/duration);
+    const ease = 1 - Math.pow(1-t, 3);
+    cam.x = startCam.x + (endCam.x-startCam.x)*ease;
+    cam.y = startCam.y + (endCam.y-startCam.y)*ease;
+    cam.scale = startCam.scale + (endCam.scale-startCam.scale)*ease;
+    applyTransform();
+    if(t < 1){ requestAnimationFrame(step); }
+    else{
+      activeRegionId = id;
+      target = { ...cam }; velocity = { x:0, y:0 };
+      animatingBetweenRegions = false;
+      updateVideoPopupVisibility(true);
+    }
+  }
+  requestAnimationFrame(step);
+}
+document.querySelectorAll('[data-goto]').forEach(btn => btn.addEventListener('click', () => goToRegion(btn.dataset.goto)));
+
+function initCamera(){
+  layoutRegions();
+  cam = centerOnRegion(HUB_ID, 1);
+  target = { ...cam };
+  applyTransform();
+}
+window.addEventListener('load', initCamera);
+window.addEventListener('resize', () => {
+  layoutRegions();
+  cam = centerOnRegion(activeRegionId, cam.scale);
+  target = { ...cam };
+  positionVideoPopup();
+});
+
+let dragHistory = [];
+viewport.addEventListener('pointerdown', (e) => {
+  if(animatingBetweenRegions) return;
+  dragging = true; velocity = { x:0, y:0 };
+  viewport.classList.add('grabbing');
+  lastPointer = { x:e.clientX, y:e.clientY };
+  dragHistory = [{ x:e.clientX, y:e.clientY, t: performance.now() }];
+});
+window.addEventListener('pointermove', (e) => {
+  if(!dragging) return;
+  const dx = e.clientX - lastPointer.x, dy = e.clientY - lastPointer.y;
+  target.x += dx; target.y += dy;
+  clamp(target, getRegionBounds(activeRegionId));
+  lastPointer = { x:e.clientX, y:e.clientY };
+  dragHistory.push({ x:e.clientX, y:e.clientY, t: performance.now() });
+  if(dragHistory.length > 5) dragHistory.shift();
+});
+window.addEventListener('pointerup', () => {
+  if(!dragging) return;
+  dragging = false; viewport.classList.remove('grabbing');
+  if(dragHistory.length >= 2){
+    const a = dragHistory[0], b = dragHistory[dragHistory.length-1];
+    const dt = Math.max(1, b.t - a.t);
+    velocity.x = (b.x - a.x)/dt*16; velocity.y = (b.y - a.y)/dt*16;
+  }
+});
+viewport.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  if(animatingBetweenRegions) return;
+  const rect = viewport.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const worldX = (mx - target.x)/target.scale, worldY = (my - target.y)/target.scale;
+  const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, target.scale * (e.deltaY < 0 ? 1.06 : 0.94)));
+  target.scale = newScale;
+  target.x = mx - worldX*newScale; target.y = my - worldY*newScale;
+  clamp(target, getRegionBounds(activeRegionId));
+}, { passive:false });
+
+/* ================= LOW ATTENTION SPAN MODE (several distinct clips) ================= */
+const VIDEO_OPTIONS = [
+  { id: 'QPW3XwBoQlw', label: 'Subway Surfers', aspect: 9/16 },
+  { id: 'vnM6WJrWdkk', label: 'Subway Surfers (Long)', aspect: 16/9 },
+  { id: '0y3iAtrfKjk', label: 'Minecraft Parkour', aspect: 9/16 },
+];
+let videoIndex = parseInt(localStorage.getItem('lasVideoIndex') ?? '-1', 10); // -1 = off
+
+const lasToggle = document.getElementById('lasToggle');
+const videoPopup = document.getElementById('videoPopup');
+const videoFrame = document.getElementById('videoFrame');
+
+function positionVideoPopup(){
+  if(videoIndex < 0) return;
+  const opt = VIDEO_OPTIONS[videoIndex];
+  const maxH = window.innerHeight * 0.8;
+  const maxW = Math.min(460, window.innerWidth * 0.42);
+  let h = maxH, w = h * opt.aspect;
+  if(w > maxW){ w = maxW; h = w / opt.aspect; }
+  videoPopup.style.width = w + 'px';
+  videoPopup.style.height = h + 'px';
+}
+
+function updateVideoPopupVisibility(showIfOn){
+  const shouldShow = showIfOn && videoIndex >= 0 && activeRegionId === HUB_ID;
+  videoPopup.classList.toggle('show', shouldShow);
+  if(!shouldShow){ videoFrame.src = ''; }
+  else{
+    const opt = VIDEO_OPTIONS[videoIndex];
+    videoFrame.src = `https://www.youtube.com/embed/${opt.id}?autoplay=1&mute=1&loop=1&playlist=${opt.id}&controls=0`;
+  }
+}
+
+function applyLasLabel(){
+  if(videoIndex < 0){ lasToggle.textContent = 'Off'; lasToggle.classList.remove('active'); }
+  else{ lasToggle.textContent = VIDEO_OPTIONS[videoIndex].label; lasToggle.classList.add('active'); }
+}
+applyLasLabel();
+positionVideoPopup();
+updateVideoPopupVisibility(true);
+
+lasToggle.addEventListener('click', () => {
+  videoIndex += 1;
+  if(videoIndex >= VIDEO_OPTIONS.length) videoIndex = -1;
+  localStorage.setItem('lasVideoIndex', videoIndex);
+  applyLasLabel();
+  positionVideoPopup();
+  updateVideoPopupVisibility(true);
+});
+
+/* ================= MrWestCoin (real price via CoinGecko) ================= */
+const SCALE = 1000;
+const STORAGE_KEY = 'mrwestcoin_portfolio';
+const HISTORY_KEY = 'mrwestcoin_price_history';
+function loadPortfolio(){ const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : { cash:1000, held:0, trades:[] }; }
+function savePortfolio(p){ localStorage.setItem(STORAGE_KEY, JSON.stringify(p)); }
+let portfolio = loadPortfolio();
+let currentPrice = null;
+let priceHistory = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+
+const priceEl = document.getElementById('price'), changeEl = document.getElementById('change');
+const miniPriceEl = document.getElementById('miniPrice'), miniChangeEl = document.getElementById('miniChange');
+const cashEl = document.getElementById('cash'), heldEl = document.getElementById('held'), totalEl = document.getElementById('total');
+const msgEl = document.getElementById('msg'), historyListEl = document.getElementById('historyList');
+const qtyInput = document.getElementById('qty');
+const canvas = document.getElementById('chart'), ctx = canvas.getContext('2d');
+
+function renderPortfolio(){
+  cashEl.textContent = '$' + portfolio.cash.toFixed(2);
+  heldEl.textContent = portfolio.held.toFixed(4);
+  if(currentPrice) totalEl.textContent = '$' + (portfolio.cash + portfolio.held*currentPrice).toFixed(2);
+}
+function renderHistory(){
+  if(portfolio.trades.length === 0){ historyListEl.innerHTML = '<div class="empty-history">No trades yet.</div>'; return; }
+  historyListEl.innerHTML = portfolio.trades.slice().reverse().map(t => `
+    <div class="history-row ${t.type}"><span class="type">${t.type.toUpperCase()}</span><span>${t.qty.toFixed(4)} $WEST @ $${t.price.toFixed(2)}</span><span>${t.time}</span></div>`).join('');
+}
+function drawChart(){
+  const w = canvas.width = canvas.offsetWidth, h = canvas.height = canvas.offsetHeight;
+  ctx.clearRect(0,0,w,h);
+  if(priceHistory.length < 2) return;
+  const prices = priceHistory.map(p => p.price);
+  const min = Math.min(...prices), max = Math.max(...prices), range = (max-min)||1;
+  ctx.beginPath(); ctx.strokeStyle = '#d97a3f'; ctx.lineWidth = 2;
+  priceHistory.forEach((p,i) => {
+    const x = (i/(priceHistory.length-1))*w;
+    const y = h - ((p.price-min)/range)*(h-20) - 10;
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+}
+async function fetchPrice(){
+  try{
+    const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=dogecoin&vs_currencies=usd&include_24hr_change=true');
+    const data = await res.json();
+    const usd = data.dogecoin.usd, change = data.dogecoin.usd_24h_change;
+    currentPrice = usd * SCALE;
+    const priceText = '$' + currentPrice.toFixed(2);
+    priceEl.textContent = priceText; miniPriceEl.textContent = priceText;
+    const isUp = change >= 0;
+    const changeText = (isUp?'▲ ':'▼ ') + Math.abs(change).toFixed(2) + '% (24h)';
+    changeEl.textContent = changeText; changeEl.className = 'change ' + (isUp?'up':'down');
+    miniChangeEl.textContent = changeText; miniChangeEl.className = 'change ' + (isUp?'up':'down');
+    priceHistory.push({ price: currentPrice, t: Date.now() });
+    if(priceHistory.length > 60) priceHistory.shift();
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(priceHistory));
+    drawChart(); renderPortfolio();
+  } catch(e){
+    priceEl.textContent = '$--.--'; changeEl.textContent = 'market closed';
+    miniPriceEl.textContent = '$--.--'; miniChangeEl.textContent = 'market closed';
+  }
+}
+document.getElementById('buyBtn').addEventListener('click', () => {
+  const qty = parseFloat(qtyInput.value);
+  if(!currentPrice || !qty || qty<=0){ msgEl.textContent = 'Enter a valid quantity.'; return; }
+  const cost = qty*currentPrice;
+  if(cost > portfolio.cash){ msgEl.textContent = "You can't afford that, champ."; return; }
+  portfolio.cash -= cost; portfolio.held += qty;
+  portfolio.trades.push({ type:'buy', qty, price: currentPrice, time: new Date().toLocaleString() });
+  savePortfolio(portfolio); renderPortfolio(); renderHistory();
+  msgEl.textContent = `Bought ${qty} $WEST for $${cost.toFixed(2)}.`;
+});
+document.getElementById('sellBtn').addEventListener('click', () => {
+  const qty = parseFloat(qtyInput.value);
+  if(!currentPrice || !qty || qty<=0){ msgEl.textContent = 'Enter a valid quantity.'; return; }
+  if(qty > portfolio.held){ msgEl.textContent = "You don't hold that much $WEST."; return; }
+  const proceeds = qty*currentPrice;
+  portfolio.cash += proceeds; portfolio.held -= qty;
+  portfolio.trades.push({ type:'sell', qty, price: currentPrice, time: new Date().toLocaleString() });
+  savePortfolio(portfolio); renderPortfolio(); renderHistory();
+  msgEl.textContent = `Sold ${qty} $WEST for $${proceeds.toFixed(2)}.`;
+});
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if(!confirm('Reset your portfolio back to $1000 cash?')) return;
+  portfolio = { cash:1000, held:0, trades:[] };
+  savePortfolio(portfolio); renderPortfolio(); renderHistory();
+  msgEl.textContent = 'Portfolio reset.';
+});
+document.getElementById('miniInvest').addEventListener('click', () => goToRegion('region-coin'));
+
+window.addEventListener('resize', drawChart);
+renderPortfolio(); renderHistory(); fetchPrice(); setInterval(fetchPrice, 30000);
+
+/* ================= Databook dropdown ================= */
+const databookToggle = document.getElementById('databookToggle');
+const databookMenu = document.getElementById('databookMenu');
+databookToggle.addEventListener('click', (e) => {
+  e.stopPropagation();
+  databookMenu.classList.toggle('open');
+});
+document.addEventListener('click', () => databookMenu.classList.remove('open'));
+databookMenu.querySelectorAll('button[data-section]').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    databookMenu.classList.remove('open');
+    goToRegion('region-databook');
+    setTimeout(() => openDbSection(btn.dataset.section), 900);
+  });
+});
+
+/* ================= PERIODIC TABLE ================= */
+// category color scheme
+const CATEGORY_COLORS = {
+  'alkali-metal': '#e05a5a',
+  'alkaline-earth': '#f0925a',
+  'transition-metal': '#f0c04a',
+  'post-transition': '#7bd17b',
+  'metalloid': '#3fc7a6',
+  'nonmetal': '#5aa9f0',
+  'halogen': '#8f8ff0',
+  'noble-gas': '#c77bdb',
+  'lanthanide': '#e87fb0',
+  'actinide': '#c98fe0',
+  'unknown': '#8a8a8a'
+};
+const CATEGORY_LABELS = {
+  'alkali-metal':'Alkali metal','alkaline-earth':'Alkaline earth metal','transition-metal':'Transition metal',
+  'post-transition':'Post-transition metal','metalloid':'Metalloid','nonmetal':'Nonmetal','halogen':'Halogen',
+  'noble-gas':'Noble gas','lanthanide':'Lanthanide','actinide':'Actinide','unknown':'Unknown'
+};
+
+// [num, sym, name, mass, category, period, group]  (group 0 = placed in lanthanide/actinide rows)
+const ELEMENTS = [
+[1,'H','Hydrogen',1.01,'nonmetal',1,1],[2,'He','Helium',4.00,'noble-gas',1,18],
+[3,'Li','Lithium',6.94,'alkali-metal',2,1],[4,'Be','Beryllium',9.01,'alkaline-earth',2,2],
+[5,'B','Boron',10.81,'metalloid',2,13],[6,'C','Carbon',12.01,'nonmetal',2,14],
+[7,'N','Nitrogen',14.01,'nonmetal',2,15],[8,'O','Oxygen',16.00,'nonmetal',2,16],
+[9,'F','Fluorine',19.00,'halogen',2,17],[10,'Ne','Neon',20.18,'noble-gas',2,18],
+[11,'Na','Sodium',22.99,'alkali-metal',3,1],[12,'Mg','Magnesium',24.31,'alkaline-earth',3,2],
+[13,'Al','Aluminium',26.98,'post-transition',3,13],[14,'Si','Silicon',28.09,'metalloid',3,14],
+[15,'P','Phosphorus',30.97,'nonmetal',3,15],[16,'S','Sulfur',32.07,'nonmetal',3,16],
+[17,'Cl','Chlorine',35.45,'halogen',3,17],[18,'Ar','Argon',39.95,'noble-gas',3,18],
+[19,'K','Potassium',39.10,'alkali-metal',4,1],[20,'Ca','Calcium',40.08,'alkaline-earth',4,2],
+[21,'Sc','Scandium',44.96,'transition-metal',4,3],[22,'Ti','Titanium',47.87,'transition-metal',4,4],
+[23,'V','Vanadium',50.94,'transition-metal',4,5],[24,'Cr','Chromium',52.00,'transition-metal',4,6],
+[25,'Mn','Manganese',54.94,'transition-metal',4,7],[26,'Fe','Iron',55.85,'transition-metal',4,8],
+[27,'Co','Cobalt',58.93,'transition-metal',4,9],[28,'Ni','Nickel',58.69,'transition-metal',4,10],
+[29,'Cu','Copper',63.55,'transition-metal',4,11],[30,'Zn','Zinc',65.38,'transition-metal',4,12],
+[31,'Ga','Gallium',69.72,'post-transition',4,13],[32,'Ge','Germanium',72.63,'metalloid',4,14],
+[33,'As','Arsenic',74.92,'metalloid',4,15],[34,'Se','Selenium',78.97,'nonmetal',4,16],
+[35,'Br','Bromine',79.90,'halogen',4,17],[36,'Kr','Krypton',83.80,'noble-gas',4,18],
+[37,'Rb','Rubidium',85.47,'alkali-metal',5,1],[38,'Sr','Strontium',87.62,'alkaline-earth',5,2],
+[39,'Y','Yttrium',88.91,'transition-metal',5,3],[40,'Zr','Zirconium',91.22,'transition-metal',5,4],
+[41,'Nb','Niobium',92.91,'transition-metal',5,5],[42,'Mo','Molybdenum',95.95,'transition-metal',5,6],
+[43,'Tc','Technetium',98,'transition-metal',5,7],[44,'Ru','Ruthenium',101.07,'transition-metal',5,8],
+[45,'Rh','Rhodium',102.91,'transition-metal',5,9],[46,'Pd','Palladium',106.42,'transition-metal',5,10],
+[47,'Ag','Silver',107.87,'transition-metal',5,11],[48,'Cd','Cadmium',112.41,'transition-metal',5,12],
+[49,'In','Indium',114.82,'post-transition',5,13],[50,'Sn','Tin',118.71,'post-transition',5,14],
+[51,'Sb','Antimony',121.76,'metalloid',5,15],[52,'Te','Tellurium',127.60,'metalloid',5,16],
+[53,'I','Iodine',126.90,'halogen',5,17],[54,'Xe','Xenon',131.29,'noble-gas',5,18],
+[55,'Cs','Caesium',132.91,'alkali-metal',6,1],[56,'Ba','Barium',137.33,'alkaline-earth',6,2],
+[57,'La','Lanthanum',138.91,'lanthanide',6,0],[58,'Ce','Cerium',140.12,'lanthanide',6,0],
+[59,'Pr','Praseodymium',140.91,'lanthanide',6,0],[60,'Nd','Neodymium',144.24,'lanthanide',6,0],
+[61,'Pm','Promethium',145,'lanthanide',6,0],[62,'Sm','Samarium',150.36,'lanthanide',6,0],
+[63,'Eu','Europium',151.96,'lanthanide',6,0],[64,'Gd','Gadolinium',157.25,'lanthanide',6,0],
+[65,'Tb','Terbium',158.93,'lanthanide',6,0],[66,'Dy','Dysprosium',162.50,'lanthanide',6,0],
+[67,'Ho','Holmium',164.93,'lanthanide',6,0],[68,'Er','Erbium',167.26,'lanthanide',6,0],
+[69,'Tm','Thulium',168.93,'lanthanide',6,0],[70,'Yb','Ytterbium',173.05,'lanthanide',6,0],
+[71,'Lu','Lutetium',174.97,'lanthanide',6,3],
+[72,'Hf','Hafnium',178.49,'transition-metal',6,4],[73,'Ta','Tantalum',180.95,'transition-metal',6,5],
+[74,'W','Tungsten',183.84,'transition-metal',6,6],[75,'Re','Rhenium',186.21,'transition-metal',6,7],
+[76,'Os','Osmium',190.23,'transition-metal',6,8],[77,'Ir','Iridium',192.22,'transition-metal',6,9],
+[78,'Pt','Platinum',195.08,'transition-metal',6,10],[79,'Au','Gold',196.97,'transition-metal',6,11],
+[80,'Hg','Mercury',200.59,'transition-metal',6,12],[81,'Tl','Thallium',204.38,'post-transition',6,13],
+[82,'Pb','Lead',207.2,'post-transition',6,14],[83,'Bi','Bismuth',208.98,'post-transition',6,15],
+[84,'Po','Polonium',209,'post-transition',6,16],[85,'At','Astatine',210,'halogen',6,17],
+[86,'Rn','Radon',222,'noble-gas',6,18],
+[87,'Fr','Francium',223,'alkali-metal',7,1],[88,'Ra','Radium',226,'alkaline-earth',7,2],
+[89,'Ac','Actinium',227,'actinide',7,0],[90,'Th','Thorium',232.04,'actinide',7,0],
+[91,'Pa','Protactinium',231.04,'actinide',7,0],[92,'U','Uranium',238.03,'actinide',7,0],
+[93,'Np','Neptunium',237,'actinide',7,0],[94,'Pu','Plutonium',244,'actinide',7,0],
+[95,'Am','Americium',243,'actinide',7,0],[96,'Cm','Curium',247,'actinide',7,0],
+[97,'Bk','Berkelium',247,'actinide',7,0],[98,'Cf','Californium',251,'actinide',7,0],
+[99,'Es','Einsteinium',252,'actinide',7,0],[100,'Fm','Fermium',257,'actinide',7,0],
+[101,'Md','Mendelevium',258,'actinide',7,0],[102,'No','Nobelium',259,'actinide',7,0],
+[103,'Lr','Lawrencium',266,'actinide',7,3],
+[104,'Rf','Rutherfordium',267,'transition-metal',7,4],[105,'Db','Dubnium',268,'transition-metal',7,5],
+[106,'Sg','Seaborgium',269,'transition-metal',7,6],[107,'Bh','Bohrium',270,'transition-metal',7,7],
+[108,'Hs','Hassium',269,'transition-metal',7,8],[109,'Mt','Meitnerium',278,'unknown',7,9],
+[110,'Ds','Darmstadtium',281,'unknown',7,10],[111,'Rg','Roentgenium',282,'unknown',7,11],
+[112,'Cn','Copernicium',285,'unknown',7,12],[113,'Nh','Nihonium',286,'post-transition',7,13],
+[114,'Fl','Flerovium',289,'post-transition',7,14],[115,'Mc','Moscovium',290,'post-transition',7,15],
+[116,'Lv','Livermorium',293,'post-transition',7,16],[117,'Ts','Tennessine',294,'halogen',7,17],
+[118,'Og','Oganesson',294,'noble-gas',7,18]
+];
+
+function buildPeriodicTable(){
+  const grid = document.getElementById('ptable');
+  const legend = document.getElementById('legend');
+  const info = document.getElementById('elemInfo');
+
+  // main 7x18 grid, plus 2 extra rows for lanthanides/actinides
+  const cells = {};
+  ELEMENTS.forEach(e => {
+    const [num,sym,name,mass,cat,period,group] = e;
+    let row = period, col = group;
+    if(cat === 'lanthanide' && group === 0){ row = 8; col = (num - 57) + 3; }
+    if(cat === 'actinide' && group === 0){ row = 9; col = (num - 89) + 3; }
+    if(!cells[row]) cells[row] = {};
+    cells[row][col] = e;
+  });
+
+  let html = '';
+  for(let row = 1; row <= 9; row++){
+    if(row === 8 || row === 9){
+      // blank spacer row before lanthanide/actinide block for visual separation
+    }
+    for(let col = 1; col <= 18; col++){
+      const e = cells[row] && cells[row][col];
+      if(e){
+        const [num,sym,name,mass,cat] = e;
+        html += `<div class="elem" data-cat="${cat}" data-num="${num}" data-sym="${sym}" data-name="${name}" data-mass="${mass}">
+          <span class="num">${num}</span><span class="sym">${sym}</span></div>`;
       } else {
-        rightPanel.classList.remove('show');
-        toggle.classList.remove('active');
-        toggle.textContent = 'Low Attention Span Mode: Off';
+        html += `<div class="elem spacer"></div>`;
       }
     }
-    applyLasState();
+  }
+  grid.innerHTML = html;
 
-    toggle.addEventListener('click', () => {
-      lasOn = !lasOn;
-      localStorage.setItem('lasMode', lasOn ? 'on' : 'off');
-      applyLasState();
+  grid.querySelectorAll('.elem:not(.spacer)').forEach(cell => {
+    const cat = cell.dataset.cat;
+    cell.addEventListener('mouseenter', () => { cell.style.background = CATEGORY_COLORS[cat]; cell.style.color = '#1a1510'; });
+    cell.addEventListener('mouseleave', () => { cell.style.background = ''; cell.style.color = ''; });
+    cell.addEventListener('click', () => {
+      info.innerHTML = `
+        <span class="big-sym" style="color:${CATEGORY_COLORS[cat]}">${cell.dataset.sym}</span>
+        <span class="meta">
+          <b>${cell.dataset.name}</b> — atomic number ${cell.dataset.num}<br>
+          Relative atomic mass: ${cell.dataset.mass}<br>
+          Category: ${CATEGORY_LABELS[cat]}
+        </span>`;
     });
+  });
 
-    // MrWestCoin price ticker, driven by real Dogecoin price via CoinGecko (free, no key)
-    const SCALE = 1000; // makes the tiny doge price look like a "real" coin price
-    const priceEl = document.getElementById('coinPrice');
-    const changeEl = document.getElementById('coinChange');
+  legend.innerHTML = Object.keys(CATEGORY_LABELS).map(cat => `
+    <div class="legend-item"><span class="legend-swatch" style="background:${CATEGORY_COLORS[cat]}"></span>${CATEGORY_LABELS[cat]}</div>
+  `).join('');
+}
+buildPeriodicTable();
 
-    async function updateCoinWidget(){
-      try{
-        const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=dogecoin&vs_currencies=usd&include_24hr_change=true');
-        const data = await res.json();
-        const usd = data.dogecoin.usd;
-        const change = data.dogecoin.usd_24h_change;
-        const price = (usd * SCALE).toFixed(2);
-        priceEl.textContent = '$' + price;
-        const isUp = change >= 0;
-        changeEl.textContent = (isUp ? '▲ ' : '▼ ') + Math.abs(change).toFixed(2) + '% (24h)';
-        changeEl.className = 'coin-change ' + (isUp ? 'up' : 'down');
-      } catch(e){
-        priceEl.textContent = '$--.--';
-        changeEl.textContent = 'market closed';
-      }
-    }
-    updateCoinWidget();
-    setInterval(updateCoinWidget, 30000);
-  </script>
+/* ================= CHEMISTRY DATABOOK ================= */
+// Independently compiled, publicly-known reference values — check against your
+// official VCAA Chemistry Data Book for exam use, exact formatting/rounding may differ.
+const DATABOOK = [
+  { id:'electrochem', title:'Electrochemical Series (selected, 25°C)', body: `
+    <table><tr><th>Half-reaction</th><th>E° (V)</th></tr>
+      <tr><td>F₂ + 2e⁻ → 2F⁻</td><td>+2.87</td></tr>
+      <tr><td>MnO₄⁻ + 8H⁺ + 5e⁻ → Mn²⁺ + 4H₂O</td><td>+1.51</td></tr>
+      <tr><td>Cl₂ + 2e⁻ → 2Cl⁻</td><td>+1.36</td></tr>
+      <tr><td>O₂ + 4H⁺ + 4e⁻ → 2H₂O</td><td>+1.23</td></tr>
+      <tr><td>Ag⁺ + e⁻ → Ag</td><td>+0.80</td></tr>
+      <tr><td>Fe³⁺ + e⁻ → Fe²⁺</td><td>+0.77</td></tr>
+      <tr><td>I₂ + 2e⁻ → 2I⁻</td><td>+0.54</td></tr>
+      <tr><td>Cu²⁺ + 2e⁻ → Cu</td><td>+0.34</td></tr>
+      <tr><td>2H⁺ + 2e⁻ → H₂</td><td>0.00 (reference)</td></tr>
+      <tr><td>Pb²⁺ + 2e⁻ → Pb</td><td>−0.13</td></tr>
+      <tr><td>Ni²⁺ + 2e⁻ → Ni</td><td>−0.26</td></tr>
+      <tr><td>Fe²⁺ + 2e⁻ → Fe</td><td>−0.44</td></tr>
+      <tr><td>Zn²⁺ + 2e⁻ → Zn</td><td>−0.76</td></tr>
+      <tr><td>Al³⁺ + 3e⁻ → Al</td><td>−1.66</td></tr>
+      <tr><td>Mg²⁺ + 2e⁻ → Mg</td><td>−2.37</td></tr>
+      <tr><td>Na⁺ + e⁻ → Na</td><td>−2.71</td></tr>
+      <tr><td>K⁺ + e⁻ → K</td><td>−2.93</td></tr>
+      <tr><td>Li⁺ + e⁻ → Li</td><td>−3.04</td></tr>
+    </table>
+    <div class="db-note">More positive E° = stronger oxidant. Species higher in the table oxidise species lower down.</div>
+  `},
+  { id:'relationships', title:'Chemical Relationships', body: `
+    <table><tr><th>Relationship</th><th>Formula</th></tr>
+      <tr><td>Moles from mass</td><td>n = m / M</td></tr>
+      <tr><td>Moles of gas (STP/SLC)</td><td>n = V / Vm</td></tr>
+      <tr><td>Concentration</td><td>c = n / V</td></tr>
+      <tr><td>Ideal gas law</td><td>PV = nRT</td></tr>
+      <tr><td>Dilution</td><td>c₁V₁ = c₂V₂</td></tr>
+      <tr><td>pH</td><td>pH = −log₁₀[H⁺]</td></tr>
+      <tr><td>pOH</td><td>pOH = −log₁₀[OH⁻]</td></tr>
+      <tr><td>Water equilibrium (25°C)</td><td>pH + pOH = 14</td></tr>
+      <tr><td>Faraday's law</td><td>Q = n(e⁻) × F</td></tr>
+      <tr><td>Percentage yield</td><td>(actual / theoretical) × 100</td></tr>
+    </table>
+  `},
+  { id:'constants', title:'Physical Constants &amp; Standard Values', body: `
+    <table><tr><th>Constant</th><th>Symbol</th><th>Value</th></tr>
+      <tr><td>Avogadro's number</td><td>Nₐ</td><td>6.022 × 10²³ mol⁻¹</td></tr>
+      <tr><td>Gas constant</td><td>R</td><td>8.314 J K⁻¹ mol⁻¹</td></tr>
+      <tr><td>Faraday constant</td><td>F</td><td>96 485 C mol⁻¹</td></tr>
+      <tr><td>Molar volume of gas at STP (0°C, 100 kPa)</td><td>Vm</td><td>22.7 L mol⁻¹</td></tr>
+      <tr><td>Molar volume of gas at SLC (25°C, 100 kPa)</td><td>Vm</td><td>24.8 L mol⁻¹</td></tr>
+      <tr><td>Ionic product of water (25°C)</td><td>Kw</td><td>1.0 × 10⁻¹⁴</td></tr>
+      <tr><td>Standard atmospheric pressure</td><td>—</td><td>101.3 kPa</td></tr>
+      <tr><td>Standard temperature (STP)</td><td>—</td><td>0°C (273.15 K)</td></tr>
+    </table>
+  `},
+  { id:'conversions', title:'Unit Conversions', body: `
+    <table><tr><th>From</th><th>To</th><th>Multiply by</th></tr>
+      <tr><td>°C</td><td>K</td><td>+ 273.15</td></tr>
+      <tr><td>kPa</td><td>atm</td><td>÷ 101.3</td></tr>
+      <tr><td>mL</td><td>L</td><td>÷ 1000</td></tr>
+      <tr><td>g</td><td>kg</td><td>÷ 1000</td></tr>
+      <tr><td>J</td><td>kJ</td><td>÷ 1000</td></tr>
+      <tr><td>nm</td><td>m</td><td>× 10⁻⁹</td></tr>
+    </table>
+  `},
+  { id:'prefixes', title:'Metric Prefixes', body: `
+    <table><tr><th>Prefix</th><th>Symbol</th><th>Factor</th></tr>
+      <tr><td>giga</td><td>G</td><td>10⁹</td></tr>
+      <tr><td>mega</td><td>M</td><td>10⁶</td></tr>
+      <tr><td>kilo</td><td>k</td><td>10³</td></tr>
+      <tr><td>centi</td><td>c</td><td>10⁻²</td></tr>
+      <tr><td>milli</td><td>m</td><td>10⁻³</td></tr>
+      <tr><td>micro</td><td>µ</td><td>10⁻⁶</td></tr>
+      <tr><td>nano</td><td>n</td><td>10⁻⁹</td></tr>
+      <tr><td>pico</td><td>p</td><td>10⁻¹²</td></tr>
+    </table>
+  `},
+  { id:'indicators', title:'Acid-Base Indicators', body: `
+    <table><tr><th>Indicator</th><th>pH range</th><th>Acid colour</th><th>Base colour</th></tr>
+      <tr><td>Methyl orange</td><td>3.1 – 4.4</td><td>Red</td><td>Yellow</td></tr>
+      <tr><td>Bromothymol blue</td><td>6.0 – 7.6</td><td>Yellow</td><td>Blue</td></tr>
+      <tr><td>Litmus</td><td>4.5 – 8.3</td><td>Red</td><td>Blue</td></tr>
+      <tr><td>Phenolphthalein</td><td>8.3 – 10.0</td><td>Colourless</td><td>Pink</td></tr>
+    </table>
+  `},
+  { id:'ions', title:'Formulas &amp; Charges of Common Ions', body: `
+    <table><tr><th>Cations</th><th>Charge</th></tr>
+      <tr><td>NH₄⁺</td><td>+1</td></tr><tr><td>Cu⁺ / Cu²⁺</td><td>+1 / +2</td></tr>
+      <tr><td>Fe²⁺ / Fe³⁺</td><td>+2 / +3</td></tr><tr><td>Ag⁺</td><td>+1</td></tr>
+      <tr><td>Zn²⁺</td><td>+2</td></tr><tr><td>Al³⁺</td><td>+3</td></tr>
+    </table>
+    <table><tr><th>Anions</th><th>Charge</th></tr>
+      <tr><td>OH⁻</td><td>−1</td></tr><tr><td>NO₃⁻</td><td>−1</td></tr>
+      <tr><td>CO₃²⁻</td><td>−2</td></tr><tr><td>SO₄²⁻</td><td>−2</td></tr>
+      <tr><td>PO₄³⁻</td><td>−3</td></tr><tr><td>CH₃COO⁻ (acetate)</td><td>−1</td></tr>
+    </table>
+  `},
+  { id:'solubility', title:'Solubility Table (general rules)', body: `
+    <table><tr><th>Ion</th><th>Solubility</th></tr>
+      <tr><td>Group 1 &amp; NH₄⁺ salts</td><td>Soluble (all)</td></tr>
+      <tr><td>NO₃⁻, CH₃COO⁻</td><td>Soluble (all)</td></tr>
+      <tr><td>Cl⁻, Br⁻, I⁻</td><td>Soluble, except Ag⁺, Pb²⁺, Hg₂²⁺</td></tr>
+      <tr><td>SO₄²⁻</td><td>Soluble, except Ba²⁺, Sr²⁺, Pb²⁺, Ca²⁺ (slightly)</td></tr>
+      <tr><td>CO₃²⁻, PO₄³⁻</td><td>Insoluble, except Group 1 &amp; NH₄⁺</td></tr>
+      <tr><td>OH⁻</td><td>Insoluble, except Group 1, Ba²⁺ (Ca(OH)₂ slightly soluble)</td></tr>
+    </table>
+  `},
+  { id:'organic', title:'Organic Chemistry — Homologous Series', body: `
+    <table><tr><th>Series</th><th>General formula</th><th>Functional group</th></tr>
+      <tr><td>Alkanes</td><td>CₙH₂ₙ₊₂</td><td>C–C single bonds</td></tr>
+      <tr><td>Alkenes</td><td>CₙH₂ₙ</td><td>C=C double bond</td></tr>
+      <tr><td>Alkynes</td><td>CₙH₂ₙ₋₂</td><td>C≡C triple bond</td></tr>
+      <tr><td>Alcohols</td><td>CₙH₂ₙ₊₁OH</td><td>–OH</td></tr>
+      <tr><td>Carboxylic acids</td><td>CₙH₂ₙ₊₁COOH</td><td>–COOH</td></tr>
+      <tr><td>Esters</td><td>—</td><td>–COO–</td></tr>
+      <tr><td>Amines</td><td>CₙH₂ₙ₊₃N</td><td>–NH₂</td></tr>
+    </table>
+  `}
+];
+
+function buildDatabook(){
+  const wrap = document.getElementById('databookAccordion');
+  wrap.innerHTML = DATABOOK.map(sec => `
+    <div class="db-section" id="dbsec-${sec.id}">
+      <button class="db-head" data-target="${sec.id}"><span>${sec.title}</span><span>+</span></button>
+      <div class="db-body" id="dbbody-${sec.id}">${sec.body}</div>
+    </div>
+  `).join('');
+  wrap.querySelectorAll('.db-head').forEach(head => {
+    head.addEventListener('click', () => {
+      document.getElementById('dbbody-' + head.dataset.target).classList.toggle('open');
+    });
+  });
+}
+buildDatabook();
+
+function openDbSection(id){
+  document.querySelectorAll('.db-body').forEach(b => b.classList.remove('open'));
+  const body = document.getElementById('dbbody-' + id);
+  if(body){
+    body.classList.add('open');
+    document.getElementById('dbsec-' + id).scrollIntoView({ behavior:'smooth', block:'start' });
+  }
+}
+</script>
 </body>
 </html>
