@@ -112,7 +112,7 @@
 
   /* ---------- Widgets LOCKED to the poster (world-space, pan/zoom with it) ---------- */
   #posterCoin{
-    position:absolute; left: -270px; top: 0; width: 230px; height: 48%; display:flex; flex-direction:column;
+    position:absolute; left: -340px; top: 0; width: 300px; height: 48%; display:flex; flex-direction:column;
   }
   #posterCoin .panel-card{ flex:1; display:flex; flex-direction:column; justify-content:center; }
   #posterLas{
@@ -121,10 +121,10 @@
   .panel-card{ background: var(--paper); border:1px solid var(--line); outline:1px solid #000; outline-offset:4px; padding:0.7rem; box-shadow: 0 16px 30px rgba(0,0,0,0.55); }
   .panel-label{ font-size:0.58rem; letter-spacing:0.2em; text-transform:uppercase; color: var(--muted); margin-bottom:0.4rem; text-align:center; }
   .mini-coin{ text-align:center; }
-  .mini-coin .name{ font-family: Georgia, serif; font-weight:900; font-size:0.95rem; color: var(--rust-2); }
-  .mini-coin .ticker{ font-size:0.55rem; color: var(--muted); letter-spacing:0.12em; margin-bottom:0.4rem; }
-  .mini-coin .price{ font-size:1.25rem; font-weight:700; margin-bottom:0.1rem; }
-  .mini-coin .change{ font-size:0.7rem; margin-bottom:0.5rem; }
+  .mini-coin .name{ font-family: Georgia, serif; font-weight:900; font-size:1.15rem; color: var(--rust-2); }
+  .mini-coin .ticker{ font-size:0.62rem; color: var(--muted); letter-spacing:0.12em; margin-bottom:0.6rem; }
+  .mini-coin .price{ font-size:1.6rem; font-weight:700; margin-bottom:0.15rem; }
+  .mini-coin .change{ font-size:0.82rem; margin-bottom:0.7rem; }
   .mini-invest{ display:block; width:100%; padding:0.5rem; font-family:Georgia,serif; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; font-size:0.68rem; color: var(--paper); border:none; border-radius:3px; cursor:pointer; background: linear-gradient(135deg, var(--gain), #2f7a3a); box-shadow: 0 3px 0 #1f5a28; }
 
   .las-toggle{
@@ -137,11 +137,21 @@
 
   /* video popup: screen-fixed, only ever shown while the poster/hub is the active region */
   #videoPopup{
-    position: fixed; top:50%; right: 1.25rem; transform: translateY(-50%);
-    z-index:60; display:none; border: 1px solid var(--line); outline:1px solid #000; outline-offset:4px;
+    position: fixed; z-index:60; border: 1px solid var(--line); outline:1px solid #000; outline-offset:4px;
     box-shadow: 0 20px 40px rgba(0,0,0,0.6); overflow:hidden; background:#000;
+    display:none; flex-direction:column;
   }
-  #videoPopup.show{ display:block; }
+  #videoPopup.show{ display:flex; }
+  #videoPopup .drag-bar{
+    flex-shrink:0; background: var(--paper-2); border-bottom: 1px solid var(--line);
+    padding: 0.35rem 0.6rem; display:flex; justify-content:space-between; align-items:center;
+    cursor: grab; font-size: 0.6rem; letter-spacing: 0.08em; text-transform:uppercase; color: var(--muted);
+    user-select:none;
+  }
+  #videoPopup .drag-bar:active{ cursor: grabbing; }
+  #videoPopup .drag-bar .close-x{ cursor:pointer; color: var(--muted); font-weight:700; padding: 0 0.3rem; }
+  #videoPopup .drag-bar .close-x:hover{ color: var(--danger); }
+  #videoPopup .video-body{ flex:1; min-height:0; }
   #videoPopup iframe{ width:100%; height:100%; border:0; display:block; }
 
   .side-nav{ margin-top: 0.6rem; display:flex; flex-direction:column; gap: 0.4rem; }
@@ -246,7 +256,10 @@
 <body>
 
 <div id="hint">Drag or scroll to look around this area · Buttons take you elsewhere</div>
-<div id="videoPopup"><iframe id="videoFrame" src="" title="background video" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>
+<div id="videoPopup">
+  <div class="drag-bar" id="videoDragBar"><span id="videoLabel">Low Attention Span Mode</span><span class="close-x" id="videoClose">✕</span></div>
+  <div class="video-body"><iframe id="videoFrame" src="" title="background video" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>
+</div>
 
 <div id="viewport">
   <div id="world">
@@ -272,7 +285,10 @@
           <div class="panel-card">
             <div class="panel-label">Attention Span</div>
             <button class="las-toggle" id="lasToggle">Off</button>
+          </div>
 
+          <div class="panel-card" style="margin-top: 0.7rem;">
+            <div class="panel-label">Explore</div>
             <div class="side-nav">
               <button class="las-toggle side-nav-btn" data-goto="region-periodic">Periodic Table</button>
 
@@ -442,7 +458,11 @@ function getRegionBounds(id){
 }
 function clamp(c, bounds){
   const vw = viewport.clientWidth, vh = viewport.clientHeight;
-  c.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, c.scale));
+  const boundsW = bounds.maxX - bounds.minX, boundsH = bounds.maxY - bounds.minY;
+  // never allow zooming out further than what's needed to fill the viewport with
+  // THIS region's own bounds box — otherwise neighboring regions become visible.
+  const dynamicMin = Math.max(MIN_SCALE, vw / boundsW, vh / boundsH);
+  c.scale = Math.min(MAX_SCALE, Math.max(dynamicMin, c.scale));
   const minX = vw - bounds.maxX*c.scale, maxX = -bounds.minX*c.scale;
   const minY = vh - bounds.maxY*c.scale, maxY = -bounds.minY*c.scale;
   c.x = Math.min(maxX, Math.max(minX, c.x));
@@ -551,7 +571,7 @@ viewport.addEventListener('wheel', (e) => {
   clamp(target, getRegionBounds(activeRegionId));
 }, { passive:false });
 
-/* ================= LOW ATTENTION SPAN MODE (several distinct clips) ================= */
+/* ================= LOW ATTENTION SPAN MODE (several distinct clips, floatable popup) ================= */
 const VIDEO_OPTIONS = [
   { id: 'QPW3XwBoQlw', label: 'Subway Surfers', aspect: 9/16 },
   { id: 'vnM6WJrWdkk', label: 'Subway Surfers (Long)', aspect: 16/9 },
@@ -562,16 +582,36 @@ let videoIndex = parseInt(localStorage.getItem('lasVideoIndex') ?? '-1', 10); //
 const lasToggle = document.getElementById('lasToggle');
 const videoPopup = document.getElementById('videoPopup');
 const videoFrame = document.getElementById('videoFrame');
+const videoLabel = document.getElementById('videoLabel');
+const videoDragBar = document.getElementById('videoDragBar');
+const videoClose = document.getElementById('videoClose');
+const DRAG_BAR_H = 28;
+
+// popup position in screen space (persisted so it stays where you left it)
+let popupPos = JSON.parse(localStorage.getItem('lasPopupPos') || 'null');
 
 function positionVideoPopup(){
   if(videoIndex < 0) return;
   const opt = VIDEO_OPTIONS[videoIndex];
   const maxH = window.innerHeight * 0.8;
-  const maxW = Math.min(460, window.innerWidth * 0.42);
-  let h = maxH, w = h * opt.aspect;
-  if(w > maxW){ w = maxW; h = w / opt.aspect; }
+  const maxW = Math.min(520, window.innerWidth * 0.42);
+  let bodyH = maxH - DRAG_BAR_H, w = bodyH * opt.aspect;
+  if(w > maxW){ w = maxW; bodyH = w / opt.aspect; }
   videoPopup.style.width = w + 'px';
-  videoPopup.style.height = h + 'px';
+  videoPopup.style.height = (bodyH + DRAG_BAR_H) + 'px';
+
+  // clamp any saved/current position back onto screen after a resize
+  if(!popupPos){
+    popupPos = { x: window.innerWidth - w - 24, y: (window.innerHeight - (bodyH+DRAG_BAR_H)) / 2 };
+  }
+  popupPos.x = Math.min(Math.max(0, popupPos.x), window.innerWidth - w);
+  popupPos.y = Math.min(Math.max(0, popupPos.y), window.innerHeight - (bodyH+DRAG_BAR_H));
+  applyPopupPos();
+}
+function applyPopupPos(){
+  videoPopup.style.left = popupPos.x + 'px';
+  videoPopup.style.top = popupPos.y + 'px';
+  videoPopup.style.transform = 'none';
 }
 
 function updateVideoPopupVisibility(showIfOn){
@@ -580,6 +620,7 @@ function updateVideoPopupVisibility(showIfOn){
   if(!shouldShow){ videoFrame.src = ''; }
   else{
     const opt = VIDEO_OPTIONS[videoIndex];
+    videoLabel.textContent = opt.label;
     videoFrame.src = `https://www.youtube.com/embed/${opt.id}?autoplay=1&mute=1&loop=1&playlist=${opt.id}&controls=0`;
   }
 }
@@ -600,6 +641,35 @@ lasToggle.addEventListener('click', () => {
   positionVideoPopup();
   updateVideoPopupVisibility(true);
 });
+videoClose.addEventListener('click', () => {
+  videoIndex = -1;
+  localStorage.setItem('lasVideoIndex', videoIndex);
+  applyLasLabel();
+  updateVideoPopupVisibility(true);
+});
+
+// drag the popup freely around screen space
+let draggingPopup = false, popupDragStart = {x:0,y:0}, popupStart = {x:0,y:0};
+videoDragBar.addEventListener('pointerdown', (e) => {
+  draggingPopup = true;
+  popupDragStart = { x:e.clientX, y:e.clientY };
+  popupStart = { ...popupPos };
+});
+window.addEventListener('pointermove', (e) => {
+  if(!draggingPopup) return;
+  const w = videoPopup.offsetWidth, h = videoPopup.offsetHeight;
+  popupPos.x = Math.min(Math.max(0, popupStart.x + (e.clientX - popupDragStart.x)), window.innerWidth - w);
+  popupPos.y = Math.min(Math.max(0, popupStart.y + (e.clientY - popupDragStart.y)), window.innerHeight - h);
+  applyPopupPos();
+});
+window.addEventListener('pointerup', () => {
+  if(!draggingPopup) return;
+  draggingPopup = false;
+  localStorage.setItem('lasPopupPos', JSON.stringify(popupPos));
+});
+window.addEventListener('resize', positionVideoPopup);
+
+
 
 /* ================= MrWestCoin (real price via CoinGecko) ================= */
 const SCALE = 1000;
