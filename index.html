@@ -537,6 +537,26 @@
 </div>
 
 <script>
+/* ================= FIREBASE (shared by market sync + leaderboard) ================= */
+const firebaseConfig = {
+  apiKey: "AIzaSyBNT1jvi0El_txSKTjCGS5MeBbVz15DKs4",
+  authDomain: "mrwestfiles.firebaseapp.com",
+  databaseURL: "https://mrwestfiles-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "mrwestfiles",
+  storageBucket: "mrwestfiles.firebasestorage.app",
+  messagingSenderId: "761539070041",
+  appId: "1:761539070041:web:392762db7b305b2b3e4948"
+};
+const FIREBASE_CONFIGURED = firebaseConfig.apiKey !== "YOUR_API_KEY";
+
+let db = null;
+if(FIREBASE_CONFIGURED){
+  try{
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+  } catch(e){ db = null; }
+}
+
 /* ================= RADIAL AUTO-LAYOUT ================= */
 const HUB_ID = 'region-index';
 const SATELLITE_IDS = ['region-notice', 'region-coin', 'region-periodic', 'region-databook', 'region-leaderboard'];
@@ -849,20 +869,21 @@ window.addEventListener('resize', positionVideoPopup);
 
 
 
-/* ================= MrWestCoin (shared market — synced via a JSON file in this repo, updated by a GitHub Action) ================= */
-// This is a static site with no backend, so the ONE genuinely free-forever way to share state across
-// every visitor is: keep it in a file in the repo, let a scheduled GitHub Action ("the algorithm")
-// advance it, and have every browser just read that file. You can also hand-edit market-data.json
-// in the GitHub UI anytime to set the price manually.
+/* ================= MrWestCoin (shared market — live via Firebase Realtime Database) ================= */
+// Every browser subscribes to the same Firebase path and gets pushed updates instantly (no
+// polling, no delay). Whichever browsers are open take turns advancing the simulation every
+// couple of seconds (gated so we don't all tick at once), and the moment one of them writes,
+// everyone else's chart updates in real time. If Firebase isn't configured/reachable, it falls
+// back to a local-only simulation so the page still works.
 const STORAGE_KEY = 'mrwestcoin_portfolio';
-const MARKET_URL = 'https://raw.githubusercontent.com/Ca1ok/TheMrWestFiles/main/market-data.json';
-const SYNC_INTERVAL = 60000; // background safety-net poll (light, since trades trigger their own sync)
+const TICK_INTERVAL = 2000;      // how often the market moves
+const MAX_CATCHUP_TICKS = 5;     // capped low so reconnecting after a while can't cause a wild swing
+const MAX_HISTORY_POINTS = 300;  // ~10 minutes of dense history at the tick rate above
 
 function loadPortfolio(){ const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : { cash:1000, held:0, trades:[] }; }
 function savePortfolio(p){ localStorage.setItem(STORAGE_KEY, JSON.stringify(p)); }
 let portfolio = loadPortfolio();
 
-// local cache so the widget has something to show immediately, and still works if the fetch ever fails
 let market = JSON.parse(localStorage.getItem('mrwestcoin_market_cache') || 'null') || {
   price: 12.50, history: [{ price: 12.50, t: Date.now() }],
   fairValue: 12.50, momentum: 0, vol: 0.012, updatedAt: 0
@@ -894,8 +915,8 @@ function renderHistory(){
 }
 
 /* --- scrollable time-range chart --- */
-let rangeMs = 3600000;   // 0 means "All"
-let scrollOffsetMs = 0;  // 0 = showing the latest data; larger = scrolled back in time
+let rangeMs = 3600000;
+let scrollOffsetMs = 0;
 
 function visibleHistory(){
   if(priceHistory.length === 0) return [];
@@ -904,11 +925,6 @@ function visibleHistory(){
   const startT = rangeMs > 0 ? endT - rangeMs : priceHistory[0].t;
   let points = priceHistory.filter(p => p.t >= startT && p.t <= endT);
   if(points.length < 2) points = priceHistory.slice(-2);
-  // when looking at the live edge, tack on the current deterministic wiggle point so the
-  // line visibly keeps moving between real syncs instead of sitting flat
-  if(scrollOffsetMs === 0){
-    points = points.concat([{ price: displayPrice, t: Date.now() }]);
-  }
   return points;
 }
 function clampScroll(){
@@ -920,39 +936,8 @@ function clampScroll(){
   jumpLiveBtn.classList.toggle('visible', scrollOffsetMs > 0);
 }
 
-// Real synced history points are sparse (one per GitHub Action run), which makes a raw plot
-// look like a flat zigzag. This fills in extra points BETWEEN each real pair using a seeded
-// "bridge" — noise that's zero exactly at the real endpoints and bulges in the middle — so the
-// line looks like an actual fluctuating market. It's seeded from the data itself (not the clock),
-// so every viewer sees the exact same shape for the exact same synced history.
-function hashSeed(i){ return (Math.imul(i, 2654435761) ^ (i >>> 3)) >>> 0; }
-const SUBDIVISIONS = 5;
-function buildDisplaySeries(points){
-  if(points.length < 2) return points;
-  const out = [points[0]];
-  for(let i = 0; i < points.length - 1; i++){
-    const p0 = points[i], p1 = points[i+1];
-    // scale noise off the SMALLER of the actual gap and a gentle percentage of price, so one
-    // outlier real data point can't blow up the interpolation into a wild, overshooting swing
-    const gap = Math.abs(p1.price - p0.price);
-    const segMag = Math.min(gap, p0.price * 0.05) || p0.price * 0.004;
-    for(let s = 1; s <= SUBDIVISIONS; s++){
-      const t = s / (SUBDIVISIONS + 1);
-      const lerpPrice = p0.price + (p1.price - p0.price) * t;
-      const lerpT = p0.t + (p1.t - p0.t) * t;
-      const rand = mulberry32(hashSeed(i * 97 + s))();
-      const taper = Math.sin(Math.PI * t); // 0 at both ends, peaks in the middle — keeps real points exact
-      const noise = (rand - 0.5) * segMag * 0.6 * taper; // gentle bridge, not a spike generator
-      out.push({ price: Math.max(0.01, lerpPrice + noise), t: lerpT });
-    }
-    out.push(p1);
-  }
-  return out;
-}
-
 function formatAxisTime(t, spanMs){
   const d = new Date(t);
-  if(spanMs <= 6 * 3600000) return d.toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
   if(spanMs <= 2 * 86400000) return d.toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
   return d.toLocaleDateString([], { month:'short', day:'numeric' });
 }
@@ -965,8 +950,7 @@ function drawChart(){
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0,0,cssW,cssH);
 
-  const rawPoints = visibleHistory();
-  const points = buildDisplaySeries(rawPoints);
+  const points = visibleHistory();
   if(points.length < 2) return;
 
   const LEFT_PAD = 46, RIGHT_PAD = 6, TOP_PAD = 10, BOTTOM_PAD = 24;
@@ -978,7 +962,6 @@ function drawChart(){
   const yOf = v => TOP_PAD + plotH - ((v - min) / range) * plotH;
   const xOf = i => LEFT_PAD + (i / (points.length - 1)) * plotW;
 
-  // X-axis time labels
   const spanMs = points[points.length-1].t - points[0].t;
   const X_LABELS = 4;
   ctx.font = '9px Courier New, monospace';
@@ -1031,7 +1014,6 @@ function drawChart(){
   ctx.fillStyle = 'rgba(217,122,63,0.08)';
   ctx.fill();
 
-  // only draw the "current price" dot when we're actually looking at the live edge
   if(scrollOffsetMs === 0){
     ctx.beginPath();
     ctx.arc(lastX, lastY, 2.6, 0, Math.PI*2);
@@ -1052,7 +1034,6 @@ document.querySelectorAll('.range-btns button').forEach(btn => {
 });
 jumpLiveBtn.addEventListener('click', () => { scrollOffsetMs = 0; clampScroll(); drawChart(); });
 
-// drag the chart itself to scroll back through history (independent of the world-map drag)
 let chartDragging = false, chartDragStartX = 0, chartDragStartOffset = 0;
 chartWrap.addEventListener('pointerdown', (e) => {
   chartDragging = true;
@@ -1072,8 +1053,9 @@ window.addEventListener('pointermove', (e) => {
 window.addEventListener('pointerup', () => { chartDragging = false; chartWrap.classList.remove('grabbing'); });
 
 function updatePriceDisplays(){
-  const changePct = currentPrice ? ((displayPrice - currentPrice) / currentPrice) * 100 : 0;
-  const priceText = '$' + displayPrice.toFixed(2);
+  const prevPrice = priceHistory.length > 1 ? priceHistory[priceHistory.length-2].price : currentPrice;
+  const changePct = prevPrice ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
+  const priceText = '$' + currentPrice.toFixed(2);
   priceEl.textContent = priceText; miniPriceEl.textContent = priceText;
   const isUp = changePct >= 0;
   const changeText = (isUp?'▲ ':'▼ ') + Math.abs(changePct).toFixed(2) + '%' + (syncOK ? '' : ' (local)');
@@ -1081,8 +1063,7 @@ function updatePriceDisplays(){
   miniChangeEl.textContent = changeText; miniChangeEl.className = 'change ' + (isUp?'up':'down');
 }
 
-// local-only fallback model, used only if the shared file can't be reached at all
-function advanceOneTickLocally(m){
+function advanceOneTick(m){
   m.fairValue *= (1 + (Math.random() - 0.5) * 0.01);
   const volShock = Math.abs((Math.random() - 0.5)) * 0.03;
   m.vol = Math.min(0.06, Math.max(0.004, m.vol * 0.85 + volShock * 0.15));
@@ -1092,27 +1073,11 @@ function advanceOneTickLocally(m){
   const spike = Math.random() < 0.03 ? (Math.random() - 0.5) * 0.12 : 0;
   m.price = Math.max(0.01, m.price * (1 + m.momentum + reversion + spike));
   m.history.push({ price: m.price, t: Date.now() });
-  if(m.history.length > 150) m.history.shift();
+  if(m.history.length > MAX_HISTORY_POINTS) m.history.shift();
 }
 
-async function syncMarket(){
-  try{
-    const res = await fetch(MARKET_URL, { cache:'no-store' });
-    if(res.ok){
-      const remote = await res.json();
-      if(remote && remote.history && remote.history.length){
-        market = remote;
-        syncOK = true;
-      }
-    } else {
-      syncOK = false;
-    }
-  } catch(e){
-    syncOK = false;
-  }
-
-  if(!syncOK) advanceOneTickLocally(market); // keep something moving locally if the file is unreachable
-
+function applyMarketUpdate(m){
+  market = m;
   currentPrice = market.price;
   priceHistory = market.history;
   cacheMarketLocally();
@@ -1122,43 +1087,42 @@ async function syncMarket(){
   renderPortfolio();
 }
 
-/* --- deterministic "live" ticking between syncs ---
-   Instead of polling the server every few seconds, we only actually fetch on page load and
-   right before a trade. In between, every browser computes the SAME small price wiggle
-   independently, because it's seeded from the current wall-clock time bucket rather than
-   Math.random() — so everyone sees identical movement without any network traffic. This is
-   purely a display effect: it never touches market.price or gets saved anywhere, so it can't
-   drift away from the real GitHub-Action-driven price. */
-function mulberry32(seed){
-  return function(){
-    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
-    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
+if(db){
+  // live push updates — every browser sees a change the instant anyone writes one
+  db.ref('market/state').on('value', (snap) => {
+    const remote = snap.val();
+    if(remote && remote.history && remote.history.length){
+      syncOK = true;
+      applyMarketUpdate(remote);
+    }
+  });
+
+  // gated ticking: only actually advance + write if nobody else has ticked very recently,
+  // so multiple open tabs don't all fight to write at once
+  setInterval(() => {
+    const elapsed = market.updatedAt ? Date.now() - market.updatedAt : TICK_INTERVAL;
+    if(elapsed < TICK_INTERVAL * 0.9) return; // someone else just ticked — let their write arrive
+    const ticksOwed = Math.min(MAX_CATCHUP_TICKS, Math.max(1, Math.round(elapsed / TICK_INTERVAL)));
+    const next = JSON.parse(JSON.stringify(market));
+    for(let i = 0; i < ticksOwed; i++) advanceOneTick(next);
+    next.updatedAt = Date.now();
+    db.ref('market/state').set(next).catch(() => {});
+  }, TICK_INTERVAL);
+} else {
+  // no Firebase — fall back to a purely local simulation so the page still works
+  syncOK = false;
+  applyMarketUpdate(market);
+  setInterval(() => {
+    advanceOneTick(market);
+    applyMarketUpdate(market);
+  }, TICK_INTERVAL);
 }
-const WIGGLE_BUCKET_MS = 1500; // everyone recomputes together every 1.5s of wall-clock time
-let displayPrice = currentPrice;
 
-function tickLiveDisplay(){
-  const bucket = Math.floor(Date.now() / WIGGLE_BUCKET_MS);
-  const rand1 = mulberry32(bucket)();
-  const rand2 = mulberry32(bucket + 99991)(); // second draw, decorrelated from the first
-  const wiggle = (rand1 - 0.5) * 0.012 + (rand2 - 0.5) * 0.006; // small, deterministic, same for everyone
-  displayPrice = currentPrice * (1 + wiggle);
-  updatePriceDisplays();
-  drawChart();
-}
-setInterval(tickLiveDisplay, WIGGLE_BUCKET_MS);
+const TRADE_TAX_RATE = 0.015;
 
-
-const TRADE_TAX_RATE = 0.015; // 1.5% tax on every trade — also closes the buy-then-sell-higher loop
-
-document.getElementById('buyBtn').addEventListener('click', async () => {
+document.getElementById('buyBtn').addEventListener('click', () => {
   const qty = parseFloat(qtyInput.value);
   if(!qty || qty<=0){ msgEl.textContent = 'Enter a valid quantity.'; return; }
-  msgEl.textContent = 'Checking latest price...';
-  await syncMarket(); // trades always execute against the freshest synced price, not a stale local one
   const cost = qty*currentPrice;
   const tax = cost * TRADE_TAX_RATE;
   const totalCost = cost + tax;
@@ -1166,31 +1130,23 @@ document.getElementById('buyBtn').addEventListener('click', async () => {
   portfolio.cash -= totalCost; portfolio.held += qty;
   portfolio.trades.push({ type:'buy', qty, price: currentPrice, tax, time: new Date().toLocaleString() });
   savePortfolio(portfolio);
-
-  // NOTE: trades no longer move the price at all — the shared price only comes from the
-  // GitHub Action file. This is also what actually fixes the buy-then-sell exploit: since your
-  // own trade can never move the price you're trading at, there's no free arbitrage loop to run.
   renderPortfolio(); renderHistory();
   msgEl.textContent = `Bought ${qty} $WEST for $${cost.toFixed(2)} (+ $${tax.toFixed(2)} tax).`;
 });
-document.getElementById('sellBtn').addEventListener('click', async () => {
+document.getElementById('sellBtn').addEventListener('click', () => {
   const qty = parseFloat(qtyInput.value);
   if(!qty || qty<=0){ msgEl.textContent = 'Enter a valid quantity.'; return; }
   if(qty > portfolio.held){ msgEl.textContent = "You don't hold that much $WEST."; return; }
-  msgEl.textContent = 'Checking latest price...';
-  await syncMarket();
   const proceeds = qty*currentPrice;
   const tax = proceeds * TRADE_TAX_RATE;
   const netProceeds = proceeds - tax;
   portfolio.cash += netProceeds; portfolio.held -= qty;
   portfolio.trades.push({ type:'sell', qty, price: currentPrice, tax, time: new Date().toLocaleString() });
   savePortfolio(portfolio);
-
   renderPortfolio(); renderHistory();
   msgEl.textContent = `Sold ${qty} $WEST for $${netProceeds.toFixed(2)} (after $${tax.toFixed(2)} tax).`;
 });
 
-// Reset is now two steps on purpose, so it's hard to hit by accident.
 document.getElementById('resetReveal').addEventListener('click', () => {
   document.getElementById('resetReveal').style.display = 'none';
   document.getElementById('resetConfirmWrap').style.display = 'flex';
@@ -1210,8 +1166,8 @@ document.getElementById('resetConfirm').addEventListener('click', () => {
 document.getElementById('miniInvest').addEventListener('click', () => goToRegion('region-coin'));
 
 window.addEventListener('resize', drawChart);
-syncMarket();
-setInterval(syncMarket, SYNC_INTERVAL); // only runs while this page is actually open
+
+
 
 /* ================= Databook dropdown ================= */
 const databookToggle = document.getElementById('databookToggle');
@@ -1598,27 +1554,7 @@ function openDbSection(id){
 }
 
 /* ================= INVESTOR LEADERBOARD ================= */
-// Requires a Firebase Realtime Database (free tier) — see setup notes provided alongside this file.
-// Until firebaseConfig below is filled in with your real project, this quietly runs in
-// "local only" mode: you can still pick a name and see your own value, but nobody else's.
-const firebaseConfig = {
-  apiKey: "AIzaSyBNT1jvi0El_txSKTjCGS5MeBbVz15DKs4",
-  authDomain: "mrwestfiles.firebaseapp.com",
-  databaseURL: "https://mrwestfiles-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "mrwestfiles",
-  storageBucket: "mrwestfiles.firebasestorage.app",
-  messagingSenderId: "761539070041",
-  appId: "1:761539070041:web:392762db7b305b2b3e4948"
-};
-const FIREBASE_CONFIGURED = firebaseConfig.apiKey !== "YOUR_API_KEY";
-
-let db = null;
-if(FIREBASE_CONFIGURED){
-  try{
-    firebase.initializeApp(firebaseConfig);
-    db = firebase.database();
-  } catch(e){ db = null; }
-}
+// Firebase (config + db) is initialized near the top of this script, shared with the market sync below.
 
 /* --- name filter ---
    Normalizes common leetspeak substitutions (4->a, 3->e, 1->i, 0->o, 5->s, 7->t, @->a, $->s, etc.),
