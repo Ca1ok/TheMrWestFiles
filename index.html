@@ -344,8 +344,8 @@
 
 <div id="cookieBanner">
   <div class="cookie-text">
-    We don't use cookies but...
-    By clicking "Accept All" you agree to *redacted*
+    We dont use cookies but you should still accept.
+    By clicking "Accept All" you agree *Redacted*
   </div>
   <div class="cookie-btns">
     <button id="cookieReject">Reject All</button>
@@ -854,7 +854,7 @@ window.addEventListener('resize', positionVideoPopup);
 // in the GitHub UI anytime to set the price manually.
 const STORAGE_KEY = 'mrwestcoin_portfolio';
 const MARKET_URL = 'https://raw.githubusercontent.com/Ca1ok/TheMrWestFiles/main/market-data.json';
-const SYNC_INTERVAL = 15000; // how often we re-check the file (only while this page is actually open)
+const SYNC_INTERVAL = 60000; // background safety-net poll (light, since trades trigger their own sync)
 
 function loadPortfolio(){ const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : { cash:1000, held:0, trades:[] }; }
 function savePortfolio(p){ localStorage.setItem(STORAGE_KEY, JSON.stringify(p)); }
@@ -900,8 +900,14 @@ function visibleHistory(){
   const latestT = priceHistory[priceHistory.length-1].t;
   const endT = latestT - scrollOffsetMs;
   const startT = rangeMs > 0 ? endT - rangeMs : priceHistory[0].t;
-  const points = priceHistory.filter(p => p.t >= startT && p.t <= endT);
-  return points.length >= 2 ? points : priceHistory.slice(-2);
+  let points = priceHistory.filter(p => p.t >= startT && p.t <= endT);
+  if(points.length < 2) points = priceHistory.slice(-2);
+  // when looking at the live edge, tack on the current deterministic wiggle point so the
+  // line visibly keeps moving between real syncs instead of sitting flat
+  if(scrollOffsetMs === 0){
+    points = points.concat([{ price: displayPrice, t: Date.now() }]);
+  }
+  return points;
 }
 function clampScroll(){
   if(priceHistory.length === 0){ scrollOffsetMs = 0; return; }
@@ -1013,9 +1019,8 @@ window.addEventListener('pointermove', (e) => {
 window.addEventListener('pointerup', () => { chartDragging = false; chartWrap.classList.remove('grabbing'); });
 
 function updatePriceDisplays(){
-  const prevPrice = priceHistory.length > 1 ? priceHistory[priceHistory.length-2].price : currentPrice;
-  const changePct = prevPrice ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
-  const priceText = '$' + currentPrice.toFixed(2);
+  const changePct = currentPrice ? ((displayPrice - currentPrice) / currentPrice) * 100 : 0;
+  const priceText = '$' + displayPrice.toFixed(2);
   priceEl.textContent = priceText; miniPriceEl.textContent = priceText;
   const isUp = changePct >= 0;
   const changeText = (isUp?'▲ ':'▼ ') + Math.abs(changePct).toFixed(2) + '%' + (syncOK ? '' : ' (local)');
@@ -1064,11 +1069,43 @@ async function syncMarket(){
   renderPortfolio();
 }
 
+/* --- deterministic "live" ticking between syncs ---
+   Instead of polling the server every few seconds, we only actually fetch on page load and
+   right before a trade. In between, every browser computes the SAME small price wiggle
+   independently, because it's seeded from the current wall-clock time bucket rather than
+   Math.random() — so everyone sees identical movement without any network traffic. This is
+   purely a display effect: it never touches market.price or gets saved anywhere, so it can't
+   drift away from the real GitHub-Action-driven price. */
+function mulberry32(seed){
+  return function(){
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const WIGGLE_BUCKET_MS = 1500; // everyone recomputes together every 1.5s of wall-clock time
+let displayPrice = currentPrice;
+
+function tickLiveDisplay(){
+  const bucket = Math.floor(Date.now() / WIGGLE_BUCKET_MS);
+  const rand1 = mulberry32(bucket)();
+  const rand2 = mulberry32(bucket + 99991)(); // second draw, decorrelated from the first
+  const wiggle = (rand1 - 0.5) * 0.012 + (rand2 - 0.5) * 0.006; // small, deterministic, same for everyone
+  displayPrice = currentPrice * (1 + wiggle);
+  updatePriceDisplays();
+  drawChart();
+}
+setInterval(tickLiveDisplay, WIGGLE_BUCKET_MS);
+
+
 const TRADE_TAX_RATE = 0.015; // 1.5% tax on every trade — also closes the buy-then-sell-higher loop
 
-document.getElementById('buyBtn').addEventListener('click', () => {
+document.getElementById('buyBtn').addEventListener('click', async () => {
   const qty = parseFloat(qtyInput.value);
   if(!qty || qty<=0){ msgEl.textContent = 'Enter a valid quantity.'; return; }
+  msgEl.textContent = 'Checking latest price...';
+  await syncMarket(); // trades always execute against the freshest synced price, not a stale local one
   const cost = qty*currentPrice;
   const tax = cost * TRADE_TAX_RATE;
   const totalCost = cost + tax;
@@ -1083,10 +1120,12 @@ document.getElementById('buyBtn').addEventListener('click', () => {
   renderPortfolio(); renderHistory();
   msgEl.textContent = `Bought ${qty} $WEST for $${cost.toFixed(2)} (+ $${tax.toFixed(2)} tax).`;
 });
-document.getElementById('sellBtn').addEventListener('click', () => {
+document.getElementById('sellBtn').addEventListener('click', async () => {
   const qty = parseFloat(qtyInput.value);
   if(!qty || qty<=0){ msgEl.textContent = 'Enter a valid quantity.'; return; }
   if(qty > portfolio.held){ msgEl.textContent = "You don't hold that much $WEST."; return; }
+  msgEl.textContent = 'Checking latest price...';
+  await syncMarket();
   const proceeds = qty*currentPrice;
   const tax = proceeds * TRADE_TAX_RATE;
   const netProceeds = proceeds - tax;
