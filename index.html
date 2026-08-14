@@ -599,15 +599,29 @@ window.addEventListener('pointerup', () => {
     velocity.x = (b.x - a.x)/dt*16; velocity.y = (b.y - a.y)/dt*16;
   }
 });
+// Trackpads send two-finger scroll AND pinch-to-zoom through the same 'wheel' event, so we
+// have to tell them apart: browsers set e.ctrlKey=true automatically during a pinch gesture
+// (same signal as holding Ctrl + scrolling on a mouse). Everything else is a pan — this matches
+// how Figma/Google Maps/etc. behave, which is what people's muscle memory expects.
 viewport.addEventListener('wheel', (e) => {
   e.preventDefault();
   if(animatingBetweenRegions) return;
-  const rect = viewport.getBoundingClientRect();
-  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-  const worldX = (mx - target.x)/target.scale, worldY = (my - target.y)/target.scale;
-  const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, target.scale * (e.deltaY < 0 ? 1.06 : 0.94)));
-  target.scale = newScale;
-  target.x = mx - worldX*newScale; target.y = my - worldY*newScale;
+
+  if(e.ctrlKey || e.metaKey){
+    // pinch-to-zoom (trackpad) or Ctrl/Cmd + scroll (mouse) — zoom centered on the cursor
+    const rect = viewport.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const worldX = (mx - target.x)/target.scale, worldY = (my - target.y)/target.scale;
+    // exponential response gives a smooth continuous feel instead of a fixed 6% jump per event
+    const zoomFactor = Math.exp(-e.deltaY * 0.012);
+    const newScale = target.scale * zoomFactor;
+    target.scale = newScale;
+    target.x = mx - worldX*newScale; target.y = my - worldY*newScale;
+  } else {
+    // plain scroll / two-finger swipe — pan in both directions, matching the swipe direction 1:1
+    target.x -= e.deltaX;
+    target.y -= e.deltaY;
+  }
   clamp(target, getRegionBounds(activeRegionId));
 }, { passive:false });
 
