@@ -95,7 +95,7 @@
   .change.up{ color: var(--gain); } .change.down{ color: var(--danger); }
   .chart-wrap{ margin: 1rem 0 0.5rem; border:1px solid var(--line); background: rgba(0,0,0,0.2); cursor: grab; }
   .chart-wrap.grabbing{ cursor: grabbing; }
-  canvas#chart{ width:100%; height:130px; display:block; }
+  canvas#chart{ width:100%; height:230px; display:block; }
   .chart-controls{ display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem; flex-wrap:wrap; gap:0.5rem; }
   .range-btns{ display:flex; gap:0.3rem; }
   .range-btns button{
@@ -932,20 +932,29 @@ function buildDisplaySeries(points){
   const out = [points[0]];
   for(let i = 0; i < points.length - 1; i++){
     const p0 = points[i], p1 = points[i+1];
-    const segMag = Math.abs(p1.price - p0.price) || (p0.price * 0.008);
+    // scale noise off the SMALLER of the actual gap and a gentle percentage of price, so one
+    // outlier real data point can't blow up the interpolation into a wild, overshooting swing
+    const gap = Math.abs(p1.price - p0.price);
+    const segMag = Math.min(gap, p0.price * 0.05) || p0.price * 0.004;
     for(let s = 1; s <= SUBDIVISIONS; s++){
       const t = s / (SUBDIVISIONS + 1);
-      if(s === SUBDIVISIONS + 1) continue;
       const lerpPrice = p0.price + (p1.price - p0.price) * t;
       const lerpT = p0.t + (p1.t - p0.t) * t;
       const rand = mulberry32(hashSeed(i * 97 + s))();
       const taper = Math.sin(Math.PI * t); // 0 at both ends, peaks in the middle — keeps real points exact
-      const noise = (rand - 0.5) * segMag * 1.4 * taper;
-      out.push({ price: lerpPrice + noise, t: lerpT });
+      const noise = (rand - 0.5) * segMag * 0.6 * taper; // gentle bridge, not a spike generator
+      out.push({ price: Math.max(0.01, lerpPrice + noise), t: lerpT });
     }
     out.push(p1);
   }
   return out;
+}
+
+function formatAxisTime(t, spanMs){
+  const d = new Date(t);
+  if(spanMs <= 6 * 3600000) return d.toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
+  if(spanMs <= 2 * 86400000) return d.toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
+  return d.toLocaleDateString([], { month:'short', day:'numeric' });
 }
 
 function drawChart(){
@@ -956,10 +965,11 @@ function drawChart(){
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0,0,cssW,cssH);
 
-  const points = buildDisplaySeries(visibleHistory());
+  const rawPoints = visibleHistory();
+  const points = buildDisplaySeries(rawPoints);
   if(points.length < 2) return;
 
-  const LEFT_PAD = 46, RIGHT_PAD = 6, TOP_PAD = 10, BOTTOM_PAD = 10;
+  const LEFT_PAD = 46, RIGHT_PAD = 6, TOP_PAD = 10, BOTTOM_PAD = 24;
   const plotW = cssW - LEFT_PAD - RIGHT_PAD, plotH = cssH - TOP_PAD - BOTTOM_PAD;
   const prices = points.map(p => p.price);
   const rawMin = Math.min(...prices), rawMax = Math.max(...prices);
@@ -967,6 +977,19 @@ function drawChart(){
   const min = rawMin - pad, max = rawMax + pad, range = (max - min) || 1;
   const yOf = v => TOP_PAD + plotH - ((v - min) / range) * plotH;
   const xOf = i => LEFT_PAD + (i / (points.length - 1)) * plotW;
+
+  // X-axis time labels
+  const spanMs = points[points.length-1].t - points[0].t;
+  const X_LABELS = 4;
+  ctx.font = '9px Courier New, monospace';
+  ctx.fillStyle = '#a89678';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  for(let x = 0; x <= X_LABELS; x++){
+    const idx = Math.round((x / X_LABELS) * (points.length - 1));
+    const px = xOf(idx);
+    ctx.fillText(formatAxisTime(points[idx].t, spanMs), Math.min(Math.max(px, LEFT_PAD+20), cssW-RIGHT_PAD-20), cssH - BOTTOM_PAD + 6);
+  }
 
   const GRID_LINES = 4;
   ctx.font = '9px Courier New, monospace';
