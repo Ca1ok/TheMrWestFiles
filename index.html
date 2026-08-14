@@ -93,25 +93,23 @@
   .price-row .price{ font-size:2.4rem; font-weight:700; }
   .price-row .change{ font-size:0.95rem; }
   .change.up{ color: var(--gain); } .change.down{ color: var(--danger); }
-  .chart-wrap{ margin: 1rem 0 0.5rem; border:1px solid var(--line); background: rgba(0,0,0,0.2); cursor: grab; }
+  .chart-wrap{ margin: 1rem 0 0.5rem; border:1px solid var(--line); background: rgba(0,0,0,0.2); cursor: grab; contain: layout paint; }
   .chart-wrap.grabbing{ cursor: grabbing; }
   canvas#chart{ width:100%; height:230px; display:block; }
-  .chart-controls{ display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem; flex-wrap:wrap; gap:0.5rem; }
-  .range-btns{ display:flex; gap:0.3rem; }
-  .range-btns button{
-    background: var(--paper-2); border:1px solid var(--line); color: var(--muted); font-family:inherit;
-    font-size:0.62rem; letter-spacing:0.04em; text-transform:uppercase; padding:0.35rem 0.6rem;
-    border-radius:3px; cursor:pointer; transition: all 0.15s ease;
+  .brush-wrap{
+    margin: 0 0 0.6rem; border:1px solid var(--line); background: rgba(0,0,0,0.25);
+    height: 60px; position: relative; contain: layout paint;
   }
-  .range-btns button:hover{ color: var(--rust-2); border-color: var(--rust-2); }
-  .range-btns button.active{ background: var(--rust); color: var(--ink); border-color: var(--rust-2); }
+  canvas#brushChart{ width:100%; height:100%; display:block; cursor: grab; }
+  .brush-wrap.dragging canvas#brushChart{ cursor: grabbing; }
+  .chart-controls{ display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem; flex-wrap:wrap; gap:0.5rem; }
+  .brush-hint{ font-size:0.6rem; color: var(--muted); opacity:0.7; }
   .range-jump{
     background:none; border:1px solid var(--line); color: var(--muted); font-family:inherit;
     font-size:0.6rem; letter-spacing:0.04em; text-transform:uppercase; padding:0.35rem 0.6rem;
     border-radius:3px; cursor:pointer; opacity:0.6;
   }
   .range-jump.visible{ opacity:1; color: var(--rust-2); border-color: var(--rust-2); }
-  .chart-hint{ text-align:center; font-size:0.6rem; color: var(--muted); opacity:0.7; margin-bottom:0.8rem; }
   .stats{ display:grid; grid-template-columns: repeat(3,1fr); gap:0.75rem; text-align:center; margin-bottom:1.4rem; }
   .stat-label{ font-size:0.58rem; letter-spacing:0.15em; text-transform:uppercase; color: var(--muted); margin-bottom:0.3rem; }
   .stat-value{ font-size:1rem; font-weight:700; }
@@ -306,9 +304,10 @@
     #videoPopup{ max-width: 42vw; }
   }
   @media (max-width: 620px){
-    /* not enough room beside a 620px-wide poster on very small screens */
+    /* not enough room beside a 620px-wide poster on very small screens — use the bottom toolbar instead */
     #posterCoin, #posterLas{ display:none !important; }
-    #videoPopup{ display:none !important; }
+    #videoPopup{ max-width: 78vw !important; max-height: 55vh !important; }
+    #hint{ display:none; }
   }
 
   #hint{
@@ -316,6 +315,28 @@
     font-size: 0.65rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
     background: var(--paper-2); border: 1px solid var(--line); padding: 0.5rem 1rem;
     border-radius: 999px; opacity: 0.85; pointer-events:none;
+  }
+
+  #mobileToolbar{
+    display:none; position: fixed; bottom:0; left:0; right:0; z-index: 65;
+    background: var(--paper); border-top: 2px solid var(--line);
+    box-shadow: 0 -8px 20px rgba(0,0,0,0.5);
+  }
+  @media (max-width: 620px){
+    #mobileToolbar{ display:flex; }
+    #cookieBanner{ bottom: 54px; }
+  }
+  #mobileToolbar button{
+    flex:1; background:none; border:none; color: var(--muted); font-family: inherit;
+    padding: 0.55rem 0.2rem 0.6rem; display:flex; flex-direction:column; align-items:center; gap:0.15rem;
+    font-size: 0.55rem; letter-spacing: 0.03em; text-transform:uppercase; cursor:pointer;
+  }
+  #mobileToolbar button:active{ background: rgba(214,167,107,0.12); }
+  #mobileToolbar button.active{ color: var(--rust-2); }
+  #mobileToolbar .mt-icon{
+    font-family: Georgia, serif; font-weight:900; font-size: 0.9rem; color: var(--rust-2);
+    width: 22px; height: 22px; display:flex; align-items:center; justify-content:center;
+    border: 1px solid var(--line); border-radius: 4px;
   }
 
   #cookieBanner{
@@ -341,6 +362,14 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js"></script>
 
 <div id="hint">Drag or scroll to look around this area · Buttons take you elsewhere</div>
+
+<div id="mobileToolbar">
+  <button data-goto="region-coin"><span class="mt-icon">$</span><span>Coin</span></button>
+  <button data-goto="region-periodic"><span class="mt-icon">Pt</span><span>Table</span></button>
+  <button data-goto="region-leaderboard"><span class="mt-icon">#</span><span>Ranks</span></button>
+  <button data-goto="region-databook"><span class="mt-icon">B</span><span>Book</span></button>
+  <button id="mobileLasBtn"><span class="mt-icon">></span><span>Focus</span></button>
+</div>
 
 <div id="cookieBanner">
   <div class="cookie-text">
@@ -407,9 +436,9 @@
           </div>
         </div>
 
-        <div class="missing-banner">Missing 0 day(s)</div>
+        <div class="missing-banner">Missing 1 day(s)</div>
         <div class="stamp">FEDERAL<br>NOTICE</div>
-        <div class="eyebrow">By order of room C4</div>
+        <div class="eyebrow">By order of the court</div>
         <h1>WANTED</h1>
         <div class="subject">Colin West</div>
         <p class="intro">Download the files insecurely below.</p>
@@ -454,17 +483,13 @@
         <div class="chart-wrap">
           <canvas id="chart"></canvas>
         </div>
+        <div class="brush-wrap">
+          <canvas id="brushChart"></canvas>
+        </div>
         <div class="chart-controls">
-          <div class="range-btns" id="rangeBtns">
-            <button data-range="3600000" class="active">1H</button>
-            <button data-range="21600000">6H</button>
-            <button data-range="86400000">1D</button>
-            <button data-range="604800000">1W</button>
-            <button data-range="0">All</button>
-          </div>
+          <span class="brush-hint" id="brushHint">Drag the handles to pick a range</span>
           <button class="range-jump" id="jumpLive">Jump to live</button>
         </div>
-        <div class="chart-hint">Drag the chart to scroll back through history</div>
         <div class="stats">
           <div><div class="stat-label">Cash</div><div class="stat-value" id="cash">$0.00</div></div>
           <div><div class="stat-label">$WEST Held</div><div class="stat-value" id="held">0</div></div>
@@ -689,6 +714,11 @@ function goToRegion(id){
   }
   requestAnimationFrame(step);
 }
+function updateMobileToolbarActive(){
+  document.querySelectorAll('#mobileToolbar button[data-goto]').forEach(b => {
+    b.classList.toggle('active', b.dataset.goto === activeRegionId);
+  });
+}
 document.querySelectorAll('[data-goto]').forEach(btn => btn.addEventListener('click', () => goToRegion(btn.dataset.goto)));
 
 function initCamera(){
@@ -831,13 +861,19 @@ applyLasLabel();
 positionVideoPopup();
 updateVideoPopupVisibility(true);
 
-lasToggle.addEventListener('click', () => {
+function toggleLas(){
   videoIndex += 1;
   if(videoIndex >= VIDEO_OPTIONS.length) videoIndex = -1;
   localStorage.setItem('lasVideoIndex', videoIndex);
   applyLasLabel();
   positionVideoPopup();
   updateVideoPopupVisibility(true);
+}
+lasToggle.addEventListener('click', toggleLas);
+document.getElementById('mobileLasBtn').addEventListener('click', () => {
+  // the popup only ever shows while on the poster, so hop back there first if needed
+  if(activeRegionId !== HUB_ID) goToRegion(HUB_ID);
+  toggleLas();
 });
 videoClose.addEventListener('click', () => {
   videoIndex = -1;
@@ -914,26 +950,30 @@ function renderHistory(){
     <div class="history-row ${t.type}"><span class="type">${t.type.toUpperCase()}</span><span>${t.qty.toFixed(4)} $WEST @ $${t.price.toFixed(2)}</span><span>${t.time}</span></div>`).join('');
 }
 
-/* --- scrollable time-range chart --- */
-let rangeMs = 3600000;
-let scrollOffsetMs = 0;
+/* --- fence-style brush timeline: shows the full history, drag the handles to pick a window --- */
+const brushCanvas = document.getElementById('brushChart');
+const brushCtx = brushCanvas.getContext('2d');
+let viewStart = null, viewEnd = null; // absolute timestamps; null = "live" (always show the latest window)
+const MIN_WINDOW_MS = 8000; // can't shrink the selection below ~8 seconds of data
+
+function currentWindow(){
+  if(priceHistory.length === 0) return { start: 0, end: 0, live: true };
+  const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
+  if(viewStart === null || viewEnd === null){
+    return { start: Math.max(earliestT, latestT - 120000), end: latestT, live: true }; // trailing 2-minute live window
+  }
+  return { start: Math.max(earliestT, viewStart), end: Math.min(latestT, viewEnd), live: false };
+}
 
 function visibleHistory(){
   if(priceHistory.length === 0) return [];
-  const latestT = priceHistory[priceHistory.length-1].t;
-  const endT = latestT - scrollOffsetMs;
-  const startT = rangeMs > 0 ? endT - rangeMs : priceHistory[0].t;
-  let points = priceHistory.filter(p => p.t >= startT && p.t <= endT);
+  const w = currentWindow();
+  let points = priceHistory.filter(p => p.t >= w.start && p.t <= w.end);
   if(points.length < 2) points = priceHistory.slice(-2);
   return points;
 }
 function clampScroll(){
-  if(priceHistory.length === 0){ scrollOffsetMs = 0; return; }
-  const latestT = priceHistory[priceHistory.length-1].t;
-  const earliestT = priceHistory[0].t;
-  const maxOffset = rangeMs > 0 ? Math.max(0, (latestT - earliestT) - rangeMs) : 0;
-  scrollOffsetMs = Math.min(maxOffset, Math.max(0, scrollOffsetMs));
-  jumpLiveBtn.classList.toggle('visible', scrollOffsetMs > 0);
+  jumpLiveBtn.classList.toggle('visible', viewStart !== null);
 }
 
 function formatAxisTime(t, spanMs){
@@ -951,7 +991,7 @@ function drawChart(){
   ctx.clearRect(0,0,cssW,cssH);
 
   const points = visibleHistory();
-  if(points.length < 2) return;
+  if(points.length < 2) { drawBrush(); return; }
 
   const LEFT_PAD = 46, RIGHT_PAD = 6, TOP_PAD = 10, BOTTOM_PAD = 24;
   const plotW = cssW - LEFT_PAD - RIGHT_PAD, plotH = cssH - TOP_PAD - BOTTOM_PAD;
@@ -1014,43 +1054,181 @@ function drawChart(){
   ctx.fillStyle = 'rgba(217,122,63,0.08)';
   ctx.fill();
 
-  if(scrollOffsetMs === 0){
+  if(currentWindow().live){
     ctx.beginPath();
     ctx.arc(lastX, lastY, 2.6, 0, Math.PI*2);
     ctx.fillStyle = '#f4ecd8';
     ctx.fill();
   }
+
+  drawBrush();
 }
 
-document.querySelectorAll('.range-btns button').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.range-btns button').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    rangeMs = parseInt(btn.dataset.range, 10);
-    scrollOffsetMs = 0;
-    clampScroll();
-    drawChart();
-  });
-});
-jumpLiveBtn.addEventListener('click', () => { scrollOffsetMs = 0; clampScroll(); drawChart(); });
+/* --- the brush strip itself: a compressed sparkline of ALL history, with two draggable
+   handles ("fence posts") marking the selected window, plus a draggable middle to pan it --- */
+function drawBrush(){
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = brushCanvas.offsetWidth, cssH = brushCanvas.offsetHeight;
+  if(cssW === 0 || cssH === 0 || priceHistory.length < 2) return;
+  brushCanvas.width = cssW * dpr; brushCanvas.height = cssH * dpr;
+  brushCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  brushCtx.clearRect(0,0,cssW,cssH);
 
-let chartDragging = false, chartDragStartX = 0, chartDragStartOffset = 0;
+  const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
+  const totalSpan = Math.max(1, latestT - earliestT);
+  const prices = priceHistory.map(p => p.price);
+  const min = Math.min(...prices), max = Math.max(...prices), range = (max-min) || 1;
+  const tToX = t => ((t - earliestT) / totalSpan) * cssW;
+  const priceToY = p => cssH - ((p - min) / range) * (cssH - 6) - 3;
+
+  // full-history sparkline — the entire priceHistory array, always, regardless of what the main chart shows
+  brushCtx.beginPath();
+  priceHistory.forEach((p, i) => {
+    const x = tToX(p.t), y = priceToY(p.price);
+    if(i === 0) brushCtx.moveTo(x, y); else brushCtx.lineTo(x, y);
+  });
+  brushCtx.strokeStyle = '#c9a876';
+  brushCtx.lineWidth = 1.4;
+  brushCtx.lineJoin = 'round';
+  brushCtx.stroke();
+
+  // light fill under it so the shape reads clearly even at a glance
+  brushCtx.lineTo(tToX(priceHistory[priceHistory.length-1].t), cssH);
+  brushCtx.lineTo(tToX(priceHistory[0].t), cssH);
+  brushCtx.closePath();
+  brushCtx.fillStyle = 'rgba(201,168,118,0.12)';
+  brushCtx.fill();
+
+  // small dot at the very latest point so it's obvious this is live, real data
+  const lastP = priceHistory[priceHistory.length-1];
+  brushCtx.beginPath();
+  brushCtx.arc(tToX(lastP.t), priceToY(lastP.price), 2, 0, Math.PI*2);
+  brushCtx.fillStyle = '#f4ecd8';
+  brushCtx.fill();
+
+  // selected window highlight + handles
+  const w = currentWindow();
+  const x0 = tToX(w.start), x1 = tToX(w.end);
+  brushCtx.fillStyle = 'rgba(217,122,63,0.16)';
+  brushCtx.fillRect(x0, 0, Math.max(2, x1 - x0), cssH);
+  brushCtx.strokeStyle = 'rgba(217,122,63,0.5)';
+  brushCtx.lineWidth = 1;
+  brushCtx.strokeRect(x0, 0.5, Math.max(2, x1 - x0), cssH - 1);
+
+  // wide gate posts with a grip notch, so they're obviously separate from the pannable middle
+  [x0, x1].forEach(hx => {
+    brushCtx.fillStyle = '#d97a3f';
+    brushCtx.fillRect(hx - 3, 0, 6, cssH);
+    brushCtx.fillStyle = '#f4ecd8';
+    brushCtx.fillRect(hx - 1, cssH/2 - 6, 2, 12);
+  });
+}
+
+jumpLiveBtn.addEventListener('click', () => { viewStart = null; viewEnd = null; clampScroll(); drawChart(); });
+
+/* dragging on the main chart pans the current window left/right */
+let chartDragging = false, chartDragStartX = 0, chartDragStartWindow = null;
 chartWrap.addEventListener('pointerdown', (e) => {
   chartDragging = true;
   chartWrap.classList.add('grabbing');
   chartDragStartX = e.clientX;
-  chartDragStartOffset = scrollOffsetMs;
+  chartDragStartWindow = currentWindow();
   e.stopPropagation();
 });
 window.addEventListener('pointermove', (e) => {
   if(!chartDragging) return;
-  const pxPerMs = canvas.offsetWidth / (rangeMs > 0 ? rangeMs : (priceHistory[priceHistory.length-1].t - priceHistory[0].t || 1));
+  const w = chartDragStartWindow;
+  const spanMs = w.end - w.start;
+  const pxPerMs = canvas.offsetWidth / (spanMs || 1);
   const dx = e.clientX - chartDragStartX;
-  scrollOffsetMs = chartDragStartOffset - dx / pxPerMs;
+  const shift = -dx / pxPerMs;
+  const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
+  let newStart = w.start + shift, newEnd = w.end + shift;
+  if(newStart < earliestT){ newEnd += (earliestT - newStart); newStart = earliestT; }
+  if(newEnd > latestT){ newStart -= (newEnd - latestT); newEnd = latestT; }
+  viewStart = Math.max(earliestT, newStart);
+  viewEnd = Math.min(latestT, newEnd);
   clampScroll();
   drawChart();
 });
 window.addEventListener('pointerup', () => { chartDragging = false; chartWrap.classList.remove('grabbing'); });
+
+/* dragging the brush handles resizes the window; dragging the middle pans it */
+const brushWrap = document.querySelector('.brush-wrap');
+let brushMode = null; // 'left' | 'right' | 'move' | null
+let brushDragStartX = 0, brushDragStartWindow = null;
+
+function brushPxToTime(px){
+  const cssW = brushCanvas.offsetWidth;
+  const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
+  return earliestT + (px / cssW) * (latestT - earliestT);
+}
+brushCanvas.addEventListener('pointermove', (e) => {
+  if(brushMode || priceHistory.length < 2) return; // don't fight the cursor mid-drag
+  const rect = brushCanvas.getBoundingClientRect();
+  const px = e.clientX - rect.left;
+  const w = currentWindow();
+  const cssW = brushCanvas.offsetWidth;
+  const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
+  const x0 = ((w.start - earliestT) / (latestT - earliestT || 1)) * cssW;
+  const x1 = ((w.end - earliestT) / (latestT - earliestT || 1)) * cssW;
+  const HANDLE_HIT = 16;
+  if(Math.abs(px - x0) <= HANDLE_HIT || Math.abs(px - x1) <= HANDLE_HIT){
+    brushCanvas.style.cursor = 'ew-resize';
+  } else if(px > x0 && px < x1){
+    brushCanvas.style.cursor = 'grab';
+  } else {
+    brushCanvas.style.cursor = 'crosshair';
+  }
+});
+
+brushWrap.addEventListener('pointerdown', (e) => {
+  if(priceHistory.length < 2) return;
+  const rect = brushCanvas.getBoundingClientRect();
+  const px = e.clientX - rect.left;
+  const w = currentWindow();
+  const cssW = brushCanvas.offsetWidth;
+  const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
+  const x0 = ((w.start - earliestT) / (latestT - earliestT || 1)) * cssW;
+  const x1 = ((w.end - earliestT) / (latestT - earliestT || 1)) * cssW;
+  const HANDLE_HIT = 16; // wide, easy-to-grab hit zone right at each gate
+  if(Math.abs(px - x0) <= HANDLE_HIT) brushMode = 'left';
+  else if(Math.abs(px - x1) <= HANDLE_HIT) brushMode = 'right';
+  else if(px > x0 + HANDLE_HIT && px < x1 - HANDLE_HIT) brushMode = 'move'; // clear gap between the gates and the pan zone
+  else if(px > x0 && px < x1) brushMode = 'move'; // narrow windows: whatever's left between the gates is still pannable
+  else brushMode = 'right'; // clicking outside the window starts a fresh selection edge
+  brushDragStartX = e.clientX;
+  brushDragStartWindow = w;
+  brushWrap.classList.add('dragging');
+  e.stopPropagation();
+});
+window.addEventListener('pointermove', (e) => {
+  if(!brushMode || priceHistory.length < 2) return;
+  const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
+  const cssW = brushCanvas.offsetWidth;
+  const rect = brushCanvas.getBoundingClientRect();
+  const px = e.clientX - rect.left;
+  const t = Math.min(latestT, Math.max(earliestT, brushPxToTime(px)));
+
+  if(brushMode === 'left'){
+    viewStart = Math.min(t, brushDragStartWindow.end - MIN_WINDOW_MS);
+    viewEnd = brushDragStartWindow.end;
+  } else if(brushMode === 'right'){
+    viewStart = brushDragStartWindow.start;
+    viewEnd = Math.max(t, brushDragStartWindow.start + MIN_WINDOW_MS);
+  } else if(brushMode === 'move'){
+    const dxPx = e.clientX - brushDragStartX;
+    const dxMs = (dxPx / cssW) * (latestT - earliestT);
+    const spanMs = brushDragStartWindow.end - brushDragStartWindow.start;
+    let ns = brushDragStartWindow.start + dxMs, ne = brushDragStartWindow.end + dxMs;
+    if(ns < earliestT){ ne += (earliestT - ns); ns = earliestT; }
+    if(ne > latestT){ ns -= (ne - latestT); ne = latestT; }
+    viewStart = ns; viewEnd = ne;
+  }
+  clampScroll();
+  drawChart();
+});
+window.addEventListener('pointerup', () => { brushMode = null; brushWrap.classList.remove('dragging'); });
 
 function updatePriceDisplays(){
   const prevPrice = priceHistory.length > 1 ? priceHistory[priceHistory.length-2].price : currentPrice;
