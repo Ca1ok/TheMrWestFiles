@@ -124,6 +124,28 @@
   .history-row{ display:flex; justify-content:space-between; font-size:0.72rem; padding:0.4rem 0; border-bottom:1px dashed rgba(107,90,65,0.4); }
   .history-row.buy .type{ color: var(--gain); } .history-row.sell .type{ color: var(--danger); }
   .empty-history{ color: var(--muted); font-size:0.72rem; text-align:center; padding:0.5rem 0; }
+
+  .lots-list{ max-height:180px; overflow-y:auto; margin-top:0.5rem; }
+  .lot-row{
+    display:flex; align-items:center; gap:0.7rem; padding:0.5rem 0.3rem;
+    border-bottom:1px dashed rgba(107,90,65,0.4); font-size:0.78rem;
+  }
+  .lot-num{
+    width:1.8rem; height:1.8rem; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    background: var(--paper-2); border:1px solid var(--rust-2); color: var(--rust-2);
+    font-family: Georgia, serif; font-weight:700; font-size:0.7rem;
+  }
+  .lot-info{ flex:1; color: var(--muted); line-height:1.4; }
+  .lot-info b{ color: var(--ink); }
+  .lot-pl{ font-variant-numeric: tabular-nums; font-weight:700; }
+  .lot-pl.up{ color: var(--gain); } .lot-pl.down{ color: var(--danger); }
+  .lot-sell-btn{
+    background: var(--danger); color: var(--ink); border:none; border-radius:3px;
+    padding:0.4rem 0.7rem; font-family:inherit; font-size:0.68rem; text-transform:uppercase;
+    letter-spacing:0.03em; cursor:pointer; flex-shrink:0;
+  }
+  .lot-sell-btn:hover{ filter: brightness(1.15); }
   .reset-link{ display:block; text-align:center; margin-top:0.8rem; color: var(--muted); font-size:0.6rem; text-decoration:underline; cursor:pointer; background:none; border:none; font-family:inherit; }
   .reset-confirm-wrap{
     display:none; align-items:center; justify-content:center; gap:0.6rem; margin-top:0.8rem;
@@ -498,9 +520,13 @@
         <div class="trade-panel">
           <input type="number" id="qty" placeholder="Qty" min="0" step="1" value="1">
           <button class="trade-btn buy" id="buyBtn">Buy</button>
-          <button class="trade-btn sell" id="sellBtn">Sell</button>
         </div>
         <div class="msg" id="msg"></div>
+
+        <div class="section-label" style="margin-top:1.2rem;">Open Positions</div>
+        <div class="lots-list" id="lotsList"><div class="empty-history">No open positions.</div></div>
+
+        <div class="section-label">Transaction History</div>
         <div class="history" id="historyList"><div class="empty-history">No trades yet.</div></div>
         <button class="reset-link" id="resetReveal">Reset portfolio</button>
         <div class="reset-confirm-wrap" id="resetConfirmWrap">
@@ -916,7 +942,18 @@ const TICK_INTERVAL = 2000;      // how often the market moves
 const MAX_CATCHUP_TICKS = 5;     // capped low so reconnecting after a while can't cause a wild swing
 const MAX_HISTORY_POINTS = 300;  // ~10 minutes of dense history at the tick rate above
 
-function loadPortfolio(){ const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : { cash:1000, held:0, trades:[] }; }
+function loadPortfolio(){
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if(!raw) return { cash:1000, lots:[], nextLotId:1, trades:[] };
+  const p = JSON.parse(raw);
+  // migrate old aggregate-holdings saves into a single lot so nothing is lost
+  if(p.lots === undefined){
+    p.lots = p.held > 0 ? [{ id:1, qty:p.held, buyPrice: 12.5, time: new Date().toLocaleString() }] : [];
+    p.nextLotId = 2;
+    delete p.held;
+  }
+  return p;
+}
 function savePortfolio(p){ localStorage.setItem(STORAGE_KEY, JSON.stringify(p)); }
 let portfolio = loadPortfolio();
 
@@ -939,15 +976,39 @@ const jumpLiveBtn = document.getElementById('jumpLive');
 
 function cacheMarketLocally(){ localStorage.setItem('mrwestcoin_market_cache', JSON.stringify(market)); }
 
+function totalHeld(){
+  return portfolio.lots.reduce((sum, l) => sum + l.qty, 0);
+}
 function renderPortfolio(){
   cashEl.textContent = '$' + portfolio.cash.toFixed(2);
-  heldEl.textContent = portfolio.held.toFixed(4);
-  totalEl.textContent = '$' + (portfolio.cash + portfolio.held*currentPrice).toFixed(2);
+  heldEl.textContent = totalHeld().toFixed(4);
+  totalEl.textContent = '$' + (portfolio.cash + totalHeld()*currentPrice).toFixed(2);
 }
 function renderHistory(){
   if(portfolio.trades.length === 0){ historyListEl.innerHTML = '<div class="empty-history">No trades yet.</div>'; return; }
   historyListEl.innerHTML = portfolio.trades.slice().reverse().map(t => `
-    <div class="history-row ${t.type}"><span class="type">${t.type.toUpperCase()}</span><span>${t.qty.toFixed(4)} $WEST @ $${t.price.toFixed(2)}</span><span>${t.time}</span></div>`).join('');
+    <div class="history-row ${t.type}"><span class="type">${t.type.toUpperCase()} #${t.lotId}</span><span>${t.qty.toFixed(4)} $WEST @ $${t.price.toFixed(2)}</span><span>${t.time}</span></div>`).join('');
+}
+const lotsListEl = document.getElementById('lotsList');
+function renderLots(){
+  if(portfolio.lots.length === 0){ lotsListEl.innerHTML = '<div class="empty-history">No open positions.</div>'; return; }
+  lotsListEl.innerHTML = portfolio.lots.slice().reverse().map(l => {
+    const pl = (currentPrice - l.buyPrice) * l.qty;
+    const plPct = ((currentPrice - l.buyPrice) / l.buyPrice) * 100;
+    const up = pl >= 0;
+    return `
+      <div class="lot-row">
+        <div class="lot-num">#${l.id}</div>
+        <div class="lot-info">
+          ${l.qty.toFixed(4)} $WEST @ <b>$${l.buyPrice.toFixed(2)}</b><br>
+          <span class="lot-pl ${up?'up':'down'}">${up?'+':''}$${pl.toFixed(2)} (${up?'+':''}${plPct.toFixed(1)}%)</span>
+        </div>
+        <button class="lot-sell-btn" data-lot-id="${l.id}">Sell</button>
+      </div>`;
+  }).join('');
+  lotsListEl.querySelectorAll('.lot-sell-btn').forEach(btn => {
+    btn.addEventListener('click', () => sellLot(parseInt(btn.dataset.lotId, 10)));
+  });
 }
 
 /* --- fence-style brush timeline: shows the full history, drag the handles to pick a window --- */
@@ -1059,6 +1120,35 @@ function drawChart(){
     ctx.arc(lastX, lastY, 2.6, 0, Math.PI*2);
     ctx.fillStyle = '#f4ecd8';
     ctx.fill();
+  }
+
+  // numbered horizontal lines marking where each open position was bought
+  if(typeof portfolio !== 'undefined' && portfolio.lots){
+    portfolio.lots.forEach(lot => {
+      if(lot.buyPrice < min || lot.buyPrice > max) return; // off the current price range — skip rather than clutter
+      const y = yOf(lot.buyPrice);
+      ctx.beginPath();
+      ctx.strokeStyle = 'rgba(244,236,216,0.5)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.moveTo(LEFT_PAD, y);
+      ctx.lineTo(cssW - RIGHT_PAD, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const label = '#' + lot.id;
+      ctx.font = '9px Courier New, monospace';
+      const labelW = ctx.measureText(label).width + 8;
+      ctx.fillStyle = 'rgba(26,21,16,0.9)';
+      ctx.fillRect(cssW - RIGHT_PAD - labelW, y - 8, labelW, 16);
+      ctx.strokeStyle = '#f4ecd8';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(cssW - RIGHT_PAD - labelW + 0.5, y - 8 + 0.5, labelW - 1, 15);
+      ctx.fillStyle = '#f4ecd8';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, cssW - RIGHT_PAD - labelW/2, y);
+    });
   }
 
   drawBrush();
@@ -1263,6 +1353,7 @@ function applyMarketUpdate(m){
   updatePriceDisplays();
   drawChart();
   renderPortfolio();
+  renderLots();
 }
 
 if(db){
@@ -1305,25 +1396,30 @@ document.getElementById('buyBtn').addEventListener('click', () => {
   const tax = cost * TRADE_TAX_RATE;
   const totalCost = cost + tax;
   if(totalCost > portfolio.cash){ msgEl.textContent = "You can't afford that (incl. tax), champ."; return; }
-  portfolio.cash -= totalCost; portfolio.held += qty;
-  portfolio.trades.push({ type:'buy', qty, price: currentPrice, tax, time: new Date().toLocaleString() });
+  portfolio.cash -= totalCost;
+  const lotId = portfolio.nextLotId++;
+  portfolio.lots.push({ id: lotId, qty, buyPrice: currentPrice, time: new Date().toLocaleString() });
+  portfolio.trades.push({ type:'buy', qty, price: currentPrice, tax, lotId, time: new Date().toLocaleString() });
   savePortfolio(portfolio);
-  renderPortfolio(); renderHistory();
-  msgEl.textContent = `Bought ${qty} $WEST for $${cost.toFixed(2)} (+ $${tax.toFixed(2)} tax).`;
+  renderPortfolio(); renderHistory(); renderLots(); drawChart();
+  msgEl.textContent = `Bought #${lotId}: ${qty} $WEST for $${cost.toFixed(2)} (+ $${tax.toFixed(2)} tax).`;
 });
-document.getElementById('sellBtn').addEventListener('click', () => {
-  const qty = parseFloat(qtyInput.value);
-  if(!qty || qty<=0){ msgEl.textContent = 'Enter a valid quantity.'; return; }
-  if(qty > portfolio.held){ msgEl.textContent = "You don't hold that much $WEST."; return; }
-  const proceeds = qty*currentPrice;
+
+function sellLot(lotId){
+  const idx = portfolio.lots.findIndex(l => l.id === lotId);
+  if(idx === -1) return;
+  const lot = portfolio.lots[idx];
+  const proceeds = lot.qty * currentPrice;
   const tax = proceeds * TRADE_TAX_RATE;
   const netProceeds = proceeds - tax;
-  portfolio.cash += netProceeds; portfolio.held -= qty;
-  portfolio.trades.push({ type:'sell', qty, price: currentPrice, tax, time: new Date().toLocaleString() });
+  portfolio.cash += netProceeds;
+  portfolio.lots.splice(idx, 1);
+  portfolio.trades.push({ type:'sell', qty: lot.qty, price: currentPrice, tax, lotId, time: new Date().toLocaleString() });
   savePortfolio(portfolio);
-  renderPortfolio(); renderHistory();
-  msgEl.textContent = `Sold ${qty} $WEST for $${netProceeds.toFixed(2)} (after $${tax.toFixed(2)} tax).`;
-});
+  renderPortfolio(); renderHistory(); renderLots(); drawChart();
+  const pl = (currentPrice - lot.buyPrice) * lot.qty;
+  msgEl.textContent = `Sold #${lotId} for $${netProceeds.toFixed(2)} (after tax) — ${pl>=0?'profit':'loss'} of $${Math.abs(pl).toFixed(2)}.`;
+}
 
 document.getElementById('resetReveal').addEventListener('click', () => {
   document.getElementById('resetReveal').style.display = 'none';
@@ -1334,8 +1430,8 @@ document.getElementById('resetCancel').addEventListener('click', () => {
   document.getElementById('resetReveal').style.display = 'block';
 });
 document.getElementById('resetConfirm').addEventListener('click', () => {
-  portfolio = { cash:1000, held:0, trades:[] };
-  savePortfolio(portfolio); renderPortfolio(); renderHistory();
+  portfolio = { cash:1000, lots:[], nextLotId:1, trades:[] };
+  savePortfolio(portfolio); renderPortfolio(); renderHistory(); renderLots(); drawChart();
   document.getElementById('resetConfirmWrap').style.display = 'none';
   document.getElementById('resetReveal').style.display = 'block';
   msgEl.textContent = 'Portfolio reset.';
@@ -1781,7 +1877,7 @@ document.getElementById('nameSaveBtn').addEventListener('click', () => {
 });
 
 function portfolioValue(){
-  return portfolio.cash + portfolio.held * currentPrice;
+  return portfolio.cash + totalHeld() * currentPrice;
 }
 
 function pushLeaderboardEntry(){
