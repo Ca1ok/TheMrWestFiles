@@ -387,6 +387,7 @@
             <div class="panel-label">Explore</div>
             <div class="side-nav">
               <button class="las-toggle side-nav-btn" data-goto="region-periodic">Periodic Table</button>
+              <button class="las-toggle side-nav-btn" data-goto="region-leaderboard">Leaderboard</button>
 
               <div class="dropdown-wrap">
                 <button class="las-toggle side-nav-btn" id="databookToggle">Databook ▾</button>
@@ -482,7 +483,8 @@
           <button class="reset-confirm-btn danger" id="resetConfirm">Yes, reset</button>
           <button class="reset-confirm-btn" id="resetCancel">Cancel</button>
         </div>
-        <button class="nav-btn" data-goto="region-index" style="margin-top:1.2rem;">Back to the board</button>
+        <button class="nav-btn" data-goto="region-leaderboard" style="margin-top:0.8rem;">View Leaderboard</button>
+        <button class="nav-btn" data-goto="region-index" style="margin-top:0.6rem;">Back to the board</button>
       </div>
     </div>
     <div class="region wide" id="region-periodic" data-role="satellite">
@@ -918,6 +920,34 @@ function clampScroll(){
   jumpLiveBtn.classList.toggle('visible', scrollOffsetMs > 0);
 }
 
+// Real synced history points are sparse (one per GitHub Action run), which makes a raw plot
+// look like a flat zigzag. This fills in extra points BETWEEN each real pair using a seeded
+// "bridge" — noise that's zero exactly at the real endpoints and bulges in the middle — so the
+// line looks like an actual fluctuating market. It's seeded from the data itself (not the clock),
+// so every viewer sees the exact same shape for the exact same synced history.
+function hashSeed(i){ return (Math.imul(i, 2654435761) ^ (i >>> 3)) >>> 0; }
+const SUBDIVISIONS = 5;
+function buildDisplaySeries(points){
+  if(points.length < 2) return points;
+  const out = [points[0]];
+  for(let i = 0; i < points.length - 1; i++){
+    const p0 = points[i], p1 = points[i+1];
+    const segMag = Math.abs(p1.price - p0.price) || (p0.price * 0.008);
+    for(let s = 1; s <= SUBDIVISIONS; s++){
+      const t = s / (SUBDIVISIONS + 1);
+      if(s === SUBDIVISIONS + 1) continue;
+      const lerpPrice = p0.price + (p1.price - p0.price) * t;
+      const lerpT = p0.t + (p1.t - p0.t) * t;
+      const rand = mulberry32(hashSeed(i * 97 + s))();
+      const taper = Math.sin(Math.PI * t); // 0 at both ends, peaks in the middle — keeps real points exact
+      const noise = (rand - 0.5) * segMag * 1.4 * taper;
+      out.push({ price: lerpPrice + noise, t: lerpT });
+    }
+    out.push(p1);
+  }
+  return out;
+}
+
 function drawChart(){
   const dpr = window.devicePixelRatio || 1;
   const cssW = canvas.offsetWidth, cssH = canvas.offsetHeight;
@@ -926,7 +956,7 @@ function drawChart(){
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0,0,cssW,cssH);
 
-  const points = visibleHistory();
+  const points = buildDisplaySeries(visibleHistory());
   if(points.length < 2) return;
 
   const LEFT_PAD = 46, RIGHT_PAD = 6, TOP_PAD = 10, BOTTOM_PAD = 10;
