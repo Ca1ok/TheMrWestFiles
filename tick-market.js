@@ -6,7 +6,7 @@ const path = require('path');
 const DATA_PATH = path.join(__dirname, '..', '..', 'market-data.json');
 const TICK_INTERVAL_MS = 10 * 60 * 1000; // matches the cron schedule (every 10 minutes)
 const MAX_HISTORY_POINTS = 1000;          // ~1000 * 10min = ~1 week of history
-const MAX_CATCHUP_TICKS = 50;             // safety cap if the workflow was paused for a while
+const MAX_CATCHUP_TICKS = 15;             // safety cap if the workflow was paused for a while (kept modest so catch-up can't cause a wild swing)
 
 function advanceOneTick(m) {
   m.fairValue *= (1 + (Math.random() - 0.5) * 0.01);
@@ -25,8 +25,11 @@ function advanceOneTick(m) {
 const market = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
 
 const now = Date.now();
-const elapsed = market.updatedAt ? now - market.updatedAt : TICK_INTERVAL_MS;
-const ticksOwed = Math.min(MAX_CATCHUP_TICKS, Math.max(1, Math.round(elapsed / TICK_INTERVAL_MS)));
+// If this has never run before (updatedAt is 0), don't compute elapsed time since epoch —
+// that produces a huge, wild multi-tick catch-up on the very first run. Just take one gentle tick.
+const isFirstRun = !market.updatedAt;
+const elapsed = isFirstRun ? TICK_INTERVAL_MS : now - market.updatedAt;
+const ticksOwed = isFirstRun ? 1 : Math.min(MAX_CATCHUP_TICKS, Math.max(1, Math.round(elapsed / TICK_INTERVAL_MS)));
 
 for (let i = 0; i < ticksOwed; i++) advanceOneTick(market);
 market.updatedAt = now;
