@@ -711,19 +711,28 @@ window.addEventListener('resize', positionVideoPopup);
 
 
 
-/* ================= MrWestCoin (simulated random-walk market — no external API) ================= */
+/* ================= MrWestCoin (shared market — synced across users via kvdb.io) ================= */
+// This is a static site with no backend, so "synced across users" means every open browser
+// talks to a free public key-value store to read/write one shared market state.
+// If that service is ever unreachable, we fall back to a local-only simulation so the page keeps working.
 const STORAGE_KEY = 'mrwestcoin_portfolio';
-const HISTORY_KEY = 'mrwestcoin_price_history';
-const SIM_PRICE_KEY = 'mrwestcoin_sim_price';
+const SHARED_URL = 'https://kvdb.io/themrwestfiles-mrwestcoin-market/state';
+const SYNC_INTERVAL = 2500; // how often we check for updates from other viewers
+const TICK_INTERVAL = 1200; // how often the market moves (only computed by whichever browser is actively open)
+const MAX_CATCHUP_TICKS = 40; // cap how many "missed" ticks we simulate at once if nobody was watching for a while
 
 function loadPortfolio(){ const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : { cash:1000, held:0, trades:[] }; }
 function savePortfolio(p){ localStorage.setItem(STORAGE_KEY, JSON.stringify(p)); }
 let portfolio = loadPortfolio();
 
-// price starts wherever it was last left (or $12.50 fresh), then random-walks forever
-let currentPrice = parseFloat(localStorage.getItem(SIM_PRICE_KEY)) || 12.50;
-let priceHistory = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-if(priceHistory.length === 0) priceHistory.push({ price: currentPrice, t: Date.now() });
+// local cache of shared market state (used as fallback + immediate rendering while syncing)
+let market = JSON.parse(localStorage.getItem('mrwestcoin_market_cache') || 'null') || {
+  price: 12.50, history: [{ price: 12.50, t: Date.now() }],
+  fairValue: 12.50, momentum: 0, vol: 0.012, updatedAt: 0
+};
+let currentPrice = market.price;
+let priceHistory = market.history;
+let syncOK = false;
 
 const priceEl = document.getElementById('price'), changeEl = document.getElementById('change');
 const miniPriceEl = document.getElementById('miniPrice'), miniChangeEl = document.getElementById('miniChange');
@@ -731,6 +740,8 @@ const cashEl = document.getElementById('cash'), heldEl = document.getElementById
 const msgEl = document.getElementById('msg'), historyListEl = document.getElementById('historyList');
 const qtyInput = document.getElementById('qty');
 const canvas = document.getElementById('chart'), ctx = canvas.getContext('2d');
+
+function cacheMarketLocally(){ localStorage.setItem('mrwestcoin_market_cache', JSON.stringify(market)); }
 
 function renderPortfolio(){
   cashEl.textContent = '$' + portfolio.cash.toFixed(2);
@@ -760,7 +771,6 @@ function drawChart(){
   const yOf = v => TOP_PAD + plotH - ((v - min) / range) * plotH;
   const xOf = i => LEFT_PAD + (i / (priceHistory.length - 1)) * plotW;
 
-  // fake Y-axis gridlines + labels
   const GRID_LINES = 4;
   ctx.font = '9px Courier New, monospace';
   ctx.textAlign = 'right';
@@ -778,7 +788,6 @@ function drawChart(){
     ctx.fillText('$' + v.toFixed(2), LEFT_PAD - 6, y);
   }
 
-  // smoothed line through the (now denser) price history, using quadratic curves for higher visual resolution
   ctx.beginPath();
   ctx.strokeStyle = '#d97a3f';
   ctx.lineWidth = 1.6;
@@ -796,14 +805,12 @@ function drawChart(){
   ctx.lineTo(lastX, lastY);
   ctx.stroke();
 
-  // fill under the line for a bit of depth
   ctx.lineTo(lastX, TOP_PAD + plotH);
   ctx.lineTo(LEFT_PAD, TOP_PAD + plotH);
   ctx.closePath();
   ctx.fillStyle = 'rgba(217,122,63,0.08)';
   ctx.fill();
 
-  // current price marker
   ctx.beginPath();
   ctx.arc(lastX, lastY, 2.6, 0, Math.PI*2);
   ctx.fillStyle = '#f4ecd8';
@@ -816,51 +823,66 @@ function updatePriceDisplays(){
   const priceText = '$' + currentPrice.toFixed(2);
   priceEl.textContent = priceText; miniPriceEl.textContent = priceText;
   const isUp = changePct >= 0;
-  const changeText = (isUp?'▲ ':'▼ ') + Math.abs(changePct).toFixed(2) + '%';
+  const changeText = (isUp?'▲ ':'▼ ') + Math.abs(changePct).toFixed(2) + '%' + (syncOK ? '' : ' (local)');
   changeEl.textContent = changeText; changeEl.className = 'change ' + (isUp?'up':'down');
   miniChangeEl.textContent = changeText; miniChangeEl.className = 'change ' + (isUp?'up':'down');
 }
 
-// --- realistic-ish price model ---
-// 1) a "fair value" that itself slowly drifts over time (so the market has a real long-term trend, not just a fixed anchor)
-// 2) momentum: today's move is correlated with yesterday's (real markets trend in bursts, not pure independent noise)
-// 3) volatility clustering: big moves tend to follow big moves (calm periods and choppy periods, like a simplified GARCH)
-let fairValue = parseFloat(localStorage.getItem('mrwestcoin_fair_value')) || currentPrice;
-let momentum = parseFloat(localStorage.getItem('mrwestcoin_momentum')) || 0;
-let vol = parseFloat(localStorage.getItem('mrwestcoin_vol')) || 0.012;
-
-function tickPrice(){
-  // fair value itself random-walks slowly, giving the market a long-term direction
-  fairValue *= (1 + (Math.random() - 0.5) * 0.01);
-  localStorage.setItem('mrwestcoin_fair_value', fairValue);
-
-  // volatility clustering: this tick's volatility depends on recent volatility, plus its own random shock
+// advances the shared market model by one tick (momentum + volatility clustering + drifting fair value)
+function advanceOneTick(m){
+  m.fairValue *= (1 + (Math.random() - 0.5) * 0.01);
   const volShock = Math.abs((Math.random() - 0.5)) * 0.03;
-  vol = vol * 0.85 + volShock * 0.15;
-  vol = Math.min(0.06, Math.max(0.004, vol));
-  localStorage.setItem('mrwestcoin_vol', vol);
-
-  // momentum: correlated with the previous move, decaying over time, plus fresh random shock scaled by current volatility
-  const shock = (Math.random() - 0.5) * 2 * vol;
-  momentum = momentum * 0.55 + shock * 0.45;
-  localStorage.setItem('mrwestcoin_momentum', momentum);
-
-  // mean reversion pulls gently toward the drifting fair value, on top of momentum-driven movement
-  const reversion = (fairValue - currentPrice) / currentPrice * 0.03;
-
-  // rare bigger jump (news event), on top of everything else
+  m.vol = Math.min(0.06, Math.max(0.004, m.vol * 0.85 + volShock * 0.15));
+  const shock = (Math.random() - 0.5) * 2 * m.vol;
+  m.momentum = m.momentum * 0.55 + shock * 0.45;
+  const reversion = (m.fairValue - m.price) / m.price * 0.03;
   const spike = Math.random() < 0.03 ? (Math.random() - 0.5) * 0.12 : 0;
+  m.price = Math.max(0.01, m.price * (1 + m.momentum + reversion + spike));
+  m.history.push({ price: m.price, t: Date.now() });
+  if(m.history.length > 150) m.history.shift();
+  return m;
+}
 
-  currentPrice = Math.max(0.01, currentPrice * (1 + momentum + reversion + spike));
-  localStorage.setItem(SIM_PRICE_KEY, currentPrice);
+async function pushMarket(){
+  cacheMarketLocally();
+  try{
+    await fetch(SHARED_URL, { method:'PUT', body: JSON.stringify(market) });
+    syncOK = true;
+  } catch(e){ syncOK = false; }
+}
 
-  priceHistory.push({ price: currentPrice, t: Date.now() });
-  if(priceHistory.length > 150) priceHistory.shift();
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(priceHistory));
+async function pullAndAdvanceMarket(){
+  try{
+    const res = await fetch(SHARED_URL, { cache:'no-store' });
+    if(res.ok){
+      const remote = await res.json();
+      if(remote && remote.updatedAt >= market.updatedAt){ market = remote; }
+      syncOK = true;
+    } else if(res.status === 404){
+      // nobody has ever written this key yet — we'll create it below
+      syncOK = true;
+    } else {
+      syncOK = false;
+    }
+  } catch(e){
+    syncOK = false; // e.g. offline, or the shared store is unreachable — keep using local state
+  }
 
+  // figure out how many ticks "should" have happened since the last update, and catch up
+  // (capped so a long-idle page doesn't loop forever computing history)
+  const now = Date.now();
+  const elapsed = market.updatedAt ? now - market.updatedAt : TICK_INTERVAL;
+  let ticksOwed = Math.min(MAX_CATCHUP_TICKS, Math.max(1, Math.floor(elapsed / TICK_INTERVAL)));
+  for(let i = 0; i < ticksOwed; i++) advanceOneTick(market);
+  market.updatedAt = now;
+
+  currentPrice = market.price;
+  priceHistory = market.history;
   updatePriceDisplays();
   drawChart();
   renderPortfolio();
+
+  if(syncOK) pushMarket(); else cacheMarketLocally();
 }
 
 document.getElementById('buyBtn').addEventListener('click', () => {
@@ -870,7 +892,18 @@ document.getElementById('buyBtn').addEventListener('click', () => {
   if(cost > portfolio.cash){ msgEl.textContent = "You can't afford that, champ."; return; }
   portfolio.cash -= cost; portfolio.held += qty;
   portfolio.trades.push({ type:'buy', qty, price: currentPrice, time: new Date().toLocaleString() });
-  savePortfolio(portfolio); renderPortfolio(); renderHistory();
+  savePortfolio(portfolio);
+
+  // buying actually pushes the price up (simple market-impact model), and broadcasts it to everyone else
+  const impact = Math.min(0.25, (qty * currentPrice) / 4000);
+  market.price = currentPrice * (1 + impact);
+  market.momentum += impact * 0.5;
+  market.history.push({ price: market.price, t: Date.now() });
+  if(market.history.length > 150) market.history.shift();
+  market.updatedAt = Date.now();
+  currentPrice = market.price; priceHistory = market.history;
+
+  renderPortfolio(); renderHistory(); updatePriceDisplays(); drawChart(); pushMarket();
   msgEl.textContent = `Bought ${qty} $WEST for $${cost.toFixed(2)}.`;
 });
 document.getElementById('sellBtn').addEventListener('click', () => {
@@ -880,11 +913,22 @@ document.getElementById('sellBtn').addEventListener('click', () => {
   const proceeds = qty*currentPrice;
   portfolio.cash += proceeds; portfolio.held -= qty;
   portfolio.trades.push({ type:'sell', qty, price: currentPrice, time: new Date().toLocaleString() });
-  savePortfolio(portfolio); renderPortfolio(); renderHistory();
+  savePortfolio(portfolio);
+
+  // selling actually pushes the price down, and broadcasts it to everyone else
+  const impact = Math.min(0.25, (qty * currentPrice) / 4000);
+  market.price = currentPrice * (1 - impact);
+  market.momentum -= impact * 0.5;
+  market.history.push({ price: market.price, t: Date.now() });
+  if(market.history.length > 150) market.history.shift();
+  market.updatedAt = Date.now();
+  currentPrice = market.price; priceHistory = market.history;
+
+  renderPortfolio(); renderHistory(); updatePriceDisplays(); drawChart(); pushMarket();
   msgEl.textContent = `Sold ${qty} $WEST for $${proceeds.toFixed(2)}.`;
 });
 document.getElementById('resetBtn').addEventListener('click', () => {
-  if(!confirm('Reset your portfolio back to $1000 cash?')) return;
+  if(!confirm('Reset your portfolio back to $1000 cash? (This only resets your own cash/holdings, not the shared market price.)')) return;
   portfolio = { cash:1000, held:0, trades:[] };
   savePortfolio(portfolio); renderPortfolio(); renderHistory();
   msgEl.textContent = 'Portfolio reset.';
@@ -893,7 +937,8 @@ document.getElementById('miniInvest').addEventListener('click', () => goToRegion
 
 window.addEventListener('resize', drawChart);
 updatePriceDisplays(); renderPortfolio(); renderHistory(); drawChart();
-setInterval(tickPrice, 1200); // market "ticks" ~every 1.2s for a denser, smoother line
+pullAndAdvanceMarket();
+setInterval(pullAndAdvanceMarket, SYNC_INTERVAL); // only runs while this page is actually open
 
 /* ================= Databook dropdown ================= */
 const databookToggle = document.getElementById('databookToggle');
