@@ -1001,7 +1001,6 @@ window.addEventListener('pointerup', () => {
 // back to a local-only simulation so the page still works.
 const STORAGE_KEY = 'mrwestcoin_portfolio';
 const TICK_INTERVAL = 2000;      // how often the market moves
-const MAX_CATCHUP_TICKS = 5;     // capped low so reconnecting after a while can't cause a wild swing
 const MAX_HISTORY_POINTS = 300;  // ~10 minutes of dense history at the tick rate above
 
 function loadPortfolio(){
@@ -1154,25 +1153,55 @@ function drawChart(){
     ctx.fillText('$' + v.toFixed(2), LEFT_PAD - 6, y);
   }
 
-  ctx.beginPath();
-  ctx.strokeStyle = '#d97a3f';
-  ctx.lineWidth = 1.6;
-  ctx.lineJoin = 'round';
-  points.forEach((p, i) => {
-    const x = xOf(i), y = yOf(p.price);
-    if(i === 0){ ctx.moveTo(x, y); }
-    else{
-      const prevX = xOf(i-1), prevY = yOf(points[i-1].price);
-      const midX = (prevX + x) / 2, midY = (prevY + y) / 2;
-      ctx.quadraticCurveTo(prevX, prevY, midX, midY);
-    }
-  });
-  const lastX = xOf(points.length-1), lastY = yOf(points[points.length-1].price);
-  ctx.lineTo(lastX, lastY);
-  ctx.stroke();
+  // draw the line as a sequence of segments, switching style whenever we cross a
+  // closed/live boundary — this is what actually renders the "market closed" bridge distinctly
+  let segStart = 0;
+  for(let i = 1; i <= points.length; i++){
+    const boundary = i === points.length || !!points[i].closed !== !!points[segStart].closed;
+    if(!boundary) continue;
+    const segPoints = points.slice(segStart, i);
+    const isClosed = !!points[segStart].closed;
+    ctx.beginPath();
+    ctx.strokeStyle = isClosed ? 'rgba(168,150,120,0.55)' : '#d97a3f';
+    ctx.lineWidth = isClosed ? 1.3 : 1.6;
+    ctx.lineJoin = 'round';
+    ctx.setLineDash(isClosed ? [5, 4] : []);
+    segPoints.forEach((p, j) => {
+      const gi = segStart + j;
+      const x = xOf(gi), y = yOf(p.price);
+      if(j === 0){ ctx.moveTo(x, y); }
+      else{
+        const prevX = xOf(gi-1), prevY = yOf(points[gi-1].price);
+        const midX = (prevX + x) / 2, midY = (prevY + y) / 2;
+        ctx.quadraticCurveTo(prevX, prevY, midX, midY);
+      }
+    });
+    // connect to the first point of the next segment so there's no visible gap at the boundary
+    if(i < points.length){ ctx.lineTo(xOf(i), yOf(points[i].price)); }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    segStart = i;
+  }
 
+  // "Market Closed" label centered under any closed stretch
+  const closedIdxs = points.map((p,i) => p.closed ? i : -1).filter(i => i >= 0);
+  if(closedIdxs.length > 0){
+    const midIdx = closedIdxs[Math.floor(closedIdxs.length/2)];
+    const labelX = xOf(midIdx);
+    ctx.font = '9px Courier New, monospace';
+    ctx.fillStyle = 'rgba(168,150,120,0.85)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('MARKET CLOSED', Math.min(Math.max(labelX, LEFT_PAD+50), cssW-RIGHT_PAD-50), TOP_PAD + plotH/2);
+  }
+
+  const lastX = xOf(points.length-1), lastY = yOf(points[points.length-1].price);
+
+  ctx.beginPath();
+  ctx.moveTo(lastX, lastY);
   ctx.lineTo(lastX, TOP_PAD + plotH);
   ctx.lineTo(LEFT_PAD, TOP_PAD + plotH);
+  ctx.lineTo(xOf(0), yOf(points[0].price));
   ctx.closePath();
   ctx.fillStyle = 'rgba(217,122,63,0.08)';
   ctx.fill();
@@ -1393,7 +1422,7 @@ function updatePriceDisplays(){
   miniChangeEl.textContent = changeText; miniChangeEl.className = 'change ' + (isUp?'up':'down');
 }
 
-function advanceOneTick(m){
+function advanceOneTick(m, closed){
   m.fairValue *= (1 + (Math.random() - 0.5) * 0.01);
   const volShock = Math.abs((Math.random() - 0.5)) * 0.03;
   m.vol = Math.min(0.06, Math.max(0.004, m.vol * 0.85 + volShock * 0.15));
@@ -1402,8 +1431,34 @@ function advanceOneTick(m){
   const reversion = (m.fairValue - m.price) / m.price * 0.03;
   const spike = Math.random() < 0.03 ? (Math.random() - 0.5) * 0.12 : 0;
   m.price = Math.max(0.01, m.price * (1 + m.momentum + reversion + spike));
-  m.history.push({ price: m.price, t: Date.now() });
+  const point = { price: m.price, t: Date.now() };
+  if(closed) point.closed = true; // tags this as a "market was closed" synthetic bridge point
+  m.history.push(point);
   if(m.history.length > MAX_HISTORY_POINTS) m.history.shift();
+}
+
+// If nobody had the page open for a while, instead of one abrupt jump (or a flat line), simulate
+// a believable "what would have happened" path across the whole gap and tag those points as
+// closed — the chart then renders that stretch greyed out with a "Market Closed" label, rather
+// than pretending the market secretly kept ticking in real time while no one was watching.
+const CLOSED_GAP_THRESHOLD = TICK_INTERVAL * 3;
+const CLOSED_BRIDGE_POINTS = 40; // how many synthetic points span the closed gap, regardless of how long it actually was
+
+function applyCatchup(m){
+  const now = Date.now();
+  const elapsed = m.updatedAt ? now - m.updatedAt : TICK_INTERVAL;
+  if(elapsed <= CLOSED_GAP_THRESHOLD){
+    advanceOneTick(m, false);
+  } else {
+    const startT = m.updatedAt || (now - elapsed);
+    const stepMs = elapsed / CLOSED_BRIDGE_POINTS;
+    for(let i = 1; i <= CLOSED_BRIDGE_POINTS; i++){
+      advanceOneTick(m, true);
+      m.history[m.history.length - 1].t = Math.round(startT + stepMs * i); // spread evenly across the real gap
+    }
+  }
+  m.updatedAt = now;
+  return m;
 }
 
 function applyMarketUpdate(m){
@@ -1433,18 +1488,15 @@ if(db){
   setInterval(() => {
     const elapsed = market.updatedAt ? Date.now() - market.updatedAt : TICK_INTERVAL;
     if(elapsed < TICK_INTERVAL * 0.9) return; // someone else just ticked — let their write arrive
-    const ticksOwed = Math.min(MAX_CATCHUP_TICKS, Math.max(1, Math.round(elapsed / TICK_INTERVAL)));
-    const next = JSON.parse(JSON.stringify(market));
-    for(let i = 0; i < ticksOwed; i++) advanceOneTick(next);
-    next.updatedAt = Date.now();
+    const next = applyCatchup(JSON.parse(JSON.stringify(market)));
     db.ref('market/state').set(next).catch(() => {});
   }, TICK_INTERVAL);
 } else {
   // no Firebase — fall back to a purely local simulation so the page still works
   syncOK = false;
-  applyMarketUpdate(market);
+  applyMarketUpdate(applyCatchup(market));
   setInterval(() => {
-    advanceOneTick(market);
+    applyCatchup(market);
     applyMarketUpdate(market);
   }, TICK_INTERVAL);
 }
