@@ -93,7 +93,25 @@
   .price-row .price{ font-size:2.4rem; font-weight:700; }
   .price-row .change{ font-size:0.95rem; }
   .change.up{ color: var(--gain); } .change.down{ color: var(--danger); }
-  .chart-wrap{ margin: 1rem 0 0.5rem; border:1px solid var(--line); background: rgba(0,0,0,0.2); cursor: grab; contain: layout paint; }
+  .chart-row{ display:flex; gap:0.7rem; align-items:stretch; margin: 1rem 0 0.5rem; }
+  .chart-wrap{ flex:1; margin:0; border:1px solid var(--line); background: rgba(0,0,0,0.2); cursor: grab; contain: layout paint; position:relative; min-width:0; }
+
+  .analysis-tools{ display:flex; flex-direction:column; gap:0.4rem; width:76px; flex-shrink:0; }
+  .tool-btn{
+    background: var(--paper-2); border:1px solid var(--line); color: var(--muted); font-family:inherit;
+    font-size:0.65rem; letter-spacing:0.02em; text-transform:uppercase; padding:0.55rem 0.3rem;
+    border-radius:3px; cursor:pointer; transition: all 0.15s ease;
+  }
+  .tool-btn:hover{ color: var(--rust-2); border-color: var(--rust-2); }
+  .tool-btn.active{ background: var(--rust); color: var(--ink); border-color: var(--rust-2); }
+
+  .chart-hover-tooltip{
+    display:none; position:absolute; z-index:20; pointer-events:none;
+    background: var(--paper-2); border:1px solid var(--rust-2); border-radius:3px;
+    padding:0.35rem 0.6rem; font-size:0.68rem; color: var(--ink); white-space:nowrap;
+    box-shadow: 0 6px 14px rgba(0,0,0,0.5);
+  }
+  .chart-hover-tooltip.show{ display:block; }
   .chart-wrap.grabbing{ cursor: grabbing; }
   canvas#chart{ width:100%; height:230px; display:block; }
   .brush-wrap{
@@ -496,13 +514,23 @@
       </div>
     </div>
 
-    <div class="region" id="region-coin" data-role="satellite">
+    <div class="region wide" id="region-coin" data-role="satellite">
       <div class="region-inner">
         <div class="coin-title">MrWestCoin Exchange</div>
         <div class="coin-ticker">$WEST — Not real. Not FDIC insured. Not anything.</div>
         <div class="price-row"><span class="price" id="price">$--.--</span><span class="change" id="change">loading...</span></div>
-        <div class="chart-wrap">
-          <canvas id="chart"></canvas>
+        <div class="chart-row">
+          <div class="chart-wrap">
+            <canvas id="chart"></canvas>
+            <div class="chart-hover-tooltip" id="chartHoverTip"></div>
+          </div>
+          <div class="analysis-tools" id="analysisTools">
+            <button class="tool-btn" data-tool="avg" title="Average — the mean price across whatever's currently visible on the chart.">Avg</button>
+            <button class="tool-btn" data-tool="trend" title="Trend — a straight best-fit line through the visible data, showing overall direction and slope.">Trend</button>
+            <button class="tool-btn" data-tool="highlow" title="High / Low — marks the highest and lowest price reached within the visible range.">Hi/Lo</button>
+            <button class="tool-btn" data-tool="vol" title="Volatility — how much the price is swinging (standard deviation) within the visible range.">Vol</button>
+            <button class="tool-btn" data-tool="bands" title="Bollinger-style bands — the average plus/minus one standard deviation, a common range-of-normal-movement indicator.">Bands</button>
+          </div>
         </div>
         <div class="brush-wrap">
           <canvas id="brushChart"></canvas>
@@ -599,6 +627,13 @@ if(FIREBASE_CONFIGURED){
     firebase.initializeApp(firebaseConfig);
     db = firebase.database();
   } catch(e){ db = null; }
+}
+
+// stable per-browser ID, used both to back up this player's portfolio and to identify them on the leaderboard
+let investorId = localStorage.getItem('mrwestcoin_investor_id');
+if(!investorId){
+  investorId = 'inv_' + Math.random().toString(36).slice(2, 10);
+  localStorage.setItem('mrwestcoin_investor_id', investorId);
 }
 
 /* ================= RADIAL AUTO-LAYOUT ================= */
@@ -1015,8 +1050,32 @@ function loadPortfolio(){
   }
   return p;
 }
-function savePortfolio(p){ localStorage.setItem(STORAGE_KEY, JSON.stringify(p)); }
+function savePortfolio(p){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
+  if(db && investorId){
+    // this is what stops the stock you bought from disappearing — cash AND lots are backed up,
+    // not just the computed leaderboard number, so it survives a cleared cache or a new device
+    db.ref('players/' + investorId).set({
+      cash: p.cash, lots: p.lots, trades: p.trades.slice(-200), updatedAt: Date.now()
+    }).catch(() => {});
+  }
+}
 let portfolio = loadPortfolio();
+
+if(db && investorId){
+  db.ref('players/' + investorId).once('value').then(snap => {
+    const remote = snap.val();
+    if(remote){
+      // a backed-up copy exists — restore it (this is the source of truth for cash/holdings)
+      portfolio = { cash: remote.cash, lots: remote.lots || [], trades: remote.trades || [] };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio));
+    } else {
+      // nothing backed up yet for this browser — push what we have now so it's protected going forward
+      savePortfolio(portfolio);
+    }
+    renderPortfolio(); renderHistory(); renderLots(); drawChart();
+  }).catch(() => {});
+}
 
 let market = JSON.parse(localStorage.getItem('mrwestcoin_market_cache') || 'null') || {
   price: 12.50, history: [{ price: 12.50, t: Date.now() }],
@@ -1033,6 +1092,47 @@ const msgEl = document.getElementById('msg'), historyListEl = document.getElemen
 const qtyInput = document.getElementById('qty');
 const canvas = document.getElementById('chart'), ctx = canvas.getContext('2d');
 const chartWrap = document.querySelector('.chart-wrap');
+
+/* --- analysis tools: click to toggle an overlay, hover a button to see what it does --- */
+const activeTools = new Set();
+document.querySelectorAll('.tool-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tool = btn.dataset.tool;
+    if(activeTools.has(tool)){ activeTools.delete(tool); btn.classList.remove('active'); }
+    else{ activeTools.add(tool); btn.classList.add('active'); }
+    drawChart();
+  });
+});
+
+/* --- hover over the chart to see the value at that point (crosshair tooltip) --- */
+let lastChartGeometry = null;
+const chartHoverTip = document.getElementById('chartHoverTip');
+
+canvas.addEventListener('pointermove', (e) => {
+  if(chartDragging || !lastChartGeometry) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const { points, xOf, LEFT_PAD, RIGHT_PAD, cssW } = lastChartGeometry;
+  if(mx < LEFT_PAD || mx > cssW - RIGHT_PAD || points.length === 0){
+    chartHoverTip.classList.remove('show');
+    return;
+  }
+  // find nearest data point to the cursor's x position
+  let nearestIdx = 0, nearestDist = Infinity;
+  points.forEach((p, i) => {
+    const d = Math.abs(xOf(i) - mx);
+    if(d < nearestDist){ nearestDist = d; nearestIdx = i; }
+  });
+  const p = points[nearestIdx];
+  chartHoverTip.textContent = '$' + p.price.toFixed(2) + '  ·  ' + new Date(p.t).toLocaleTimeString([], { hour:'numeric', minute:'2-digit', second:'2-digit' }) + (p.closed ? '  (market closed)' : '');
+  const tipX = Math.min(Math.max(xOf(nearestIdx), 60), cssW - 60);
+  chartHoverTip.style.left = tipX + 'px';
+  chartHoverTip.style.top = '6px';
+  chartHoverTip.style.transform = 'translateX(-50%)';
+  chartHoverTip.classList.add('show');
+});
+canvas.addEventListener('pointerleave', () => chartHoverTip.classList.remove('show'));
+
 const jumpLiveBtn = document.getElementById('jumpLive');
 
 function cacheMarketLocally(){ localStorage.setItem('mrwestcoin_market_cache', JSON.stringify(market)); }
@@ -1161,6 +1261,7 @@ function drawChart(){
     if(!boundary) continue;
     const segPoints = points.slice(segStart, i);
     const isClosed = !!points[segStart].closed;
+
     ctx.beginPath();
     ctx.strokeStyle = isClosed ? 'rgba(168,150,120,0.55)' : '#d97a3f';
     ctx.lineWidth = isClosed ? 1.3 : 1.6;
@@ -1180,6 +1281,17 @@ function drawChart(){
     if(i < points.length){ ctx.lineTo(xOf(i), yOf(points[i].price)); }
     ctx.stroke();
     ctx.setLineDash([]);
+
+    // fill under THIS segment only — never under the closed bridge, so there's no stray tint there
+    if(!isClosed){
+      const segEndIdx = i < points.length ? i : points.length - 1;
+      ctx.lineTo(xOf(segEndIdx), TOP_PAD + plotH);
+      ctx.lineTo(xOf(segStart), TOP_PAD + plotH);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(217,122,63,0.08)';
+      ctx.fill();
+    }
+
     segStart = i;
   }
 
@@ -1196,15 +1308,6 @@ function drawChart(){
   }
 
   const lastX = xOf(points.length-1), lastY = yOf(points[points.length-1].price);
-
-  ctx.beginPath();
-  ctx.moveTo(lastX, lastY);
-  ctx.lineTo(lastX, TOP_PAD + plotH);
-  ctx.lineTo(LEFT_PAD, TOP_PAD + plotH);
-  ctx.lineTo(xOf(0), yOf(points[0].price));
-  ctx.closePath();
-  ctx.fillStyle = 'rgba(217,122,63,0.08)';
-  ctx.fill();
 
   if(currentWindow().live){
     ctx.beginPath();
@@ -1241,6 +1344,86 @@ function drawChart(){
       ctx.fillText(label, cssW - RIGHT_PAD - labelW/2, y);
     });
   }
+
+  // --- analysis tool overlays ---
+  const meanPrice = prices.reduce((a,b) => a+b, 0) / prices.length;
+  const variance = prices.reduce((a,b) => a + (b-meanPrice)*(b-meanPrice), 0) / prices.length;
+  const stdDev = Math.sqrt(variance);
+
+  if(activeTools.has('avg')){
+    ctx.beginPath();
+    ctx.strokeStyle = '#5aa9f0';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2,3]);
+    ctx.moveTo(LEFT_PAD, yOf(meanPrice));
+    ctx.lineTo(cssW - RIGHT_PAD, yOf(meanPrice));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#5aa9f0';
+    ctx.font = '9px Courier New, monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('avg $' + meanPrice.toFixed(2), LEFT_PAD + 4, yOf(meanPrice) - 2);
+  }
+
+  if(activeTools.has('bands') && stdDev > 0){
+    ctx.fillStyle = 'rgba(90,169,240,0.08)';
+    ctx.fillRect(LEFT_PAD, yOf(meanPrice+stdDev), plotW, yOf(meanPrice-stdDev)-yOf(meanPrice+stdDev));
+    [meanPrice+stdDev, meanPrice-stdDev].forEach(v => {
+      ctx.beginPath();
+      ctx.strokeStyle = 'rgba(90,169,240,0.4)';
+      ctx.lineWidth = 1;
+      ctx.moveTo(LEFT_PAD, yOf(v));
+      ctx.lineTo(cssW - RIGHT_PAD, yOf(v));
+      ctx.stroke();
+    });
+  }
+
+  if(activeTools.has('trend') && points.length >= 2){
+    // simple linear regression over the visible points
+    const n = points.length;
+    let sumX=0,sumY=0,sumXY=0,sumXX=0;
+    points.forEach((p,i) => { sumX+=i; sumY+=p.price; sumXY+=i*p.price; sumXX+=i*i; });
+    const slope = (n*sumXY - sumX*sumY) / (n*sumXX - sumX*sumX || 1);
+    const intercept = (sumY - slope*sumX) / n;
+    const y0 = intercept, y1 = intercept + slope*(n-1);
+    ctx.beginPath();
+    ctx.strokeStyle = slope >= 0 ? '#4fae5c' : '#c23b3b';
+    ctx.lineWidth = 1.4;
+    ctx.moveTo(LEFT_PAD, yOf(y0));
+    ctx.lineTo(cssW - RIGHT_PAD, yOf(y1));
+    ctx.stroke();
+  }
+
+  if(activeTools.has('highlow')){
+    const maxP = Math.max(...prices), minP = Math.min(...prices);
+    [{v:maxP,c:'#4fae5c',label:'high'},{v:minP,c:'#c23b3b',label:'low'}].forEach(h => {
+      ctx.beginPath();
+      ctx.strokeStyle = h.c;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2,3]);
+      ctx.moveTo(LEFT_PAD, yOf(h.v));
+      ctx.lineTo(cssW - RIGHT_PAD, yOf(h.v));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = h.c;
+      ctx.font = '9px Courier New, monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(h.label + ' $' + h.v.toFixed(2), LEFT_PAD + 4, yOf(h.v) - 2);
+    });
+  }
+
+  if(activeTools.has('vol')){
+    ctx.fillStyle = 'rgba(244,236,216,0.8)';
+    ctx.font = '10px Courier New, monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillText('σ $' + stdDev.toFixed(3), cssW - RIGHT_PAD - 4, TOP_PAD + 4);
+  }
+
+  // stash geometry so the hover handler can map a mouse x back to a data point
+  lastChartGeometry = { points, xOf, yOf, LEFT_PAD, RIGHT_PAD, TOP_PAD, plotW, plotH, cssW, cssH };
 
   drawBrush();
 }
@@ -1977,11 +2160,6 @@ const nameMsg = document.getElementById('nameMsg');
 const leaderboardListEl = document.getElementById('leaderboardList');
 const lbStatus = document.getElementById('lbStatus');
 
-let investorId = localStorage.getItem('mrwestcoin_investor_id');
-if(!investorId){
-  investorId = 'inv_' + Math.random().toString(36).slice(2, 10);
-  localStorage.setItem('mrwestcoin_investor_id', investorId);
-}
 let investorName = localStorage.getItem('mrwestcoin_investor_name') || '';
 nameInput.value = investorName;
 
