@@ -157,18 +157,6 @@
   .profit-popup.profit{ color: var(--gain); }
   .profit-popup.loss{ color: var(--danger); }
   .profit-popup.rise{ transform: translate(-50%, -64px); opacity: 0; }
-  .reset-link{ display:block; text-align:center; margin-top:0.8rem; color: var(--muted); font-size:0.6rem; text-decoration:underline; cursor:pointer; background:none; border:none; font-family:inherit; }
-  .reset-confirm-wrap{
-    display:none; align-items:center; justify-content:center; gap:0.6rem; margin-top:0.8rem;
-    font-size:0.62rem; color: var(--muted); flex-wrap:wrap;
-  }
-  .reset-confirm-btn{
-    background: var(--paper-2); border:1px solid var(--line); color: var(--muted); font-family:inherit;
-    font-size:0.6rem; text-transform:uppercase; letter-spacing:0.04em; padding:0.35rem 0.7rem;
-    border-radius:3px; cursor:pointer;
-  }
-  .reset-confirm-btn.danger{ border-color: var(--danger); color: var(--danger); }
-  .reset-confirm-btn.danger:hover{ background: var(--danger); color: var(--ink); }
 
   /* ---------- Widgets LOCKED to the poster (world-space, pan/zoom with it) ---------- */
   #posterCoin{
@@ -539,12 +527,6 @@
 
         <div class="section-label">Transaction History</div>
         <div class="history" id="historyList"><div class="empty-history">No trades yet.</div></div>
-        <button class="reset-link" id="resetReveal">Reset portfolio</button>
-        <div class="reset-confirm-wrap" id="resetConfirmWrap">
-          <span>Really reset your cash &amp; holdings?</span>
-          <button class="reset-confirm-btn danger" id="resetConfirm">Yes, reset</button>
-          <button class="reset-confirm-btn" id="resetCancel">Cancel</button>
-        </div>
         <button class="nav-btn" data-goto="region-leaderboard" style="margin-top:0.8rem;">View Leaderboard</button>
         <button class="nav-btn" data-goto="region-index" style="margin-top:0.6rem;">Back to the board</button>
       </div>
@@ -680,13 +662,17 @@ function getRegionBounds(id){
     minY: el.offsetTop - REGION_PAD, maxY: el.offsetTop + el.offsetHeight + REGION_PAD,
   };
 }
-function clamp(c, bounds){
+function clampScaleForBounds(scale, bounds){
   const vw = viewport.clientWidth, vh = viewport.clientHeight;
   const boundsW = bounds.maxX - bounds.minX, boundsH = bounds.maxY - bounds.minY;
+  const dynamicMin = Math.max(MIN_SCALE, vw / boundsW, vh / boundsH);
+  return Math.min(MAX_SCALE, Math.max(dynamicMin, scale));
+}
+function clamp(c, bounds){
+  const vw = viewport.clientWidth, vh = viewport.clientHeight;
   // never allow zooming out further than what's needed to fill the viewport with
   // THIS region's own bounds box — otherwise neighboring regions become visible.
-  const dynamicMin = Math.max(MIN_SCALE, vw / boundsW, vh / boundsH);
-  c.scale = Math.min(MAX_SCALE, Math.max(dynamicMin, c.scale));
+  c.scale = clampScaleForBounds(c.scale, bounds);
   const minX = vw - bounds.maxX*c.scale, maxX = -bounds.minX*c.scale;
   const minY = vh - bounds.maxY*c.scale, maxY = -bounds.minY*c.scale;
   c.x = Math.min(maxX, Math.max(minX, c.x));
@@ -718,10 +704,17 @@ function tick(){
       velocity.x *= FRICTION; velocity.y *= FRICTION;
       clamp(target, getRegionBounds(activeRegionId));
     }
-    cam.x += (target.x - cam.x) * LERP;
-    cam.y += (target.y - cam.y) * LERP;
-    cam.scale += (target.scale - cam.scale) * LERP;
-    applyTransform();
+    // once cam has essentially caught up to target, stop touching the transform every frame —
+    // this is the single biggest idle-CPU win, since a static page was still writing to the
+    // DOM transform 60x/sec even when nothing was actually moving
+    const dx = target.x - cam.x, dy = target.y - cam.y, ds = target.scale - cam.scale;
+    const settled = Math.abs(dx) < 0.05 && Math.abs(dy) < 0.05 && Math.abs(ds) < 0.0005;
+    if(!settled){
+      cam.x += dx * LERP;
+      cam.y += dy * LERP;
+      cam.scale += ds * LERP;
+      applyTransform();
+    }
   }
   requestAnimationFrame(tick);
 }
@@ -777,11 +770,18 @@ function dismissCookieBanner(){
 }
 document.getElementById('cookieAccept').addEventListener('click', dismissCookieBanner);
 document.getElementById('cookieReject').addEventListener('click', dismissCookieBanner);
+// One debounced resize handler instead of several separate listeners each firing on every
+// single resize event — a window drag-resize fires dozens of these per second otherwise.
+let resizeDebounceTimer = null;
 window.addEventListener('resize', () => {
-  layoutRegions();
-  cam = centerOnRegion(activeRegionId);
-  target = { ...cam };
-  positionVideoPopup();
+  clearTimeout(resizeDebounceTimer);
+  resizeDebounceTimer = setTimeout(() => {
+    layoutRegions();
+    cam = centerOnRegion(activeRegionId);
+    target = { ...cam };
+    positionVideoPopup();
+    drawChart();
+  }, 120);
 });
 
 let dragHistory = [];
@@ -825,9 +825,11 @@ viewport.addEventListener('wheel', (e) => {
     const worldX = (mx - target.x)/target.scale, worldY = (my - target.y)/target.scale;
     // exponential response gives a smooth continuous feel instead of a fixed 6% jump per event
     const zoomFactor = Math.exp(-e.deltaY * 0.012);
-    const newScale = target.scale * zoomFactor;
-    target.scale = newScale;
-    target.x = mx - worldX*newScale; target.y = my - worldY*newScale;
+    // clamp the scale FIRST, then compute position off the clamped value — otherwise, right at
+    // the zoom limits, the position math and the final clamped scale disagree and the view snaps
+    const clampedScale = clampScaleForBounds(target.scale * zoomFactor, getRegionBounds(activeRegionId));
+    target.scale = clampedScale;
+    target.x = mx - worldX*clampedScale; target.y = my - worldY*clampedScale;
   } else {
     // plain scroll / two-finger swipe — pan in both directions, matching the swipe direction 1:1
     target.x -= e.deltaX;
@@ -938,7 +940,6 @@ window.addEventListener('pointerup', () => {
   draggingPopup = false;
   localStorage.setItem('lasPopupPos', JSON.stringify(popupPos));
 });
-window.addEventListener('resize', positionVideoPopup);
 
 
 
@@ -1456,25 +1457,7 @@ function sellLot(lotId, btnEl){
   msgEl.textContent = `Sold #${lotId} for $${netProceeds.toFixed(2)} (after tax) — ${pl>=0?'profit':'loss'} of $${Math.abs(pl).toFixed(2)}.`;
 }
 
-document.getElementById('resetReveal').addEventListener('click', () => {
-  document.getElementById('resetReveal').style.display = 'none';
-  document.getElementById('resetConfirmWrap').style.display = 'flex';
-});
-document.getElementById('resetCancel').addEventListener('click', () => {
-  document.getElementById('resetConfirmWrap').style.display = 'none';
-  document.getElementById('resetReveal').style.display = 'block';
-});
-document.getElementById('resetConfirm').addEventListener('click', () => {
-  portfolio = { cash:1000, lots:[], nextLotId:1, trades:[] };
-  savePortfolio(portfolio); renderPortfolio(); renderHistory(); renderLots(); drawChart();
-  document.getElementById('resetConfirmWrap').style.display = 'none';
-  document.getElementById('resetReveal').style.display = 'block';
-  msgEl.textContent = 'Portfolio reset.';
-});
-
 document.getElementById('miniInvest').addEventListener('click', () => goToRegion('region-coin'));
-
-window.addEventListener('resize', drawChart);
 
 
 
