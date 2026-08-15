@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const DATA_PATH = path.join(__dirname, '..', '..', 'market-data.json');
-const TICK_INTERVAL_MS = 10 * 60 * 1000 * 2; // matches the cron schedule (every 10 minutes)
+const TICK_INTERVAL_MS = 10 * 60 * 1000 * 10; // matches the cron schedule (every 10 minutes)
 const MAX_HISTORY_POINTS = 1000;          // ~1000 * 10min = ~1 week of history
 const MAX_CATCHUP_TICKS = 15;             // safety cap if the workflow was paused for a while (kept modest so catch-up can't cause a wild swing)
 
