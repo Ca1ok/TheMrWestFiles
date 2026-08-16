@@ -1536,7 +1536,7 @@ brushCanvas.addEventListener('pointermove', (e) => {
   const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
   const x0 = ((w.start - earliestT) / (latestT - earliestT || 1)) * cssW;
   const x1 = ((w.end - earliestT) / (latestT - earliestT || 1)) * cssW;
-  const HANDLE_HIT = 16;
+  const HANDLE_HIT = 20;
   if(Math.abs(px - x0) <= HANDLE_HIT || Math.abs(px - x1) <= HANDLE_HIT){
     brushCanvas.style.cursor = 'ew-resize';
   } else if(px > x0 && px < x1){
@@ -1555,12 +1555,17 @@ brushWrap.addEventListener('pointerdown', (e) => {
   const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
   const x0 = ((w.start - earliestT) / (latestT - earliestT || 1)) * cssW;
   const x1 = ((w.end - earliestT) / (latestT - earliestT || 1)) * cssW;
-  const HANDLE_HIT = 16; // wide, easy-to-grab hit zone right at each gate
-  if(Math.abs(px - x0) <= HANDLE_HIT) brushMode = 'left';
-  else if(Math.abs(px - x1) <= HANDLE_HIT) brushMode = 'right';
+  const HANDLE_HIT = 20; // wide, easy-to-grab hit zone right at each gate
+  // whichever gate is CLOSER wins when a click is within reach of both (e.g. a narrow window) —
+  // previously any click that missed both exact hit-zones silently fell through to always
+  // grabbing the right gate, which is what made the left one feel unresponsive
+  const distToLeft = Math.abs(px - x0), distToRight = Math.abs(px - x1);
+  if(distToLeft <= HANDLE_HIT && distToLeft <= distToRight) brushMode = 'left';
+  else if(distToRight <= HANDLE_HIT) brushMode = 'right';
   else if(px > x0 + HANDLE_HIT && px < x1 - HANDLE_HIT) brushMode = 'move'; // clear gap between the gates and the pan zone
   else if(px > x0 && px < x1) brushMode = 'move'; // narrow windows: whatever's left between the gates is still pannable
-  else brushMode = 'right'; // clicking outside the window starts a fresh selection edge
+  else if(px < x0) brushMode = 'left'; // clicked outside the window, closer to the left edge — adjust that side
+  else brushMode = 'right'; // clicked outside the window, closer to the right edge — adjust that side
   brushDragStartX = e.clientX;
   brushDragStartWindow = w;
   brushWrap.classList.add('dragging');
