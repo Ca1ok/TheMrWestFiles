@@ -1182,7 +1182,14 @@ function currentWindow(){
   if(priceHistory.length === 0) return { start: 0, end: 0, live: true };
   const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
   if(viewStart === null || viewEnd === null){
-    return { start: Math.max(earliestT, Date.now() - 120000), end: Date.now(), live: true }; // trailing 2-minute live window, pinned to real time
+    const end = Date.now();
+    // the nominal trailing-2-minute start, BUT never so tight that it excludes the last 2 real
+    // points — that mismatch (points existing outside the window) was what broke rendering
+    // whenever the market hadn't ticked recently (e.g. right after a page load)
+    const nominalStart = Math.max(earliestT, end - 120000);
+    const mustInclude = priceHistory.length >= 2 ? priceHistory[priceHistory.length - 2].t : earliestT;
+    const start = Math.min(nominalStart, mustInclude);
+    return { start, end, live: true };
   }
   return { start: Math.max(earliestT, viewStart), end: Math.min(latestT, viewEnd), live: false };
 }
@@ -1190,9 +1197,7 @@ function currentWindow(){
 function visibleHistory(){
   if(priceHistory.length === 0) return [];
   const w = currentWindow();
-  let points = priceHistory.filter(p => p.t >= w.start && p.t <= w.end);
-  if(points.length < 2) points = priceHistory.slice(-2);
-  return points;
+  return priceHistory.filter(p => p.t >= w.start && p.t <= w.end);
 }
 function clampScroll(){
   jumpLiveBtn.classList.toggle('visible', viewStart !== null);
