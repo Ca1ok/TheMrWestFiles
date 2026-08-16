@@ -1120,12 +1120,12 @@ canvas.addEventListener('pointermove', (e) => {
   // find nearest data point to the cursor's x position
   let nearestIdx = 0, nearestDist = Infinity;
   points.forEach((p, i) => {
-    const d = Math.abs(xOf(p.t) - mx);
+    const d = Math.abs(xOf(i) - mx);
     if(d < nearestDist){ nearestDist = d; nearestIdx = i; }
   });
   const p = points[nearestIdx];
   chartHoverTip.textContent = '$' + p.price.toFixed(2) + '  ·  ' + new Date(p.t).toLocaleTimeString([], { hour:'numeric', minute:'2-digit', second:'2-digit' }) + (p.closed ? '  (market closed)' : '');
-  const tipX = Math.min(Math.max(xOf(p.t), 60), cssW - 60);
+  const tipX = Math.min(Math.max(xOf(nearestIdx), 60), cssW - 60);
   chartHoverTip.style.left = tipX + 'px';
   chartHoverTip.style.top = '6px';
   chartHoverTip.style.transform = 'translateX(-50%)';
@@ -1182,14 +1182,7 @@ function currentWindow(){
   if(priceHistory.length === 0) return { start: 0, end: 0, live: true };
   const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
   if(viewStart === null || viewEnd === null){
-    const end = Date.now();
-    // the nominal trailing-2-minute start, BUT never so tight that it excludes the last 2 real
-    // points — that mismatch (points existing outside the window) was what broke rendering
-    // whenever the market hadn't ticked recently (e.g. right after a page load)
-    const nominalStart = Math.max(earliestT, end - 120000);
-    const mustInclude = priceHistory.length >= 2 ? priceHistory[priceHistory.length - 2].t : earliestT;
-    const start = Math.min(nominalStart, mustInclude);
-    return { start, end, live: true };
+    return { start: Math.max(earliestT, latestT - 120000), end: latestT, live: true }; // trailing 2-minute live window
   }
   return { start: Math.max(earliestT, viewStart), end: Math.min(latestT, viewEnd), live: false };
 }
@@ -1197,7 +1190,9 @@ function currentWindow(){
 function visibleHistory(){
   if(priceHistory.length === 0) return [];
   const w = currentWindow();
-  return priceHistory.filter(p => p.t >= w.start && p.t <= w.end);
+  let points = priceHistory.filter(p => p.t >= w.start && p.t <= w.end);
+  if(points.length < 2) points = priceHistory.slice(-2);
+  return points;
 }
 function clampScroll(){
   jumpLiveBtn.classList.toggle('visible', viewStart !== null);
@@ -1226,20 +1221,19 @@ function drawChart(){
   const rawMin = Math.min(...prices), rawMax = Math.max(...prices);
   const pad = (rawMax - rawMin) * 0.12 || rawMax * 0.05 || 1;
   const min = rawMin - pad, max = rawMax + pad, range = (max - min) || 1;
-  const w = currentWindow();
   const yOf = v => TOP_PAD + plotH - ((v - min) / range) * plotH;
-  const xOf = t => LEFT_PAD + ((t - w.start) / ((w.end - w.start) || 1)) * plotW;
+  const xOf = i => LEFT_PAD + (i / (points.length - 1)) * plotW;
 
-  const spanMs = w.end - w.start;
+  const spanMs = points[points.length-1].t - points[0].t;
   const X_LABELS = 4;
   ctx.font = '9px Courier New, monospace';
   ctx.fillStyle = '#a89678';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   for(let x = 0; x <= X_LABELS; x++){
-    const labelT = w.start + (x / X_LABELS) * spanMs;
-    const px = xOf(labelT);
-    ctx.fillText(formatAxisTime(labelT, spanMs), Math.min(Math.max(px, LEFT_PAD+20), cssW-RIGHT_PAD-20), cssH - BOTTOM_PAD + 6);
+    const idx = Math.round((x / X_LABELS) * (points.length - 1));
+    const px = xOf(idx);
+    ctx.fillText(formatAxisTime(points[idx].t, spanMs), Math.min(Math.max(px, LEFT_PAD+20), cssW-RIGHT_PAD-20), cssH - BOTTOM_PAD + 6);
   }
 
   const GRID_LINES = 4;
@@ -1275,24 +1269,24 @@ function drawChart(){
     ctx.setLineDash(isClosed ? [5, 4] : []);
     segPoints.forEach((p, j) => {
       const gi = segStart + j;
-      const x = xOf(p.t), y = yOf(p.price);
+      const x = xOf(gi), y = yOf(p.price);
       if(j === 0){ ctx.moveTo(x, y); }
       else{
-        const prevX = xOf(points[gi-1].t), prevY = yOf(points[gi-1].price);
+        const prevX = xOf(gi-1), prevY = yOf(points[gi-1].price);
         const midX = (prevX + x) / 2, midY = (prevY + y) / 2;
         ctx.quadraticCurveTo(prevX, prevY, midX, midY);
       }
     });
     // connect to the first point of the next segment so there's no visible gap at the boundary
-    if(i < points.length){ ctx.lineTo(xOf(points[i].t), yOf(points[i].price)); }
+    if(i < points.length){ ctx.lineTo(xOf(i), yOf(points[i].price)); }
     ctx.stroke();
     ctx.setLineDash([]);
 
     // fill under THIS segment only — never under the closed bridge, so there's no stray tint there
     if(!isClosed){
       const segEndIdx = i < points.length ? i : points.length - 1;
-      ctx.lineTo(xOf(points[segEndIdx].t), TOP_PAD + plotH);
-      ctx.lineTo(xOf(points[segStart].t), TOP_PAD + plotH);
+      ctx.lineTo(xOf(segEndIdx), TOP_PAD + plotH);
+      ctx.lineTo(xOf(segStart), TOP_PAD + plotH);
       ctx.closePath();
       ctx.fillStyle = 'rgba(217,122,63,0.08)';
       ctx.fill();
@@ -1305,7 +1299,7 @@ function drawChart(){
   const closedIdxs = points.map((p,i) => p.closed ? i : -1).filter(i => i >= 0);
   if(closedIdxs.length > 0){
     const midIdx = closedIdxs[Math.floor(closedIdxs.length/2)];
-    const labelX = xOf(points[midIdx].t);
+    const labelX = xOf(midIdx);
     ctx.font = '9px Courier New, monospace';
     ctx.fillStyle = 'rgba(168,150,120,0.85)';
     ctx.textAlign = 'center';
@@ -1313,7 +1307,7 @@ function drawChart(){
     ctx.fillText('MARKET CLOSED', Math.min(Math.max(labelX, LEFT_PAD+50), cssW-RIGHT_PAD-50), TOP_PAD + plotH/2);
   }
 
-  const lastX = xOf(points[points.length-1].t), lastY = yOf(points[points.length-1].price);
+  const lastX = xOf(points.length-1), lastY = yOf(points[points.length-1].price);
 
   if(currentWindow().live){
     ctx.beginPath();
@@ -1533,22 +1527,8 @@ function brushPxToTime(px){
   const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
   return earliestT + (px / cssW) * (latestT - earliestT);
 }
-// The live window continuously slides forward (its end is real "now"), so if we let it keep
-// moving while the user is hovering over or about to click a handle, the handle drifts out from
-// under their cursor between "hover" and "click" — this is what caused clicks to snap to the
-// wrong spot. Freezing the window the instant the pointer enters the brush fixes it: the target
-// stops moving before any hit-testing happens, so what you see is exactly what you get.
-function freezeWindowIfLive(){
-  if(viewStart === null){
-    const w = currentWindow();
-    viewStart = w.start; viewEnd = w.end;
-    clampScroll();
-  }
-}
-brushCanvas.addEventListener('pointerenter', freezeWindowIfLive);
 brushCanvas.addEventListener('pointermove', (e) => {
   if(brushMode || priceHistory.length < 2) return; // don't fight the cursor mid-drag
-  freezeWindowIfLive();
   const rect = brushCanvas.getBoundingClientRect();
   const px = e.clientX - rect.left;
   const w = currentWindow();
@@ -1568,7 +1548,6 @@ brushCanvas.addEventListener('pointermove', (e) => {
 
 brushWrap.addEventListener('pointerdown', (e) => {
   if(priceHistory.length < 2) return;
-  freezeWindowIfLive();
   const rect = brushCanvas.getBoundingClientRect();
   const px = e.clientX - rect.left;
   const w = currentWindow();
