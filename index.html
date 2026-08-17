@@ -295,6 +295,43 @@
   .legend-item{ display:flex; align-items:center; gap:0.4rem; font-size:0.65rem; color: var(--muted); text-transform:uppercase; letter-spacing:0.05em; cursor:default; }
   .legend-swatch{ width:12px; height:12px; border:1px solid rgba(0,0,0,0.4); }
 
+  /* --- Compound Lab --- */
+  .lab-wrap{ display:flex; gap:0.8rem; align-items:flex-start; flex-wrap:wrap; }
+  .dropzone{
+    flex:1; min-width:220px; min-height:110px; border:2px dashed var(--line); border-radius:4px;
+    background: rgba(0,0,0,0.2); padding:0.9rem; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:0.6rem; transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .dropzone.drag-over{ border-color: var(--rust-2); background: rgba(217,122,63,0.08); }
+  .dropzone-hint{ font-size:0.7rem; color: var(--muted); text-align:center; }
+  .dropzone-chips{ display:flex; flex-wrap:wrap; gap:0.4rem; justify-content:center; }
+  .elem-chip{
+    display:flex; align-items:center; gap:0.35rem; background: var(--paper-2); border:1px solid var(--rust-2);
+    border-radius:3px; padding:0.3rem 0.5rem; font-size:0.8rem; color: var(--ink);
+  }
+  .elem-chip .chip-remove{ cursor:pointer; color: var(--danger); font-weight:700; font-size:0.7rem; }
+  .lab-actions{ display:flex; flex-direction:column; gap:0.5rem; flex-shrink:0; }
+
+  .drag-ghost{
+    position:fixed; z-index:500; pointer-events:none; width:42px; height:42px;
+    display:flex; align-items:center; justify-content:center; font-family:Georgia,serif; font-weight:700;
+    font-size:1rem; color:#1a1510; border:1px solid rgba(0,0,0,0.4); border-radius:3px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.6); transform: translate(-50%, -50%);
+  }
+
+  .compound-result{ margin-top:1rem; }
+  .compound-card{
+    border:1px solid var(--line); background: var(--paper-2); border-radius:4px; padding:1rem 1.2rem;
+  }
+  .compound-card .cc-formula{ font-family:Georgia,serif; font-size:1.4rem; color: var(--rust-2); margin-bottom:0.2rem; }
+  .compound-card .cc-name{ font-size:0.95rem; color: var(--ink); margin-bottom:0.6rem; }
+  .compound-card .cc-props{ display:grid; grid-template-columns: repeat(2, auto); gap:0.2rem 1.6rem; font-size:0.78rem; color: var(--muted); margin-bottom:0.6rem; }
+  .compound-card .cc-props b{ color: var(--ink); }
+  .compound-card .cc-desc{ font-size:0.8rem; color: var(--muted); line-height:1.6; border-top:1px dashed rgba(107,90,65,0.4); padding-top:0.6rem; }
+  .compound-card .cc-source{ font-size:0.6rem; color: var(--muted); opacity:0.7; margin-top:0.5rem; }
+  .compound-status{ font-size:0.8rem; color: var(--muted); text-align:center; padding:0.6rem; }
+  .compound-status.error{ color: var(--danger); }
+
   /* --- databook --- */
   .db-section{ border-bottom: 1px dashed rgba(107,90,65,0.4); }
   .db-head{
@@ -576,6 +613,23 @@
         <div id="ptable"></div>
         <div id="elemInfo"><span class="meta">Hover or click an element to see its details.</span></div>
         <div class="legend" id="legend"></div>
+
+        <div class="section-label" style="margin-top:1.8rem;">Compound Lab</div>
+        <div class="page-sub" style="margin-bottom:0.8rem;">Drag elements from the table above into the beaker to build a formula, then combine</div>
+
+        <div class="lab-wrap">
+          <div class="dropzone" id="compoundDropzone">
+            <span class="dropzone-hint" id="dropzoneHint">Drag element tiles here</span>
+            <div class="dropzone-chips" id="dropzoneChips"></div>
+          </div>
+          <div class="lab-actions">
+            <button class="nav-btn" id="combineBtn" style="margin:0;">Combine</button>
+            <button class="tool-btn" id="clearLabBtn">Clear</button>
+          </div>
+        </div>
+
+        <div class="compound-result" id="compoundResult"></div>
+
         <button class="nav-btn" data-goto="region-index" style="margin-top:1.6rem;">Back to the board</button>
       </div>
     </div>
@@ -1253,6 +1307,15 @@ function drawChart(){
     ctx.fillText('$' + v.toFixed(2), LEFT_PAD - 6, y);
   }
 
+  // Render the line/fill slightly wider than the visible plot area, then clip tightly to the
+  // exact plot rect — this way the edges always reach flush to the boundary with room to spare,
+  // instead of any sub-pixel rounding ever being able to leave a hairline gap the player would see.
+  const OVERDRAW = 4;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(LEFT_PAD, TOP_PAD, plotW, plotH);
+  ctx.clip();
+
   // draw the line as a sequence of segments, switching style whenever we cross a
   // closed/live boundary — this is what actually renders the "market closed" bridge distinctly
   let segStart = 0;
@@ -1266,13 +1329,18 @@ function drawChart(){
     ctx.strokeStyle = isClosed ? 'rgba(168,150,120,0.55)' : '#d97a3f';
     ctx.lineWidth = isClosed ? 1.3 : 1.6;
     ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
     ctx.setLineDash(isClosed ? [5, 4] : []);
     segPoints.forEach((p, j) => {
       const gi = segStart + j;
-      const x = xOf(gi), y = yOf(p.price);
+      // overdraw the very first/last point of the WHOLE chart a little past the edge, so the
+      // rounded line-cap always fully covers the boundary rather than potentially falling short
+      const overshoot = (gi === 0 ? -OVERDRAW : gi === points.length - 1 ? OVERDRAW : 0);
+      const x = xOf(gi) + overshoot, y = yOf(p.price);
       if(j === 0){ ctx.moveTo(x, y); }
       else{
-        const prevX = xOf(gi-1), prevY = yOf(points[gi-1].price);
+        const prevOvershoot = (gi-1 === 0 ? -OVERDRAW : 0);
+        const prevX = xOf(gi-1) + prevOvershoot, prevY = yOf(points[gi-1].price);
         const midX = (prevX + x) / 2, midY = (prevY + y) / 2;
         ctx.quadraticCurveTo(prevX, prevY, midX, midY);
       }
@@ -1285,8 +1353,10 @@ function drawChart(){
     // fill under THIS segment only — never under the closed bridge, so there's no stray tint there
     if(!isClosed){
       const segEndIdx = i < points.length ? i : points.length - 1;
-      ctx.lineTo(xOf(segEndIdx), TOP_PAD + plotH);
-      ctx.lineTo(xOf(segStart), TOP_PAD + plotH);
+      const endOvershoot = segEndIdx === points.length - 1 ? OVERDRAW : 0;
+      const startOvershoot = segStart === 0 ? -OVERDRAW : 0;
+      ctx.lineTo(xOf(segEndIdx) + endOvershoot, TOP_PAD + plotH);
+      ctx.lineTo(xOf(segStart) + startOvershoot, TOP_PAD + plotH);
       ctx.closePath();
       ctx.fillStyle = 'rgba(217,122,63,0.08)';
       ctx.fill();
@@ -1294,6 +1364,7 @@ function drawChart(){
 
     segStart = i;
   }
+  ctx.restore(); // drop the clip — everything drawn after this (labels, legend, etc.) is unaffected
 
   // "Market Closed" label centered under any closed stretch
   const closedIdxs = points.map((p,i) => p.closed ? i : -1).filter(i => i >= 0);
@@ -1546,6 +1617,8 @@ brushCanvas.addEventListener('pointermove', (e) => {
   }
 });
 
+let brushGrabOffsetMs = 0; // keeps the handle at a fixed offset from the cursor instead of snapping to it
+
 brushWrap.addEventListener('pointerdown', (e) => {
   if(priceHistory.length < 2) return;
   const rect = brushCanvas.getBoundingClientRect();
@@ -1556,16 +1629,23 @@ brushWrap.addEventListener('pointerdown', (e) => {
   const x0 = ((w.start - earliestT) / (latestT - earliestT || 1)) * cssW;
   const x1 = ((w.end - earliestT) / (latestT - earliestT || 1)) * cssW;
   const HANDLE_HIT = 20; // wide, easy-to-grab hit zone right at each gate
-  // whichever gate is CLOSER wins when a click is within reach of both (e.g. a narrow window) —
-  // previously any click that missed both exact hit-zones silently fell through to always
-  // grabbing the right gate, which is what made the left one feel unresponsive
   const distToLeft = Math.abs(px - x0), distToRight = Math.abs(px - x1);
-  if(distToLeft <= HANDLE_HIT && distToLeft <= distToRight) brushMode = 'left';
-  else if(distToRight <= HANDLE_HIT) brushMode = 'right';
-  else if(px > x0 + HANDLE_HIT && px < x1 - HANDLE_HIT) brushMode = 'move'; // clear gap between the gates and the pan zone
-  else if(px > x0 && px < x1) brushMode = 'move'; // narrow windows: whatever's left between the gates is still pannable
-  else if(px < x0) brushMode = 'left'; // clicked outside the window, closer to the left edge — adjust that side
-  else brushMode = 'right'; // clicked outside the window, closer to the right edge — adjust that side
+
+  // whichever gate is genuinely closer wins whenever a click is within reach of either —
+  // no fallback branch that silently favors one side over the other
+  if(distToLeft <= HANDLE_HIT || distToRight <= HANDLE_HIT){
+    brushMode = distToLeft <= distToRight ? 'left' : 'right';
+  } else if(px > x0 && px < x1){
+    brushMode = 'move';
+  } else {
+    brushMode = px < x0 ? 'left' : 'right';
+  }
+
+  const clickedT = brushPxToTime(px);
+  // remember exactly how far off-center the click was, so the handle doesn't jump to snap
+  // under the cursor the instant you grab it — it keeps the same relative offset all the way through
+  brushGrabOffsetMs = brushMode === 'left' ? w.start - clickedT : brushMode === 'right' ? w.end - clickedT : 0;
+
   brushDragStartX = e.clientX;
   brushDragStartWindow = w;
   brushWrap.classList.add('dragging');
@@ -1577,7 +1657,7 @@ window.addEventListener('pointermove', (e) => {
   const cssW = brushCanvas.offsetWidth;
   const rect = brushCanvas.getBoundingClientRect();
   const px = e.clientX - rect.left;
-  const t = Math.min(latestT, Math.max(earliestT, brushPxToTime(px)));
+  const t = Math.min(latestT, Math.max(earliestT, brushPxToTime(px) + brushGrabOffsetMs));
 
   if(brushMode === 'left'){
     viewStart = Math.min(t, brushDragStartWindow.end - MIN_WINDOW_MS);
@@ -1588,7 +1668,6 @@ window.addEventListener('pointermove', (e) => {
   } else if(brushMode === 'move'){
     const dxPx = e.clientX - brushDragStartX;
     const dxMs = (dxPx / cssW) * (latestT - earliestT);
-    const spanMs = brushDragStartWindow.end - brushDragStartWindow.start;
     let ns = brushDragStartWindow.start + dxMs, ne = brushDragStartWindow.end + dxMs;
     if(ns < earliestT){ ne += (earliestT - ns); ns = earliestT; }
     if(ne > latestT){ ns -= (ne - latestT); ne = latestT; }
@@ -1932,12 +2011,153 @@ function buildPeriodicTable(){
           </div>
         </div>`;
     });
+    setupElementDrag(cell);
   });
 
   renderLegend();
   applyPtFilter();
   applyPtColors();
 }
+
+/* ================= COMPOUND LAB ================= */
+// Dragging uses raw Pointer Events (not native HTML5 drag-and-drop, which barely works on
+// touchscreens) so the exact same code path handles mouse, trackpad, and touch identically.
+// Each element cell already lives inside the pan/zoomable world map, so the critical thing is
+// stopping the drag's pointerdown from ever reaching the camera's own pan listener — otherwise
+// starting a drag on an element would also start panning the whole board underneath it.
+const compoundCounts = {}; // symbol -> count
+let dragGhost = null;
+
+function setupElementDrag(cell){
+  cell.addEventListener('pointerdown', (e) => {
+    e.stopPropagation(); // critical: keeps the world-map camera from also starting a pan
+    const sym = cell.dataset.sym, cat = cell.dataset.cat;
+    let dragging = false;
+    const startX = e.clientX, startY = e.clientY;
+
+    function onMove(ev){
+      const dx = ev.clientX - startX, dy = ev.clientY - startY;
+      if(!dragging && Math.hypot(dx, dy) > 6){
+        dragging = true;
+        dragGhost = document.createElement('div');
+        dragGhost.className = 'drag-ghost';
+        dragGhost.textContent = sym;
+        dragGhost.style.background = CATEGORY_COLORS[cat];
+        document.body.appendChild(dragGhost);
+      }
+      if(dragging && dragGhost){
+        dragGhost.style.left = ev.clientX + 'px';
+        dragGhost.style.top = ev.clientY + 'px';
+        const dz = document.getElementById('compoundDropzone');
+        const r = dz.getBoundingClientRect();
+        const over = ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+        dz.classList.toggle('drag-over', over);
+      }
+    }
+    function onUp(ev){
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      if(dragging){
+        const dz = document.getElementById('compoundDropzone');
+        const r = dz.getBoundingClientRect();
+        const over = ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+        dz.classList.remove('drag-over');
+        if(over) addToCompound(sym);
+      }
+      if(dragGhost){ dragGhost.remove(); dragGhost = null; }
+    }
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  });
+}
+
+function addToCompound(sym){
+  compoundCounts[sym] = (compoundCounts[sym] || 0) + 1;
+  renderCompoundChips();
+}
+function renderCompoundChips(){
+  const wrap = document.getElementById('dropzoneChips');
+  const hint = document.getElementById('dropzoneHint');
+  const syms = Object.keys(compoundCounts);
+  hint.style.display = syms.length ? 'none' : 'block';
+  wrap.innerHTML = syms.map(sym => `
+    <div class="elem-chip">${sym}<span style="color:var(--muted)">×${compoundCounts[sym]}</span><span class="chip-remove" data-sym="${sym}">✕</span></div>
+  `).join('');
+  wrap.querySelectorAll('.chip-remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sym = btn.dataset.sym;
+      compoundCounts[sym]--;
+      if(compoundCounts[sym] <= 0) delete compoundCounts[sym];
+      renderCompoundChips();
+    });
+  });
+}
+
+// Hill notation: Carbon first, Hydrogen second (if Carbon present), then everything else alphabetical
+function toHillFormula(counts){
+  const syms = Object.keys(counts);
+  let ordered;
+  if(syms.includes('C')){
+    ordered = ['C', ...(syms.includes('H') ? ['H'] : []), ...syms.filter(s => s !== 'C' && s !== 'H').sort()];
+  } else {
+    ordered = syms.slice().sort();
+  }
+  return ordered.map(s => s + (counts[s] > 1 ? counts[s] : '')).join('');
+}
+
+document.getElementById('clearLabBtn').addEventListener('click', () => {
+  Object.keys(compoundCounts).forEach(k => delete compoundCounts[k]);
+  renderCompoundChips();
+  document.getElementById('compoundResult').innerHTML = '';
+});
+
+document.getElementById('combineBtn').addEventListener('click', async () => {
+  const resultEl = document.getElementById('compoundResult');
+  if(Object.keys(compoundCounts).length === 0){
+    resultEl.innerHTML = '<div class="compound-status error">Drag some elements in first.</div>';
+    return;
+  }
+  const formula = toHillFormula(compoundCounts);
+  resultEl.innerHTML = `<div class="compound-status">Looking up ${formula}...</div>`;
+
+  try{
+    // 1. find a matching compound by formula
+    const cidRes = await fetch(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/formula/${encodeURIComponent(formula)}/cids/JSON?MaxRecords=1`);
+    if(!cidRes.ok) throw new Error('not found');
+    const cidData = await cidRes.json();
+    const cid = cidData?.IdentifierList?.CID?.[0];
+    if(!cid) throw new Error('not found');
+
+    // 2. fetch core properties
+    const propRes = await fetch(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/property/IUPACName,MolecularFormula,MolecularWeight,CanonicalSMILES/JSON`);
+    const propData = await propRes.json();
+    const props = propData?.PropertyTable?.Properties?.[0] || {};
+
+    // 3. fetch a human-readable description, if PubChem has one on file
+    let description = '';
+    try{
+      const descRes = await fetch(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/description/JSON`);
+      const descData = await descRes.json();
+      const withDesc = (descData?.InformationList?.Information || []).find(info => info.Description);
+      if(withDesc) description = withDesc.Description;
+    } catch(e){ /* description is optional — fine if this fails */ }
+
+    resultEl.innerHTML = `
+      <div class="compound-card">
+        <div class="cc-formula">${props.MolecularFormula || formula}</div>
+        <div class="cc-name">${props.IUPACName || '(no common name on file)'}</div>
+        <div class="cc-props">
+          <span>Molecular weight</span><b>${props.MolecularWeight ? props.MolecularWeight + ' g/mol' : '—'}</b>
+          <span>PubChem CID</span><b>${cid}</b>
+          <span>SMILES</span><b style="word-break:break-all;">${props.CanonicalSMILES || '—'}</b>
+        </div>
+        ${description ? `<div class="cc-desc">${description}</div>` : ''}
+        <div class="cc-source">Data via PubChem (National Library of Medicine) — not affiliated with this site</div>
+      </div>`;
+  } catch(e){
+    resultEl.innerHTML = `<div class="compound-status error">No known compound found for ${formula} (or PubChem couldn't be reached). Try a different combination.</div>`;
+  }
+});
 
 function swatchFor(cell){
   return ptMode === 'state' ? STATE_COLORS[cell.dataset.state] :
