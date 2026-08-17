@@ -93,25 +93,41 @@
   .price-row .price{ font-size:2.4rem; font-weight:700; }
   .price-row .change{ font-size:0.95rem; }
   .change.up{ color: var(--gain); } .change.down{ color: var(--danger); }
-  .chart-wrap{ margin: 1rem 0 0.5rem; border:1px solid var(--line); background: rgba(0,0,0,0.2); cursor: grab; }
-  .chart-wrap.grabbing{ cursor: grabbing; }
-  canvas#chart{ width:100%; height:130px; display:block; }
-  .chart-controls{ display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem; flex-wrap:wrap; gap:0.5rem; }
-  .range-btns{ display:flex; gap:0.3rem; }
-  .range-btns button{
+  .chart-row{ display:flex; gap:0.7rem; align-items:stretch; margin: 1rem 0 0.5rem; }
+  .chart-wrap{ flex:1; margin:0; border:1px solid var(--line); background: rgba(0,0,0,0.2); cursor: grab; contain: layout paint; position:relative; min-width:0; }
+
+  .analysis-tools{ display:flex; flex-direction:column; gap:0.4rem; width:76px; flex-shrink:0; }
+  .tool-btn{
     background: var(--paper-2); border:1px solid var(--line); color: var(--muted); font-family:inherit;
-    font-size:0.62rem; letter-spacing:0.04em; text-transform:uppercase; padding:0.35rem 0.6rem;
+    font-size:0.65rem; letter-spacing:0.02em; text-transform:uppercase; padding:0.55rem 0.3rem;
     border-radius:3px; cursor:pointer; transition: all 0.15s ease;
   }
-  .range-btns button:hover{ color: var(--rust-2); border-color: var(--rust-2); }
-  .range-btns button.active{ background: var(--rust); color: var(--ink); border-color: var(--rust-2); }
+  .tool-btn:hover{ color: var(--rust-2); border-color: var(--rust-2); }
+  .tool-btn.active, .las-toggle.active, .pt-mode-btn.active, .cookie-btns button.accept{ background: var(--rust); color: var(--ink); border-color: var(--rust-2); }
+
+  .chart-hover-tooltip{
+    display:none; position:absolute; z-index:20; pointer-events:none;
+    background: var(--paper-2); border:1px solid var(--rust-2); border-radius:3px;
+    padding:0.35rem 0.6rem; font-size:0.68rem; color: var(--ink); white-space:nowrap;
+    box-shadow: 0 6px 14px rgba(0,0,0,0.5);
+  }
+  .chart-hover-tooltip.show{ display:block; }
+  .chart-wrap.grabbing{ cursor: grabbing; }
+  canvas#chart{ width:100%; height:230px; display:block; }
+  .brush-wrap{
+    margin: 0 0 0.6rem; border:1px solid var(--line); background: rgba(0,0,0,0.25);
+    height: 60px; position: relative; contain: layout paint;
+  }
+  canvas#brushChart{ width:100%; height:100%; display:block; cursor: grab; }
+  .brush-wrap.dragging canvas#brushChart{ cursor: grabbing; }
+  .chart-controls{ display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem; flex-wrap:wrap; gap:0.5rem; }
+  .brush-hint{ font-size:0.6rem; color: var(--muted); opacity:0.7; }
   .range-jump{
     background:none; border:1px solid var(--line); color: var(--muted); font-family:inherit;
     font-size:0.6rem; letter-spacing:0.04em; text-transform:uppercase; padding:0.35rem 0.6rem;
     border-radius:3px; cursor:pointer; opacity:0.6;
   }
   .range-jump.visible{ opacity:1; color: var(--rust-2); border-color: var(--rust-2); }
-  .chart-hint{ text-align:center; font-size:0.6rem; color: var(--muted); opacity:0.7; margin-bottom:0.8rem; }
   .stats{ display:grid; grid-template-columns: repeat(3,1fr); gap:0.75rem; text-align:center; margin-bottom:1.4rem; }
   .stat-label{ font-size:0.58rem; letter-spacing:0.15em; text-transform:uppercase; color: var(--muted); margin-bottom:0.3rem; }
   .stat-value{ font-size:1rem; font-weight:700; }
@@ -126,18 +142,39 @@
   .history-row{ display:flex; justify-content:space-between; font-size:0.72rem; padding:0.4rem 0; border-bottom:1px dashed rgba(107,90,65,0.4); }
   .history-row.buy .type{ color: var(--gain); } .history-row.sell .type{ color: var(--danger); }
   .empty-history{ color: var(--muted); font-size:0.72rem; text-align:center; padding:0.5rem 0; }
-  .reset-link{ display:block; text-align:center; margin-top:0.8rem; color: var(--muted); font-size:0.6rem; text-decoration:underline; cursor:pointer; background:none; border:none; font-family:inherit; }
-  .reset-confirm-wrap{
-    display:none; align-items:center; justify-content:center; gap:0.6rem; margin-top:0.8rem;
-    font-size:0.62rem; color: var(--muted); flex-wrap:wrap;
+
+  .lots-list{ max-height:180px; overflow-y:auto; margin-top:0.5rem; }
+  .lot-row{
+    display:flex; align-items:center; gap:0.7rem; padding:0.5rem 0.3rem;
+    border-bottom:1px dashed rgba(107,90,65,0.4); font-size:0.78rem;
   }
-  .reset-confirm-btn{
-    background: var(--paper-2); border:1px solid var(--line); color: var(--muted); font-family:inherit;
-    font-size:0.6rem; text-transform:uppercase; letter-spacing:0.04em; padding:0.35rem 0.7rem;
-    border-radius:3px; cursor:pointer;
+  .lot-num{
+    width:1.8rem; height:1.8rem; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    background: var(--paper-2); border:1px solid var(--rust-2); color: var(--rust-2);
+    font-family: Georgia, serif; font-weight:700; font-size:0.7rem;
   }
-  .reset-confirm-btn.danger{ border-color: var(--danger); color: var(--danger); }
-  .reset-confirm-btn.danger:hover{ background: var(--danger); color: var(--ink); }
+  .lot-info{ flex:1; color: var(--muted); line-height:1.4; }
+  .lot-info b{ color: var(--ink); }
+  .lot-pl{ font-variant-numeric: tabular-nums; font-weight:700; }
+  .lot-pl.up{ color: var(--gain); } .lot-pl.down{ color: var(--danger); }
+  .lot-sell-btn{
+    background: var(--danger); color: var(--ink); border:none; border-radius:3px;
+    padding:0.4rem 0.7rem; font-family:inherit; font-size:0.68rem; text-transform:uppercase;
+    letter-spacing:0.03em; cursor:pointer; flex-shrink:0;
+  }
+  .lot-sell-btn:hover{ filter: brightness(1.15); }
+
+  .profit-popup{
+    position: fixed; z-index: 300; pointer-events: none;
+    transform: translate(-50%, -6px); opacity: 1;
+    font-family: Georgia, serif; font-weight: 900; font-size: 1.05rem;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.7);
+    transition: transform 1.1s ease-out, opacity 1.1s ease-out;
+  }
+  .profit-popup.profit{ color: var(--gain); }
+  .profit-popup.loss{ color: var(--danger); }
+  .profit-popup.rise{ transform: translate(-50%, -64px); opacity: 0; }
 
   /* ---------- Widgets LOCKED to the poster (world-space, pan/zoom with it) ---------- */
   #posterCoin{
@@ -162,7 +199,6 @@
     letter-spacing:0.04em; text-transform:uppercase; cursor:pointer; transition: all 0.2s ease; text-align:center;
   }
   .las-toggle:hover{ color: var(--rust-2); border-color: var(--rust-2); }
-  .las-toggle.active{ background: var(--rust); color: var(--ink); border-color: var(--rust-2); }
 
   /* video popup: screen-fixed, only ever shown while the poster/hub is the active region */
   #videoPopup{
@@ -222,7 +258,6 @@
     border-radius:3px; cursor:pointer; transition: all 0.15s ease;
   }
   .pt-mode-btn:hover{ color: var(--rust-2); border-color: var(--rust-2); }
-  .pt-mode-btn.active{ background: var(--rust); color: var(--ink); border-color: var(--rust-2); }
 
   #ptable{
     display:grid;
@@ -234,8 +269,9 @@
     aspect-ratio: 1; background: var(--paper-2); border:1px solid var(--line);
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     cursor:pointer; transition: transform 0.12s ease, background 0.12s ease, opacity 0.15s ease; color: var(--ink);
-    padding: 2px; overflow:hidden; position:relative;
+    padding: 2px; overflow:hidden; position:relative; touch-action: none;
   }
+  .elem.armed{ transform: scale(1.15); box-shadow: 0 0 0 2px var(--ink), 0 8px 16px rgba(0,0,0,0.6); z-index:6; }
   .elem .num{ font-size: 0.42rem; color: rgba(26,21,16,0.65); align-self:flex-start; margin-left:2px; }
   .elem .sym{ font-size: 0.72rem; font-weight:700; line-height:1; }
   .elem .mini-mass{ font-size:0.36rem; color: rgba(26,21,16,0.65); margin-top:1px; }
@@ -257,6 +293,101 @@
   .legend{ display:flex; flex-wrap:wrap; gap: 0.6rem 1rem; margin-top:1rem; justify-content:center; }
   .legend-item{ display:flex; align-items:center; gap:0.4rem; font-size:0.65rem; color: var(--muted); text-transform:uppercase; letter-spacing:0.05em; cursor:default; }
   .legend-swatch{ width:12px; height:12px; border:1px solid rgba(0,0,0,0.4); }
+
+  /* --- Compound Lab --- */
+  .lab-wrap{ display:flex; gap:0.8rem; align-items:flex-start; flex-wrap:wrap; }
+  .dropzone{
+    flex:1; min-width:220px; min-height:110px; border:2px dashed var(--line); border-radius:4px;
+    background: rgba(0,0,0,0.2); padding:0.9rem; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:0.6rem; transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .dropzone.drag-over{ border-color: var(--rust-2); background: rgba(217,122,63,0.08); }
+  .dropzone-hint{ font-size:0.7rem; color: var(--muted); text-align:center; }
+  .dropzone-chips{ display:flex; flex-wrap:wrap; gap:0.4rem; justify-content:center; }
+  .elem-chip{
+    display:flex; align-items:center; gap:0.35rem; background: var(--paper-2); border:1px solid var(--rust-2);
+    border-radius:3px; padding:0.3rem 0.5rem; font-size:0.8rem; color: var(--ink);
+  }
+  .elem-chip .chip-remove{ cursor:pointer; color: var(--danger); font-weight:700; font-size:0.7rem; }
+  .lab-actions{ display:flex; flex-direction:column; gap:0.5rem; flex-shrink:0; }
+
+  .drag-ghost{
+    position:fixed; z-index:500; pointer-events:none; width:42px; height:42px;
+    display:flex; align-items:center; justify-content:center; font-family:Georgia,serif; font-weight:700;
+    font-size:1rem; color:#1a1510; border:1px solid rgba(0,0,0,0.4); border-radius:3px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.6); transform: translate(-50%, -50%);
+  }
+
+  .compound-result{ margin-top:1rem; }
+  .compound-card{
+    border:1px solid var(--line); background: var(--paper-2); border-radius:4px; padding:1rem 1.2rem;
+  }
+  .compound-card .cc-formula{ font-family:Georgia,serif; font-size:1.4rem; color: var(--rust-2); margin-bottom:0.2rem; }
+  .compound-card .cc-name{ font-size:0.95rem; color: var(--ink); margin-bottom:0.6rem; }
+  .compound-card .cc-props{ display:grid; grid-template-columns: repeat(2, auto); gap:0.2rem 1.6rem; font-size:0.78rem; color: var(--muted); margin-bottom:0.6rem; }
+  .compound-card .cc-props b{ color: var(--ink); }
+  .compound-card .cc-desc{ font-size:0.8rem; color: var(--muted); line-height:1.6; border-top:1px dashed rgba(107,90,65,0.4); padding-top:0.6rem; }
+  .compound-card .cc-source{ font-size:0.6rem; color: var(--muted); opacity:0.7; margin-top:0.5rem; }
+  .compound-status{ font-size:0.8rem; color: var(--muted); text-align:center; padding:0.6rem; }
+  .compound-status.error{ color: var(--danger); }
+
+  /* --- Element Economy --- */
+  .market-controls{ display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap; margin-bottom:1rem; }
+  .market-controls select, .market-controls input{
+    background: var(--paper-2); border:1px solid var(--line); color: var(--ink);
+    font-family:inherit; font-size:0.8rem; padding:0.5rem 0.6rem; border-radius:3px;
+  }
+  .market-controls input[type=number]{ width:70px; }
+  .market-price-hint{ font-size:0.72rem; color: var(--muted); }
+
+  .owned-list{ display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem; }
+  .owned-chip{
+    display:flex; align-items:center; gap:0.5rem; background: var(--paper-2); border:1px solid var(--line);
+    border-radius:3px; padding:0.4rem 0.6rem; font-size:0.78rem; color: var(--ink);
+  }
+  .owned-chip .oc-qty{ color: var(--rust-2); font-weight:700; }
+  .owned-chip .oc-sell{
+    background:none; border:1px solid var(--danger); color: var(--danger); font-size:0.62rem;
+    padding:0.2rem 0.4rem; border-radius:3px; cursor:pointer; text-transform:uppercase;
+  }
+
+  .tools-grid{ display:flex; flex-wrap:wrap; gap:0.6rem; margin-bottom:1.2rem; }
+  .tool-card{
+    background: var(--paper-2); border:1px solid var(--line); border-radius:4px; padding:0.7rem 0.9rem;
+    min-width:150px; flex:1;
+  }
+  .tool-card.owned{ border-color: var(--gain); }
+  .tool-card .tc-name{ font-family:Georgia,serif; color: var(--ink); font-size:0.9rem; margin-bottom:0.2rem; }
+  .tool-card .tc-desc{ font-size:0.7rem; color: var(--muted); margin-bottom:0.5rem; line-height:1.4; }
+  .tool-card .tc-btn{
+    background: var(--rust); color: var(--ink); border:none; border-radius:3px; padding:0.4rem 0.7rem;
+    font-family:inherit; font-size:0.7rem; text-transform:uppercase; cursor:pointer;
+  }
+  .tool-card.owned .tc-btn{ display:none; }
+  .tool-card .tc-owned-tag{ display:none; font-size:0.65rem; color: var(--gain); text-transform:uppercase; }
+  .tool-card.owned .tc-owned-tag{ display:inline; }
+
+  .recipes-grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:0.6rem; margin-bottom:1rem; }
+  .recipe-card{ background: var(--paper-2); border:1px solid var(--line); border-radius:4px; padding:0.7rem 0.9rem; }
+  .recipe-card .rc-name{ font-family:Georgia,serif; color: var(--rust-2); font-size:0.9rem; }
+  .recipe-card .rc-formula{ font-size:0.7rem; color: var(--muted); margin-bottom:0.4rem; }
+  .recipe-card .rc-need{ font-size:0.68rem; color: var(--muted); margin-bottom:0.5rem; line-height:1.5; }
+  .recipe-card .rc-need b{ color: var(--ink); }
+  .recipe-card .rc-btn{
+    width:100%; background: var(--rust); color: var(--ink); border:none; border-radius:3px;
+    padding:0.5rem; font-family:inherit; font-size:0.72rem; text-transform:uppercase; cursor:pointer;
+  }
+  .recipe-card .rc-btn:disabled{ background: var(--paper); color: var(--muted); cursor:not-allowed; opacity:0.5; }
+  .recipe-card .rc-locked{ font-size:0.62rem; color: var(--danger); margin-top:0.3rem; }
+
+  .listing-row{
+    display:flex; align-items:center; gap:0.7rem; padding:0.6rem 0.4rem; width:100%;
+    border-bottom:1px dashed rgba(107,90,65,0.4); font-size:0.8rem;
+  }
+  .listing-row .lr-buy{
+    background: var(--gain); color: var(--ink); border:none; border-radius:3px; padding:0.35rem 0.7rem;
+    font-family:inherit; font-size:0.68rem; text-transform:uppercase; cursor:pointer; margin-left:auto;
+  }
 
   /* --- databook --- */
   .db-section{ border-bottom: 1px dashed rgba(107,90,65,0.4); }
@@ -306,9 +437,10 @@
     #videoPopup{ max-width: 42vw; }
   }
   @media (max-width: 620px){
-    /* not enough room beside a 620px-wide poster on very small screens */
+    /* not enough room beside a 620px-wide poster on very small screens — use the bottom toolbar instead */
     #posterCoin, #posterLas{ display:none !important; }
-    #videoPopup{ display:none !important; }
+    #videoPopup{ max-width: 78vw !important; max-height: 55vh !important; }
+    #hint{ display:none; }
   }
 
   #hint{
@@ -316,6 +448,28 @@
     font-size: 0.65rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
     background: var(--paper-2); border: 1px solid var(--line); padding: 0.5rem 1rem;
     border-radius: 999px; opacity: 0.85; pointer-events:none;
+  }
+
+  #mobileToolbar{
+    display:none; position: fixed; bottom:0; left:0; right:0; z-index: 65;
+    background: var(--paper); border-top: 2px solid var(--line);
+    box-shadow: 0 -8px 20px rgba(0,0,0,0.5);
+  }
+  @media (max-width: 620px){
+    #mobileToolbar{ display:flex; }
+    #cookieBanner{ bottom: 54px; }
+  }
+  #mobileToolbar button{
+    flex:1; background:none; border:none; color: var(--muted); font-family: inherit;
+    padding: 0.55rem 0.2rem 0.6rem; display:flex; flex-direction:column; align-items:center; gap:0.15rem;
+    font-size: 0.55rem; letter-spacing: 0.03em; text-transform:uppercase; cursor:pointer;
+  }
+  #mobileToolbar button:active{ background: rgba(214,167,107,0.12); }
+  #mobileToolbar button.active{ color: var(--rust-2); }
+  #mobileToolbar .mt-icon{
+    font-family: Georgia, serif; font-weight:900; font-size: 0.9rem; color: var(--rust-2);
+    width: 22px; height: 22px; display:flex; align-items:center; justify-content:center;
+    border: 1px solid var(--line); border-radius: 4px;
   }
 
   #cookieBanner{
@@ -331,7 +485,6 @@
     font-size:0.7rem; padding:0.6rem 1.2rem; border-radius:3px; cursor:pointer; border:1px solid var(--line);
     background: var(--paper-2); color: var(--muted);
   }
-  .cookie-btns button.accept{ background: var(--rust); color: var(--ink); border-color: var(--rust-2); }
   .cookie-btns button:hover{ filter: brightness(1.15); }
 </style>
 </head>
@@ -341,6 +494,14 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js"></script>
 
 <div id="hint">Drag or scroll to look around this area · Buttons take you elsewhere</div>
+
+<div id="mobileToolbar">
+  <button data-goto="region-coin"><span class="mt-icon">$</span><span>Coin</span></button>
+  <button data-goto="region-periodic"><span class="mt-icon">Pt</span><span>Table</span></button>
+  <button data-goto="region-leaderboard"><span class="mt-icon">#</span><span>Ranks</span></button>
+  <button data-goto="region-databook"><span class="mt-icon">B</span><span>Book</span></button>
+  <button id="mobileLasBtn"><span class="mt-icon">></span><span>Focus</span></button>
+</div>
 
 <div id="cookieBanner">
   <div class="cookie-text">
@@ -387,6 +548,7 @@
             <div class="panel-label">Explore</div>
             <div class="side-nav">
               <button class="las-toggle side-nav-btn" data-goto="region-periodic">Periodic Table</button>
+              <button class="las-toggle side-nav-btn" data-goto="region-leaderboard">Leaderboard</button>
 
               <div class="dropdown-wrap">
                 <button class="las-toggle side-nav-btn" id="databookToggle">Databook ▾</button>
@@ -445,25 +607,31 @@
       </div>
     </div>
 
-    <div class="region" id="region-coin" data-role="satellite">
+    <div class="region wide" id="region-coin" data-role="satellite">
       <div class="region-inner">
         <div class="coin-title">MrWestCoin Exchange</div>
         <div class="coin-ticker">$WEST — Not real. Not FDIC insured. Not anything.</div>
         <div class="price-row"><span class="price" id="price">$--.--</span><span class="change" id="change">loading...</span></div>
-        <div class="chart-wrap">
-          <canvas id="chart"></canvas>
+        <div class="chart-row">
+          <div class="chart-wrap">
+            <canvas id="chart"></canvas>
+            <div class="chart-hover-tooltip" id="chartHoverTip"></div>
+          </div>
+          <div class="analysis-tools" id="analysisTools">
+            <button class="tool-btn" data-tool="avg" title="Average — the mean price across whatever's currently visible on the chart.">Avg</button>
+            <button class="tool-btn" data-tool="trend" title="Trend — a straight best-fit line through the visible data, showing overall direction and slope.">Trend</button>
+            <button class="tool-btn" data-tool="highlow" title="High / Low — marks the highest and lowest price reached within the visible range.">Hi/Lo</button>
+            <button class="tool-btn" data-tool="vol" title="Volatility — how much the price is swinging (standard deviation) within the visible range.">Vol</button>
+            <button class="tool-btn" data-tool="bands" title="Bollinger-style bands — the average plus/minus one standard deviation, a common range-of-normal-movement indicator.">Bands</button>
+          </div>
+        </div>
+        <div class="brush-wrap">
+          <canvas id="brushChart"></canvas>
         </div>
         <div class="chart-controls">
-          <div class="range-btns" id="rangeBtns">
-            <button data-range="3600000" class="active">1H</button>
-            <button data-range="21600000">6H</button>
-            <button data-range="86400000">1D</button>
-            <button data-range="604800000">1W</button>
-            <button data-range="0">All</button>
-          </div>
+          <span class="brush-hint" id="brushHint">Drag the handles to pick a range</span>
           <button class="range-jump" id="jumpLive">Jump to live</button>
         </div>
-        <div class="chart-hint">Drag the chart to scroll back through history</div>
         <div class="stats">
           <div><div class="stat-label">Cash</div><div class="stat-value" id="cash">$0.00</div></div>
           <div><div class="stat-label">$WEST Held</div><div class="stat-value" id="held">0</div></div>
@@ -472,17 +640,16 @@
         <div class="trade-panel">
           <input type="number" id="qty" placeholder="Qty" min="0" step="1" value="1">
           <button class="trade-btn buy" id="buyBtn">Buy</button>
-          <button class="trade-btn sell" id="sellBtn">Sell</button>
         </div>
         <div class="msg" id="msg"></div>
+
+        <div class="section-label" style="margin-top:1.2rem;">Open Positions</div>
+        <div class="lots-list" id="lotsList"><div class="empty-history">No open positions.</div></div>
+
+        <div class="section-label">Transaction History</div>
         <div class="history" id="historyList"><div class="empty-history">No trades yet.</div></div>
-        <button class="reset-link" id="resetReveal">Reset portfolio</button>
-        <div class="reset-confirm-wrap" id="resetConfirmWrap">
-          <span>Really reset your cash &amp; holdings?</span>
-          <button class="reset-confirm-btn danger" id="resetConfirm">Yes, reset</button>
-          <button class="reset-confirm-btn" id="resetCancel">Cancel</button>
-        </div>
-        <button class="nav-btn" data-goto="region-index" style="margin-top:1.2rem;">Back to the board</button>
+        <button class="nav-btn" data-goto="region-leaderboard" style="margin-top:0.8rem;">View Leaderboard</button>
+        <button class="nav-btn" data-goto="region-index" style="margin-top:0.6rem;">Back to the board</button>
       </div>
     </div>
     <div class="region wide" id="region-periodic" data-role="satellite">
@@ -502,6 +669,23 @@
         <div id="ptable"></div>
         <div id="elemInfo"><span class="meta">Hover or click an element to see its details.</span></div>
         <div class="legend" id="legend"></div>
+
+        <div class="section-label" style="margin-top:1.8rem;">Compound Lab</div>
+        <div class="page-sub" style="margin-bottom:0.8rem;">Drag elements from the table above into the beaker to build a formula, then combine</div>
+
+        <div class="lab-wrap">
+          <div class="dropzone" id="compoundDropzone">
+            <span class="dropzone-hint" id="dropzoneHint">Drag element tiles here</span>
+            <div class="dropzone-chips" id="dropzoneChips"></div>
+          </div>
+          <div class="lab-actions">
+            <button class="nav-btn" id="combineBtn" style="margin:0;">Combine</button>
+            <button class="tool-btn" id="clearLabBtn">Clear</button>
+          </div>
+        </div>
+
+        <div class="compound-result" id="compoundResult"></div>
+
         <button class="nav-btn" data-goto="region-index" style="margin-top:1.6rem;">Back to the board</button>
       </div>
     </div>
@@ -531,13 +715,81 @@
       </div>
     </div>
 
+    <div class="region wide" id="region-market" data-role="satellite">
+      <div class="region-inner">
+        <div class="page-title">Element Economy</div>
+        <div class="page-sub">Buy elements with your $WEST cash, craft compounds, trade with other players</div>
+
+        <div class="section-label">Buy Elements</div>
+        <div class="market-controls">
+          <select id="marketElemSelect"></select>
+          <input type="number" id="marketQty" min="1" step="1" value="1">
+          <button class="trade-btn buy" id="marketBuyBtn">Buy</button>
+          <span class="market-price-hint" id="marketPriceHint"></span>
+        </div>
+
+        <div class="section-label">Your Elements</div>
+        <div id="ownedElementsList" class="owned-list"><div class="empty-history">You don't own any elements yet.</div></div>
+
+        <div class="section-label">Tools</div>
+        <div class="page-sub" style="margin-bottom:0.6rem;">Unlock recipes for more complex compounds</div>
+        <div id="toolsList" class="tools-grid"></div>
+
+        <div class="section-label">Craft a Compound</div>
+        <div id="recipesList" class="recipes-grid"></div>
+        <div class="compound-result" id="craftResult"></div>
+
+        <div class="section-label">Your Compounds</div>
+        <div id="ownedCompoundsList" class="owned-list"><div class="empty-history">You haven't made anything yet.</div></div>
+
+        <div class="section-label">Marketplace</div>
+        <div class="page-sub" style="margin-bottom:0.6rem;">Buy elements listed for sale by other players</div>
+        <div class="market-controls">
+          <select id="listElemSelect"></select>
+          <input type="number" id="listQty" min="1" step="1" value="1">
+          <input type="number" id="listPrice" min="0.01" step="0.01" placeholder="Price/unit" style="width:90px;">
+          <button class="nav-btn" id="createListingBtn" style="margin:0;">List for sale</button>
+        </div>
+        <div id="marketplaceList" class="owned-list"><div class="empty-history">No listings yet.</div></div>
+
+        <button class="nav-btn" data-goto="region-index" style="margin-top:1.6rem;">Back to the board</button>
+      </div>
+    </div>
+
   </div>
 </div>
 
 <script>
+/* ================= FIREBASE (shared by market sync + leaderboard) ================= */
+const firebaseConfig = {
+  apiKey: "AIzaSyBNT1jvi0El_txSKTjCGS5MeBbVz15DKs4",
+  authDomain: "mrwestfiles.firebaseapp.com",
+  databaseURL: "https://mrwestfiles-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "mrwestfiles",
+  storageBucket: "mrwestfiles.firebasestorage.app",
+  messagingSenderId: "761539070041",
+  appId: "1:761539070041:web:392762db7b305b2b3e4948"
+};
+const FIREBASE_CONFIGURED = firebaseConfig.apiKey !== "YOUR_API_KEY";
+
+let db = null;
+if(FIREBASE_CONFIGURED){
+  try{
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+  } catch(e){ db = null; }
+}
+
+// stable per-browser ID, used both to back up this player's portfolio and to identify them on the leaderboard
+let investorId = localStorage.getItem('mrwestcoin_investor_id');
+if(!investorId){
+  investorId = 'inv_' + Math.random().toString(36).slice(2, 10);
+  localStorage.setItem('mrwestcoin_investor_id', investorId);
+}
+
 /* ================= RADIAL AUTO-LAYOUT ================= */
 const HUB_ID = 'region-index';
-const SATELLITE_IDS = ['region-notice', 'region-coin', 'region-periodic', 'region-databook', 'region-leaderboard'];
+const SATELLITE_IDS = ['region-notice', 'region-coin', 'region-periodic', 'region-databook', 'region-leaderboard', 'region-market'];
 const RADIUS = 2300;
 
 function layoutRegions(){
@@ -596,13 +848,17 @@ function getRegionBounds(id){
     minY: el.offsetTop - REGION_PAD, maxY: el.offsetTop + el.offsetHeight + REGION_PAD,
   };
 }
-function clamp(c, bounds){
+function clampScaleForBounds(scale, bounds){
   const vw = viewport.clientWidth, vh = viewport.clientHeight;
   const boundsW = bounds.maxX - bounds.minX, boundsH = bounds.maxY - bounds.minY;
+  const dynamicMin = Math.max(MIN_SCALE, vw / boundsW, vh / boundsH);
+  return Math.min(MAX_SCALE, Math.max(dynamicMin, scale));
+}
+function clamp(c, bounds){
+  const vw = viewport.clientWidth, vh = viewport.clientHeight;
   // never allow zooming out further than what's needed to fill the viewport with
   // THIS region's own bounds box — otherwise neighboring regions become visible.
-  const dynamicMin = Math.max(MIN_SCALE, vw / boundsW, vh / boundsH);
-  c.scale = Math.min(MAX_SCALE, Math.max(dynamicMin, c.scale));
+  c.scale = clampScaleForBounds(c.scale, bounds);
   const minX = vw - bounds.maxX*c.scale, maxX = -bounds.minX*c.scale;
   const minY = vh - bounds.maxY*c.scale, maxY = -bounds.minY*c.scale;
   c.x = Math.min(maxX, Math.max(minX, c.x));
@@ -634,10 +890,17 @@ function tick(){
       velocity.x *= FRICTION; velocity.y *= FRICTION;
       clamp(target, getRegionBounds(activeRegionId));
     }
-    cam.x += (target.x - cam.x) * LERP;
-    cam.y += (target.y - cam.y) * LERP;
-    cam.scale += (target.scale - cam.scale) * LERP;
-    applyTransform();
+    // once cam has essentially caught up to target, stop touching the transform every frame —
+    // this is the single biggest idle-CPU win, since a static page was still writing to the
+    // DOM transform 60x/sec even when nothing was actually moving
+    const dx = target.x - cam.x, dy = target.y - cam.y, ds = target.scale - cam.scale;
+    const settled = Math.abs(dx) < 0.05 && Math.abs(dy) < 0.05 && Math.abs(ds) < 0.0005;
+    if(!settled){
+      cam.x += dx * LERP;
+      cam.y += dy * LERP;
+      cam.scale += ds * LERP;
+      applyTransform();
+    }
   }
   requestAnimationFrame(tick);
 }
@@ -663,9 +926,15 @@ function goToRegion(id){
       target = { ...cam }; velocity = { x:0, y:0 };
       animatingBetweenRegions = false;
       updateVideoPopupVisibility(true);
+      updateMobileToolbarActive();
     }
   }
   requestAnimationFrame(step);
+}
+function updateMobileToolbarActive(){
+  document.querySelectorAll('#mobileToolbar button[data-goto]').forEach(b => {
+    b.classList.toggle('active', b.dataset.goto === activeRegionId);
+  });
 }
 document.querySelectorAll('[data-goto]').forEach(btn => btn.addEventListener('click', () => goToRegion(btn.dataset.goto)));
 
@@ -674,6 +943,7 @@ function initCamera(){
   cam = centerOnRegion(HUB_ID);
   target = { ...cam };
   applyTransform();
+  updateMobileToolbarActive();
 }
 window.addEventListener('load', initCamera);
 
@@ -688,23 +958,41 @@ function dismissCookieBanner(){
 }
 document.getElementById('cookieAccept').addEventListener('click', dismissCookieBanner);
 document.getElementById('cookieReject').addEventListener('click', dismissCookieBanner);
+// One debounced resize handler instead of several separate listeners each firing on every
+// single resize event — a window drag-resize fires dozens of these per second otherwise.
+let resizeDebounceTimer = null;
 window.addEventListener('resize', () => {
-  layoutRegions();
-  cam = centerOnRegion(activeRegionId);
-  target = { ...cam };
-  positionVideoPopup();
+  clearTimeout(resizeDebounceTimer);
+  resizeDebounceTimer = setTimeout(() => {
+    layoutRegions();
+    cam = centerOnRegion(activeRegionId);
+    target = { ...cam };
+    positionVideoPopup();
+    drawChart();
+  }, 120);
 });
 
+// Prevent the right-click context menu and middle-click's autoscroll icon from interfering
+// with using those buttons to pan.
+viewport.addEventListener('contextmenu', (e) => e.preventDefault());
+viewport.addEventListener('auxclick', (e) => e.preventDefault());
+
 let dragHistory = [];
+let dragPointerType = null;
+
+// --- panning: any mouse button (left/middle/right) via click-drag, or a single touch ---
 viewport.addEventListener('pointerdown', (e) => {
   if(animatingBetweenRegions) return;
+  if(e.pointerType === 'touch' && activeTouchPointers.size >= 1) return; // a second touch means pinch, not pan — handled below
+  if(e.pointerType === 'mouse' && e.button > 2) return; // ignore exotic extra mouse buttons, just the 3 standard ones
   dragging = true; velocity = { x:0, y:0 };
+  dragPointerType = e.pointerType;
   viewport.classList.add('grabbing');
   lastPointer = { x:e.clientX, y:e.clientY };
   dragHistory = [{ x:e.clientX, y:e.clientY, t: performance.now() }];
 });
 window.addEventListener('pointermove', (e) => {
-  if(!dragging) return;
+  if(!dragging || e.pointerType !== dragPointerType) return;
   const dx = e.clientX - lastPointer.x, dy = e.clientY - lastPointer.y;
   target.x += dx; target.y += dy;
   clamp(target, getRegionBounds(activeRegionId));
@@ -714,38 +1002,79 @@ window.addEventListener('pointermove', (e) => {
 });
 window.addEventListener('pointerup', () => {
   if(!dragging) return;
-  dragging = false; viewport.classList.remove('grabbing');
+  dragging = false; dragPointerType = null; viewport.classList.remove('grabbing');
   if(dragHistory.length >= 2){
     const a = dragHistory[0], b = dragHistory[dragHistory.length-1];
     const dt = Math.max(1, b.t - a.t);
     velocity.x = (b.x - a.x)/dt*16; velocity.y = (b.y - a.y)/dt*16;
   }
 });
-// Trackpads send two-finger scroll AND pinch-to-zoom through the same 'wheel' event, so we
-// have to tell them apart: browsers set e.ctrlKey=true automatically during a pinch gesture
-// (same signal as holding Ctrl + scrolling on a mouse). Everything else is a pan — this matches
-// how Figma/Google Maps/etc. behave, which is what people's muscle memory expects.
+
+// --- zoom: mouse scroll wheel, or a trackpad zoom gesture (pinch, which browsers report as a
+// wheel event with ctrlKey set) — every wheel event zooms now, panning is button-drag only ---
 viewport.addEventListener('wheel', (e) => {
   e.preventDefault();
   if(animatingBetweenRegions) return;
-
-  if(e.ctrlKey || e.metaKey){
-    // pinch-to-zoom (trackpad) or Ctrl/Cmd + scroll (mouse) — zoom centered on the cursor
-    const rect = viewport.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    const worldX = (mx - target.x)/target.scale, worldY = (my - target.y)/target.scale;
-    // exponential response gives a smooth continuous feel instead of a fixed 6% jump per event
-    const zoomFactor = Math.exp(-e.deltaY * 0.012);
-    const newScale = target.scale * zoomFactor;
-    target.scale = newScale;
-    target.x = mx - worldX*newScale; target.y = my - worldY*newScale;
-  } else {
-    // plain scroll / two-finger swipe — pan in both directions, matching the swipe direction 1:1
-    target.x -= e.deltaX;
-    target.y -= e.deltaY;
-  }
+  const rect = viewport.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const worldX = (mx - target.x)/target.scale, worldY = (my - target.y)/target.scale;
+  // exponential response gives a smooth continuous feel instead of a fixed jump per event
+  const zoomFactor = Math.exp(-e.deltaY * 0.012);
+  // clamp the scale FIRST, then compute position off the clamped value — otherwise, right at
+  // the zoom limits, the position math and the final clamped scale disagree and the view snaps
+  const clampedScale = clampScaleForBounds(target.scale * zoomFactor, getRegionBounds(activeRegionId));
+  target.scale = clampedScale;
+  target.x = mx - worldX*clampedScale; target.y = my - worldY*clampedScale;
   clamp(target, getRegionBounds(activeRegionId));
 }, { passive:false });
+
+// --- zoom: real two-finger pinch on touchscreens (these never fire 'wheel' events at all,
+// so they need their own handling entirely separate from the trackpad/mouse path above) ---
+const activeTouchPointers = new Map();
+let pinchStartDist = null, pinchStartScale = 1;
+
+function touchMidpoint(){
+  const pts = [...activeTouchPointers.values()];
+  return { x: (pts[0].x + pts[1].x)/2, y: (pts[0].y + pts[1].y)/2 };
+}
+function touchDistance(){
+  const pts = [...activeTouchPointers.values()];
+  return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+}
+
+viewport.addEventListener('pointerdown', (e) => {
+  if(e.pointerType !== 'touch') return;
+  activeTouchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if(activeTouchPointers.size === 2){
+    // a second finger landed — cancel any single-finger pan in progress and start a pinch instead
+    dragging = false; viewport.classList.remove('grabbing');
+    pinchStartDist = touchDistance();
+    pinchStartScale = target.scale;
+  }
+});
+window.addEventListener('pointermove', (e) => {
+  if(e.pointerType !== 'touch' || !activeTouchPointers.has(e.pointerId)) return;
+  activeTouchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if(activeTouchPointers.size === 2 && pinchStartDist){
+    const rect = viewport.getBoundingClientRect();
+    const mid = touchMidpoint();
+    const mx = mid.x - rect.left, my = mid.y - rect.top;
+    const worldX = (mx - target.x)/target.scale, worldY = (my - target.y)/target.scale;
+    const newDist = touchDistance();
+    const rawScale = pinchStartScale * (newDist / pinchStartDist);
+    const clampedScale = clampScaleForBounds(rawScale, getRegionBounds(activeRegionId));
+    target.scale = clampedScale;
+    target.x = mx - worldX*clampedScale; target.y = my - worldY*clampedScale;
+    clamp(target, getRegionBounds(activeRegionId));
+  }
+});
+function endTouchPointer(e){
+  if(e.pointerType !== 'touch') return;
+  activeTouchPointers.delete(e.pointerId);
+  if(activeTouchPointers.size < 2) pinchStartDist = null;
+}
+window.addEventListener('pointerup', endTouchPointer);
+window.addEventListener('pointercancel', endTouchPointer);
 
 /* ================= LOW ATTENTION SPAN MODE (several distinct clips, floatable popup) ================= */
 const VIDEO_OPTIONS = [
@@ -809,13 +1138,19 @@ applyLasLabel();
 positionVideoPopup();
 updateVideoPopupVisibility(true);
 
-lasToggle.addEventListener('click', () => {
+function toggleLas(){
   videoIndex += 1;
   if(videoIndex >= VIDEO_OPTIONS.length) videoIndex = -1;
   localStorage.setItem('lasVideoIndex', videoIndex);
   applyLasLabel();
   positionVideoPopup();
   updateVideoPopupVisibility(true);
+}
+lasToggle.addEventListener('click', toggleLas);
+document.getElementById('mobileLasBtn').addEventListener('click', () => {
+  // the popup only ever shows while on the poster, so hop back there first if needed
+  if(activeRegionId !== HUB_ID) goToRegion(HUB_ID);
+  toggleLas();
 });
 videoClose.addEventListener('click', () => {
   videoIndex = -1;
@@ -843,24 +1178,71 @@ window.addEventListener('pointerup', () => {
   draggingPopup = false;
   localStorage.setItem('lasPopupPos', JSON.stringify(popupPos));
 });
-window.addEventListener('resize', positionVideoPopup);
 
 
 
-/* ================= MrWestCoin (shared market — synced via a JSON file in this repo, updated by a GitHub Action) ================= */
-// This is a static site with no backend, so the ONE genuinely free-forever way to share state across
-// every visitor is: keep it in a file in the repo, let a scheduled GitHub Action ("the algorithm")
-// advance it, and have every browser just read that file. You can also hand-edit market-data.json
-// in the GitHub UI anytime to set the price manually.
+/* ================= MrWestCoin (shared market — live via Firebase Realtime Database) ================= */
+// Every browser subscribes to the same Firebase path and gets pushed updates instantly (no
+// polling, no delay). Whichever browsers are open take turns advancing the simulation every
+// couple of seconds (gated so we don't all tick at once), and the moment one of them writes,
+// everyone else's chart updates in real time. If Firebase isn't configured/reachable, it falls
+// back to a local-only simulation so the page still works.
 const STORAGE_KEY = 'mrwestcoin_portfolio';
-const MARKET_URL = 'https://raw.githubusercontent.com/Ca1ok/TheMrWestFiles/main/market-data.json';
-const SYNC_INTERVAL = 60000; // background safety-net poll (light, since trades trigger their own sync)
+const TICK_INTERVAL = 2000;      // how often the market moves
 
-function loadPortfolio(){ const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : { cash:1000, held:0, trades:[] }; }
-function savePortfolio(p){ localStorage.setItem(STORAGE_KEY, JSON.stringify(p)); }
+function loadPortfolio(){
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if(!raw) return { cash:1000, lots:[], nextLotId:1, trades:[] };
+  const p = JSON.parse(raw);
+  // migrate old aggregate-holdings saves into a single lot so nothing is lost
+  if(p.lots === undefined){
+    p.lots = p.held > 0 ? [{ id:1, qty:p.held, buyPrice: 12.5, time: new Date().toLocaleString() }] : [];
+    p.nextLotId = 2;
+    delete p.held;
+  }
+  return p;
+}
+function savePortfolio(p){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
+  if(db && investorId){
+    // this is what stops the stock you bought from disappearing — cash AND lots are backed up,
+    // not just the computed leaderboard number, so it survives a cleared cache or a new device
+    db.ref('players/' + investorId).set({
+      cash: p.cash, lots: p.lots, trades: p.trades.slice(-200), updatedAt: Date.now()
+    }).catch(() => {});
+  }
+}
 let portfolio = loadPortfolio();
 
-// local cache so the widget has something to show immediately, and still works if the fetch ever fails
+if(db && investorId){
+  db.ref('players/' + investorId).once('value').then(snap => {
+    const remote = snap.val();
+    if(remote){
+      // a backed-up copy exists — restore it (this is the source of truth for cash/holdings)
+      portfolio = {
+        cash: remote.cash, lots: remote.lots || [], trades: remote.trades || [],
+        elements: remote.elements || {}, compounds: remote.compounds || {}, tools: remote.tools || ['basic']
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio));
+    } else {
+      // nothing backed up yet for this browser — push what we have now so it's protected going forward
+      savePortfolio(portfolio);
+    }
+    renderPortfolio(); renderHistory(); renderLots(); drawChart();
+  }).catch(() => {});
+
+  // Marketplace sales credit a seller's cash directly in Firebase (via transaction), which could
+  // otherwise get silently overwritten the next time this player's own client does a full save —
+  // this listener merges any such external change into the live local state so it isn't lost.
+  db.ref('players/' + investorId + '/cash').on('value', (snap) => {
+    const remoteCash = snap.val();
+    if(typeof remoteCash === 'number' && remoteCash !== portfolio.cash){
+      portfolio.cash = remoteCash;
+      renderPortfolio();
+    }
+  });
+}
+
 let market = JSON.parse(localStorage.getItem('mrwestcoin_market_cache') || 'null') || {
   price: 12.50, history: [{ price: 12.50, t: Date.now() }],
   fairValue: 12.50, momentum: 0, vol: 0.012, updatedAt: 0
@@ -876,46 +1258,116 @@ const msgEl = document.getElementById('msg'), historyListEl = document.getElemen
 const qtyInput = document.getElementById('qty');
 const canvas = document.getElementById('chart'), ctx = canvas.getContext('2d');
 const chartWrap = document.querySelector('.chart-wrap');
+
+/* --- analysis tools: click to toggle an overlay, hover a button to see what it does --- */
+const activeTools = new Set();
+document.querySelectorAll('.tool-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tool = btn.dataset.tool;
+    if(activeTools.has(tool)){ activeTools.delete(tool); btn.classList.remove('active'); }
+    else{ activeTools.add(tool); btn.classList.add('active'); }
+    drawChart();
+  });
+});
+
+/* --- hover over the chart to see the value at that point (crosshair tooltip) --- */
+let lastChartGeometry = null;
+const chartHoverTip = document.getElementById('chartHoverTip');
+
+canvas.addEventListener('pointermove', (e) => {
+  if(chartDragging || !lastChartGeometry) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const { points, xOf, LEFT_PAD, RIGHT_PAD, cssW } = lastChartGeometry;
+  if(mx < LEFT_PAD || mx > cssW - RIGHT_PAD || points.length === 0){
+    chartHoverTip.classList.remove('show');
+    return;
+  }
+  // find nearest data point to the cursor's x position
+  let nearestIdx = 0, nearestDist = Infinity;
+  points.forEach((p, i) => {
+    const d = Math.abs(xOf(i) - mx);
+    if(d < nearestDist){ nearestDist = d; nearestIdx = i; }
+  });
+  const p = points[nearestIdx];
+  chartHoverTip.textContent = '$' + p.price.toFixed(2) + '  ·  ' + new Date(p.t).toLocaleTimeString([], { hour:'numeric', minute:'2-digit', second:'2-digit' }) + (p.closed ? '  (market closed)' : '');
+  const tipX = Math.min(Math.max(xOf(nearestIdx), 60), cssW - 60);
+  chartHoverTip.style.left = tipX + 'px';
+  chartHoverTip.style.top = '6px';
+  chartHoverTip.style.transform = 'translateX(-50%)';
+  chartHoverTip.classList.add('show');
+});
+canvas.addEventListener('pointerleave', () => chartHoverTip.classList.remove('show'));
+
 const jumpLiveBtn = document.getElementById('jumpLive');
 
 function cacheMarketLocally(){ localStorage.setItem('mrwestcoin_market_cache', JSON.stringify(market)); }
 
+function totalHeld(){
+  return portfolio.lots.reduce((sum, l) => sum + l.qty, 0);
+}
 function renderPortfolio(){
   cashEl.textContent = '$' + portfolio.cash.toFixed(2);
-  heldEl.textContent = portfolio.held.toFixed(4);
-  totalEl.textContent = '$' + (portfolio.cash + portfolio.held*currentPrice).toFixed(2);
+  heldEl.textContent = totalHeld().toFixed(4);
+  totalEl.textContent = '$' + (portfolio.cash + totalHeld()*currentPrice).toFixed(2);
 }
 function renderHistory(){
   if(portfolio.trades.length === 0){ historyListEl.innerHTML = '<div class="empty-history">No trades yet.</div>'; return; }
   historyListEl.innerHTML = portfolio.trades.slice().reverse().map(t => `
-    <div class="history-row ${t.type}"><span class="type">${t.type.toUpperCase()}</span><span>${t.qty.toFixed(4)} $WEST @ $${t.price.toFixed(2)}</span><span>${t.time}</span></div>`).join('');
+    <div class="history-row ${t.type}"><span class="type">${t.type.toUpperCase()} #${t.lotId}</span><span>${t.qty.toFixed(4)} $WEST @ $${t.price.toFixed(2)}</span><span>${t.time}</span></div>`).join('');
+}
+const lotsListEl = document.getElementById('lotsList');
+function renderLots(){
+  if(portfolio.lots.length === 0){ lotsListEl.innerHTML = '<div class="empty-history">No open positions.</div>'; return; }
+  lotsListEl.innerHTML = portfolio.lots.slice().reverse().map(l => {
+    const pl = (currentPrice - l.buyPrice) * l.qty;
+    const plPct = ((currentPrice - l.buyPrice) / l.buyPrice) * 100;
+    const up = pl >= 0;
+    return `
+      <div class="lot-row">
+        <div class="lot-num">#${l.id}</div>
+        <div class="lot-info">
+          ${l.qty.toFixed(4)} $WEST @ <b>$${l.buyPrice.toFixed(2)}</b><br>
+          <span class="lot-pl ${up?'up':'down'}">${up?'+':''}$${pl.toFixed(2)} (${up?'+':''}${plPct.toFixed(1)}%)</span>
+        </div>
+        <button class="lot-sell-btn" data-lot-id="${l.id}">Sell</button>
+      </div>`;
+  }).join('');
+  lotsListEl.querySelectorAll('.lot-sell-btn').forEach(btn => {
+    btn.addEventListener('click', () => sellLot(parseInt(btn.dataset.lotId, 10), btn));
+  });
 }
 
-/* --- scrollable time-range chart --- */
-let rangeMs = 3600000;   // 0 means "All"
-let scrollOffsetMs = 0;  // 0 = showing the latest data; larger = scrolled back in time
+/* --- fence-style brush timeline: shows the full history, drag the handles to pick a window --- */
+const brushCanvas = document.getElementById('brushChart');
+const brushCtx = brushCanvas.getContext('2d');
+let viewStart = null, viewEnd = null; // absolute timestamps; null = "live" (always show the latest window)
+const MIN_WINDOW_MS = 8000; // can't shrink the selection below ~8 seconds of data
+
+function currentWindow(){
+  if(priceHistory.length === 0) return { start: 0, end: 0, live: true };
+  const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
+  if(viewStart === null || viewEnd === null){
+    return { start: Math.max(earliestT, latestT - 120000), end: latestT, live: true }; // trailing 2-minute live window
+  }
+  return { start: Math.max(earliestT, viewStart), end: Math.min(latestT, viewEnd), live: false };
+}
 
 function visibleHistory(){
   if(priceHistory.length === 0) return [];
-  const latestT = priceHistory[priceHistory.length-1].t;
-  const endT = latestT - scrollOffsetMs;
-  const startT = rangeMs > 0 ? endT - rangeMs : priceHistory[0].t;
-  let points = priceHistory.filter(p => p.t >= startT && p.t <= endT);
+  const w = currentWindow();
+  let points = priceHistory.filter(p => p.t >= w.start && p.t <= w.end);
   if(points.length < 2) points = priceHistory.slice(-2);
-  // when looking at the live edge, tack on the current deterministic wiggle point so the
-  // line visibly keeps moving between real syncs instead of sitting flat
-  if(scrollOffsetMs === 0){
-    points = points.concat([{ price: displayPrice, t: Date.now() }]);
-  }
   return points;
 }
 function clampScroll(){
-  if(priceHistory.length === 0){ scrollOffsetMs = 0; return; }
-  const latestT = priceHistory[priceHistory.length-1].t;
-  const earliestT = priceHistory[0].t;
-  const maxOffset = rangeMs > 0 ? Math.max(0, (latestT - earliestT) - rangeMs) : 0;
-  scrollOffsetMs = Math.min(maxOffset, Math.max(0, scrollOffsetMs));
-  jumpLiveBtn.classList.toggle('visible', scrollOffsetMs > 0);
+  jumpLiveBtn.classList.toggle('visible', viewStart !== null);
+}
+
+function formatAxisTime(t, spanMs){
+  const d = new Date(t);
+  if(spanMs <= 2 * 86400000) return d.toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
+  return d.toLocaleDateString([], { month:'short', day:'numeric' });
 }
 
 function drawChart(){
@@ -927,9 +1379,9 @@ function drawChart(){
   ctx.clearRect(0,0,cssW,cssH);
 
   const points = visibleHistory();
-  if(points.length < 2) return;
+  if(points.length < 2) { drawBrush(); return; }
 
-  const LEFT_PAD = 46, RIGHT_PAD = 6, TOP_PAD = 10, BOTTOM_PAD = 10;
+  const LEFT_PAD = 46, RIGHT_PAD = 6, TOP_PAD = 10, BOTTOM_PAD = 24;
   const plotW = cssW - LEFT_PAD - RIGHT_PAD, plotH = cssH - TOP_PAD - BOTTOM_PAD;
   const prices = points.map(p => p.price);
   const rawMin = Math.min(...prices), rawMax = Math.max(...prices);
@@ -937,6 +1389,18 @@ function drawChart(){
   const min = rawMin - pad, max = rawMax + pad, range = (max - min) || 1;
   const yOf = v => TOP_PAD + plotH - ((v - min) / range) * plotH;
   const xOf = i => LEFT_PAD + (i / (points.length - 1)) * plotW;
+
+  const spanMs = points[points.length-1].t - points[0].t;
+  const X_LABELS = 4;
+  ctx.font = '9px Courier New, monospace';
+  ctx.fillStyle = '#a89678';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  for(let x = 0; x <= X_LABELS; x++){
+    const idx = Math.round((x / X_LABELS) * (points.length - 1));
+    const px = xOf(idx);
+    ctx.fillText(formatAxisTime(points[idx].t, spanMs), Math.min(Math.max(px, LEFT_PAD+20), cssW-RIGHT_PAD-20), cssH - BOTTOM_PAD + 6);
+  }
 
   const GRID_LINES = 4;
   ctx.font = '9px Courier New, monospace';
@@ -955,72 +1419,381 @@ function drawChart(){
     ctx.fillText('$' + v.toFixed(2), LEFT_PAD - 6, y);
   }
 
+  // Render the line/fill slightly wider than the visible plot area, then clip tightly to the
+  // exact plot rect — this way the edges always reach flush to the boundary with room to spare,
+  // instead of any sub-pixel rounding ever being able to leave a hairline gap the player would see.
+  const OVERDRAW = 4;
+  ctx.save();
   ctx.beginPath();
-  ctx.strokeStyle = '#d97a3f';
-  ctx.lineWidth = 1.6;
-  ctx.lineJoin = 'round';
-  points.forEach((p, i) => {
-    const x = xOf(i), y = yOf(p.price);
-    if(i === 0){ ctx.moveTo(x, y); }
-    else{
-      const prevX = xOf(i-1), prevY = yOf(points[i-1].price);
-      const midX = (prevX + x) / 2, midY = (prevY + y) / 2;
-      ctx.quadraticCurveTo(prevX, prevY, midX, midY);
+  ctx.rect(LEFT_PAD, TOP_PAD, plotW, plotH);
+  ctx.clip();
+
+  // draw the line as a sequence of segments, switching style whenever we cross a
+  // closed/live boundary — this is what actually renders the "market closed" bridge distinctly
+  let segStart = 0;
+  for(let i = 1; i <= points.length; i++){
+    const boundary = i === points.length || !!points[i].closed !== !!points[segStart].closed;
+    if(!boundary) continue;
+    const segPoints = points.slice(segStart, i);
+    const isClosed = !!points[segStart].closed;
+
+    ctx.beginPath();
+    ctx.strokeStyle = isClosed ? 'rgba(168,150,120,0.55)' : '#d97a3f';
+    ctx.lineWidth = isClosed ? 1.3 : 1.6;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.setLineDash(isClosed ? [5, 4] : []);
+    segPoints.forEach((p, j) => {
+      const gi = segStart + j;
+      // overdraw the very first/last point of the WHOLE chart a little past the edge, so the
+      // rounded line-cap always fully covers the boundary rather than potentially falling short
+      const overshoot = (gi === 0 ? -OVERDRAW : gi === points.length - 1 ? OVERDRAW : 0);
+      const x = xOf(gi) + overshoot, y = yOf(p.price);
+      if(j === 0){ ctx.moveTo(x, y); }
+      else{
+        const prevOvershoot = (gi-1 === 0 ? -OVERDRAW : 0);
+        const prevX = xOf(gi-1) + prevOvershoot, prevY = yOf(points[gi-1].price);
+        const midX = (prevX + x) / 2, midY = (prevY + y) / 2;
+        ctx.quadraticCurveTo(prevX, prevY, midX, midY);
+      }
+    });
+    // connect to the first point of the next segment so there's no visible gap at the boundary
+    if(i < points.length){ ctx.lineTo(xOf(i), yOf(points[i].price)); }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // fill under THIS segment only — never under the closed bridge, so there's no stray tint there
+    if(!isClosed){
+      const segEndIdx = i < points.length ? i : points.length - 1;
+      const endOvershoot = segEndIdx === points.length - 1 ? OVERDRAW : 0;
+      const startOvershoot = segStart === 0 ? -OVERDRAW : 0;
+      ctx.lineTo(xOf(segEndIdx) + endOvershoot, TOP_PAD + plotH);
+      ctx.lineTo(xOf(segStart) + startOvershoot, TOP_PAD + plotH);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(217,122,63,0.08)';
+      ctx.fill();
     }
-  });
+
+    segStart = i;
+  }
+  ctx.restore(); // drop the clip — everything drawn after this (labels, legend, etc.) is unaffected
+
+  // "Market Closed" label centered under any closed stretch
+  const closedIdxs = points.map((p,i) => p.closed ? i : -1).filter(i => i >= 0);
+  if(closedIdxs.length > 0){
+    const midIdx = closedIdxs[Math.floor(closedIdxs.length/2)];
+    const labelX = xOf(midIdx);
+    ctx.font = '9px Courier New, monospace';
+    ctx.fillStyle = 'rgba(168,150,120,0.85)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('MARKET CLOSED', Math.min(Math.max(labelX, LEFT_PAD+50), cssW-RIGHT_PAD-50), TOP_PAD + plotH/2);
+  }
+
   const lastX = xOf(points.length-1), lastY = yOf(points[points.length-1].price);
-  ctx.lineTo(lastX, lastY);
-  ctx.stroke();
 
-  ctx.lineTo(lastX, TOP_PAD + plotH);
-  ctx.lineTo(LEFT_PAD, TOP_PAD + plotH);
-  ctx.closePath();
-  ctx.fillStyle = 'rgba(217,122,63,0.08)';
-  ctx.fill();
-
-  // only draw the "current price" dot when we're actually looking at the live edge
-  if(scrollOffsetMs === 0){
+  if(currentWindow().live){
     ctx.beginPath();
     ctx.arc(lastX, lastY, 2.6, 0, Math.PI*2);
     ctx.fillStyle = '#f4ecd8';
     ctx.fill();
   }
+
+  // numbered horizontal lines marking where each open position was bought
+  if(typeof portfolio !== 'undefined' && portfolio.lots){
+    portfolio.lots.forEach(lot => {
+      if(lot.buyPrice < min || lot.buyPrice > max) return; // off the current price range — skip rather than clutter
+      const y = yOf(lot.buyPrice);
+      ctx.beginPath();
+      ctx.strokeStyle = 'rgba(244,236,216,0.5)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.moveTo(LEFT_PAD, y);
+      ctx.lineTo(cssW - RIGHT_PAD, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const label = '#' + lot.id;
+      ctx.font = '9px Courier New, monospace';
+      const labelW = ctx.measureText(label).width + 8;
+      ctx.fillStyle = 'rgba(26,21,16,0.9)';
+      ctx.fillRect(cssW - RIGHT_PAD - labelW, y - 8, labelW, 16);
+      ctx.strokeStyle = '#f4ecd8';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(cssW - RIGHT_PAD - labelW + 0.5, y - 8 + 0.5, labelW - 1, 15);
+      ctx.fillStyle = '#f4ecd8';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, cssW - RIGHT_PAD - labelW/2, y);
+    });
+  }
+
+  // --- analysis tool overlays ---
+  const meanPrice = prices.reduce((a,b) => a+b, 0) / prices.length;
+  const variance = prices.reduce((a,b) => a + (b-meanPrice)*(b-meanPrice), 0) / prices.length;
+  const stdDev = Math.sqrt(variance);
+
+  if(activeTools.has('avg')){
+    ctx.beginPath();
+    ctx.strokeStyle = '#5aa9f0';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2,3]);
+    ctx.moveTo(LEFT_PAD, yOf(meanPrice));
+    ctx.lineTo(cssW - RIGHT_PAD, yOf(meanPrice));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#5aa9f0';
+    ctx.font = '9px Courier New, monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('avg $' + meanPrice.toFixed(2), LEFT_PAD + 4, yOf(meanPrice) - 2);
+  }
+
+  if(activeTools.has('bands') && stdDev > 0){
+    ctx.fillStyle = 'rgba(90,169,240,0.08)';
+    ctx.fillRect(LEFT_PAD, yOf(meanPrice+stdDev), plotW, yOf(meanPrice-stdDev)-yOf(meanPrice+stdDev));
+    [meanPrice+stdDev, meanPrice-stdDev].forEach(v => {
+      ctx.beginPath();
+      ctx.strokeStyle = 'rgba(90,169,240,0.4)';
+      ctx.lineWidth = 1;
+      ctx.moveTo(LEFT_PAD, yOf(v));
+      ctx.lineTo(cssW - RIGHT_PAD, yOf(v));
+      ctx.stroke();
+    });
+  }
+
+  if(activeTools.has('trend') && points.length >= 2){
+    // simple linear regression over the visible points
+    const n = points.length;
+    let sumX=0,sumY=0,sumXY=0,sumXX=0;
+    points.forEach((p,i) => { sumX+=i; sumY+=p.price; sumXY+=i*p.price; sumXX+=i*i; });
+    const slope = (n*sumXY - sumX*sumY) / (n*sumXX - sumX*sumX || 1);
+    const intercept = (sumY - slope*sumX) / n;
+    const y0 = intercept, y1 = intercept + slope*(n-1);
+    ctx.beginPath();
+    ctx.strokeStyle = slope >= 0 ? '#4fae5c' : '#c23b3b';
+    ctx.lineWidth = 1.4;
+    ctx.moveTo(LEFT_PAD, yOf(y0));
+    ctx.lineTo(cssW - RIGHT_PAD, yOf(y1));
+    ctx.stroke();
+  }
+
+  if(activeTools.has('highlow')){
+    const maxP = Math.max(...prices), minP = Math.min(...prices);
+    [{v:maxP,c:'#4fae5c',label:'high'},{v:minP,c:'#c23b3b',label:'low'}].forEach(h => {
+      ctx.beginPath();
+      ctx.strokeStyle = h.c;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2,3]);
+      ctx.moveTo(LEFT_PAD, yOf(h.v));
+      ctx.lineTo(cssW - RIGHT_PAD, yOf(h.v));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = h.c;
+      ctx.font = '9px Courier New, monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(h.label + ' $' + h.v.toFixed(2), LEFT_PAD + 4, yOf(h.v) - 2);
+    });
+  }
+
+  if(activeTools.has('vol')){
+    ctx.fillStyle = 'rgba(244,236,216,0.8)';
+    ctx.font = '10px Courier New, monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillText('σ $' + stdDev.toFixed(3), cssW - RIGHT_PAD - 4, TOP_PAD + 4);
+  }
+
+  // stash geometry so the hover handler can map a mouse x back to a data point
+  lastChartGeometry = { points, xOf, yOf, LEFT_PAD, RIGHT_PAD, TOP_PAD, plotW, plotH, cssW, cssH };
+
+  drawBrush();
 }
 
-document.querySelectorAll('.range-btns button').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.range-btns button').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    rangeMs = parseInt(btn.dataset.range, 10);
-    scrollOffsetMs = 0;
-    clampScroll();
-    drawChart();
-  });
-});
-jumpLiveBtn.addEventListener('click', () => { scrollOffsetMs = 0; clampScroll(); drawChart(); });
+/* --- the brush strip itself: a compressed sparkline of ALL history, with two draggable
+   handles ("fence posts") marking the selected window, plus a draggable middle to pan it --- */
+function drawBrush(){
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = brushCanvas.offsetWidth, cssH = brushCanvas.offsetHeight;
+  if(cssW === 0 || cssH === 0 || priceHistory.length < 2) return;
+  brushCanvas.width = cssW * dpr; brushCanvas.height = cssH * dpr;
+  brushCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  brushCtx.clearRect(0,0,cssW,cssH);
 
-// drag the chart itself to scroll back through history (independent of the world-map drag)
-let chartDragging = false, chartDragStartX = 0, chartDragStartOffset = 0;
+  const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
+  const totalSpan = Math.max(1, latestT - earliestT);
+  const prices = priceHistory.map(p => p.price);
+  const min = Math.min(...prices), max = Math.max(...prices), range = (max-min) || 1;
+  const tToX = t => ((t - earliestT) / totalSpan) * cssW;
+  const priceToY = p => cssH - ((p - min) / range) * (cssH - 6) - 3;
+
+  // full-history sparkline — the entire priceHistory array, always, regardless of what the main chart shows
+  brushCtx.beginPath();
+  priceHistory.forEach((p, i) => {
+    const x = tToX(p.t), y = priceToY(p.price);
+    if(i === 0) brushCtx.moveTo(x, y); else brushCtx.lineTo(x, y);
+  });
+  brushCtx.strokeStyle = '#c9a876';
+  brushCtx.lineWidth = 1.4;
+  brushCtx.lineJoin = 'round';
+  brushCtx.stroke();
+
+  // light fill under it so the shape reads clearly even at a glance
+  brushCtx.lineTo(tToX(priceHistory[priceHistory.length-1].t), cssH);
+  brushCtx.lineTo(tToX(priceHistory[0].t), cssH);
+  brushCtx.closePath();
+  brushCtx.fillStyle = 'rgba(201,168,118,0.12)';
+  brushCtx.fill();
+
+  // small dot at the very latest point so it's obvious this is live, real data
+  const lastP = priceHistory[priceHistory.length-1];
+  brushCtx.beginPath();
+  brushCtx.arc(tToX(lastP.t), priceToY(lastP.price), 2, 0, Math.PI*2);
+  brushCtx.fillStyle = '#f4ecd8';
+  brushCtx.fill();
+
+  // selected window highlight + handles
+  const w = currentWindow();
+  const x0 = tToX(w.start), x1 = tToX(w.end);
+  brushCtx.fillStyle = 'rgba(217,122,63,0.16)';
+  brushCtx.fillRect(x0, 0, Math.max(2, x1 - x0), cssH);
+  brushCtx.strokeStyle = 'rgba(217,122,63,0.5)';
+  brushCtx.lineWidth = 1;
+  brushCtx.strokeRect(x0, 0.5, Math.max(2, x1 - x0), cssH - 1);
+
+  // wide gate posts with a grip notch, so they're obviously separate from the pannable middle
+  [x0, x1].forEach(hx => {
+    brushCtx.fillStyle = '#d97a3f';
+    brushCtx.fillRect(hx - 3, 0, 6, cssH);
+    brushCtx.fillStyle = '#f4ecd8';
+    brushCtx.fillRect(hx - 1, cssH/2 - 6, 2, 12);
+  });
+}
+
+jumpLiveBtn.addEventListener('click', () => { viewStart = null; viewEnd = null; clampScroll(); drawChart(); });
+
+/* dragging on the main chart pans the current window left/right */
+let chartDragging = false, chartDragStartX = 0, chartDragStartWindow = null;
 chartWrap.addEventListener('pointerdown', (e) => {
   chartDragging = true;
   chartWrap.classList.add('grabbing');
   chartDragStartX = e.clientX;
-  chartDragStartOffset = scrollOffsetMs;
+  chartDragStartWindow = currentWindow();
   e.stopPropagation();
 });
 window.addEventListener('pointermove', (e) => {
   if(!chartDragging) return;
-  const pxPerMs = canvas.offsetWidth / (rangeMs > 0 ? rangeMs : (priceHistory[priceHistory.length-1].t - priceHistory[0].t || 1));
+  const w = chartDragStartWindow;
+  const spanMs = w.end - w.start;
+  const pxPerMs = canvas.offsetWidth / (spanMs || 1);
   const dx = e.clientX - chartDragStartX;
-  scrollOffsetMs = chartDragStartOffset - dx / pxPerMs;
+  const shift = -dx / pxPerMs;
+  const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
+  let newStart = w.start + shift, newEnd = w.end + shift;
+  if(newStart < earliestT){ newEnd += (earliestT - newStart); newStart = earliestT; }
+  if(newEnd > latestT){ newStart -= (newEnd - latestT); newEnd = latestT; }
+  viewStart = Math.max(earliestT, newStart);
+  viewEnd = Math.min(latestT, newEnd);
   clampScroll();
   drawChart();
 });
 window.addEventListener('pointerup', () => { chartDragging = false; chartWrap.classList.remove('grabbing'); });
 
+/* dragging the brush handles resizes the window; dragging the middle pans it */
+const brushWrap = document.querySelector('.brush-wrap');
+let brushMode = null; // 'left' | 'right' | 'move' | null
+let brushDragStartX = 0, brushDragStartWindow = null;
+
+function brushPxToTime(px){
+  const cssW = brushCanvas.offsetWidth;
+  const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
+  return earliestT + (px / cssW) * (latestT - earliestT);
+}
+brushCanvas.addEventListener('pointermove', (e) => {
+  if(brushMode || priceHistory.length < 2) return; // don't fight the cursor mid-drag
+  const rect = brushCanvas.getBoundingClientRect();
+  const px = e.clientX - rect.left;
+  const w = currentWindow();
+  const cssW = brushCanvas.offsetWidth;
+  const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
+  const x0 = ((w.start - earliestT) / (latestT - earliestT || 1)) * cssW;
+  const x1 = ((w.end - earliestT) / (latestT - earliestT || 1)) * cssW;
+  const HANDLE_HIT = 20;
+  if(Math.abs(px - x0) <= HANDLE_HIT || Math.abs(px - x1) <= HANDLE_HIT){
+    brushCanvas.style.cursor = 'ew-resize';
+  } else if(px > x0 && px < x1){
+    brushCanvas.style.cursor = 'grab';
+  } else {
+    brushCanvas.style.cursor = 'crosshair';
+  }
+});
+
+let brushGrabOffsetMs = 0; // keeps the handle at a fixed offset from the cursor instead of snapping to it
+
+brushWrap.addEventListener('pointerdown', (e) => {
+  if(priceHistory.length < 2) return;
+  const rect = brushCanvas.getBoundingClientRect();
+  const px = e.clientX - rect.left;
+  const w = currentWindow();
+  const cssW = brushCanvas.offsetWidth;
+  const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
+  const x0 = ((w.start - earliestT) / (latestT - earliestT || 1)) * cssW;
+  const x1 = ((w.end - earliestT) / (latestT - earliestT || 1)) * cssW;
+  const HANDLE_HIT = 20; // wide, easy-to-grab hit zone right at each gate
+  const distToLeft = Math.abs(px - x0), distToRight = Math.abs(px - x1);
+
+  // whichever gate is genuinely closer wins whenever a click is within reach of either —
+  // no fallback branch that silently favors one side over the other
+  if(distToLeft <= HANDLE_HIT || distToRight <= HANDLE_HIT){
+    brushMode = distToLeft <= distToRight ? 'left' : 'right';
+  } else if(px > x0 && px < x1){
+    brushMode = 'move';
+  } else {
+    brushMode = px < x0 ? 'left' : 'right';
+  }
+
+  const clickedT = brushPxToTime(px);
+  // remember exactly how far off-center the click was, so the handle doesn't jump to snap
+  // under the cursor the instant you grab it — it keeps the same relative offset all the way through
+  brushGrabOffsetMs = brushMode === 'left' ? w.start - clickedT : brushMode === 'right' ? w.end - clickedT : 0;
+
+  brushDragStartX = e.clientX;
+  brushDragStartWindow = w;
+  brushWrap.classList.add('dragging');
+  e.stopPropagation();
+});
+window.addEventListener('pointermove', (e) => {
+  if(!brushMode || priceHistory.length < 2) return;
+  const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
+  const cssW = brushCanvas.offsetWidth;
+  const rect = brushCanvas.getBoundingClientRect();
+  const px = e.clientX - rect.left;
+  const t = Math.min(latestT, Math.max(earliestT, brushPxToTime(px) + brushGrabOffsetMs));
+
+  if(brushMode === 'left'){
+    viewStart = Math.min(t, brushDragStartWindow.end - MIN_WINDOW_MS);
+    viewEnd = brushDragStartWindow.end;
+  } else if(brushMode === 'right'){
+    viewStart = brushDragStartWindow.start;
+    viewEnd = Math.max(t, brushDragStartWindow.start + MIN_WINDOW_MS);
+  } else if(brushMode === 'move'){
+    const dxPx = e.clientX - brushDragStartX;
+    const dxMs = (dxPx / cssW) * (latestT - earliestT);
+    let ns = brushDragStartWindow.start + dxMs, ne = brushDragStartWindow.end + dxMs;
+    if(ns < earliestT){ ne += (earliestT - ns); ns = earliestT; }
+    if(ne > latestT){ ns -= (ne - latestT); ne = latestT; }
+    viewStart = ns; viewEnd = ne;
+  }
+  clampScroll();
+  drawChart();
+});
+window.addEventListener('pointerup', () => { brushMode = null; brushWrap.classList.remove('dragging'); });
+
 function updatePriceDisplays(){
-  const changePct = currentPrice ? ((displayPrice - currentPrice) / currentPrice) * 100 : 0;
-  const priceText = '$' + displayPrice.toFixed(2);
+  const prevPrice = priceHistory.length > 1 ? priceHistory[priceHistory.length-2].price : currentPrice;
+  const changePct = prevPrice ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
+  const priceText = '$' + currentPrice.toFixed(2);
   priceEl.textContent = priceText; miniPriceEl.textContent = priceText;
   const isUp = changePct >= 0;
   const changeText = (isUp?'▲ ':'▼ ') + Math.abs(changePct).toFixed(2) + '%' + (syncOK ? '' : ' (local)');
@@ -1028,9 +1801,13 @@ function updatePriceDisplays(){
   miniChangeEl.textContent = changeText; miniChangeEl.className = 'change ' + (isUp?'up':'down');
 }
 
-// local-only fallback model, used only if the shared file can't be reached at all
-function advanceOneTickLocally(m){
-  m.fairValue *= (1 + (Math.random() - 0.5) * 0.01);
+// Small persistent upward drift: on average, fair value gains about 1% per real day. Applied
+// per-tick so it compounds naturally instead of being one big jump — TICK_INTERVAL-aware so it
+// stays correct even if the tick rate is ever changed.
+const DAILY_BIAS = 0.01 / (86400000 / TICK_INTERVAL);
+
+function advanceOneTick(m, closed){
+  m.fairValue *= (1 + (Math.random() - 0.5) * 0.01 + DAILY_BIAS);
   const volShock = Math.abs((Math.random() - 0.5)) * 0.03;
   m.vol = Math.min(0.06, Math.max(0.004, m.vol * 0.85 + volShock * 0.15));
   const shock = (Math.random() - 0.5) * 2 * m.vol;
@@ -1038,28 +1815,63 @@ function advanceOneTickLocally(m){
   const reversion = (m.fairValue - m.price) / m.price * 0.03;
   const spike = Math.random() < 0.03 ? (Math.random() - 0.5) * 0.12 : 0;
   m.price = Math.max(0.01, m.price * (1 + m.momentum + reversion + spike));
-  m.history.push({ price: m.price, t: Date.now() });
-  if(m.history.length > 150) m.history.shift();
+  const point = { price: m.price, t: Date.now() };
+  if(closed) point.closed = true; // tags this as a "market was closed" synthetic bridge point
+  m.history.push(point);
+  downsampleHistory(m);
 }
 
-async function syncMarket(){
-  try{
-    const res = await fetch(MARKET_URL, { cache:'no-store' });
-    if(res.ok){
-      const remote = await res.json();
-      if(remote && remote.history && remote.history.length){
-        market = remote;
-        syncOK = true;
-      }
-    } else {
-      syncOK = false;
+// Keeps full-resolution data for the last week, then progressively halves resolution for each
+// week further back — so history goes all the way back to the start, but storage in Firebase
+// stays bounded instead of growing forever at full density.
+const WEEK_MS = 7 * 86400000;
+function downsampleHistory(m){
+  if(m.history.length < 4) return;
+  const now = Date.now();
+  const kept = [];
+  // walk oldest-to-newest, deciding whether to keep each point based on which "age bracket"
+  // it falls into — every bracket further back keeps half as many points as the one before it
+  let bracketIndex = -1, seenInBracket = 0;
+  for(let i = 0; i < m.history.length; i++){
+    const age = now - m.history[i].t;
+    const thisBracket = age <= WEEK_MS ? 0 : Math.floor(Math.log2(age / WEEK_MS)) + 1;
+    if(thisBracket !== bracketIndex){ bracketIndex = thisBracket; seenInBracket = 0; }
+    const keepEvery = Math.pow(2, Math.max(0, bracketIndex));
+    // always keep the very newest and very oldest points so the chart's edges never look truncated
+    if(seenInBracket % keepEvery === 0 || i === m.history.length - 1 || i === 0){
+      kept.push(m.history[i]);
     }
-  } catch(e){
-    syncOK = false;
+    seenInBracket++;
   }
+  m.history = kept;
+}
 
-  if(!syncOK) advanceOneTickLocally(market); // keep something moving locally if the file is unreachable
+// If nobody had the page open for a while, instead of one abrupt jump (or a flat line), simulate
+// a believable "what would have happened" path across the whole gap and tag those points as
+// closed — the chart then renders that stretch greyed out with a "Market Closed" label, rather
+// than pretending the market secretly kept ticking in real time while no one was watching.
+const CLOSED_GAP_THRESHOLD = TICK_INTERVAL * 3;
+const CLOSED_BRIDGE_POINTS = 40; // how many synthetic points span the closed gap, regardless of how long it actually was
 
+function applyCatchup(m){
+  const now = Date.now();
+  const elapsed = m.updatedAt ? now - m.updatedAt : TICK_INTERVAL;
+  if(elapsed <= CLOSED_GAP_THRESHOLD){
+    advanceOneTick(m, false);
+  } else {
+    const startT = m.updatedAt || (now - elapsed);
+    const stepMs = elapsed / CLOSED_BRIDGE_POINTS;
+    for(let i = 1; i <= CLOSED_BRIDGE_POINTS; i++){
+      advanceOneTick(m, true);
+      m.history[m.history.length - 1].t = Math.round(startT + stepMs * i); // spread evenly across the real gap
+    }
+  }
+  m.updatedAt = now;
+  return m;
+}
+
+function applyMarketUpdate(m){
+  market = m;
   currentPrice = market.price;
   priceHistory = market.history;
   cacheMarketLocally();
@@ -1067,98 +1879,105 @@ async function syncMarket(){
   updatePriceDisplays();
   drawChart();
   renderPortfolio();
+  renderLots();
 }
 
-/* --- deterministic "live" ticking between syncs ---
-   Instead of polling the server every few seconds, we only actually fetch on page load and
-   right before a trade. In between, every browser computes the SAME small price wiggle
-   independently, because it's seeded from the current wall-clock time bucket rather than
-   Math.random() — so everyone sees identical movement without any network traffic. This is
-   purely a display effect: it never touches market.price or gets saved anywhere, so it can't
-   drift away from the real GitHub-Action-driven price. */
-function mulberry32(seed){
-  return function(){
-    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
-    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
+if(db){
+  // live push updates — every browser sees a change the instant anyone writes one
+  db.ref('market/state').on('value', (snap) => {
+    const remote = snap.val();
+    if(remote && remote.history && remote.history.length){
+      syncOK = true;
+      applyMarketUpdate(remote);
+    }
+  });
+
+  // gated ticking: only actually advance + write if nobody else has ticked very recently,
+  // so multiple open tabs don't all fight to write at once
+  setInterval(() => {
+    const elapsed = market.updatedAt ? Date.now() - market.updatedAt : TICK_INTERVAL;
+    if(elapsed < TICK_INTERVAL * 0.9) return; // someone else just ticked — let their write arrive
+    const next = applyCatchup(JSON.parse(JSON.stringify(market)));
+    db.ref('market/state').set(next).catch(() => {});
+  }, TICK_INTERVAL);
+} else {
+  // no Firebase — fall back to a purely local simulation so the page still works
+  syncOK = false;
+  applyMarketUpdate(applyCatchup(market));
+  setInterval(() => {
+    applyCatchup(market);
+    applyMarketUpdate(market);
+  }, TICK_INTERVAL);
 }
-const WIGGLE_BUCKET_MS = 1500; // everyone recomputes together every 1.5s of wall-clock time
-let displayPrice = currentPrice;
 
-function tickLiveDisplay(){
-  const bucket = Math.floor(Date.now() / WIGGLE_BUCKET_MS);
-  const rand1 = mulberry32(bucket)();
-  const rand2 = mulberry32(bucket + 99991)(); // second draw, decorrelated from the first
-  const wiggle = (rand1 - 0.5) * 0.012 + (rand2 - 0.5) * 0.006; // small, deterministic, same for everyone
-  displayPrice = currentPrice * (1 + wiggle);
-  updatePriceDisplays();
-  drawChart();
+// Previously taxed BOTH buy and sell at a flat rate, which guaranteed a loss on every round
+// trip even when the price went up — that's what made it feel unbalanced. Now: no tax at all
+// on buying, and selling is only taxed on the PROFIT portion, and only once that profit is
+// meaningful — a real capital-gains-style model instead of a flat transaction fee.
+const PROFIT_TAX_THRESHOLD = 0.10; // only taxed once a position is up at least 10%
+const PROFIT_TAX_RATE = 0.15;      // and even then, only 15% of the profit itself is taxed
+
+// picks the smallest positive integer not currently in use, so a sold lot's number gets
+// reused by the next buy — e.g. sell #1 while #2 and #3 exist, and the next buy becomes #1 again
+function nextAvailableLotId(){
+  const used = new Set(portfolio.lots.map(l => l.id));
+  let id = 1;
+  while(used.has(id)) id++;
+  return id;
 }
-setInterval(tickLiveDisplay, WIGGLE_BUCKET_MS);
 
-
-const TRADE_TAX_RATE = 0.015; // 1.5% tax on every trade — also closes the buy-then-sell-higher loop
-
-document.getElementById('buyBtn').addEventListener('click', async () => {
+document.getElementById('buyBtn').addEventListener('click', () => {
   const qty = parseFloat(qtyInput.value);
   if(!qty || qty<=0){ msgEl.textContent = 'Enter a valid quantity.'; return; }
-  msgEl.textContent = 'Checking latest price...';
-  await syncMarket(); // trades always execute against the freshest synced price, not a stale local one
   const cost = qty*currentPrice;
-  const tax = cost * TRADE_TAX_RATE;
-  const totalCost = cost + tax;
-  if(totalCost > portfolio.cash){ msgEl.textContent = "You can't afford that (incl. tax), champ."; return; }
-  portfolio.cash -= totalCost; portfolio.held += qty;
-  portfolio.trades.push({ type:'buy', qty, price: currentPrice, tax, time: new Date().toLocaleString() });
+  if(cost > portfolio.cash){ msgEl.textContent = "You can't afford that, champ."; return; }
+  portfolio.cash -= cost;
+  const lotId = nextAvailableLotId();
+  portfolio.lots.push({ id: lotId, qty, buyPrice: currentPrice, time: new Date().toLocaleString() });
+  portfolio.trades.push({ type:'buy', qty, price: currentPrice, tax: 0, lotId, time: new Date().toLocaleString() });
   savePortfolio(portfolio);
-
-  // NOTE: trades no longer move the price at all — the shared price only comes from the
-  // GitHub Action file. This is also what actually fixes the buy-then-sell exploit: since your
-  // own trade can never move the price you're trading at, there's no free arbitrage loop to run.
-  renderPortfolio(); renderHistory();
-  msgEl.textContent = `Bought ${qty} $WEST for $${cost.toFixed(2)} (+ $${tax.toFixed(2)} tax).`;
+  renderPortfolio(); renderHistory(); renderLots(); drawChart();
+  msgEl.textContent = `Bought #${lotId}: ${qty} $WEST for $${cost.toFixed(2)}.`;
 });
-document.getElementById('sellBtn').addEventListener('click', async () => {
-  const qty = parseFloat(qtyInput.value);
-  if(!qty || qty<=0){ msgEl.textContent = 'Enter a valid quantity.'; return; }
-  if(qty > portfolio.held){ msgEl.textContent = "You don't hold that much $WEST."; return; }
-  msgEl.textContent = 'Checking latest price...';
-  await syncMarket();
-  const proceeds = qty*currentPrice;
-  const tax = proceeds * TRADE_TAX_RATE;
+
+// cookie-clicker style floating +$X.XX / -$X.XX that rises and fades above wherever it was triggered
+function spawnProfitPopup(anchorRect, amount){
+  const isProfit = amount >= 0;
+  const popup = document.createElement('div');
+  popup.className = 'profit-popup ' + (isProfit ? 'profit' : 'loss');
+  popup.textContent = (isProfit ? '+' : '−') + '$' + Math.abs(amount).toFixed(2);
+  popup.style.left = (anchorRect.left + anchorRect.width / 2) + 'px';
+  popup.style.top = anchorRect.top + 'px';
+  document.body.appendChild(popup);
+  requestAnimationFrame(() => popup.classList.add('rise'));
+  setTimeout(() => popup.remove(), 1100);
+}
+
+function sellLot(lotId, btnEl){
+  const idx = portfolio.lots.findIndex(l => l.id === lotId);
+  if(idx === -1) return;
+  const lot = portfolio.lots[idx];
+  const anchorRect = btnEl ? btnEl.getBoundingClientRect() : null; // capture before the list re-renders and detaches this button
+  const proceeds = lot.qty * currentPrice;
+  const costBasis = lot.qty * lot.buyPrice;
+  const grossProfit = proceeds - costBasis;
+  const profitPct = costBasis > 0 ? grossProfit / costBasis : 0;
+  const tax = (grossProfit > 0 && profitPct >= PROFIT_TAX_THRESHOLD) ? grossProfit * PROFIT_TAX_RATE : 0;
   const netProceeds = proceeds - tax;
-  portfolio.cash += netProceeds; portfolio.held -= qty;
-  portfolio.trades.push({ type:'sell', qty, price: currentPrice, tax, time: new Date().toLocaleString() });
+  const pl = grossProfit - tax; // net profit/loss after tax, what you actually walked away with
+  portfolio.cash += netProceeds;
+  portfolio.lots.splice(idx, 1);
+  portfolio.trades.push({ type:'sell', qty: lot.qty, price: currentPrice, tax, lotId, time: new Date().toLocaleString() });
   savePortfolio(portfolio);
-
-  renderPortfolio(); renderHistory();
-  msgEl.textContent = `Sold ${qty} $WEST for $${netProceeds.toFixed(2)} (after $${tax.toFixed(2)} tax).`;
-});
-
-// Reset is now two steps on purpose, so it's hard to hit by accident.
-document.getElementById('resetReveal').addEventListener('click', () => {
-  document.getElementById('resetReveal').style.display = 'none';
-  document.getElementById('resetConfirmWrap').style.display = 'flex';
-});
-document.getElementById('resetCancel').addEventListener('click', () => {
-  document.getElementById('resetConfirmWrap').style.display = 'none';
-  document.getElementById('resetReveal').style.display = 'block';
-});
-document.getElementById('resetConfirm').addEventListener('click', () => {
-  portfolio = { cash:1000, held:0, trades:[] };
-  savePortfolio(portfolio); renderPortfolio(); renderHistory();
-  document.getElementById('resetConfirmWrap').style.display = 'none';
-  document.getElementById('resetReveal').style.display = 'block';
-  msgEl.textContent = 'Portfolio reset.';
-});
+  renderPortfolio(); renderHistory(); renderLots(); drawChart();
+  if(anchorRect) spawnProfitPopup(anchorRect, pl);
+  const taxNote = tax > 0 ? ` (after $${tax.toFixed(2)} capital gains tax)` : '';
+  msgEl.textContent = `Sold #${lotId} for $${netProceeds.toFixed(2)}${taxNote} — ${pl>=0?'profit':'loss'} of $${Math.abs(pl).toFixed(2)}.`;
+}
 
 document.getElementById('miniInvest').addEventListener('click', () => goToRegion('region-coin'));
 
-window.addEventListener('resize', drawChart);
-syncMarket();
-setInterval(syncMarket, SYNC_INTERVAL); // only runs while this page is actually open
+
 
 /* ================= Databook dropdown ================= */
 const databookToggle = document.getElementById('databookToggle');
@@ -1341,12 +2160,433 @@ function buildPeriodicTable(){
           </div>
         </div>`;
     });
+    setupElementDrag(cell);
   });
 
   renderLegend();
   applyPtFilter();
   applyPtColors();
 }
+
+/* ================= COMPOUND LAB ================= */
+// Dragging uses raw Pointer Events (not native HTML5 drag-and-drop, which barely works on
+// touchscreens) so the exact same code path handles mouse, trackpad, and touch identically.
+// Each element cell already lives inside the pan/zoomable world map, so the critical thing is
+// stopping the drag's pointerdown from ever reaching the camera's own pan listener — otherwise
+// starting a drag on an element would also start panning the whole board underneath it.
+const compoundCounts = {}; // symbol -> count
+let dragGhost = null;
+
+function setupElementDrag(cell){
+  cell.addEventListener('pointerdown', (e) => {
+    e.stopPropagation(); // critical: keeps the world-map camera from also starting a pan
+    const sym = cell.dataset.sym, cat = cell.dataset.cat;
+    const isTouch = e.pointerType === 'touch';
+    let dragging = false, armed = !isTouch; // mouse/trackpad can drag immediately; touch needs a hold first
+    const startX = e.clientX, startY = e.clientY;
+
+    // Touch needs a distinct "press and hold" phase before dragging starts — otherwise every
+    // ordinary tap-to-select or attempt to scroll would also register as a drag, and dragging
+    // downward specifically would get swallowed by the browser's native scroll gesture instead
+    // (this is why it felt like you "can't drag down with a finger" before).
+    const armTimer = isTouch ? setTimeout(() => {
+      armed = true;
+      cell.classList.add('armed');
+      if(navigator.vibrate) navigator.vibrate(15); // small haptic tick, like iOS's icon-jiggle pickup
+    }, 300) : null;
+
+    function startDrag(){
+      dragging = true;
+      dragGhost = document.createElement('div');
+      dragGhost.className = 'drag-ghost';
+      dragGhost.textContent = sym;
+      dragGhost.style.background = CATEGORY_COLORS[cat];
+      document.body.appendChild(dragGhost);
+    }
+
+    function onMove(ev){
+      const dx = ev.clientX - startX, dy = ev.clientY - startY;
+      const moved = Math.hypot(dx, dy);
+      if(!armed){
+        // moved too far before the hold completed — this was a scroll/pan attempt, not a drag
+        if(moved > 10){ clearTimeout(armTimer); cell.classList.remove('armed'); }
+        return;
+      }
+      if(!dragging && moved > 4) startDrag();
+      if(dragging && dragGhost){
+        dragGhost.style.left = ev.clientX + 'px';
+        dragGhost.style.top = ev.clientY + 'px';
+        const dz = document.getElementById('compoundDropzone');
+        const r = dz.getBoundingClientRect();
+        const over = ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+        dz.classList.toggle('drag-over', over);
+      }
+    }
+    function onUp(ev){
+      clearTimeout(armTimer);
+      cell.classList.remove('armed');
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      if(dragging){
+        const dz = document.getElementById('compoundDropzone');
+        const r = dz.getBoundingClientRect();
+        const over = ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+        dz.classList.remove('drag-over');
+        if(over) addToCompound(sym);
+      }
+      if(dragGhost){ dragGhost.remove(); dragGhost = null; }
+    }
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  });
+}
+
+function addToCompound(sym){
+  compoundCounts[sym] = (compoundCounts[sym] || 0) + 1;
+  renderCompoundChips();
+}
+function renderCompoundChips(){
+  const wrap = document.getElementById('dropzoneChips');
+  const hint = document.getElementById('dropzoneHint');
+  const syms = Object.keys(compoundCounts);
+  hint.style.display = syms.length ? 'none' : 'block';
+  wrap.innerHTML = syms.map(sym => `
+    <div class="elem-chip">${sym}<span style="color:var(--muted)">×${compoundCounts[sym]}</span><span class="chip-remove" data-sym="${sym}">✕</span></div>
+  `).join('');
+  wrap.querySelectorAll('.chip-remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sym = btn.dataset.sym;
+      compoundCounts[sym]--;
+      if(compoundCounts[sym] <= 0) delete compoundCounts[sym];
+      renderCompoundChips();
+    });
+  });
+}
+
+// Hill notation: Carbon first, Hydrogen second (if Carbon present), then everything else alphabetical
+function toHillFormula(counts){
+  const syms = Object.keys(counts);
+  let ordered;
+  if(syms.includes('C')){
+    ordered = ['C', ...(syms.includes('H') ? ['H'] : []), ...syms.filter(s => s !== 'C' && s !== 'H').sort()];
+  } else {
+    ordered = syms.slice().sort();
+  }
+  return ordered.map(s => s + (counts[s] > 1 ? counts[s] : '')).join('');
+}
+
+document.getElementById('clearLabBtn').addEventListener('click', () => {
+  Object.keys(compoundCounts).forEach(k => delete compoundCounts[k]);
+  renderCompoundChips();
+  document.getElementById('compoundResult').innerHTML = '';
+});
+
+// PubChem's REST API is mainly documented for server-side use (Python/R scripts), which never
+// triggers CORS at all since that's a browser-only restriction — so there's a real chance it
+// doesn't send the headers needed for a direct browser fetch from an arbitrary site. Try direct
+// first (fastest, works if they do allow it), and fall back to a public CORS proxy if that fails.
+async function fetchPubChemJson(url){
+  try{
+    const res = await fetch(url);
+    if(res.ok) return await res.json();
+  } catch(e) { /* likely CORS — fall through to the proxy */ }
+  const proxied = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(url));
+  if(!proxied.ok) throw new Error('unreachable');
+  return await proxied.json();
+}
+
+document.getElementById('combineBtn').addEventListener('click', async () => {
+  const resultEl = document.getElementById('compoundResult');
+  if(Object.keys(compoundCounts).length === 0){
+    resultEl.innerHTML = '<div class="compound-status error">Drag some elements in first.</div>';
+    return;
+  }
+  const formula = toHillFormula(compoundCounts);
+  resultEl.innerHTML = `<div class="compound-status">Looking up ${formula}...</div>`;
+
+  try{
+    // 1. find a matching compound by formula
+    const cidData = await fetchPubChemJson(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/formula/${encodeURIComponent(formula)}/cids/JSON?MaxRecords=1`);
+    const cid = cidData?.IdentifierList?.CID?.[0];
+    if(!cid) throw new Error('not found');
+
+    // 2. fetch core properties
+    const propData = await fetchPubChemJson(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/property/IUPACName,MolecularFormula,MolecularWeight,CanonicalSMILES/JSON`);
+    const props = propData?.PropertyTable?.Properties?.[0] || {};
+
+    // 3. fetch a human-readable description, if PubChem has one on file
+    let description = '';
+    try{
+      const descData = await fetchPubChemJson(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/description/JSON`);
+      const withDesc = (descData?.InformationList?.Information || []).find(info => info.Description);
+      if(withDesc) description = withDesc.Description;
+    } catch(e){ /* description is optional — fine if this fails */ }
+
+    resultEl.innerHTML = `
+      <div class="compound-card">
+        <div class="cc-formula">${props.MolecularFormula || formula}</div>
+        <div class="cc-name">${props.IUPACName || '(no common name on file)'}</div>
+        <div class="cc-props">
+          <span>Molecular weight</span><b>${props.MolecularWeight ? props.MolecularWeight + ' g/mol' : '—'}</b>
+          <span>PubChem CID</span><b>${cid}</b>
+          <span>SMILES</span><b style="word-break:break-all;">${props.CanonicalSMILES || '—'}</b>
+        </div>
+        ${description ? `<div class="cc-desc">${description}</div>` : ''}
+        <div class="cc-source">Data via PubChem (National Library of Medicine) — not affiliated with this site</div>
+      </div>`;
+  } catch(e){
+    resultEl.innerHTML = `<div class="compound-status error">No known compound found for ${formula} (or PubChem couldn't be reached). Try a different combination.</div>`;
+  }
+});
+
+/* ================= ELEMENT ECONOMY ================= */
+// Prices are illustrative, roughly ordered like real-world commodity prices (precious metals
+// expensive, common gases/nonmetals cheap) — not exact spot prices, this is a game, not a
+// commodities terminal. Scoped to ~20 elements rather than all 118 to keep this maintainable.
+const ELEMENT_PRICES = {
+  H: 0.50, He: 4, C: 0.30, N: 0.25, O: 0.20, Na: 3, Mg: 3, Al: 2, Si: 2, P: 3,
+  S: 0.40, Cl: 1, K: 5, Ca: 1.5, Fe: 2, Cu: 8, Zn: 2.5, Ag: 700, Pt: 30000, Au: 62000
+}; // approx USD per "unit" (rough mole-scale analogy)
+
+// Embedded, guaranteed-correct recipe data — this is the actual source of truth for whether a
+// combination succeeds and what it's called. PubChem is used ONLY as bonus enrichment for extra
+// real-world detail when reachable; the core game never depends on an external API succeeding.
+const RECIPES = [
+  { formula:'H2', name:'Hydrogen Gas', need:{H:2}, tool:'basic', desc:'The simplest diatomic molecule — two hydrogen atoms bonded together.' },
+  { formula:'O2', name:'Oxygen Gas', need:{O:2}, tool:'basic', desc:'What you\'re breathing right now, more or less.' },
+  { formula:'N2', name:'Nitrogen Gas', need:{N:2}, tool:'basic', desc:'Makes up about 78% of Earth\'s atmosphere.' },
+  { formula:'H2O', name:'Water', need:{H:2,O:1}, tool:'basic', desc:'Two hydrogens, one oxygen. The universal solvent.' },
+  { formula:'CO2', name:'Carbon Dioxide', need:{C:1,O:2}, tool:'basic', desc:'What you exhale, and what plants breathe in.' },
+  { formula:'NaCl', name:'Sodium Chloride (Table Salt)', need:{Na:1,Cl:1}, tool:'basic', desc:'An explosive metal and a toxic gas, combined into something you sprinkle on fries.' },
+  { formula:'HCl', name:'Hydrochloric Acid', need:{H:1,Cl:1}, tool:'basic', desc:'A strong acid — also naturally present in your stomach.' },
+  { formula:'CH4', name:'Methane', need:{C:1,H:4}, tool:'burner', desc:'The simplest hydrocarbon, and the main component of natural gas.' },
+  { formula:'SO2', name:'Sulfur Dioxide', need:{S:1,O:2}, tool:'burner', desc:'Produced when sulfur burns — a major component of acid rain.' },
+  { formula:'Fe2O3', name:'Iron(III) Oxide (Rust)', need:{Fe:2,O:3}, tool:'burner', desc:'What iron becomes when it oxidizes over time.' },
+  { formula:'CaCO3', name:'Calcium Carbonate', need:{Ca:1,C:1,O:3}, tool:'burner', desc:'The main component of limestone, marble, and seashells.' },
+  { formula:'NaOH', name:'Sodium Hydroxide (Lye)', need:{Na:1,O:1,H:1}, tool:'electrolysis', desc:'A caustic base produced industrially via electrolysis of brine.' },
+  { formula:'Al2O3', name:'Aluminium Oxide', need:{Al:2,O:3}, tool:'electrolysis', desc:'Also known as alumina — extremely hard, used as an abrasive.' },
+  { formula:'NH3', name:'Ammonia', need:{N:1,H:3}, tool:'pressure', desc:'Made industrially via the Haber process, which needs high pressure and heat.' },
+];
+
+const TOOLS = [
+  { id:'basic', name:'Basic Glassware', cost:0, desc:'Beakers and tubing — free, unlocks simple combinations.' },
+  { id:'burner', name:'Bunsen Burner', cost:50, desc:'Unlocks combustion and heat-driven reactions.' },
+  { id:'electrolysis', name:'Electrolysis Rig', cost:200, desc:'Splits compounds using electric current — unlocks more advanced synthesis.' },
+  { id:'pressure', name:'High-Pressure Reactor', cost:800, desc:'Unlocks industrial-scale reactions like ammonia synthesis.' },
+];
+
+// player's element/compound/tool state — synced to Firebase alongside cash/lots
+function ensureEconomyState(p){
+  if(!p.elements) p.elements = {};
+  if(!p.compounds) p.compounds = {};
+  if(!p.tools) p.tools = ['basic'];
+  return p;
+}
+ensureEconomyState(portfolio);
+
+function saveEconomy(){
+  savePortfolio(portfolio); // reuses the existing cash/lots sync, now also carrying elements/compounds/tools
+}
+
+// populate the element dropdowns
+const marketElemSelect = document.getElementById('marketElemSelect');
+const marketQtyInput = document.getElementById('marketQty');
+const marketPriceHintEl = document.getElementById('marketPriceHint');
+const listElemSelect = document.getElementById('listElemSelect');
+
+function populateElementSelects(){
+  const optionsHtml = Object.keys(ELEMENT_PRICES).map(sym => `<option value="${sym}">${sym} — $${ELEMENT_PRICES[sym].toLocaleString()}</option>`).join('');
+  marketElemSelect.innerHTML = optionsHtml;
+  listElemSelect.innerHTML = optionsHtml;
+  updateMarketPriceHint();
+}
+function updateMarketPriceHint(){
+  const sym = marketElemSelect.value;
+  const qty = parseFloat(marketQtyInput.value) || 0;
+  marketPriceHintEl.textContent = sym ? `Total: $${(ELEMENT_PRICES[sym]*qty).toFixed(2)}` : '';
+}
+marketElemSelect.addEventListener('change', updateMarketPriceHint);
+marketQtyInput.addEventListener('input', updateMarketPriceHint);
+
+document.getElementById('marketBuyBtn').addEventListener('click', () => {
+  const sym = marketElemSelect.value;
+  const qty = parseFloat(marketQtyInput.value);
+  if(!qty || qty <= 0) return;
+  const cost = ELEMENT_PRICES[sym] * qty;
+  if(cost > portfolio.cash){ marketPriceHintEl.textContent = "Can't afford that."; return; }
+  portfolio.cash -= cost;
+  portfolio.elements[sym] = (portfolio.elements[sym] || 0) + qty;
+  saveEconomy();
+  renderPortfolio(); renderOwnedElements();
+});
+
+function renderOwnedElements(){
+  const wrap = document.getElementById('ownedElementsList');
+  const syms = Object.keys(portfolio.elements).filter(s => portfolio.elements[s] > 0);
+  if(syms.length === 0){ wrap.innerHTML = '<div class="empty-history">You don\'t own any elements yet.</div>'; }
+  else{
+    wrap.innerHTML = syms.map(sym => `
+      <div class="owned-chip">${sym} <span class="oc-qty">×${portfolio.elements[sym]}</span>
+        <button class="oc-sell" data-sym="${sym}">Sell 1</button>
+      </div>`).join('');
+    wrap.querySelectorAll('.oc-sell').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const sym = btn.dataset.sym;
+        if(portfolio.elements[sym] > 0){
+          portfolio.elements[sym]--;
+          portfolio.cash += ELEMENT_PRICES[sym] * 0.8; // sell back to the system at a discount
+          saveEconomy();
+          renderPortfolio(); renderOwnedElements();
+        }
+      });
+    });
+  }
+  renderRecipes(); // recipe availability depends on what you own
+}
+
+function renderTools(){
+  const wrap = document.getElementById('toolsList');
+  wrap.innerHTML = TOOLS.map(t => {
+    const owned = portfolio.tools.includes(t.id);
+    return `
+      <div class="tool-card ${owned ? 'owned' : ''}">
+        <div class="tc-name">${t.name}</div>
+        <div class="tc-desc">${t.desc}</div>
+        <span class="tc-owned-tag">✓ Owned</span>
+        <button class="tc-btn" data-tool="${t.id}" data-cost="${t.cost}">Buy — $${t.cost}</button>
+      </div>`;
+  }).join('');
+  wrap.querySelectorAll('.tc-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const toolId = btn.dataset.tool, cost = parseFloat(btn.dataset.cost);
+      if(portfolio.tools.includes(toolId)) return;
+      if(cost > portfolio.cash){ return; }
+      portfolio.cash -= cost;
+      portfolio.tools.push(toolId);
+      saveEconomy();
+      renderPortfolio(); renderTools(); renderRecipes();
+    });
+  });
+}
+
+function renderRecipes(){
+  const wrap = document.getElementById('recipesList');
+  wrap.innerHTML = RECIPES.map(r => {
+    const haveTool = portfolio.tools.includes(r.tool);
+    const haveElements = Object.keys(r.need).every(sym => (portfolio.elements[sym] || 0) >= r.need[sym]);
+    const needText = Object.keys(r.need).map(sym => `<b>${sym}×${r.need[sym]}</b>`).join(', ');
+    return `
+      <div class="recipe-card">
+        <div class="rc-name">${r.name}</div>
+        <div class="rc-formula">${r.formula}</div>
+        <div class="rc-need">Needs: ${needText}${!haveTool ? `<div class="rc-locked">🔒 Requires: ${TOOLS.find(t=>t.id===r.tool).name}</div>` : ''}</div>
+        <button class="rc-btn" data-formula="${r.formula}" ${(!haveTool || !haveElements) ? 'disabled' : ''}>Craft</button>
+      </div>`;
+  }).join('');
+  wrap.querySelectorAll('.rc-btn:not(:disabled)').forEach(btn => {
+    btn.addEventListener('click', () => craftCompound(btn.dataset.formula));
+  });
+}
+
+async function craftCompound(formula){
+  const recipe = RECIPES.find(r => r.formula === formula);
+  if(!recipe) return;
+  Object.keys(recipe.need).forEach(sym => { portfolio.elements[sym] -= recipe.need[sym]; });
+  const materialCost = Object.keys(recipe.need).reduce((sum, sym) => sum + ELEMENT_PRICES[sym] * recipe.need[sym], 0);
+  const value = materialCost * 1.6; // crafting adds value over raw materials, like real manufacturing
+  portfolio.compounds[formula] = (portfolio.compounds[formula] || 0) + 1;
+  saveEconomy();
+  renderPortfolio(); renderOwnedElements(); renderOwnedCompounds();
+
+  const resultEl = document.getElementById('craftResult');
+  resultEl.innerHTML = `<div class="compound-status">Crafted ${recipe.name}! Looking up extra detail...</div>`;
+  // guaranteed local result first, then try to enrich with real PubChem data (non-blocking on failure)
+  let extra = '';
+  try{
+    const cidData = await fetchPubChemJson(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/formula/${encodeURIComponent(formula)}/cids/JSON?MaxRecords=1`);
+    const cid = cidData?.IdentifierList?.CID?.[0];
+    if(cid){
+      const propData = await fetchPubChemJson(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/property/MolecularWeight,CanonicalSMILES/JSON`);
+      const props = propData?.PropertyTable?.Properties?.[0];
+      if(props) extra = `<div class="cc-props"><span>Molecular weight</span><b>${props.MolecularWeight} g/mol</b><span>SMILES</span><b style="word-break:break-all;">${props.CanonicalSMILES}</b></div>`;
+    }
+  } catch(e){ /* fine — the local recipe data already has everything the game needs */ }
+
+  resultEl.innerHTML = `
+    <div class="compound-card">
+      <div class="cc-formula">${recipe.formula}</div>
+      <div class="cc-name">${recipe.name} — added to your collection (worth ~$${value.toFixed(2)})</div>
+      ${extra}
+      <div class="cc-desc">${recipe.desc}</div>
+    </div>`;
+}
+
+function renderOwnedCompounds(){
+  const wrap = document.getElementById('ownedCompoundsList');
+  const formulas = Object.keys(portfolio.compounds).filter(f => portfolio.compounds[f] > 0);
+  if(formulas.length === 0){ wrap.innerHTML = '<div class="empty-history">You haven\'t made anything yet.</div>'; return; }
+  wrap.innerHTML = formulas.map(f => {
+    const r = RECIPES.find(rc => rc.formula === f);
+    return `<div class="owned-chip">${r ? r.name : f} <span class="oc-qty">×${portfolio.compounds[f]}</span></div>`;
+  }).join('');
+}
+
+/* --- Marketplace: shared Firebase listings, buyable by any player --- */
+document.getElementById('createListingBtn').addEventListener('click', () => {
+  const sym = listElemSelect.value;
+  const qty = parseFloat(document.getElementById('listQty').value);
+  const price = parseFloat(document.getElementById('listPrice').value);
+  if(!qty || qty <= 0 || !price || price <= 0) return;
+  if((portfolio.elements[sym] || 0) < qty) return;
+  portfolio.elements[sym] -= qty;
+  saveEconomy();
+  renderOwnedElements();
+  if(db){
+    const listingId = 'listing_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
+    db.ref('marketplace/' + listingId).set({
+      sellerId: investorId, sellerName: investorName || 'Anonymous', symbol: sym, qty, pricePerUnit: price, createdAt: Date.now()
+    }).catch(() => {});
+  }
+});
+
+if(db){
+  db.ref('marketplace').on('value', (snap) => {
+    const val = snap.val() || {};
+    const wrap = document.getElementById('marketplaceList');
+    const ids = Object.keys(val);
+    if(ids.length === 0){ wrap.innerHTML = '<div class="empty-history">No listings yet.</div>'; return; }
+    wrap.innerHTML = ids.map(id => {
+      const l = val[id];
+      return `<div class="listing-row">${l.symbol} ×${l.qty} — $${l.pricePerUnit}/unit by ${l.sellerName}
+        <button class="lr-buy" data-id="${id}">Buy</button></div>`;
+    }).join('');
+    wrap.querySelectorAll('.lr-buy').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        const listing = val[id];
+        if(!listing || listing.sellerId === investorId) return; // can't buy your own listing
+        const totalCost = listing.qty * listing.pricePerUnit;
+        if(totalCost > portfolio.cash) return;
+        portfolio.cash -= totalCost;
+        portfolio.elements[listing.symbol] = (portfolio.elements[listing.symbol] || 0) + listing.qty;
+        saveEconomy();
+        renderPortfolio(); renderOwnedElements();
+        db.ref('marketplace/' + id).remove().catch(() => {});
+        // credit the seller even if they're offline right now, via an atomic increment —
+        // this is the part that actually pays them, not just removing their listing
+        db.ref('players/' + listing.sellerId + '/cash').transaction(cash => (cash || 0) + totalCost).catch(() => {});
+      });
+    });
+  });
+}
+
+populateElementSelects();
+renderOwnedElements();
+renderTools();
+renderRecipes();
+renderOwnedCompounds();
 
 function swatchFor(cell){
   return ptMode === 'state' ? STATE_COLORS[cell.dataset.state] :
@@ -1545,27 +2785,7 @@ function openDbSection(id){
 }
 
 /* ================= INVESTOR LEADERBOARD ================= */
-// Requires a Firebase Realtime Database (free tier) — see setup notes provided alongside this file.
-// Until firebaseConfig below is filled in with your real project, this quietly runs in
-// "local only" mode: you can still pick a name and see your own value, but nobody else's.
-const firebaseConfig = {
-  apiKey: "AIzaSyBNT1jvi0El_txSKTjCGS5MeBbVz15DKs4",
-  authDomain: "mrwestfiles.firebaseapp.com",
-  databaseURL: "https://mrwestfiles-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "mrwestfiles",
-  storageBucket: "mrwestfiles.firebasestorage.app",
-  messagingSenderId: "761539070041",
-  appId: "1:761539070041:web:392762db7b305b2b3e4948"
-};
-const FIREBASE_CONFIGURED = firebaseConfig.apiKey !== "YOUR_API_KEY";
-
-let db = null;
-if(FIREBASE_CONFIGURED){
-  try{
-    firebase.initializeApp(firebaseConfig);
-    db = firebase.database();
-  } catch(e){ db = null; }
-}
+// Firebase (config + db) is initialized near the top of this script, shared with the market sync below.
 
 /* --- name filter ---
    Normalizes common leetspeak substitutions (4->a, 3->e, 1->i, 0->o, 5->s, 7->t, @->a, $->s, etc.),
@@ -1594,11 +2814,6 @@ const nameMsg = document.getElementById('nameMsg');
 const leaderboardListEl = document.getElementById('leaderboardList');
 const lbStatus = document.getElementById('lbStatus');
 
-let investorId = localStorage.getItem('mrwestcoin_investor_id');
-if(!investorId){
-  investorId = 'inv_' + Math.random().toString(36).slice(2, 10);
-  localStorage.setItem('mrwestcoin_investor_id', investorId);
-}
 let investorName = localStorage.getItem('mrwestcoin_investor_name') || '';
 nameInput.value = investorName;
 
@@ -1614,7 +2829,13 @@ document.getElementById('nameSaveBtn').addEventListener('click', () => {
 });
 
 function portfolioValue(){
-  return portfolio.cash + portfolio.held * currentPrice;
+  return portfolio.cash + totalHeld() * currentPrice;
+}
+function elementsOwnedCount(){
+  return Object.values(portfolio.elements || {}).reduce((a,b) => a+b, 0);
+}
+function compoundsMadeCount(){
+  return Object.values(portfolio.compounds || {}).reduce((a,b) => a+b, 0);
 }
 
 function pushLeaderboardEntry(){
@@ -1622,6 +2843,8 @@ function pushLeaderboardEntry(){
   db.ref('leaderboard/' + investorId).set({
     name: investorName,
     value: portfolioValue(),
+    elementsOwned: elementsOwnedCount(),
+    compoundsMade: compoundsMadeCount(),
     updatedAt: Date.now()
   }).catch(() => {});
 }
@@ -1636,7 +2859,9 @@ function renderLeaderboard(entries){
   leaderboardListEl.innerHTML = sorted.map((e,i) => `
     <div class="lb-row">
       <span class="lb-rank ${medalClass(i)}">#${i+1}</span>
-      <span class="lb-name ${e.id===investorId ? 'you' : ''}">${e.name}${e.id===investorId ? ' (you)' : ''}</span>
+      <span class="lb-name ${e.id===investorId ? 'you' : ''}">${e.name}${e.id===investorId ? ' (you)' : ''}
+        <span style="display:block; font-size:0.62rem; color:var(--muted);">${e.elementsOwned||0} elements owned · ${e.compoundsMade||0} compounds made</span>
+      </span>
       <span class="lb-value">$${e.value.toFixed(2)}</span>
     </div>`).join('');
 }
@@ -1645,7 +2870,7 @@ if(db){
   lbStatus.textContent = 'Ranked by total portfolio value — live, shared with everyone.';
   db.ref('leaderboard').on('value', (snap) => {
     const val = snap.val() || {};
-    const entries = Object.keys(val).map(id => ({ id, name: val[id].name, value: val[id].value }));
+    const entries = Object.keys(val).map(id => ({ id, name: val[id].name, value: val[id].value, elementsOwned: val[id].elementsOwned, compoundsMade: val[id].compoundsMade }));
     renderLeaderboard(entries);
   });
   setInterval(pushLeaderboardEntry, 20000); // keep your own entry fresh while this page is open
