@@ -271,8 +271,9 @@
     aspect-ratio: 1; background: var(--paper-2); border:1px solid var(--line);
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     cursor:pointer; transition: transform 0.12s ease, background 0.12s ease, opacity 0.15s ease; color: var(--ink);
-    padding: 2px; overflow:hidden; position:relative;
+    padding: 2px; overflow:hidden; position:relative; touch-action: none;
   }
+  .elem.armed{ transform: scale(1.15); box-shadow: 0 0 0 2px var(--ink), 0 8px 16px rgba(0,0,0,0.6); z-index:6; }
   .elem .num{ font-size: 0.42rem; color: rgba(26,21,16,0.65); align-self:flex-start; margin-left:2px; }
   .elem .sym{ font-size: 0.72rem; font-weight:700; line-height:1; }
   .elem .mini-mass{ font-size:0.36rem; color: rgba(26,21,16,0.65); margin-top:1px; }
@@ -1090,7 +1091,6 @@ window.addEventListener('pointerup', () => {
 // back to a local-only simulation so the page still works.
 const STORAGE_KEY = 'mrwestcoin_portfolio';
 const TICK_INTERVAL = 2000;      // how often the market moves
-const MAX_HISTORY_POINTS = 300;  // ~10 minutes of dense history at the tick rate above
 
 function loadPortfolio(){
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -1689,8 +1689,13 @@ function updatePriceDisplays(){
   miniChangeEl.textContent = changeText; miniChangeEl.className = 'change ' + (isUp?'up':'down');
 }
 
+// Small persistent upward drift: on average, fair value gains about 1% per real day. Applied
+// per-tick so it compounds naturally instead of being one big jump — TICK_INTERVAL-aware so it
+// stays correct even if the tick rate is ever changed.
+const DAILY_BIAS = 0.01 / (86400000 / TICK_INTERVAL);
+
 function advanceOneTick(m, closed){
-  m.fairValue *= (1 + (Math.random() - 0.5) * 0.01);
+  m.fairValue *= (1 + (Math.random() - 0.5) * 0.01 + DAILY_BIAS);
   const volShock = Math.abs((Math.random() - 0.5)) * 0.03;
   m.vol = Math.min(0.06, Math.max(0.004, m.vol * 0.85 + volShock * 0.15));
   const shock = (Math.random() - 0.5) * 2 * m.vol;
@@ -1701,7 +1706,32 @@ function advanceOneTick(m, closed){
   const point = { price: m.price, t: Date.now() };
   if(closed) point.closed = true; // tags this as a "market was closed" synthetic bridge point
   m.history.push(point);
-  if(m.history.length > MAX_HISTORY_POINTS) m.history.shift();
+  downsampleHistory(m);
+}
+
+// Keeps full-resolution data for the last week, then progressively halves resolution for each
+// week further back — so history goes all the way back to the start, but storage in Firebase
+// stays bounded instead of growing forever at full density.
+const WEEK_MS = 7 * 86400000;
+function downsampleHistory(m){
+  if(m.history.length < 4) return;
+  const now = Date.now();
+  const kept = [];
+  // walk oldest-to-newest, deciding whether to keep each point based on which "age bracket"
+  // it falls into — every bracket further back keeps half as many points as the one before it
+  let bracketIndex = -1, seenInBracket = 0;
+  for(let i = 0; i < m.history.length; i++){
+    const age = now - m.history[i].t;
+    const thisBracket = age <= WEEK_MS ? 0 : Math.floor(Math.log2(age / WEEK_MS)) + 1;
+    if(thisBracket !== bracketIndex){ bracketIndex = thisBracket; seenInBracket = 0; }
+    const keepEvery = Math.pow(2, Math.max(0, bracketIndex));
+    // always keep the very newest and very oldest points so the chart's edges never look truncated
+    if(seenInBracket % keepEvery === 0 || i === m.history.length - 1 || i === 0){
+      kept.push(m.history[i]);
+    }
+    seenInBracket++;
+  }
+  m.history = kept;
 }
 
 // If nobody had the page open for a while, instead of one abrupt jump (or a flat line), simulate
@@ -1768,7 +1798,12 @@ if(db){
   }, TICK_INTERVAL);
 }
 
-const TRADE_TAX_RATE = 0.015;
+// Previously taxed BOTH buy and sell at a flat rate, which guaranteed a loss on every round
+// trip even when the price went up — that's what made it feel unbalanced. Now: no tax at all
+// on buying, and selling is only taxed on the PROFIT portion, and only once that profit is
+// meaningful — a real capital-gains-style model instead of a flat transaction fee.
+const PROFIT_TAX_THRESHOLD = 0.10; // only taxed once a position is up at least 10%
+const PROFIT_TAX_RATE = 0.15;      // and even then, only 15% of the profit itself is taxed
 
 // picks the smallest positive integer not currently in use, so a sold lot's number gets
 // reused by the next buy — e.g. sell #1 while #2 and #3 exist, and the next buy becomes #1 again
@@ -1783,16 +1818,14 @@ document.getElementById('buyBtn').addEventListener('click', () => {
   const qty = parseFloat(qtyInput.value);
   if(!qty || qty<=0){ msgEl.textContent = 'Enter a valid quantity.'; return; }
   const cost = qty*currentPrice;
-  const tax = cost * TRADE_TAX_RATE;
-  const totalCost = cost + tax;
-  if(totalCost > portfolio.cash){ msgEl.textContent = "You can't afford that (incl. tax), champ."; return; }
-  portfolio.cash -= totalCost;
+  if(cost > portfolio.cash){ msgEl.textContent = "You can't afford that, champ."; return; }
+  portfolio.cash -= cost;
   const lotId = nextAvailableLotId();
   portfolio.lots.push({ id: lotId, qty, buyPrice: currentPrice, time: new Date().toLocaleString() });
-  portfolio.trades.push({ type:'buy', qty, price: currentPrice, tax, lotId, time: new Date().toLocaleString() });
+  portfolio.trades.push({ type:'buy', qty, price: currentPrice, tax: 0, lotId, time: new Date().toLocaleString() });
   savePortfolio(portfolio);
   renderPortfolio(); renderHistory(); renderLots(); drawChart();
-  msgEl.textContent = `Bought #${lotId}: ${qty} $WEST for $${cost.toFixed(2)} (+ $${tax.toFixed(2)} tax).`;
+  msgEl.textContent = `Bought #${lotId}: ${qty} $WEST for $${cost.toFixed(2)}.`;
 });
 
 // cookie-clicker style floating +$X.XX / -$X.XX that rises and fades above wherever it was triggered
@@ -1814,16 +1847,20 @@ function sellLot(lotId, btnEl){
   const lot = portfolio.lots[idx];
   const anchorRect = btnEl ? btnEl.getBoundingClientRect() : null; // capture before the list re-renders and detaches this button
   const proceeds = lot.qty * currentPrice;
-  const tax = proceeds * TRADE_TAX_RATE;
+  const costBasis = lot.qty * lot.buyPrice;
+  const grossProfit = proceeds - costBasis;
+  const profitPct = costBasis > 0 ? grossProfit / costBasis : 0;
+  const tax = (grossProfit > 0 && profitPct >= PROFIT_TAX_THRESHOLD) ? grossProfit * PROFIT_TAX_RATE : 0;
   const netProceeds = proceeds - tax;
-  const pl = (currentPrice - lot.buyPrice) * lot.qty - tax; // net profit/loss after tax, what you actually walked away with
+  const pl = grossProfit - tax; // net profit/loss after tax, what you actually walked away with
   portfolio.cash += netProceeds;
   portfolio.lots.splice(idx, 1);
   portfolio.trades.push({ type:'sell', qty: lot.qty, price: currentPrice, tax, lotId, time: new Date().toLocaleString() });
   savePortfolio(portfolio);
   renderPortfolio(); renderHistory(); renderLots(); drawChart();
   if(anchorRect) spawnProfitPopup(anchorRect, pl);
-  msgEl.textContent = `Sold #${lotId} for $${netProceeds.toFixed(2)} (after tax) — ${pl>=0?'profit':'loss'} of $${Math.abs(pl).toFixed(2)}.`;
+  const taxNote = tax > 0 ? ` (after $${tax.toFixed(2)} capital gains tax)` : '';
+  msgEl.textContent = `Sold #${lotId} for $${netProceeds.toFixed(2)}${taxNote} — ${pl>=0?'profit':'loss'} of $${Math.abs(pl).toFixed(2)}.`;
 }
 
 document.getElementById('miniInvest').addEventListener('click', () => goToRegion('region-coin'));
@@ -2032,19 +2069,38 @@ function setupElementDrag(cell){
   cell.addEventListener('pointerdown', (e) => {
     e.stopPropagation(); // critical: keeps the world-map camera from also starting a pan
     const sym = cell.dataset.sym, cat = cell.dataset.cat;
-    let dragging = false;
+    const isTouch = e.pointerType === 'touch';
+    let dragging = false, armed = !isTouch; // mouse/trackpad can drag immediately; touch needs a hold first
     const startX = e.clientX, startY = e.clientY;
+
+    // Touch needs a distinct "press and hold" phase before dragging starts — otherwise every
+    // ordinary tap-to-select or attempt to scroll would also register as a drag, and dragging
+    // downward specifically would get swallowed by the browser's native scroll gesture instead
+    // (this is why it felt like you "can't drag down with a finger" before).
+    const armTimer = isTouch ? setTimeout(() => {
+      armed = true;
+      cell.classList.add('armed');
+      if(navigator.vibrate) navigator.vibrate(15); // small haptic tick, like iOS's icon-jiggle pickup
+    }, 300) : null;
+
+    function startDrag(){
+      dragging = true;
+      dragGhost = document.createElement('div');
+      dragGhost.className = 'drag-ghost';
+      dragGhost.textContent = sym;
+      dragGhost.style.background = CATEGORY_COLORS[cat];
+      document.body.appendChild(dragGhost);
+    }
 
     function onMove(ev){
       const dx = ev.clientX - startX, dy = ev.clientY - startY;
-      if(!dragging && Math.hypot(dx, dy) > 6){
-        dragging = true;
-        dragGhost = document.createElement('div');
-        dragGhost.className = 'drag-ghost';
-        dragGhost.textContent = sym;
-        dragGhost.style.background = CATEGORY_COLORS[cat];
-        document.body.appendChild(dragGhost);
+      const moved = Math.hypot(dx, dy);
+      if(!armed){
+        // moved too far before the hold completed — this was a scroll/pan attempt, not a drag
+        if(moved > 10){ clearTimeout(armTimer); cell.classList.remove('armed'); }
+        return;
       }
+      if(!dragging && moved > 4) startDrag();
       if(dragging && dragGhost){
         dragGhost.style.left = ev.clientX + 'px';
         dragGhost.style.top = ev.clientY + 'px';
@@ -2055,8 +2111,11 @@ function setupElementDrag(cell){
       }
     }
     function onUp(ev){
+      clearTimeout(armTimer);
+      cell.classList.remove('armed');
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
       if(dragging){
         const dz = document.getElementById('compoundDropzone');
         const r = dz.getBoundingClientRect();
@@ -2068,6 +2127,7 @@ function setupElementDrag(cell){
     }
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
   });
 }
 
@@ -2111,6 +2171,20 @@ document.getElementById('clearLabBtn').addEventListener('click', () => {
   document.getElementById('compoundResult').innerHTML = '';
 });
 
+// PubChem's REST API is mainly documented for server-side use (Python/R scripts), which never
+// triggers CORS at all since that's a browser-only restriction — so there's a real chance it
+// doesn't send the headers needed for a direct browser fetch from an arbitrary site. Try direct
+// first (fastest, works if they do allow it), and fall back to a public CORS proxy if that fails.
+async function fetchPubChemJson(url){
+  try{
+    const res = await fetch(url);
+    if(res.ok) return await res.json();
+  } catch(e) { /* likely CORS — fall through to the proxy */ }
+  const proxied = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(url));
+  if(!proxied.ok) throw new Error('unreachable');
+  return await proxied.json();
+}
+
 document.getElementById('combineBtn').addEventListener('click', async () => {
   const resultEl = document.getElementById('compoundResult');
   if(Object.keys(compoundCounts).length === 0){
@@ -2122,22 +2196,18 @@ document.getElementById('combineBtn').addEventListener('click', async () => {
 
   try{
     // 1. find a matching compound by formula
-    const cidRes = await fetch(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/formula/${encodeURIComponent(formula)}/cids/JSON?MaxRecords=1`);
-    if(!cidRes.ok) throw new Error('not found');
-    const cidData = await cidRes.json();
+    const cidData = await fetchPubChemJson(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/formula/${encodeURIComponent(formula)}/cids/JSON?MaxRecords=1`);
     const cid = cidData?.IdentifierList?.CID?.[0];
     if(!cid) throw new Error('not found');
 
     // 2. fetch core properties
-    const propRes = await fetch(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/property/IUPACName,MolecularFormula,MolecularWeight,CanonicalSMILES/JSON`);
-    const propData = await propRes.json();
+    const propData = await fetchPubChemJson(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/property/IUPACName,MolecularFormula,MolecularWeight,CanonicalSMILES/JSON`);
     const props = propData?.PropertyTable?.Properties?.[0] || {};
 
     // 3. fetch a human-readable description, if PubChem has one on file
     let description = '';
     try{
-      const descRes = await fetch(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/description/JSON`);
-      const descData = await descRes.json();
+      const descData = await fetchPubChemJson(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/description/JSON`);
       const withDesc = (descData?.InformationList?.Information || []).find(info => info.Description);
       if(withDesc) description = withDesc.Description;
     } catch(e){ /* description is optional — fine if this fails */ }
