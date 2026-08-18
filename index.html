@@ -389,6 +389,30 @@
     font-family:inherit; font-size:0.68rem; text-transform:uppercase; cursor:pointer; margin-left:auto;
   }
 
+  /* --- Settings / Auth --- */
+  .settings-block{ margin-bottom:1.2rem; }
+  .email-auth-form{ display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.6rem; }
+  .email-auth-form input{
+    background: var(--paper-2); border:1px solid var(--line); color: var(--ink);
+    font-family:inherit; font-size:0.8rem; padding:0.5rem 0.7rem; border-radius:3px;
+  }
+  .admin-player-row{
+    display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap; padding:0.6rem 0.4rem;
+    border-bottom:1px dashed rgba(107,90,65,0.4); font-size:0.78rem;
+  }
+  .admin-player-row input[type=text], .admin-player-row input[type=number]{
+    background: var(--paper-2); border:1px solid var(--line); color: var(--ink);
+    font-family:inherit; font-size:0.75rem; padding:0.35rem 0.5rem; border-radius:3px; width:110px;
+  }
+  .admin-player-row label{ display:flex; align-items:center; gap:0.3rem; font-size:0.68rem; color: var(--muted); }
+  .admin-player-row .ap-save{
+    background: var(--gain); color: var(--ink); border:none; border-radius:3px; padding:0.35rem 0.6rem;
+    font-family:inherit; font-size:0.65rem; text-transform:uppercase; cursor:pointer;
+  }
+  .admin-player-row .ap-delete{
+    background: var(--danger); color: var(--ink); border:none; border-radius:3px; padding:0.35rem 0.6rem;
+    font-family:inherit; font-size:0.65rem; text-transform:uppercase; cursor:pointer;
+  }
   /* --- databook --- */
   .db-section{ border-bottom: 1px dashed rgba(107,90,65,0.4); }
   .db-head{
@@ -492,6 +516,14 @@
 <!-- Only used for the investor leaderboard (real-time shared write access). See setup notes for firebaseConfig below. -->
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+
+<!-- Data files, split out so the main site logic stays short and each dataset can be edited independently -->
+<script src="data/wanted-data.js"></script>
+<script src="data/periodic-table-data.js"></script>
+<script src="data/databook-data.js"></script>
+<script src="data/moderation-data.js"></script>
+<script src="data/economy-data.js"></script>
 
 <div id="hint">Drag or scroll to look around this area · Buttons take you elsewhere</div>
 
@@ -549,6 +581,7 @@
             <div class="side-nav">
               <button class="las-toggle side-nav-btn" data-goto="region-periodic">Periodic Table</button>
               <button class="las-toggle side-nav-btn" data-goto="region-leaderboard">Leaderboard</button>
+              <button class="las-toggle side-nav-btn" data-goto="region-settings">Settings</button>
 
               <div class="dropdown-wrap">
                 <button class="las-toggle side-nav-btn" id="databookToggle">Databook ▾</button>
@@ -568,30 +601,16 @@
           </div>
         </div>
 
-        <div class="missing-banner">Missing 1 day(s)</div>
+        <div class="missing-banner" id="missingBanner"></div>
         <div class="stamp">FEDERAL<br>NOTICE</div>
         <div class="eyebrow">By order of the court</div>
         <h1>WANTED</h1>
         <div class="subject">Colin West</div>
         <p class="intro">Download the files insecurely below.</p>
         <div class="section-label">Charges</div>
-        <ul class="charge-list">
-          <li><span class="count">×5</span><span>Skipping class (I'm disappointed)</span></li>
-          <li><span class="count">×2</span><span>Child endangerment</span></li>
-          <li><span class="count">×2</span><span>Treason</span></li>
-          <li><span class="count">×1</span><span>Possession and use of perchlorate</span></li>
-          <li><span class="count">×1</span><span>Accepting bribes</span></li>
-          <li><span class="count">×1</span><span>Possession of radioactive material</span></li>
-          <li><span class="count">×1</span><span>Multiple Errors, Skipping and No LP all for SAC </span></li>
-        </ul>
+        <ul class="charge-list" id="chargeList"></ul>
         <div class="section-label">Sentence</div>
-        <ul class="sentence-list">
-          <li><span class="count">—</span><span>6 after-school detentions</span></li>
-          <li><span class="count">—</span><span>Tree(3) minutes of community service</span></li>
-          <li><span class="count">—</span><span>28 years in federal prison</span></li>
-          <li><span class="count">—</span><span>The sulfuric acid chair</span></li>
-          <li><span class="count">—</span><span>Body taken down to 195K (−78.5°C) and left for 93 years</span></li>
-        </ul>
+        <ul class="sentence-list" id="sentenceList"></ul>
         <p class="final-line">Your days are numbered.</p>
         <button class="nav-btn" data-goto="region-notice">Download Files</button>
       </div>
@@ -756,10 +775,55 @@
       </div>
     </div>
 
+    <div class="region wide" id="region-settings" data-role="satellite">
+      <div class="region-inner">
+        <div class="page-title">Settings</div>
+        <div class="page-sub" id="authStatus">Checking sign-in status...</div>
+
+        <div class="section-label">Account</div>
+        <div class="settings-block">
+          <div class="auth-signed-in" id="authSignedInBlock">
+            <p class="cc-desc" id="authSignedInText"></p>
+            <button class="nav-btn" id="signOutBtn" style="margin:0;">Sign Out</button>
+          </div>
+
+          <div class="auth-signed-out" id="authSignedOutBlock">
+            <p class="cc-desc">You're playing anonymously right now — your data is saved to this device's account ID, but signing in lets you continue on other devices too.</p>
+            <button class="nav-btn" id="googleSignInBtn" style="margin:0 0.6rem 0.6rem 0;">Sign in with Google</button>
+            <div class="email-auth-form">
+              <input type="email" id="authEmail" placeholder="Email">
+              <input type="password" id="authPassword" placeholder="Password">
+              <button class="tool-btn" id="emailSignInBtn">Sign In</button>
+              <button class="tool-btn" id="emailSignUpBtn">Create Account</button>
+            </div>
+            <div class="compound-status error" id="authMsg"></div>
+          </div>
+        </div>
+
+        <div class="section-label">Your Account ID</div>
+        <p class="cc-desc" id="accountIdText"></p>
+
+        <div id="adminPanelWrap" style="display:none;">
+          <div class="section-label">Admin Panel</div>
+          <p class="cc-desc">Edit or delete any player's record. This only works because Firebase's own security rules check your signed-in email — not because of anything in this page's code.</p>
+          <div id="adminPlayerList"></div>
+        </div>
+
+        <button class="nav-btn" data-goto="region-index" style="margin-top:1.6rem;">Back to the board</button>
+      </div>
+    </div>
+
   </div>
 </div>
 
 <script>
+/* ================= WANTED POSTER (rendered from data/wanted-data.js) ================= */
+document.getElementById('missingBanner').textContent = `Missing ${WANTED_DATA.missingDays} day(s)`;
+document.getElementById('chargeList').innerHTML = WANTED_DATA.charges.map(c =>
+  `<li><span class="count">${c.count}</span><span>${c.text}</span></li>`).join('');
+document.getElementById('sentenceList').innerHTML = WANTED_DATA.sentence.map(s =>
+  `<li><span class="count">${s.count}</span><span>${s.text}</span></li>`).join('');
+
 /* ================= FIREBASE (shared by market sync + leaderboard) ================= */
 const firebaseConfig = {
   apiKey: "AIzaSyBNT1jvi0El_txSKTjCGS5MeBbVz15DKs4",
@@ -789,7 +853,7 @@ if(!investorId){
 
 /* ================= RADIAL AUTO-LAYOUT ================= */
 const HUB_ID = 'region-index';
-const SATELLITE_IDS = ['region-notice', 'region-coin', 'region-periodic', 'region-databook', 'region-leaderboard', 'region-market'];
+const SATELLITE_IDS = ['region-notice', 'region-coin', 'region-periodic', 'region-databook', 'region-leaderboard', 'region-market', 'region-settings'];
 const RADIUS = 2300;
 
 function layoutRegions(){
@@ -1205,36 +1269,47 @@ function loadPortfolio(){
 function savePortfolio(p){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
   if(db && investorId){
-    // this is what stops the stock you bought from disappearing — cash AND lots are backed up,
-    // not just the computed leaderboard number, so it survives a cleared cache or a new device
+    // this is what stops the stock (and elements/compounds/tools) you bought from disappearing —
+    // everything is backed up, not just the computed leaderboard number, so it survives a
+    // cleared cache or a new device
     db.ref('players/' + investorId).set({
-      cash: p.cash, lots: p.lots, trades: p.trades.slice(-200), updatedAt: Date.now()
+      cash: p.cash, lots: p.lots, trades: p.trades.slice(-200),
+      elements: p.elements || {}, compounds: p.compounds || {}, tools: p.tools || ['basic'],
+      nameLocked: !!p.nameLocked, updatedAt: Date.now()
     }).catch(() => {});
   }
 }
 let portfolio = loadPortfolio();
+let playerCashListenerRef = null;
 
-if(db && investorId){
-  db.ref('players/' + investorId).once('value').then(snap => {
+// Loads (or initializes) player data for whichever account ID is currently active. Called once
+// at startup, and again any time the active account switches (sign in, sign out, or upgrading
+// from anonymous to a real account) — so the same logic handles all three cases identically.
+function loadPlayerData(uid){
+  if(!db || !uid) return;
+  db.ref('players/' + uid).once('value').then(snap => {
     const remote = snap.val();
     if(remote){
-      // a backed-up copy exists — restore it (this is the source of truth for cash/holdings)
       portfolio = {
         cash: remote.cash, lots: remote.lots || [], trades: remote.trades || [],
-        elements: remote.elements || {}, compounds: remote.compounds || {}, tools: remote.tools || ['basic']
+        elements: remote.elements || {}, compounds: remote.compounds || {}, tools: remote.tools || ['basic'],
+        nameLocked: !!remote.nameLocked
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio));
     } else {
-      // nothing backed up yet for this browser — push what we have now so it's protected going forward
-      savePortfolio(portfolio);
+      savePortfolio(portfolio); // nothing backed up yet under this ID — protect what we have now
     }
     renderPortfolio(); renderHistory(); renderLots(); drawChart();
+    if(typeof renderOwnedElements === 'function'){ renderOwnedElements(); renderOwnedCompounds(); renderTools(); }
+    if(typeof refreshNameLockUI === 'function') refreshNameLockUI();
   }).catch(() => {});
 
-  // Marketplace sales credit a seller's cash directly in Firebase (via transaction), which could
+  // Marketplace sales (and admin edits) credit/adjust cash directly in Firebase, which could
   // otherwise get silently overwritten the next time this player's own client does a full save —
   // this listener merges any such external change into the live local state so it isn't lost.
-  db.ref('players/' + investorId + '/cash').on('value', (snap) => {
+  if(playerCashListenerRef) playerCashListenerRef.off();
+  playerCashListenerRef = db.ref('players/' + uid + '/cash');
+  playerCashListenerRef.on('value', (snap) => {
     const remoteCash = snap.val();
     if(typeof remoteCash === 'number' && remoteCash !== portfolio.cash){
       portfolio.cash = remoteCash;
@@ -1242,6 +1317,7 @@ if(db && investorId){
     }
   });
 }
+if(db && investorId) loadPlayerData(investorId);
 
 let market = JSON.parse(localStorage.getItem('mrwestcoin_market_cache') || 'null') || {
   price: 12.50, history: [{ price: 12.50, t: Date.now() }],
@@ -1998,94 +2074,8 @@ databookMenu.querySelectorAll('button[data-section]').forEach(btn => {
 
 /* ================= PERIODIC TABLE ================= */
 // category color scheme
-const CATEGORY_COLORS = {
-  'alkali-metal': '#e05a5a',
-  'alkaline-earth': '#f0925a',
-  'transition-metal': '#f0c04a',
-  'post-transition': '#7bd17b',
-  'metalloid': '#3fc7a6',
-  'nonmetal': '#5aa9f0',
-  'halogen': '#8f8ff0',
-  'noble-gas': '#c77bdb',
-  'lanthanide': '#e87fb0',
-  'actinide': '#c98fe0',
-  'unknown': '#8a8a8a'
-};
-const CATEGORY_LABELS = {
-  'alkali-metal':'Alkali metal','alkaline-earth':'Alkaline earth metal','transition-metal':'Transition metal',
-  'post-transition':'Post-transition metal','metalloid':'Metalloid','nonmetal':'Nonmetal','halogen':'Halogen',
-  'noble-gas':'Noble gas','lanthanide':'Lanthanide','actinide':'Actinide','unknown':'Unknown'
-};
-
-// [num, sym, name, mass, category, period, group]  (group 0 = placed in lanthanide/actinide rows)
-const ELEMENTS = [
-[1,'H','Hydrogen',1.01,'nonmetal',1,1],[2,'He','Helium',4.00,'noble-gas',1,18],
-[3,'Li','Lithium',6.94,'alkali-metal',2,1],[4,'Be','Beryllium',9.01,'alkaline-earth',2,2],
-[5,'B','Boron',10.81,'metalloid',2,13],[6,'C','Carbon',12.01,'nonmetal',2,14],
-[7,'N','Nitrogen',14.01,'nonmetal',2,15],[8,'O','Oxygen',16.00,'nonmetal',2,16],
-[9,'F','Fluorine',19.00,'halogen',2,17],[10,'Ne','Neon',20.18,'noble-gas',2,18],
-[11,'Na','Sodium',22.99,'alkali-metal',3,1],[12,'Mg','Magnesium',24.31,'alkaline-earth',3,2],
-[13,'Al','Aluminium',26.98,'post-transition',3,13],[14,'Si','Silicon',28.09,'metalloid',3,14],
-[15,'P','Phosphorus',30.97,'nonmetal',3,15],[16,'S','Sulfur',32.07,'nonmetal',3,16],
-[17,'Cl','Chlorine',35.45,'halogen',3,17],[18,'Ar','Argon',39.95,'noble-gas',3,18],
-[19,'K','Potassium',39.10,'alkali-metal',4,1],[20,'Ca','Calcium',40.08,'alkaline-earth',4,2],
-[21,'Sc','Scandium',44.96,'transition-metal',4,3],[22,'Ti','Titanium',47.87,'transition-metal',4,4],
-[23,'V','Vanadium',50.94,'transition-metal',4,5],[24,'Cr','Chromium',52.00,'transition-metal',4,6],
-[25,'Mn','Manganese',54.94,'transition-metal',4,7],[26,'Fe','Iron',55.85,'transition-metal',4,8],
-[27,'Co','Cobalt',58.93,'transition-metal',4,9],[28,'Ni','Nickel',58.69,'transition-metal',4,10],
-[29,'Cu','Copper',63.55,'transition-metal',4,11],[30,'Zn','Zinc',65.38,'transition-metal',4,12],
-[31,'Ga','Gallium',69.72,'post-transition',4,13],[32,'Ge','Germanium',72.63,'metalloid',4,14],
-[33,'As','Arsenic',74.92,'metalloid',4,15],[34,'Se','Selenium',78.97,'nonmetal',4,16],
-[35,'Br','Bromine',79.90,'halogen',4,17],[36,'Kr','Krypton',83.80,'noble-gas',4,18],
-[37,'Rb','Rubidium',85.47,'alkali-metal',5,1],[38,'Sr','Strontium',87.62,'alkaline-earth',5,2],
-[39,'Y','Yttrium',88.91,'transition-metal',5,3],[40,'Zr','Zirconium',91.22,'transition-metal',5,4],
-[41,'Nb','Niobium',92.91,'transition-metal',5,5],[42,'Mo','Molybdenum',95.95,'transition-metal',5,6],
-[43,'Tc','Technetium',98,'transition-metal',5,7],[44,'Ru','Ruthenium',101.07,'transition-metal',5,8],
-[45,'Rh','Rhodium',102.91,'transition-metal',5,9],[46,'Pd','Palladium',106.42,'transition-metal',5,10],
-[47,'Ag','Silver',107.87,'transition-metal',5,11],[48,'Cd','Cadmium',112.41,'transition-metal',5,12],
-[49,'In','Indium',114.82,'post-transition',5,13],[50,'Sn','Tin',118.71,'post-transition',5,14],
-[51,'Sb','Antimony',121.76,'metalloid',5,15],[52,'Te','Tellurium',127.60,'metalloid',5,16],
-[53,'I','Iodine',126.90,'halogen',5,17],[54,'Xe','Xenon',131.29,'noble-gas',5,18],
-[55,'Cs','Caesium',132.91,'alkali-metal',6,1],[56,'Ba','Barium',137.33,'alkaline-earth',6,2],
-[57,'La','Lanthanum',138.91,'lanthanide',6,0],[58,'Ce','Cerium',140.12,'lanthanide',6,0],
-[59,'Pr','Praseodymium',140.91,'lanthanide',6,0],[60,'Nd','Neodymium',144.24,'lanthanide',6,0],
-[61,'Pm','Promethium',145,'lanthanide',6,0],[62,'Sm','Samarium',150.36,'lanthanide',6,0],
-[63,'Eu','Europium',151.96,'lanthanide',6,0],[64,'Gd','Gadolinium',157.25,'lanthanide',6,0],
-[65,'Tb','Terbium',158.93,'lanthanide',6,0],[66,'Dy','Dysprosium',162.50,'lanthanide',6,0],
-[67,'Ho','Holmium',164.93,'lanthanide',6,0],[68,'Er','Erbium',167.26,'lanthanide',6,0],
-[69,'Tm','Thulium',168.93,'lanthanide',6,0],[70,'Yb','Ytterbium',173.05,'lanthanide',6,0],
-[71,'Lu','Lutetium',174.97,'lanthanide',6,3],
-[72,'Hf','Hafnium',178.49,'transition-metal',6,4],[73,'Ta','Tantalum',180.95,'transition-metal',6,5],
-[74,'W','Tungsten',183.84,'transition-metal',6,6],[75,'Re','Rhenium',186.21,'transition-metal',6,7],
-[76,'Os','Osmium',190.23,'transition-metal',6,8],[77,'Ir','Iridium',192.22,'transition-metal',6,9],
-[78,'Pt','Platinum',195.08,'transition-metal',6,10],[79,'Au','Gold',196.97,'transition-metal',6,11],
-[80,'Hg','Mercury',200.59,'transition-metal',6,12],[81,'Tl','Thallium',204.38,'post-transition',6,13],
-[82,'Pb','Lead',207.2,'post-transition',6,14],[83,'Bi','Bismuth',208.98,'post-transition',6,15],
-[84,'Po','Polonium',209,'post-transition',6,16],[85,'At','Astatine',210,'halogen',6,17],
-[86,'Rn','Radon',222,'noble-gas',6,18],
-[87,'Fr','Francium',223,'alkali-metal',7,1],[88,'Ra','Radium',226,'alkaline-earth',7,2],
-[89,'Ac','Actinium',227,'actinide',7,0],[90,'Th','Thorium',232.04,'actinide',7,0],
-[91,'Pa','Protactinium',231.04,'actinide',7,0],[92,'U','Uranium',238.03,'actinide',7,0],
-[93,'Np','Neptunium',237,'actinide',7,0],[94,'Pu','Plutonium',244,'actinide',7,0],
-[95,'Am','Americium',243,'actinide',7,0],[96,'Cm','Curium',247,'actinide',7,0],
-[97,'Bk','Berkelium',247,'actinide',7,0],[98,'Cf','Californium',251,'actinide',7,0],
-[99,'Es','Einsteinium',252,'actinide',7,0],[100,'Fm','Fermium',257,'actinide',7,0],
-[101,'Md','Mendelevium',258,'actinide',7,0],[102,'No','Nobelium',259,'actinide',7,0],
-[103,'Lr','Lawrencium',266,'actinide',7,3],
-[104,'Rf','Rutherfordium',267,'transition-metal',7,4],[105,'Db','Dubnium',268,'transition-metal',7,5],
-[106,'Sg','Seaborgium',269,'transition-metal',7,6],[107,'Bh','Bohrium',270,'transition-metal',7,7],
-[108,'Hs','Hassium',269,'transition-metal',7,8],[109,'Mt','Meitnerium',278,'unknown',7,9],
-[110,'Ds','Darmstadtium',281,'unknown',7,10],[111,'Rg','Roentgenium',282,'unknown',7,11],
-[112,'Cn','Copernicium',285,'unknown',7,12],[113,'Nh','Nihonium',286,'post-transition',7,13],
-[114,'Fl','Flerovium',289,'post-transition',7,14],[115,'Mc','Moscovium',290,'post-transition',7,15],
-[116,'Lv','Livermorium',293,'post-transition',7,16],[117,'Ts','Tennessine',294,'halogen',7,17],
-[118,'Og','Oganesson',294,'noble-gas',7,18]
-];
 
 // Room-temperature (25°C) state — well-established exceptions; everything else defaults to solid.
-const GAS_AT_25C = new Set([1,2,7,8,9,10,17,18,36,54,86]);
-const LIQUID_AT_25C = new Set([35,80]);
-const UNKNOWN_STATE = new Set([109,110,111,112,113,114,115,116,117,118]); // too unstable/short-lived to measure directly
 
 function stateOf(num){
   if(UNKNOWN_STATE.has(num)) return 'unknown';
@@ -2100,10 +2090,6 @@ function blockOf(num, cat, group){
   if(group >= 3 && group <= 12) return 'd';
   return 'p';
 }
-const STATE_COLORS = { solid:'#c9a876', liquid:'#5aa9f0', gas:'#e05a5a', unknown:'#6b5a41' };
-const STATE_LABELS = { solid:'Solid', liquid:'Liquid', gas:'Gas', unknown:'Unknown / too unstable to measure' };
-const BLOCK_COLORS = { s:'#e05a5a', p:'#5aa9f0', d:'#f0c04a', f:'#c77bdb' };
-const BLOCK_LABELS = { s:'s-block', p:'p-block', d:'d-block', f:'f-block' };
 
 let ptMode = 'category';
 let ptSearchTerm = '';
@@ -2345,37 +2331,6 @@ document.getElementById('combineBtn').addEventListener('click', async () => {
 // Prices are illustrative, roughly ordered like real-world commodity prices (precious metals
 // expensive, common gases/nonmetals cheap) — not exact spot prices, this is a game, not a
 // commodities terminal. Scoped to ~20 elements rather than all 118 to keep this maintainable.
-const ELEMENT_PRICES = {
-  H: 0.50, He: 4, C: 0.30, N: 0.25, O: 0.20, Na: 3, Mg: 3, Al: 2, Si: 2, P: 3,
-  S: 0.40, Cl: 1, K: 5, Ca: 1.5, Fe: 2, Cu: 8, Zn: 2.5, Ag: 700, Pt: 30000, Au: 62000
-}; // approx USD per "unit" (rough mole-scale analogy)
-
-// Embedded, guaranteed-correct recipe data — this is the actual source of truth for whether a
-// combination succeeds and what it's called. PubChem is used ONLY as bonus enrichment for extra
-// real-world detail when reachable; the core game never depends on an external API succeeding.
-const RECIPES = [
-  { formula:'H2', name:'Hydrogen Gas', need:{H:2}, tool:'basic', desc:'The simplest diatomic molecule — two hydrogen atoms bonded together.' },
-  { formula:'O2', name:'Oxygen Gas', need:{O:2}, tool:'basic', desc:'What you\'re breathing right now, more or less.' },
-  { formula:'N2', name:'Nitrogen Gas', need:{N:2}, tool:'basic', desc:'Makes up about 78% of Earth\'s atmosphere.' },
-  { formula:'H2O', name:'Water', need:{H:2,O:1}, tool:'basic', desc:'Two hydrogens, one oxygen. The universal solvent.' },
-  { formula:'CO2', name:'Carbon Dioxide', need:{C:1,O:2}, tool:'basic', desc:'What you exhale, and what plants breathe in.' },
-  { formula:'NaCl', name:'Sodium Chloride (Table Salt)', need:{Na:1,Cl:1}, tool:'basic', desc:'An explosive metal and a toxic gas, combined into something you sprinkle on fries.' },
-  { formula:'HCl', name:'Hydrochloric Acid', need:{H:1,Cl:1}, tool:'basic', desc:'A strong acid — also naturally present in your stomach.' },
-  { formula:'CH4', name:'Methane', need:{C:1,H:4}, tool:'burner', desc:'The simplest hydrocarbon, and the main component of natural gas.' },
-  { formula:'SO2', name:'Sulfur Dioxide', need:{S:1,O:2}, tool:'burner', desc:'Produced when sulfur burns — a major component of acid rain.' },
-  { formula:'Fe2O3', name:'Iron(III) Oxide (Rust)', need:{Fe:2,O:3}, tool:'burner', desc:'What iron becomes when it oxidizes over time.' },
-  { formula:'CaCO3', name:'Calcium Carbonate', need:{Ca:1,C:1,O:3}, tool:'burner', desc:'The main component of limestone, marble, and seashells.' },
-  { formula:'NaOH', name:'Sodium Hydroxide (Lye)', need:{Na:1,O:1,H:1}, tool:'electrolysis', desc:'A caustic base produced industrially via electrolysis of brine.' },
-  { formula:'Al2O3', name:'Aluminium Oxide', need:{Al:2,O:3}, tool:'electrolysis', desc:'Also known as alumina — extremely hard, used as an abrasive.' },
-  { formula:'NH3', name:'Ammonia', need:{N:1,H:3}, tool:'pressure', desc:'Made industrially via the Haber process, which needs high pressure and heat.' },
-];
-
-const TOOLS = [
-  { id:'basic', name:'Basic Glassware', cost:0, desc:'Beakers and tubing — free, unlocks simple combinations.' },
-  { id:'burner', name:'Bunsen Burner', cost:50, desc:'Unlocks combustion and heat-driven reactions.' },
-  { id:'electrolysis', name:'Electrolysis Rig', cost:200, desc:'Splits compounds using electric current — unlocks more advanced synthesis.' },
-  { id:'pressure', name:'High-Pressure Reactor', cost:800, desc:'Unlocks industrial-scale reactions like ammonia synthesis.' },
-];
 
 // player's element/compound/tool state — synced to Firebase alongside cash/lots
 function ensureEconomyState(p){
@@ -2644,120 +2599,6 @@ buildPeriodicTable();
 /* ================= CHEMISTRY DATABOOK ================= */
 // Independently compiled, publicly-known reference values — check against your
 // official VCAA Chemistry Data Book for exam use, exact formatting/rounding may differ.
-const DATABOOK = [
-  { id:'electrochem', title:'Electrochemical Series (selected, 25°C)', body: `
-    <table><tr><th>Half-reaction</th><th>E° (V)</th></tr>
-      <tr><td>F₂ + 2e⁻ → 2F⁻</td><td>+2.87</td></tr>
-      <tr><td>MnO₄⁻ + 8H⁺ + 5e⁻ → Mn²⁺ + 4H₂O</td><td>+1.51</td></tr>
-      <tr><td>Cl₂ + 2e⁻ → 2Cl⁻</td><td>+1.36</td></tr>
-      <tr><td>O₂ + 4H⁺ + 4e⁻ → 2H₂O</td><td>+1.23</td></tr>
-      <tr><td>Ag⁺ + e⁻ → Ag</td><td>+0.80</td></tr>
-      <tr><td>Fe³⁺ + e⁻ → Fe²⁺</td><td>+0.77</td></tr>
-      <tr><td>I₂ + 2e⁻ → 2I⁻</td><td>+0.54</td></tr>
-      <tr><td>Cu²⁺ + 2e⁻ → Cu</td><td>+0.34</td></tr>
-      <tr><td>2H⁺ + 2e⁻ → H₂</td><td>0.00 (reference)</td></tr>
-      <tr><td>Pb²⁺ + 2e⁻ → Pb</td><td>−0.13</td></tr>
-      <tr><td>Ni²⁺ + 2e⁻ → Ni</td><td>−0.26</td></tr>
-      <tr><td>Fe²⁺ + 2e⁻ → Fe</td><td>−0.44</td></tr>
-      <tr><td>Zn²⁺ + 2e⁻ → Zn</td><td>−0.76</td></tr>
-      <tr><td>Al³⁺ + 3e⁻ → Al</td><td>−1.66</td></tr>
-      <tr><td>Mg²⁺ + 2e⁻ → Mg</td><td>−2.37</td></tr>
-      <tr><td>Na⁺ + e⁻ → Na</td><td>−2.71</td></tr>
-      <tr><td>K⁺ + e⁻ → K</td><td>−2.93</td></tr>
-      <tr><td>Li⁺ + e⁻ → Li</td><td>−3.04</td></tr>
-    </table>
-    <div class="db-note">More positive E° = stronger oxidant. Species higher in the table oxidise species lower down.</div>
-  `},
-  { id:'relationships', title:'Chemical Relationships', body: `
-    <table><tr><th>Relationship</th><th>Formula</th></tr>
-      <tr><td>Moles from mass</td><td>n = m / M</td></tr>
-      <tr><td>Moles of gas (STP/SLC)</td><td>n = V / Vm</td></tr>
-      <tr><td>Concentration</td><td>c = n / V</td></tr>
-      <tr><td>Ideal gas law</td><td>PV = nRT</td></tr>
-      <tr><td>Dilution</td><td>c₁V₁ = c₂V₂</td></tr>
-      <tr><td>pH</td><td>pH = −log₁₀[H⁺]</td></tr>
-      <tr><td>pOH</td><td>pOH = −log₁₀[OH⁻]</td></tr>
-      <tr><td>Water equilibrium (25°C)</td><td>pH + pOH = 14</td></tr>
-      <tr><td>Faraday's law</td><td>Q = n(e⁻) × F</td></tr>
-      <tr><td>Percentage yield</td><td>(actual / theoretical) × 100</td></tr>
-    </table>
-  `},
-  { id:'constants', title:'Physical Constants &amp; Standard Values', body: `
-    <table><tr><th>Constant</th><th>Symbol</th><th>Value</th></tr>
-      <tr><td>Avogadro's number</td><td>Nₐ</td><td>6.022 × 10²³ mol⁻¹</td></tr>
-      <tr><td>Gas constant</td><td>R</td><td>8.314 J K⁻¹ mol⁻¹</td></tr>
-      <tr><td>Faraday constant</td><td>F</td><td>96 485 C mol⁻¹</td></tr>
-      <tr><td>Molar volume of gas at STP (0°C, 100 kPa)</td><td>Vm</td><td>22.7 L mol⁻¹</td></tr>
-      <tr><td>Molar volume of gas at SLC (25°C, 100 kPa)</td><td>Vm</td><td>24.8 L mol⁻¹</td></tr>
-      <tr><td>Ionic product of water (25°C)</td><td>Kw</td><td>1.0 × 10⁻¹⁴</td></tr>
-      <tr><td>Standard atmospheric pressure</td><td>—</td><td>101.3 kPa</td></tr>
-      <tr><td>Standard temperature (STP)</td><td>—</td><td>0°C (273.15 K)</td></tr>
-    </table>
-  `},
-  { id:'conversions', title:'Unit Conversions', body: `
-    <table><tr><th>From</th><th>To</th><th>Multiply by</th></tr>
-      <tr><td>°C</td><td>K</td><td>+ 273.15</td></tr>
-      <tr><td>kPa</td><td>atm</td><td>÷ 101.3</td></tr>
-      <tr><td>mL</td><td>L</td><td>÷ 1000</td></tr>
-      <tr><td>g</td><td>kg</td><td>÷ 1000</td></tr>
-      <tr><td>J</td><td>kJ</td><td>÷ 1000</td></tr>
-      <tr><td>nm</td><td>m</td><td>× 10⁻⁹</td></tr>
-    </table>
-  `},
-  { id:'prefixes', title:'Metric Prefixes', body: `
-    <table><tr><th>Prefix</th><th>Symbol</th><th>Factor</th></tr>
-      <tr><td>giga</td><td>G</td><td>10⁹</td></tr>
-      <tr><td>mega</td><td>M</td><td>10⁶</td></tr>
-      <tr><td>kilo</td><td>k</td><td>10³</td></tr>
-      <tr><td>centi</td><td>c</td><td>10⁻²</td></tr>
-      <tr><td>milli</td><td>m</td><td>10⁻³</td></tr>
-      <tr><td>micro</td><td>µ</td><td>10⁻⁶</td></tr>
-      <tr><td>nano</td><td>n</td><td>10⁻⁹</td></tr>
-      <tr><td>pico</td><td>p</td><td>10⁻¹²</td></tr>
-    </table>
-  `},
-  { id:'indicators', title:'Acid-Base Indicators', body: `
-    <table><tr><th>Indicator</th><th>pH range</th><th>Acid colour</th><th>Base colour</th></tr>
-      <tr><td>Methyl orange</td><td>3.1 – 4.4</td><td>Red</td><td>Yellow</td></tr>
-      <tr><td>Bromothymol blue</td><td>6.0 – 7.6</td><td>Yellow</td><td>Blue</td></tr>
-      <tr><td>Litmus</td><td>4.5 – 8.3</td><td>Red</td><td>Blue</td></tr>
-      <tr><td>Phenolphthalein</td><td>8.3 – 10.0</td><td>Colourless</td><td>Pink</td></tr>
-    </table>
-  `},
-  { id:'ions', title:'Formulas &amp; Charges of Common Ions', body: `
-    <table><tr><th>Cations</th><th>Charge</th></tr>
-      <tr><td>NH₄⁺</td><td>+1</td></tr><tr><td>Cu⁺ / Cu²⁺</td><td>+1 / +2</td></tr>
-      <tr><td>Fe²⁺ / Fe³⁺</td><td>+2 / +3</td></tr><tr><td>Ag⁺</td><td>+1</td></tr>
-      <tr><td>Zn²⁺</td><td>+2</td></tr><tr><td>Al³⁺</td><td>+3</td></tr>
-    </table>
-    <table><tr><th>Anions</th><th>Charge</th></tr>
-      <tr><td>OH⁻</td><td>−1</td></tr><tr><td>NO₃⁻</td><td>−1</td></tr>
-      <tr><td>CO₃²⁻</td><td>−2</td></tr><tr><td>SO₄²⁻</td><td>−2</td></tr>
-      <tr><td>PO₄³⁻</td><td>−3</td></tr><tr><td>CH₃COO⁻ (acetate)</td><td>−1</td></tr>
-    </table>
-  `},
-  { id:'solubility', title:'Solubility Table (general rules)', body: `
-    <table><tr><th>Ion</th><th>Solubility</th></tr>
-      <tr><td>Group 1 &amp; NH₄⁺ salts</td><td>Soluble (all)</td></tr>
-      <tr><td>NO₃⁻, CH₃COO⁻</td><td>Soluble (all)</td></tr>
-      <tr><td>Cl⁻, Br⁻, I⁻</td><td>Soluble, except Ag⁺, Pb²⁺, Hg₂²⁺</td></tr>
-      <tr><td>SO₄²⁻</td><td>Soluble, except Ba²⁺, Sr²⁺, Pb²⁺, Ca²⁺ (slightly)</td></tr>
-      <tr><td>CO₃²⁻, PO₄³⁻</td><td>Insoluble, except Group 1 &amp; NH₄⁺</td></tr>
-      <tr><td>OH⁻</td><td>Insoluble, except Group 1, Ba²⁺ (Ca(OH)₂ slightly soluble)</td></tr>
-    </table>
-  `},
-  { id:'organic', title:'Organic Chemistry — Homologous Series', body: `
-    <table><tr><th>Series</th><th>General formula</th><th>Functional group</th></tr>
-      <tr><td>Alkanes</td><td>CₙH₂ₙ₊₂</td><td>C–C single bonds</td></tr>
-      <tr><td>Alkenes</td><td>CₙH₂ₙ</td><td>C=C double bond</td></tr>
-      <tr><td>Alkynes</td><td>CₙH₂ₙ₋₂</td><td>C≡C triple bond</td></tr>
-      <tr><td>Alcohols</td><td>CₙH₂ₙ₊₁OH</td><td>–OH</td></tr>
-      <tr><td>Carboxylic acids</td><td>CₙH₂ₙ₊₁COOH</td><td>–COOH</td></tr>
-      <tr><td>Esters</td><td>—</td><td>–COO–</td></tr>
-      <tr><td>Amines</td><td>CₙH₂ₙ₊₃N</td><td>–NH₂</td></tr>
-    </table>
-  `}
-];
 
 function buildDatabook(){
   const wrap = document.getElementById('databookAccordion');
@@ -2794,8 +2635,6 @@ function openDbSection(id){
    of generic placeholders: add whatever specific terms/slurs you want blocked directly into this
    array yourself (including their common broken-up/leetspeak variants) — that list isn't something
    this assistant will pre-populate. */
-const BLOCKED_TERMS = ['admin', 'moderator', 'fuck', 'shit', 'bitch']; // starter list — expand as needed
-const LEET_MAP = { '4':'a', '@':'a', '3':'e', '1':'i', '!':'i', '0':'o', '5':'s', '$':'s', '7':'t', '+':'t' };
 
 function normalizeForFilter(str){
   let s = str.toLowerCase();
@@ -2816,8 +2655,10 @@ const lbStatus = document.getElementById('lbStatus');
 
 let investorName = localStorage.getItem('mrwestcoin_investor_name') || '';
 nameInput.value = investorName;
+refreshNameLockUI();
 
 document.getElementById('nameSaveBtn').addEventListener('click', () => {
+  if(portfolio.nameLocked){ nameMsg.textContent = 'Your name has been locked by an admin.'; return; }
   const raw = nameInput.value.trim();
   if(raw.length < 2){ nameMsg.textContent = 'Name needs at least 2 characters.'; return; }
   if(!isNameAllowed(raw)){ nameMsg.textContent = "That name isn't allowed — try something else."; return; }
@@ -2877,6 +2718,161 @@ if(db){
 } else {
   lbStatus.textContent = 'Leaderboard is local-only until a Firebase project is connected.';
   renderLeaderboard(investorName ? [{ id: investorId, name: investorName, value: portfolioValue() }] : []);
+}
+
+/* ================= ACCOUNTS / AUTH / ADMIN ================= */
+// Set this to the email address YOU will sign in with — the admin panel only actually works
+// because Firebase's security rules check this server-side (see the rules snippet given in
+// chat). This client-side constant only controls whether the admin UI is shown; it grants no
+// real access by itself.
+const ADMIN_EMAIL = 'YOUR_ADMIN_EMAIL@example.com';
+
+const anonId = investorId; // the local random ID this browser started with, preserved so sign-out can return to it
+let currentUser = null;
+
+function refreshNameLockUI(){
+  const locked = !!portfolio.nameLocked;
+  nameInput.disabled = locked;
+  document.getElementById('nameSaveBtn').disabled = locked;
+  nameMsg.style.color = locked ? 'var(--danger)' : '';
+  if(locked) nameMsg.textContent = 'Your name has been locked by an admin.';
+}
+
+function switchActiveAccount(uid){
+  investorId = uid;
+  localStorage.setItem('mrwestcoin_investor_id', uid);
+  if(db) loadPlayerData(uid);
+}
+
+async function migrateAnonymousDataTo(newUid){
+  if(!db) return;
+  // carry the current (anonymous) progress over to the newly-signed-in account, then switch to it
+  await db.ref('players/' + newUid).set({
+    cash: portfolio.cash, lots: portfolio.lots, trades: portfolio.trades.slice(-200),
+    elements: portfolio.elements || {}, compounds: portfolio.compounds || {}, tools: portfolio.tools || ['basic'],
+    nameLocked: !!portfolio.nameLocked, updatedAt: Date.now()
+  }).catch(() => {});
+  switchActiveAccount(newUid);
+}
+
+function updateAuthUI(user){
+  currentUser = user;
+  const signedIn = user && !user.isAnonymous;
+  document.getElementById('authSignedInBlock').style.display = signedIn ? 'block' : 'none';
+  document.getElementById('authSignedOutBlock').style.display = signedIn ? 'none' : 'block';
+  document.getElementById('authStatus').textContent = signedIn
+    ? 'Signed in — your progress follows this account across devices.'
+    : "Playing anonymously — sign in below to carry your progress to other devices.";
+  if(signedIn){
+    document.getElementById('authSignedInText').textContent = `Signed in as ${user.email || user.displayName || 'your account'}.`;
+  }
+  document.getElementById('accountIdText').textContent = signedIn
+    ? `Account ID: ${user.uid}`
+    : `Anonymous device ID: ${anonId} (this is the "backup random ID" — write it down if you ever need to recover this device's progress)`;
+
+  const isAdmin = signedIn && user.email === ADMIN_EMAIL;
+  document.getElementById('adminPanelWrap').style.display = isAdmin ? 'block' : 'none';
+  if(isAdmin) renderAdminPanel();
+}
+
+if(FIREBASE_CONFIGURED){
+  firebase.auth().onAuthStateChanged((user) => {
+    if(user){
+      if(user.isAnonymous){
+        // real Firebase anonymous auth, separate from our own local random ID — used only so
+        // linking to a real account later is possible without losing data. Doesn't change
+        // which account is "active" on its own.
+      } else if(investorId !== user.uid){
+        switchActiveAccount(user.uid);
+      }
+    }
+    updateAuthUI(user);
+  });
+  // sign in anonymously in the background so linking (upgrading to Google/email) is possible later
+  if(!firebase.auth().currentUser) firebase.auth().signInAnonymously().catch(() => {});
+}
+
+document.getElementById('googleSignInBtn').addEventListener('click', async () => {
+  const authMsg = document.getElementById('authMsg');
+  authMsg.textContent = '';
+  const provider = new firebase.auth.GoogleAuthProvider();
+  try{
+    let result;
+    if(firebase.auth().currentUser && firebase.auth().currentUser.isAnonymous){
+      try{ result = await firebase.auth().currentUser.linkWithPopup(provider); }
+      catch(linkErr){ result = await firebase.auth().signInWithPopup(provider); } // e.g. account already exists elsewhere
+    } else {
+      result = await firebase.auth().signInWithPopup(provider);
+    }
+    await migrateAnonymousDataTo(result.user.uid);
+  } catch(e){ authMsg.textContent = 'Google sign-in failed: ' + e.message; }
+});
+
+document.getElementById('emailSignUpBtn').addEventListener('click', async () => {
+  const authMsg = document.getElementById('authMsg');
+  const email = document.getElementById('authEmail').value.trim();
+  const pw = document.getElementById('authPassword').value;
+  if(!email || pw.length < 6){ authMsg.textContent = 'Enter an email and a password of at least 6 characters.'; return; }
+  try{
+    let result;
+    if(firebase.auth().currentUser && firebase.auth().currentUser.isAnonymous){
+      const cred = firebase.auth.EmailAuthProvider.credential(email, pw);
+      result = await firebase.auth().currentUser.linkWithCredential(cred);
+    } else {
+      result = await firebase.auth().createUserWithEmailAndPassword(email, pw);
+    }
+    await migrateAnonymousDataTo(result.user.uid);
+  } catch(e){ authMsg.textContent = 'Sign-up failed: ' + e.message; }
+});
+document.getElementById('emailSignInBtn').addEventListener('click', async () => {
+  const authMsg = document.getElementById('authMsg');
+  const email = document.getElementById('authEmail').value.trim();
+  const pw = document.getElementById('authPassword').value;
+  if(!email || !pw){ authMsg.textContent = 'Enter your email and password.'; return; }
+  try{
+    const result = await firebase.auth().signInWithEmailAndPassword(email, pw);
+    switchActiveAccount(result.user.uid);
+  } catch(e){ authMsg.textContent = 'Sign-in failed: ' + e.message; }
+});
+document.getElementById('signOutBtn').addEventListener('click', async () => {
+  await firebase.auth().signOut();
+  switchActiveAccount(anonId);
+  firebase.auth().signInAnonymously().catch(() => {});
+});
+
+/* --- Admin panel: reads every player's record; writes are gated by Firebase's own rules, not this code --- */
+function renderAdminPanel(){
+  if(!db) return;
+  db.ref('players').once('value').then(snap => {
+    const val = snap.val() || {};
+    const wrap = document.getElementById('adminPlayerList');
+    const ids = Object.keys(val);
+    if(ids.length === 0){ wrap.innerHTML = '<div class="empty-history">No players yet.</div>'; return; }
+    wrap.innerHTML = ids.map(id => `
+      <div class="admin-player-row">
+        <span style="width:110px; overflow:hidden; text-overflow:ellipsis;">${id}</span>
+        <input type="number" class="ap-cash" data-id="${id}" value="${(val[id].cash||0).toFixed(2)}">
+        <label><input type="checkbox" class="ap-lock" data-id="${id}" ${val[id].nameLocked ? 'checked' : ''}> Lock name</label>
+        <button class="ap-save" data-id="${id}">Save</button>
+        <button class="ap-delete" data-id="${id}">Delete</button>
+      </div>`).join('');
+    wrap.querySelectorAll('.ap-save').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        const cash = parseFloat(wrap.querySelector(`.ap-cash[data-id="${id}"]`).value);
+        const nameLocked = wrap.querySelector(`.ap-lock[data-id="${id}"]`).checked;
+        db.ref('players/' + id).update({ cash, nameLocked }).catch(e => alert('Save failed: ' + e.message));
+      });
+    });
+    wrap.querySelectorAll('.ap-delete').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if(!confirm('Delete this player entirely? This cannot be undone.')) return;
+        const id = btn.dataset.id;
+        db.ref('players/' + id).remove();
+        db.ref('leaderboard/' + id).remove();
+      });
+    });
+  });
 }
 </script>
 </body>
