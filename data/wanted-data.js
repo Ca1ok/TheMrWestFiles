@@ -3,7 +3,7 @@
 const WANTED_DATA = {
   missingDays: 1,
   charges: [
-    { count: '×5', text: "Skipping class (I'm disappointed)" },
+    { count: '×6', text: "Skipping class (I'm disappointed)" },
     { count: '×2', text: 'Child endangerment' },
     { count: '×2', text: 'Treason' },
     { count: '×1', text: 'Possession and use of perchlorate' },
