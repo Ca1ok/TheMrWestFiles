@@ -1301,7 +1301,7 @@ function loadPlayerData(uid){
     }
     renderPortfolio(); renderHistory(); renderLots(); drawChart();
     if(typeof renderOwnedElements === 'function'){ renderOwnedElements(); renderOwnedCompounds(); renderTools(); }
-    if(typeof refreshNameLockUI === 'function') refreshNameLockUI();
+    if(typeof refreshLeaderboardGateUI === 'function') refreshLeaderboardGateUI();
   }).catch(() => {});
 
   // Marketplace sales (and admin edits) credit/adjust cash directly in Firebase, which could
@@ -2679,11 +2679,29 @@ const nameMsg = document.getElementById('nameMsg');
 const leaderboardListEl = document.getElementById('leaderboardList');
 const lbStatus = document.getElementById('lbStatus');
 
+function isSignedIn(){ return currentUser && !currentUser.isAnonymous; }
+function refreshLeaderboardGateUI(){
+  const signedIn = isSignedIn();
+  const locked = !!portfolio.nameLocked;
+  nameInput.disabled = locked || !signedIn;
+  document.getElementById('nameSaveBtn').disabled = locked || !signedIn;
+  if(!signedIn){
+    nameMsg.style.color = '';
+    nameMsg.textContent = 'Sign in (Settings → Account) to join the leaderboard under your name.';
+  } else if(locked){
+    nameMsg.style.color = 'var(--danger)';
+    nameMsg.textContent = 'Your name has been locked by an admin.';
+  } else {
+    nameMsg.textContent = '';
+  }
+}
+
 let investorName = localStorage.getItem('mrwestcoin_investor_name') || '';
 nameInput.value = investorName;
-refreshNameLockUI();
+refreshLeaderboardGateUI();
 
 document.getElementById('nameSaveBtn').addEventListener('click', () => {
+  if(!isSignedIn()){ nameMsg.textContent = 'Sign in first (Settings → Account) to join the leaderboard.'; return; }
   if(portfolio.nameLocked){ nameMsg.textContent = 'Your name has been locked by an admin.'; return; }
   const raw = nameInput.value.trim();
   if(raw.length < 2){ nameMsg.textContent = 'Name needs at least 2 characters.'; return; }
@@ -2706,7 +2724,8 @@ function compoundsMadeCount(){
 }
 
 function pushLeaderboardEntry(){
-  if(!db || !investorName) return;
+  // only real signed-in accounts get added — anonymous play doesn't publish to the leaderboard
+  if(!db || !investorName || !isSignedIn()) return;
   db.ref('leaderboard/' + investorId).set({
     name: investorName,
     value: portfolioValue(),
@@ -2756,14 +2775,6 @@ const ADMIN_EMAIL = 'YOUR_ADMIN_EMAIL@example.com';
 const anonId = investorId; // the local random ID this browser started with, preserved so sign-out can return to it
 let currentUser = null;
 
-function refreshNameLockUI(){
-  const locked = !!portfolio.nameLocked;
-  nameInput.disabled = locked;
-  document.getElementById('nameSaveBtn').disabled = locked;
-  nameMsg.style.color = locked ? 'var(--danger)' : '';
-  if(locked) nameMsg.textContent = 'Your name has been locked by an admin.';
-}
-
 function switchActiveAccount(uid){
   investorId = uid;
   localStorage.setItem('mrwestcoin_investor_id', uid);
@@ -2799,6 +2810,8 @@ function updateAuthUI(user){
   const isAdmin = signedIn && user.email === ADMIN_EMAIL;
   document.getElementById('adminPanelWrap').style.display = isAdmin ? 'block' : 'none';
   if(isAdmin) renderAdminPanel();
+
+  if(typeof refreshLeaderboardGateUI === 'function') refreshLeaderboardGateUI();
 }
 
 if(FIREBASE_CONFIGURED){
