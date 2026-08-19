@@ -762,8 +762,12 @@
         <div id="ownedCompoundsList" class="owned-list"><div class="empty-history">You haven't made anything yet.</div></div>
 
         <div class="section-label">Marketplace</div>
-        <div class="page-sub" style="margin-bottom:0.6rem;">Buy elements listed for sale by other players</div>
+        <div class="page-sub" style="margin-bottom:0.6rem;">Buy or sell elements and compounds directly with other players</div>
         <div class="market-controls">
+          <select id="listTypeSelect">
+            <option value="element">Element</option>
+            <option value="compound">Compound</option>
+          </select>
           <select id="listElemSelect"></select>
           <input type="number" id="listQty" min="1" step="1" value="1">
           <input type="number" id="listPrice" min="0.01" step="0.01" placeholder="Price/unit" style="width:90px;">
@@ -1256,7 +1260,7 @@ const TICK_INTERVAL = 12000;     // was 2000ms — 6x fewer writes/reads per day
 
 function loadPortfolio(){
   const raw = localStorage.getItem(STORAGE_KEY);
-  if(!raw) return { cash:1000, lots:[], nextLotId:1, trades:[] };
+  if(!raw) return { cash:1000, lots:[], nextLotId:1, trades:[], elements:{}, compounds:{}, tools:['basic'] };
   const p = JSON.parse(raw);
   // migrate old aggregate-holdings saves into a single lot so nothing is lost
   if(p.lots === undefined){
@@ -1264,6 +1268,11 @@ function loadPortfolio(){
     p.nextLotId = 2;
     delete p.held;
   }
+  // older saves predate the element economy entirely — without this, any buy/craft/sell
+  // action throws immediately because portfolio.elements (etc.) is undefined
+  if(!p.elements) p.elements = {};
+  if(!p.compounds) p.compounds = {};
+  if(!p.tools) p.tools = ['basic'];
   return p;
 }
 function savePortfolio(p){
@@ -2380,9 +2389,26 @@ const listElemSelect = document.getElementById('listElemSelect');
 function populateElementSelects(){
   const optionsHtml = Object.keys(ELEMENT_PRICES).map(sym => `<option value="${sym}">${sym} — $${ELEMENT_PRICES[sym].toLocaleString()}</option>`).join('');
   marketElemSelect.innerHTML = optionsHtml;
-  listElemSelect.innerHTML = optionsHtml;
   updateMarketPriceHint();
 }
+
+// The marketplace "what am I listing" select depends on which type is chosen, and — since you
+// can only list what you actually own — on your current elements/compounds inventory.
+const listTypeSelect = document.getElementById('listTypeSelect');
+function populateListSelect(){
+  if(listTypeSelect.value === 'compound'){
+    const owned = Object.keys(portfolio.compounds || {}).filter(f => portfolio.compounds[f] > 0);
+    listElemSelect.innerHTML = owned.length
+      ? owned.map(f => { const r = RECIPES.find(rc => rc.formula === f); return `<option value="${f}">${r ? r.name : f} (${f}) — ×${portfolio.compounds[f]} owned</option>`; }).join('')
+      : '<option value="">No compounds owned</option>';
+  } else {
+    const owned = Object.keys(ELEMENT_PRICES).filter(sym => (portfolio.elements || {})[sym] > 0);
+    listElemSelect.innerHTML = owned.length
+      ? owned.map(sym => `<option value="${sym}">${sym} — ×${portfolio.elements[sym]} owned</option>`).join('')
+      : '<option value="">No elements owned</option>';
+  }
+}
+listTypeSelect.addEventListener('change', populateListSelect);
 function updateMarketPriceHint(){
   const sym = marketElemSelect.value;
   const qty = parseFloat(marketQtyInput.value) || 0;
@@ -2474,6 +2500,11 @@ function renderRecipes(){
 async function craftCompound(formula){
   const recipe = RECIPES.find(r => r.formula === formula);
   if(!recipe) return;
+  // re-verify right before consuming — the button is only disabled at render time, so a stale
+  // button (or a double-click) could otherwise push element counts negative
+  const haveTool = portfolio.tools.includes(recipe.tool);
+  const haveElements = Object.keys(recipe.need).every(sym => (portfolio.elements[sym] || 0) >= recipe.need[sym]);
+  if(!haveTool || !haveElements) return;
   Object.keys(recipe.need).forEach(sym => { portfolio.elements[sym] -= recipe.need[sym]; });
   const materialCost = Object.keys(recipe.need).reduce((sum, sym) => sum + ELEMENT_PRICES[sym] * recipe.need[sym], 0);
   const value = materialCost * 1.6; // crafting adds value over raw materials, like real manufacturing
@@ -2507,27 +2538,51 @@ async function craftCompound(formula){
 function renderOwnedCompounds(){
   const wrap = document.getElementById('ownedCompoundsList');
   const formulas = Object.keys(portfolio.compounds).filter(f => portfolio.compounds[f] > 0);
-  if(formulas.length === 0){ wrap.innerHTML = '<div class="empty-history">You haven\'t made anything yet.</div>'; return; }
-  wrap.innerHTML = formulas.map(f => {
-    const r = RECIPES.find(rc => rc.formula === f);
-    return `<div class="owned-chip">${r ? r.name : f} <span class="oc-qty">×${portfolio.compounds[f]}</span></div>`;
-  }).join('');
+  if(formulas.length === 0){ wrap.innerHTML = '<div class="empty-history">You haven\'t made anything yet.</div>'; }
+  else{
+    wrap.innerHTML = formulas.map(f => {
+      const r = RECIPES.find(rc => rc.formula === f);
+      return `<div class="owned-chip">${r ? r.name : f} <span class="oc-qty">×${portfolio.compounds[f]}</span>
+        <button class="oc-sell" data-formula="${f}">Sell 1</button></div>`;
+    }).join('');
+    wrap.querySelectorAll('.oc-sell').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const f = btn.dataset.formula;
+        const r = RECIPES.find(rc => rc.formula === f);
+        if(portfolio.compounds[f] > 0 && r){
+          portfolio.compounds[f]--;
+          const materialCost = Object.keys(r.need).reduce((sum, sym) => sum + ELEMENT_PRICES[sym] * r.need[sym], 0);
+          portfolio.cash += materialCost * 1.6 * 0.8; // same crafted value as when made, sold back at a discount
+          saveEconomy();
+          renderPortfolio(); renderOwnedCompounds();
+        }
+      });
+    });
+  }
+  if(typeof populateListSelect === 'function') populateListSelect();
 }
 
-/* --- Marketplace: shared Firebase listings, buyable by any player --- */
+/* --- Marketplace: shared Firebase listings, buyable by any player, elements or compounds --- */
+function creditInventory(type, key, qty){
+  if(type === 'compound'){ portfolio.compounds[key] = (portfolio.compounds[key] || 0) + qty; }
+  else { portfolio.elements[key] = (portfolio.elements[key] || 0) + qty; }
+}
+
 document.getElementById('createListingBtn').addEventListener('click', () => {
-  const sym = listElemSelect.value;
+  const type = listTypeSelect.value;
+  const key = listElemSelect.value;
   const qty = parseFloat(document.getElementById('listQty').value);
   const price = parseFloat(document.getElementById('listPrice').value);
-  if(!qty || qty <= 0 || !price || price <= 0) return;
-  if((portfolio.elements[sym] || 0) < qty) return;
-  portfolio.elements[sym] -= qty;
+  if(!key || !qty || qty <= 0 || !price || price <= 0) return;
+  const stash = type === 'compound' ? portfolio.compounds : portfolio.elements;
+  if((stash[key] || 0) < qty) return; // can't list more than you own
+  stash[key] -= qty;
   saveEconomy();
-  renderOwnedElements();
+  renderOwnedElements(); renderOwnedCompounds(); populateListSelect();
   if(db){
     const listingId = 'listing_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
     db.ref('marketplace/' + listingId).set({
-      sellerId: investorId, sellerName: investorName || 'Anonymous', symbol: sym, qty, pricePerUnit: price, createdAt: Date.now()
+      sellerId: investorId, sellerName: investorName || 'Anonymous', type, symbol: key, qty, pricePerUnit: price, createdAt: Date.now()
     }).catch(() => {});
   }
 });
@@ -2540,8 +2595,13 @@ if(db){
     if(ids.length === 0){ wrap.innerHTML = '<div class="empty-history">No listings yet.</div>'; return; }
     wrap.innerHTML = ids.map(id => {
       const l = val[id];
-      return `<div class="listing-row">${l.symbol} ×${l.qty} — $${l.pricePerUnit}/unit by ${l.sellerName}
-        <button class="lr-buy" data-id="${id}">Buy</button></div>`;
+      const isCompound = l.type === 'compound';
+      const label = isCompound ? `${(RECIPES.find(r => r.formula === l.symbol) || {}).name || l.symbol} (${l.symbol})` : l.symbol;
+      const mine = l.sellerId === investorId;
+      return `<div class="listing-row">${label} ×${l.qty} — $${l.pricePerUnit}/unit by ${l.sellerName}
+        ${mine
+          ? `<span class="oc-qty">Your listing</span> <button class="lr-cancel" data-id="${id}">Cancel</button>`
+          : `<button class="lr-buy" data-id="${id}">Buy</button>`}</div>`;
     }).join('');
     wrap.querySelectorAll('.lr-buy').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -2551,19 +2611,31 @@ if(db){
         const totalCost = listing.qty * listing.pricePerUnit;
         if(totalCost > portfolio.cash) return;
         portfolio.cash -= totalCost;
-        portfolio.elements[listing.symbol] = (portfolio.elements[listing.symbol] || 0) + listing.qty;
+        creditInventory(listing.type, listing.symbol, listing.qty);
         saveEconomy();
-        renderPortfolio(); renderOwnedElements();
+        renderPortfolio(); renderOwnedElements(); renderOwnedCompounds();
         db.ref('marketplace/' + id).remove().catch(() => {});
         // credit the seller even if they're offline right now, via an atomic increment —
         // this is the part that actually pays them, not just removing their listing
         db.ref('players/' + listing.sellerId + '/cash').transaction(cash => (cash || 0) + totalCost).catch(() => {});
       });
     });
+    wrap.querySelectorAll('.lr-cancel').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        const listing = val[id];
+        if(!listing || listing.sellerId !== investorId) return; // only the seller can pull their own listing
+        creditInventory(listing.type, listing.symbol, listing.qty); // return the stock to inventory
+        saveEconomy();
+        renderOwnedElements(); renderOwnedCompounds(); populateListSelect();
+        db.ref('marketplace/' + id).remove().catch(() => {});
+      });
+    });
   });
 }
 
 populateElementSelects();
+populateListSelect();
 renderOwnedElements();
 renderTools();
 renderRecipes();
