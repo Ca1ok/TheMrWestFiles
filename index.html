@@ -690,7 +690,7 @@
         <div class="legend" id="legend"></div>
 
         <div class="section-label" style="margin-top:1.8rem;">Compound Lab</div>
-        <div class="page-sub" style="margin-bottom:0.8rem;">Drag elements from the table above into the beaker to build a formula, then combine</div>
+        <div class="page-sub" style="margin-bottom:0.8rem;">Drag elements from the table above into the beaker to build a formula, then combine — fully offline, checked against this site's own recipe data</div>
 
         <div class="lab-wrap">
           <div class="dropzone" id="compoundDropzone">
@@ -2304,61 +2304,55 @@ document.getElementById('clearLabBtn').addEventListener('click', () => {
   document.getElementById('compoundResult').innerHTML = '';
 });
 
-// PubChem's REST API is mainly documented for server-side use (Python/R scripts), which never
-// triggers CORS at all since that's a browser-only restriction — so there's a real chance it
-// doesn't send the headers needed for a direct browser fetch from an arbitrary site. Try direct
-// first (fastest, works if they do allow it), and fall back to a public CORS proxy if that fails.
-async function fetchPubChemJson(url){
-  try{
-    const res = await fetch(url);
-    if(res.ok) return await res.json();
-  } catch(e) { /* likely CORS — fall through to the proxy */ }
-  const proxied = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(url));
-  if(!proxied.ok) throw new Error('unreachable');
-  return await proxied.json();
+// Everything below is 100% local — no network calls. PubChem was removed after proving
+// unreliable (CORS failures, downtime); RECIPES in data/economy-data.js is now the only
+// source of truth for what a combination makes, and atomic masses from the periodic table
+// data give a real molecular weight without needing an external lookup.
+const ATOMIC_MASS = {};
+ELEMENTS.forEach(([num, sym, name, mass]) => { ATOMIC_MASS[sym] = mass; });
+
+function molecularWeight(counts){
+  return Object.keys(counts).reduce((sum, sym) => sum + (ATOMIC_MASS[sym] || 0) * counts[sym], 0);
 }
 
-document.getElementById('combineBtn').addEventListener('click', async () => {
+// Matches by element/count makeup rather than formula string, since Hill notation ordering
+// (e.g. "HNaO") won't always match how a recipe's formula is conventionally written (e.g. "NaOH").
+function matchRecipe(counts){
+  const have = Object.keys(counts).filter(s => counts[s] > 0);
+  return RECIPES.find(r => {
+    const need = Object.keys(r.need);
+    return have.length === need.length && have.every(s => r.need[s] === counts[s]);
+  });
+}
+
+document.getElementById('combineBtn').addEventListener('click', () => {
   const resultEl = document.getElementById('compoundResult');
   if(Object.keys(compoundCounts).length === 0){
     resultEl.innerHTML = '<div class="compound-status error">Drag some elements in first.</div>';
     return;
   }
   const formula = toHillFormula(compoundCounts);
-  resultEl.innerHTML = `<div class="compound-status">Looking up ${formula}...</div>`;
+  const mw = molecularWeight(compoundCounts);
+  const recipe = matchRecipe(compoundCounts);
 
-  try{
-    // 1. find a matching compound by formula
-    const cidData = await fetchPubChemJson(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/formula/${encodeURIComponent(formula)}/cids/JSON?MaxRecords=1`);
-    const cid = cidData?.IdentifierList?.CID?.[0];
-    if(!cid) throw new Error('not found');
-
-    // 2. fetch core properties
-    const propData = await fetchPubChemJson(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/property/IUPACName,MolecularFormula,MolecularWeight,CanonicalSMILES/JSON`);
-    const props = propData?.PropertyTable?.Properties?.[0] || {};
-
-    // 3. fetch a human-readable description, if PubChem has one on file
-    let description = '';
-    try{
-      const descData = await fetchPubChemJson(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/description/JSON`);
-      const withDesc = (descData?.InformationList?.Information || []).find(info => info.Description);
-      if(withDesc) description = withDesc.Description;
-    } catch(e){ /* description is optional — fine if this fails */ }
-
+  if(recipe){
     resultEl.innerHTML = `
       <div class="compound-card">
-        <div class="cc-formula">${props.MolecularFormula || formula}</div>
-        <div class="cc-name">${props.IUPACName || '(no common name on file)'}</div>
+        <div class="cc-formula">${recipe.formula}</div>
+        <div class="cc-name">${recipe.name}</div>
         <div class="cc-props">
-          <span>Molecular weight</span><b>${props.MolecularWeight ? props.MolecularWeight + ' g/mol' : '—'}</b>
-          <span>PubChem CID</span><b>${cid}</b>
-          <span>SMILES</span><b style="word-break:break-all;">${props.CanonicalSMILES || '—'}</b>
+          <span>Molecular weight</span><b>${mw.toFixed(2)} g/mol</b>
+          <span>Tool required</span><b>${(TOOLS.find(t => t.id === recipe.tool) || {}).name || recipe.tool}</b>
         </div>
-        ${description ? `<div class="cc-desc">${description}</div>` : ''}
-        <div class="cc-source">Data via PubChem (National Library of Medicine) — not affiliated with this site</div>
+        <div class="cc-desc">${recipe.desc}</div>
+        <div class="cc-source">This is a reference lookup — head to the Element Economy to buy the elements and craft it for real.</div>
       </div>`;
-  } catch(e){
-    resultEl.innerHTML = `<div class="compound-status error">No known compound found for ${formula} (or PubChem couldn't be reached). Try a different combination.</div>`;
+  } else {
+    resultEl.innerHTML = `
+      <div class="compound-status error">
+        No known compound recorded for ${formula} (molecular weight would be ~${mw.toFixed(2)} g/mol).
+        Try a different combination — check the Element Economy's recipe list for what's known.
+      </div>`;
   }
 });
 
@@ -2497,7 +2491,7 @@ function renderRecipes(){
   });
 }
 
-async function craftCompound(formula){
+function craftCompound(formula){
   const recipe = RECIPES.find(r => r.formula === formula);
   if(!recipe) return;
   // re-verify right before consuming — the button is only disabled at render time, so a stale
@@ -2512,25 +2506,15 @@ async function craftCompound(formula){
   saveEconomy();
   renderPortfolio(); renderOwnedElements(); renderOwnedCompounds();
 
+  // fully local — molecular weight comes straight from the periodic table's atomic masses,
+  // no external lookup needed or attempted
+  const mw = molecularWeight(recipe.need);
   const resultEl = document.getElementById('craftResult');
-  resultEl.innerHTML = `<div class="compound-status">Crafted ${recipe.name}! Looking up extra detail...</div>`;
-  // guaranteed local result first, then try to enrich with real PubChem data (non-blocking on failure)
-  let extra = '';
-  try{
-    const cidData = await fetchPubChemJson(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/formula/${encodeURIComponent(formula)}/cids/JSON?MaxRecords=1`);
-    const cid = cidData?.IdentifierList?.CID?.[0];
-    if(cid){
-      const propData = await fetchPubChemJson(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/${cid}/property/MolecularWeight,CanonicalSMILES/JSON`);
-      const props = propData?.PropertyTable?.Properties?.[0];
-      if(props) extra = `<div class="cc-props"><span>Molecular weight</span><b>${props.MolecularWeight} g/mol</b><span>SMILES</span><b style="word-break:break-all;">${props.CanonicalSMILES}</b></div>`;
-    }
-  } catch(e){ /* fine — the local recipe data already has everything the game needs */ }
-
   resultEl.innerHTML = `
     <div class="compound-card">
       <div class="cc-formula">${recipe.formula}</div>
       <div class="cc-name">${recipe.name} — added to your collection (worth ~$${value.toFixed(2)})</div>
-      ${extra}
+      <div class="cc-props"><span>Molecular weight</span><b>${mw.toFixed(2)} g/mol</b></div>
       <div class="cc-desc">${recipe.desc}</div>
     </div>`;
 }
