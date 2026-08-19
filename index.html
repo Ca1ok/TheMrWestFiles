@@ -1252,7 +1252,7 @@ window.addEventListener('pointerup', () => {
 // everyone else's chart updates in real time. If Firebase isn't configured/reachable, it falls
 // back to a local-only simulation so the page still works.
 const STORAGE_KEY = 'mrwestcoin_portfolio';
-const TICK_INTERVAL = 2000;      // how often the market moves
+const TICK_INTERVAL = 12000;     // was 2000ms — 6x fewer writes/reads per day, primary bandwidth fix
 
 function loadPortfolio(){
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -1891,65 +1891,24 @@ function advanceOneTick(m, closed){
   const reversion = (m.fairValue - m.price) / m.price * 0.03;
   const spike = Math.random() < 0.03 ? (Math.random() - 0.5) * 0.12 : 0;
   m.price = Math.max(0.01, m.price * (1 + m.momentum + reversion + spike));
-  const point = { price: m.price, t: Date.now() };
-  if(closed) point.closed = true; // tags this as a "market was closed" synthetic bridge point
-  m.history.push(point);
-  downsampleHistory(m);
-}
-
-// Keeps full-resolution data for the last week, then progressively halves resolution for each
-// week further back — so history goes all the way back to the start, but storage in Firebase
-// stays bounded instead of growing forever at full density.
-const WEEK_MS = 7 * 86400000;
-function downsampleHistory(m){
-  if(m.history.length < 4) return;
-  const now = Date.now();
-  const kept = [];
-  // walk oldest-to-newest, deciding whether to keep each point based on which "age bracket"
-  // it falls into — every bracket further back keeps half as many points as the one before it
-  let bracketIndex = -1, seenInBracket = 0;
-  for(let i = 0; i < m.history.length; i++){
-    const age = now - m.history[i].t;
-    const thisBracket = age <= WEEK_MS ? 0 : Math.floor(Math.log2(age / WEEK_MS)) + 1;
-    if(thisBracket !== bracketIndex){ bracketIndex = thisBracket; seenInBracket = 0; }
-    const keepEvery = Math.pow(2, Math.max(0, bracketIndex));
-    // always keep the very newest and very oldest points so the chart's edges never look truncated
-    if(seenInBracket % keepEvery === 0 || i === m.history.length - 1 || i === 0){
-      kept.push(m.history[i]);
-    }
-    seenInBracket++;
-  }
-  m.history = kept;
+  return { price: m.price, t: Date.now(), closed: !!closed };
 }
 
 // If nobody had the page open for a while, instead of one abrupt jump (or a flat line), simulate
 // a believable "what would have happened" path across the whole gap and tag those points as
-// closed — the chart then renders that stretch greyed out with a "Market Closed" label, rather
-// than pretending the market secretly kept ticking in real time while no one was watching.
+// closed — the chart then renders that stretch greyed out with a "Market Closed" label.
 const CLOSED_GAP_THRESHOLD = TICK_INTERVAL * 3;
-const CLOSED_BRIDGE_POINTS = 40; // how many synthetic points span the closed gap, regardless of how long it actually was
+const CLOSED_BRIDGE_POINTS = 20; // fewer than before — keeps a bandwidth-heavy catch-up cheaper
 
-function applyCatchup(m){
-  const now = Date.now();
-  const elapsed = m.updatedAt ? now - m.updatedAt : TICK_INTERVAL;
-  if(elapsed <= CLOSED_GAP_THRESHOLD){
-    advanceOneTick(m, false);
-  } else {
-    const startT = m.updatedAt || (now - elapsed);
-    const stepMs = elapsed / CLOSED_BRIDGE_POINTS;
-    for(let i = 1; i <= CLOSED_BRIDGE_POINTS; i++){
-      advanceOneTick(m, true);
-      m.history[m.history.length - 1].t = Math.round(startT + stepMs * i); // spread evenly across the real gap
-    }
-  }
-  m.updatedAt = now;
-  return m;
-}
+// HARD CAP on total stored history — this (not fancy progressive downsampling) is what actually
+// bounds Firebase storage/bandwidth now. 2000 points at the current tick rate is roughly a week;
+// raise/lower this directly to trade off history length against Firebase usage.
+const HISTORY_HARD_CAP = 2000;
+let ticksSinceePrune = 0;
 
 function applyMarketUpdate(m){
   market = m;
   currentPrice = market.price;
-  priceHistory = market.history;
   cacheMarketLocally();
   clampScroll();
   updatePriceDisplays();
@@ -1958,30 +1917,97 @@ function applyMarketUpdate(m){
   renderLots();
 }
 
+// --- Bandwidth-conscious Firebase layout ---
+// Previously this synced ONE node holding the entire (growing) price history, re-transmitted in
+// full on every single tick, to every connected browser, every few seconds. That's what blew
+// through the free-tier daily limit. Now the data is split in two:
+//   market/current — a tiny object (price/fairValue/momentum/vol/updatedAt), updated every tick.
+//     Cheap regardless of how often it changes, since the payload never grows.
+//   market/history — an append-only list (Firebase push keys), written one small point at a
+//     time instead of rewriting the whole array. Read via a capped, periodic query rather than
+//     a live listener, so the (larger) history payload isn't re-sent on every single tick either.
+const HISTORY_REFRESH_MS = 45000;  // how often the chart re-pulls recent history — NOT every tick
+const HISTORY_READ_LIMIT = 250;    // how many recent points the chart actually needs to look good
+
+function historyArrayFromSnapshot(snapVal){
+  if(!snapVal) return [];
+  return Object.values(snapVal).sort((a,b) => a.t - b.t);
+}
+
+async function refreshHistoryFromFirebase(){
+  if(!db) return;
+  try{
+    const snap = await db.ref('market/history').orderByChild('t').limitToLast(HISTORY_READ_LIMIT).once('value');
+    const arr = historyArrayFromSnapshot(snap.val());
+    if(arr.length){ priceHistory = arr; clampScroll(); drawChart(); }
+  } catch(e){ /* keep whatever we already have locally if this fails */ }
+}
+
+async function pruneOldHistory(){
+  if(!db) return;
+  try{
+    const snap = await db.ref('market/history').orderByChild('t').limitToLast(HISTORY_HARD_CAP + 200).once('value');
+    const entries = Object.entries(snap.val() || {});
+    if(entries.length <= HISTORY_HARD_CAP) return;
+    entries.sort((a,b) => a[1].t - b[1].t);
+    const toDelete = entries.slice(0, entries.length - HISTORY_HARD_CAP);
+    const updates = {};
+    toDelete.forEach(([key]) => { updates['market/history/' + key] = null; });
+    await db.ref().update(updates); // one batched delete instead of many individual writes
+  } catch(e){ /* pruning is best-effort — not worth failing the tick over */ }
+}
+
 if(db){
-  // live push updates — every browser sees a change the instant anyone writes one
-  db.ref('market/state').on('value', (snap) => {
+  // "current price" is small and cheap to listen to live, no matter how often it updates
+  db.ref('market/current').on('value', (snap) => {
     const remote = snap.val();
-    if(remote && remote.history && remote.history.length){
-      syncOK = true;
-      applyMarketUpdate(remote);
-    }
+    if(remote){ syncOK = true; applyMarketUpdate(remote); }
   });
+  refreshHistoryFromFirebase();
+  setInterval(refreshHistoryFromFirebase, HISTORY_REFRESH_MS);
 
   // gated ticking: only actually advance + write if nobody else has ticked very recently,
   // so multiple open tabs don't all fight to write at once
   setInterval(() => {
     const elapsed = market.updatedAt ? Date.now() - market.updatedAt : TICK_INTERVAL;
     if(elapsed < TICK_INTERVAL * 0.9) return; // someone else just ticked — let their write arrive
-    const next = applyCatchup(JSON.parse(JSON.stringify(market)));
-    db.ref('market/state').set(next).catch(() => {});
+
+    const wasClosed = elapsed > CLOSED_GAP_THRESHOLD;
+    const next = JSON.parse(JSON.stringify(market));
+    const newPoints = [];
+    if(!wasClosed){
+      newPoints.push(advanceOneTick(next, false));
+    } else {
+      const startT = next.updatedAt || (Date.now() - elapsed);
+      const stepMs = elapsed / CLOSED_BRIDGE_POINTS;
+      for(let i = 1; i <= CLOSED_BRIDGE_POINTS; i++){
+        const p = advanceOneTick(next, true);
+        p.t = Math.round(startT + stepMs * i);
+        newPoints.push(p);
+      }
+    }
+    next.updatedAt = Date.now();
+
+    db.ref('market/current').set(next).catch(() => {});
+    // append only the NEW point(s) — never rewrite the whole history list
+    const updates = {};
+    newPoints.forEach(p => { updates[db.ref('market/history').push().key] = p; });
+    db.ref('market/history').update(updates).catch(() => {});
+
+    ticksSinceePrune++;
+    if(ticksSinceePrune >= 50){ ticksSinceePrune = 0; pruneOldHistory(); }
   }, TICK_INTERVAL);
 } else {
   // no Firebase — fall back to a purely local simulation so the page still works
   syncOK = false;
-  applyMarketUpdate(applyCatchup(market));
+  priceHistory = market.history && market.history.length ? market.history : [{ price: market.price, t: Date.now() }];
+  applyMarketUpdate(market);
   setInterval(() => {
-    applyCatchup(market);
+    const elapsed = market.updatedAt ? Date.now() - market.updatedAt : TICK_INTERVAL;
+    const p = advanceOneTick(market, elapsed > CLOSED_GAP_THRESHOLD);
+    priceHistory.push(p);
+    if(priceHistory.length > HISTORY_HARD_CAP) priceHistory.shift();
+    market.updatedAt = Date.now();
     applyMarketUpdate(market);
   }, TICK_INTERVAL);
 }
