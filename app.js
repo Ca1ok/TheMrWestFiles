@@ -803,6 +803,16 @@ function updatePriceDisplays(){
   const changeText = (isUp?'▲ ':'▼ ') + Math.abs(changePct).toFixed(2) + '%' + (syncOK ? '' : ' (local)');
   if(changeEl){ changeEl.textContent = changeText; changeEl.className = 'change ' + (isUp?'up':'down'); }
   if(miniChangeEl){ miniChangeEl.textContent = changeText; miniChangeEl.className = 'change ' + (isUp?'up':'down'); }
+
+  // visible proof the poll is actually happening, and how stale market-data.json currently is —
+  // the Action only commits every ~10 min, so "X min ago" jumping straight from 0 to 10 is normal
+  const hint = document.getElementById('marketUpdatedHint');
+  if(hint){
+    const mins = market.updatedAt ? Math.round((Date.now() - market.updatedAt) / 60000) : null;
+    hint.textContent = mins === null ? 'Waiting for first market update...'
+      : mins < 1 ? 'Market data updated moments ago'
+      : `Market data updated ${mins} min ago (ticks every ~10 min)`;
+  }
 }
 
 function applyMarketData(m){
@@ -825,13 +835,14 @@ function applyMarketData(m){
 // open tab writing a tick to Firebase every 12 seconds AND listening live for others' writes;
 // now Firebase carries zero market traffic at all, only player accounts/leaderboard/marketplace.
 const MARKET_JSON_PATH = 'market-data.json';
-const MARKET_POLL_MS = 60000; // the Action only updates every 10 min — no need to poll faster than this
+const MARKET_POLL_MS = 30000; // static file, effectively free to poll this often
 
 async function fetchMarketData(){
   try{
-    // round to the minute so repeated polls within the same minute still hit the CDN cache
-    const v = Math.floor(Date.now() / 60000);
-    const res = await fetch(`${MARKET_JSON_PATH}?v=${v}`, { cache: 'default' });
+    // cache-bust AND tell the browser not to reuse a cached response at all — belt and
+    // suspenders, since a stale cached copy would look exactly like "it's not updating"
+    const v = Date.now();
+    const res = await fetch(`${MARKET_JSON_PATH}?v=${v}`, { cache: 'no-store' });
     if(!res.ok) return;
     const m = await res.json();
     syncOK = true;
