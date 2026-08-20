@@ -2,11 +2,15 @@ name: Update MrWestCoin Market
 
 on:
   schedule:
-    - cron: '*/10 * * * *'   # every 10 minutes
-  workflow_dispatch:          # lets you trigger it manually from the Actions tab too
+    - cron: '* * * * *'   # every minute — the fastest interval GitHub Actions cron supports
+  workflow_dispatch:       # lets you trigger it manually from the Actions tab too
 
 permissions:
   contents: write
+
+concurrency:
+  group: mrwestcoin-market-tick
+  cancel-in-progress: false   # let queued runs wait their turn instead of overlapping and racing on the git push
 
 jobs:
   tick:
@@ -21,6 +25,7 @@ jobs:
         run: |
           git config user.name "mrwestcoin-bot"
           git config user.email "actions@github.com"
-          git add market-data.json
+          git add market-data.json history/
           git diff --staged --quiet || git commit -m "Update MrWestCoin market data"
+          git pull --rebase --autostash
           git push
