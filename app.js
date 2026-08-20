@@ -1,4 +1,3 @@
-
 /* ================= WANTED POSTER (poster page only) ================= */
 if(document.getElementById('missingBanner')){
   document.getElementById('missingBanner').textContent = `Missing ${WANTED_DATA.missingDays} day(s)`;
@@ -156,14 +155,12 @@ if(lasToggle){
 
 
 
-/* ================= MrWestCoin (shared market — live via Firebase Realtime Database) ================= */
-// Every browser subscribes to the same Firebase path and gets pushed updates instantly (no
-// polling, no delay). Whichever browsers are open take turns advancing the simulation every
-// couple of seconds (gated so we don't all tick at once), and the moment one of them writes,
-// everyone else's chart updates in real time. If Firebase isn't configured/reachable, it falls
-// back to a local-only simulation so the page still works.
+/* ================= MrWestCoin (shared market — static market-data.json, updated by GitHub Actions) ================= */
+// Market data is a static file (market-data.json) updated every 10 minutes by a scheduled
+// GitHub Action, NOT Firebase — see the note further down for why. Player accounts, the
+// leaderboard, and the marketplace still use Firebase, since that data is genuinely per-player
+// and comparatively tiny.
 const STORAGE_KEY = 'mrwestcoin_portfolio';
-const TICK_INTERVAL = 12000;     // was 2000ms — 6x fewer writes/reads per day, primary bandwidth fix
 
 function loadPortfolio(){
   const raw = localStorage.getItem(STORAGE_KEY);
@@ -808,38 +805,10 @@ function updatePriceDisplays(){
   if(miniChangeEl){ miniChangeEl.textContent = changeText; miniChangeEl.className = 'change ' + (isUp?'up':'down'); }
 }
 
-// Small persistent upward drift: on average, fair value gains about 1% per real day. Applied
-// per-tick so it compounds naturally instead of being one big jump — TICK_INTERVAL-aware so it
-// stays correct even if the tick rate is ever changed.
-const DAILY_BIAS = 0.01 / (86400000 / TICK_INTERVAL);
-
-function advanceOneTick(m, closed){
-  m.fairValue *= (1 + (Math.random() - 0.5) * 0.01 + DAILY_BIAS);
-  const volShock = Math.abs((Math.random() - 0.5)) * 0.03;
-  m.vol = Math.min(0.06, Math.max(0.004, m.vol * 0.85 + volShock * 0.15));
-  const shock = (Math.random() - 0.5) * 2 * m.vol;
-  m.momentum = m.momentum * 0.55 + shock * 0.45;
-  const reversion = (m.fairValue - m.price) / m.price * 0.03;
-  const spike = Math.random() < 0.03 ? (Math.random() - 0.5) * 0.12 : 0;
-  m.price = Math.max(0.01, m.price * (1 + m.momentum + reversion + spike));
-  return { price: m.price, t: Date.now(), closed: !!closed };
-}
-
-// If nobody had the page open for a while, instead of one abrupt jump (or a flat line), simulate
-// a believable "what would have happened" path across the whole gap and tag those points as
-// closed — the chart then renders that stretch greyed out with a "Market Closed" label.
-const CLOSED_GAP_THRESHOLD = TICK_INTERVAL * 3;
-const CLOSED_BRIDGE_POINTS = 20; // fewer than before — keeps a bandwidth-heavy catch-up cheaper
-
-// HARD CAP on total stored history — this (not fancy progressive downsampling) is what actually
-// bounds Firebase storage/bandwidth now. 2000 points at the current tick rate is roughly a week;
-// raise/lower this directly to trade off history length against Firebase usage.
-const HISTORY_HARD_CAP = 2000;
-let ticksSinceePrune = 0;
-
-function applyMarketUpdate(m){
+function applyMarketData(m){
   market = m;
   currentPrice = market.price;
+  priceHistory = (market.history && market.history.length) ? market.history : priceHistory;
   cacheMarketLocally();
   clampScroll();
   updatePriceDisplays();
@@ -848,100 +817,32 @@ function applyMarketUpdate(m){
   renderLots();
 }
 
-// --- Bandwidth-conscious Firebase layout ---
-// Previously this synced ONE node holding the entire (growing) price history, re-transmitted in
-// full on every single tick, to every connected browser, every few seconds. That's what blew
-// through the free-tier daily limit. Now the data is split in two:
-//   market/current — a tiny object (price/fairValue/momentum/vol/updatedAt), updated every tick.
-//     Cheap regardless of how often it changes, since the payload never grows.
-//   market/history — an append-only list (Firebase push keys), written one small point at a
-//     time instead of rewriting the whole array. Read via a capped, periodic query rather than
-//     a live listener, so the (larger) history payload isn't re-sent on every single tick either.
-const HISTORY_REFRESH_MS = 45000;  // how often the chart re-pulls recent history — NOT every tick
-const HISTORY_READ_LIMIT = 250;    // how many recent points the chart actually needs to look good
+// --- Market data now comes from a static file committed to the repo by a scheduled GitHub
+// Action (.github/workflows/update-market.yml + .github/scripts/tick-market.js), NOT from
+// Firebase. That Action advances the price every 10 minutes and commits market-data.json —
+// every visitor just fetches that plain static file, which GitHub Pages serves for free with
+// its own CDN caching. This is what actually fixes the Firebase quota: the old design had every
+// open tab writing a tick to Firebase every 12 seconds AND listening live for others' writes;
+// now Firebase carries zero market traffic at all, only player accounts/leaderboard/marketplace.
+const MARKET_JSON_PATH = 'market-data.json';
+const MARKET_POLL_MS = 60000; // the Action only updates every 10 min — no need to poll faster than this
 
-function historyArrayFromSnapshot(snapVal){
-  if(!snapVal) return [];
-  return Object.values(snapVal).sort((a,b) => a.t - b.t);
-}
-
-async function refreshHistoryFromFirebase(){
-  if(!db) return;
+async function fetchMarketData(){
   try{
-    const snap = await db.ref('market/history').orderByChild('t').limitToLast(HISTORY_READ_LIMIT).once('value');
-    const arr = historyArrayFromSnapshot(snap.val());
-    if(arr.length){ priceHistory = arr; clampScroll(); drawChart(); }
-  } catch(e){ /* keep whatever we already have locally if this fails */ }
+    // round to the minute so repeated polls within the same minute still hit the CDN cache
+    const v = Math.floor(Date.now() / 60000);
+    const res = await fetch(`${MARKET_JSON_PATH}?v=${v}`, { cache: 'default' });
+    if(!res.ok) return;
+    const m = await res.json();
+    syncOK = true;
+    applyMarketData(m);
+  } catch(e){ /* offline or the file isn't reachable yet — keep whatever's cached locally */ }
 }
 
-async function pruneOldHistory(){
-  if(!db) return;
-  try{
-    const snap = await db.ref('market/history').orderByChild('t').limitToLast(HISTORY_HARD_CAP + 200).once('value');
-    const entries = Object.entries(snap.val() || {});
-    if(entries.length <= HISTORY_HARD_CAP) return;
-    entries.sort((a,b) => a[1].t - b[1].t);
-    const toDelete = entries.slice(0, entries.length - HISTORY_HARD_CAP);
-    const updates = {};
-    toDelete.forEach(([key]) => { updates['market/history/' + key] = null; });
-    await db.ref().update(updates); // one batched delete instead of many individual writes
-  } catch(e){ /* pruning is best-effort — not worth failing the tick over */ }
-}
-
-if(db){
-  // "current price" is small and cheap to listen to live, no matter how often it updates
-  db.ref('market/current').on('value', (snap) => {
-    const remote = snap.val();
-    if(remote){ syncOK = true; applyMarketUpdate(remote); }
-  });
-  refreshHistoryFromFirebase();
-  setInterval(refreshHistoryFromFirebase, HISTORY_REFRESH_MS);
-
-  // gated ticking: only actually advance + write if nobody else has ticked very recently,
-  // so multiple open tabs don't all fight to write at once
-  setInterval(() => {
-    const elapsed = market.updatedAt ? Date.now() - market.updatedAt : TICK_INTERVAL;
-    if(elapsed < TICK_INTERVAL * 0.9) return; // someone else just ticked — let their write arrive
-
-    const wasClosed = elapsed > CLOSED_GAP_THRESHOLD;
-    const next = JSON.parse(JSON.stringify(market));
-    const newPoints = [];
-    if(!wasClosed){
-      newPoints.push(advanceOneTick(next, false));
-    } else {
-      const startT = next.updatedAt || (Date.now() - elapsed);
-      const stepMs = elapsed / CLOSED_BRIDGE_POINTS;
-      for(let i = 1; i <= CLOSED_BRIDGE_POINTS; i++){
-        const p = advanceOneTick(next, true);
-        p.t = Math.round(startT + stepMs * i);
-        newPoints.push(p);
-      }
-    }
-    next.updatedAt = Date.now();
-
-    db.ref('market/current').set(next).catch(() => {});
-    // append only the NEW point(s) — never rewrite the whole history list
-    const updates = {};
-    newPoints.forEach(p => { updates[db.ref('market/history').push().key] = p; });
-    db.ref('market/history').update(updates).catch(() => {});
-
-    ticksSinceePrune++;
-    if(ticksSinceePrune >= 50){ ticksSinceePrune = 0; pruneOldHistory(); }
-  }, TICK_INTERVAL);
-} else {
-  // no Firebase — fall back to a purely local simulation so the page still works
-  syncOK = false;
-  priceHistory = market.history && market.history.length ? market.history : [{ price: market.price, t: Date.now() }];
-  applyMarketUpdate(market);
-  setInterval(() => {
-    const elapsed = market.updatedAt ? Date.now() - market.updatedAt : TICK_INTERVAL;
-    const p = advanceOneTick(market, elapsed > CLOSED_GAP_THRESHOLD);
-    priceHistory.push(p);
-    if(priceHistory.length > HISTORY_HARD_CAP) priceHistory.shift();
-    market.updatedAt = Date.now();
-    applyMarketUpdate(market);
-  }, TICK_INTERVAL);
-}
+// show cached data immediately (no flash of "$--.--"), then get the real thing
+if(market.updatedAt) applyMarketData(market);
+fetchMarketData();
+setInterval(fetchMarketData, MARKET_POLL_MS);
 
 // Previously taxed BOTH buy and sell at a flat rate, which guaranteed a loss on every round
 // trip even when the price went up — that's what made it feel unbalanced. Now: no tax at all
