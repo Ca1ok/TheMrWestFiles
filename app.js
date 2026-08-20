@@ -805,13 +805,13 @@ function updatePriceDisplays(){
   if(miniChangeEl){ miniChangeEl.textContent = changeText; miniChangeEl.className = 'change ' + (isUp?'up':'down'); }
 
   // visible proof the poll is actually happening, and how stale market-data.json currently is —
-  // the Action only commits every ~10 min, so "X min ago" jumping straight from 0 to 10 is normal
+  // the Action ticks roughly every minute, so this should almost always read under a minute
   const hint = document.getElementById('marketUpdatedHint');
   if(hint){
-    const mins = market.updatedAt ? Math.round((Date.now() - market.updatedAt) / 60000) : null;
-    hint.textContent = mins === null ? 'Waiting for first market update...'
-      : mins < 1 ? 'Market data updated moments ago'
-      : `Market data updated ${mins} min ago (ticks every ~10 min)`;
+    const secs = market.updatedAt ? Math.round((Date.now() - market.updatedAt) / 1000) : null;
+    hint.textContent = secs === null ? 'Waiting for first market update...'
+      : secs < 5 ? 'Market data updated moments ago'
+      : `Market data updated ${secs}s ago (ticks every ~1 min)`;
   }
 }
 
@@ -835,7 +835,7 @@ function applyMarketData(m){
 // open tab writing a tick to Firebase every 12 seconds AND listening live for others' writes;
 // now Firebase carries zero market traffic at all, only player accounts/leaderboard/marketplace.
 const MARKET_JSON_PATH = 'market-data.json';
-const MARKET_POLL_MS = 30000; // static file, effectively free to poll this often
+const MARKET_POLL_MS = 10000; // the Action now ticks every 1 min — poll a few times per tick so updates feel near-instant
 
 async function fetchMarketData(){
   try{
