@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Coin Exchange — The Mr West Files</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav id="siteNav">
+  <a href="index.html">Poster</a>
+  <a href="coin.html">Coin Exchange</a>
+  <a href="periodic.html">Periodic Table</a>
+  <a href="market.html">Element Economy</a>
+  <a href="leaderboard.html">Leaderboard</a>
+  <a href="databook.html">Databook</a>
+  <a href="settings.html">Settings</a>
+</nav>
+<div id="cookieBanner">
+  <div class="cookie-text">
+    We dont use cookies but you should still accept.
+    By clicking "Accept All" you agree *Redacted*
+  </div>
+  <div class="cookie-btns">
+    <button id="cookieReject">Reject All</button>
+    <button id="cookieAccept" class="accept">Accept All</button>
+  </div>
+</div>
+
+<div id="pages">
+  <div class="region wide" id="region-coin" data-role="satellite">
+    <div class="region-inner">
+      <div class="coin-title">MrWestCoin Exchange</div>
+      <div class="coin-ticker">$WEST — Not real. Not FDIC insured. Not anything.</div>
+      <div class="price-row"><span class="price" id="price">$--.--</span><span class="change" id="change">loading...</span></div>
+      <div class="chart-row">
+        <div class="chart-wrap">
+          <canvas id="chart"></canvas>
+          <div class="chart-hover-tooltip" id="chartHoverTip"></div>
+        </div>
+        <div class="analysis-tools" id="analysisTools">
+          <button class="tool-btn" data-tool="avg" title="Average — the mean price across whatever's currently visible on the chart.">Avg</button>
+          <button class="tool-btn" data-tool="trend" title="Trend — a straight best-fit line through the visible data, showing overall direction and slope.">Trend</button>
+          <button class="tool-btn" data-tool="highlow" title="High / Low — marks the highest and lowest price reached within the visible range.">Hi/Lo</button>
+          <button class="tool-btn" data-tool="vol" title="Volatility — how much the price is swinging (standard deviation) within the visible range.">Vol</button>
+          <button class="tool-btn" data-tool="bands" title="Bollinger-style bands — the average plus/minus one standard deviation, a common range-of-normal-movement indicator.">Bands</button>
+        </div>
+      </div>
+      <div class="brush-wrap">
+        <canvas id="brushChart"></canvas>
+      </div>
+      <div class="chart-controls">
+        <span class="brush-hint" id="brushHint">Drag the handles to pick a range</span>
+        <button class="range-jump" id="jumpLive">Jump to live</button>
+      </div>
+      <div class="stats">
+        <div><div class="stat-label">Cash</div><div class="stat-value" id="cash">$0.00</div></div>
+        <div><div class="stat-label">$WEST Held</div><div class="stat-value" id="held">0</div></div>
+        <div><div class="stat-label">Portfolio</div><div class="stat-value" id="total">$0.00</div></div>
+      </div>
+      <div class="trade-panel">
+        <input type="number" id="qty" placeholder="Qty" min="0" step="1" value="1">
+        <button class="trade-btn buy" id="buyBtn">Buy</button>
+      </div>
+      <div class="msg" id="msg"></div>
+
+      <div class="section-label" style="margin-top:1.2rem;">Open Positions</div>
+      <div class="lots-list" id="lotsList"><div class="empty-history">No open positions.</div></div>
+
+      <div class="section-label">Transaction History</div>
+      <div class="history" id="historyList"><div class="empty-history">No trades yet.</div></div>
+      <a class="nav-btn" href="leaderboard.html" style="margin-top:0.8rem;">View Leaderboard</a>
+      <a class="nav-btn" href="index.html" style="margin-top:0.6rem;">Back to the board</a>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase (compat SDK) -->
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+
+<!-- Data files, split out so app.js stays focused on behavior -->
+<script src="data/wanted-data.js"></script>
+<script src="data/periodic-table-data.js"></script>
+<script src="data/databook-data.js"></script>
+<script src="data/moderation-data.js"></script>
+<script src="data/economy-data.js"></script>
+
+<script src="app.js"></script>
+</body>
+</html>

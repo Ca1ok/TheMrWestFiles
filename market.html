@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Element Economy — The Mr West Files</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav id="siteNav">
+  <a href="index.html">Poster</a>
+  <a href="coin.html">Coin Exchange</a>
+  <a href="periodic.html">Periodic Table</a>
+  <a href="market.html">Element Economy</a>
+  <a href="leaderboard.html">Leaderboard</a>
+  <a href="databook.html">Databook</a>
+  <a href="settings.html">Settings</a>
+</nav>
+<div id="cookieBanner">
+  <div class="cookie-text">
+    We dont use cookies but you should still accept.
+    By clicking "Accept All" you agree *Redacted*
+  </div>
+  <div class="cookie-btns">
+    <button id="cookieReject">Reject All</button>
+    <button id="cookieAccept" class="accept">Accept All</button>
+  </div>
+</div>
+
+<div id="pages">
+  <div class="region wide" id="region-market" data-role="satellite">
+    <div class="region-inner">
+      <div class="page-title">Element Economy</div>
+      <div class="page-sub">Buy elements with your $WEST cash, craft compounds, trade with other players</div>
+
+      <div class="section-label">Buy Elements</div>
+      <div class="market-controls">
+        <select id="marketElemSelect"></select>
+        <input type="number" id="marketQty" min="1" step="1" value="1">
+        <button class="trade-btn buy" id="marketBuyBtn">Buy</button>
+        <span class="market-price-hint" id="marketPriceHint"></span>
+      </div>
+
+      <div class="section-label">Your Elements</div>
+      <div id="ownedElementsList" class="owned-list"><div class="empty-history">You don't own any elements yet.</div></div>
+
+      <div class="section-label">Tools</div>
+      <div class="page-sub" style="margin-bottom:0.6rem;">Unlock recipes for more complex compounds</div>
+      <div id="toolsList" class="tools-grid"></div>
+
+      <div class="section-label">Craft a Compound</div>
+      <div class="page-sub" style="margin-bottom:0.6rem;">Simple recipes made from raw elements only — for advanced compounds made from other compounds, use the reactors on the Periodic Table page</div>
+      <div id="recipesList" class="recipes-grid"></div>
+      <div class="compound-result" id="craftResult"></div>
+
+      <div class="section-label">Your Compounds</div>
+      <div id="ownedCompoundsList" class="owned-list"><div class="empty-history">You haven't made anything yet.</div></div>
+
+      <div class="section-label">Marketplace</div>
+      <div class="page-sub" style="margin-bottom:0.6rem;">Buy or sell elements and compounds directly with other players</div>
+      <div class="market-controls">
+        <select id="listTypeSelect">
+          <option value="element">Element</option>
+          <option value="compound">Compound</option>
+        </select>
+        <select id="listElemSelect"></select>
+        <input type="number" id="listQty" min="1" step="1" value="1">
+        <input type="number" id="listPrice" min="0.01" step="0.01" placeholder="Price/unit" style="width:90px;">
+        <button class="nav-btn" id="createListingBtn" style="margin:0;">List for sale</button>
+      </div>
+      <div id="marketplaceList" class="owned-list"><div class="empty-history">No listings yet.</div></div>
+
+      <a class="nav-btn" href="index.html" style="margin-top:1.6rem;">Back to the board</a>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase (compat SDK) -->
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+
+<!-- Data files, split out so app.js stays focused on behavior -->
+<script src="data/wanted-data.js"></script>
+<script src="data/periodic-table-data.js"></script>
+<script src="data/databook-data.js"></script>
+<script src="data/moderation-data.js"></script>
+<script src="data/economy-data.js"></script>
+
+<script src="app.js"></script>
+</body>
+</html>
