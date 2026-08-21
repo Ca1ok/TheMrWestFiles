@@ -238,13 +238,12 @@ function loadPlayerData(uid){
 }
 if(db && investorId) loadPlayerData(investorId);
 
-let market = JSON.parse(localStorage.getItem('mrwestcoin_market_cache') || 'null') || {
-  price: 12.50, history: [{ price: 12.50, t: Date.now() }],
-  fairValue: 12.50, momentum: 0, vol: 0.012, updatedAt: 0
-};
-let currentPrice = market.price;
-let priceHistory = market.history;
+let currentPrice = 12.50;
+let priceHistory = [{ price: 12.50, t: Date.now() }];
 let syncOK = false;
+// keeps a cached checkpoint alive for next page load (paints instantly instead of flashing
+// "$--.--") — not the source of truth for ticking (that's marketState/marketRng below)
+let market = JSON.parse(localStorage.getItem('mrwestcoin_market_cache') || 'null') || { updatedAt: 0 };
 
 const priceEl = document.getElementById('price'), changeEl = document.getElementById('change');
 const miniPriceEl = document.getElementById('miniPrice'), miniChangeEl = document.getElementById('miniChange');
@@ -297,8 +296,6 @@ if(canvas){
 }
 
 const jumpLiveBtn = document.getElementById('jumpLive');
-
-function cacheMarketLocally(){ localStorage.setItem('mrwestcoin_market_cache', JSON.stringify(market)); }
 
 function totalHeld(){
   return portfolio.lots.reduce((sum, l) => sum + l.qty, 0);
@@ -800,60 +797,98 @@ function updatePriceDisplays(){
   if(priceEl) priceEl.textContent = priceText;
   if(miniPriceEl) miniPriceEl.textContent = priceText;
   const isUp = changePct >= 0;
-  const changeText = (isUp?'▲ ':'▼ ') + Math.abs(changePct).toFixed(2) + '%' + (syncOK ? '' : ' (local)');
+  const changeText = (isUp?'▲ ':'▼ ') + Math.abs(changePct).toFixed(2) + '%' + (syncOK ? '' : ' (unverified)');
   if(changeEl){ changeEl.textContent = changeText; changeEl.className = 'change ' + (isUp?'up':'down'); }
   if(miniChangeEl){ miniChangeEl.textContent = changeText; miniChangeEl.className = 'change ' + (isUp?'up':'down'); }
 
-  // visible proof the poll is actually happening, and how stale market-data.json currently is —
-  // the Action ticks roughly every minute, so this should almost always read under a minute
   const hint = document.getElementById('marketUpdatedHint');
   if(hint){
-    const secs = market.updatedAt ? Math.round((Date.now() - market.updatedAt) / 1000) : null;
-    hint.textContent = secs === null ? 'Waiting for first market update...'
-      : secs < 5 ? 'Market data updated moments ago'
-      : `Market data updated ${secs}s ago (ticks every ~1 min)`;
+    hint.textContent = syncOK
+      ? 'Ticking live, computed locally — same price for everyone, no server needed'
+      : 'Waiting for a checkpoint from GitHub to sync against...';
   }
 }
 
-function applyMarketData(m){
-  market = m;
-  currentPrice = market.price;
-  priceHistory = (market.history && market.history.length) ? market.history : priceHistory;
-  cacheMarketLocally();
+// --- Deterministic, seeded market — see market-model.js for the actual price math. Nobody's
+// browser ever asks anybody else "what's the price right now" — every browser computes it
+// independently from the same fixed seed and arrives at the identical number. The only reason
+// to talk to the network at all is to fetch an occasional CHECKPOINT (a static JSON file
+// committed by a scheduled GitHub Action) so a fresh page load doesn't have to replay every
+// tick since a fixed genesis date — after that one fetch, ticking runs entirely client-side,
+// completely offline-capable, with zero further requests needed to "stay in sync."
+const MARKET_JSON_PATH = 'market-data.json';
+const MARKET_CHECKPOINT_REFRESH_MS = 5 * 60 * 1000; // just keeps the baseline from getting stale over a long session — not required for correctness, only for keeping replay-to-now cheap
+
+let marketCheckpoint = null; // last known {tickIndex, state} from GitHub
+let marketState = null;      // live working state, ticked forward locally every MARKET_TICK_MS
+let marketRng = null;        // live rng continuing from wherever marketState currently is
+let marketTickIndex = -1;
+
+function cacheCheckpointLocally(cp){
+  market = { updatedAt: cp.t, tickIndex: cp.tickIndex, state: cp.state };
+  localStorage.setItem('mrwestcoin_market_cache', JSON.stringify(market));
+}
+
+// Jumps the live simulation forward to "right now" from whatever checkpoint we have (or from
+// the fixed genesis if we don't have one yet), then keeps ticking forward locally from there.
+function catchUpAndStartTicking(checkpoint){
+  marketCheckpoint = checkpoint;
+  const targetTick = marketTickIndexForTime(Date.now());
+  const result = marketSimulate(checkpoint, targetTick);
+  marketState = result.state;
+  marketTickIndex = result.tickIndex;
+  marketRng = marketRngFromCallCount((marketTickIndex + 1) * MARKET_CALLS_PER_TICK);
+  currentPrice = marketState.price;
+
+  // seed the visible chart history from whatever we just replayed (bounded — checkpoints are
+  // refreshed every few minutes, so this is at most a few thousand points, never unbounded)
+  if(result.points.length) priceHistory = result.points;
+  else if(priceHistory.length === 0) priceHistory = [{ price: currentPrice, t: Date.now() }];
+}
+
+async function fetchMarketCheckpoint(){
+  try{
+    const res = await fetch(`${MARKET_JSON_PATH}?v=${Date.now()}`, { cache: 'no-store' });
+    if(!res.ok) return;
+    const cp = await res.json();
+    if(cp && cp.tickIndex !== undefined && cp.state){
+      syncOK = true;
+      cacheCheckpointLocally(cp);
+      // only re-baseline if this checkpoint is actually newer than what we're already ticking
+      // from — otherwise a slow/late response could yank the live price backwards
+      if(!marketCheckpoint || cp.tickIndex > marketCheckpoint.tickIndex){
+        catchUpAndStartTicking(cp);
+      }
+    }
+  } catch(e){ /* offline, or the file isn't reachable yet — keep ticking from what we have */ }
+}
+
+// paint instantly from whatever's cached locally so there's no "$--.--" flash, then get a real
+// checkpoint from GitHub to make sure we're anchored correctly
+if(market && market.tickIndex !== undefined && market.state){
+  catchUpAndStartTicking({ tickIndex: market.tickIndex, state: market.state });
+} else {
+  catchUpAndStartTicking(null); // starts from the fixed genesis — still fully deterministic
+}
+fetchMarketCheckpoint();
+setInterval(fetchMarketCheckpoint, MARKET_CHECKPOINT_REFRESH_MS);
+
+// The actual live ticking — sub-second, entirely local, zero network calls. This is what makes
+// the chart move in near real time without "constant syncing": each tick is just the next
+// value in an already-fully-determined sequence, not something that needs to be fetched.
+setInterval(() => {
+  if(!marketState || !marketRng) return;
+  const price = marketAdvanceOneTick(marketState, marketRng);
+  marketTickIndex++;
+  currentPrice = price;
+  priceHistory.push({ price, t: Date.now() });
+  if(priceHistory.length > 20000) priceHistory.shift(); // bound in-memory growth for very long sessions
   clampScroll();
   updatePriceDisplays();
   drawChart();
   renderPortfolio();
   renderLots();
-}
-
-// --- Market data now comes from a static file committed to the repo by a scheduled GitHub
-// Action (.github/workflows/update-market.yml + .github/scripts/tick-market.js), NOT from
-// Firebase. That Action advances the price every 10 minutes and commits market-data.json —
-// every visitor just fetches that plain static file, which GitHub Pages serves for free with
-// its own CDN caching. This is what actually fixes the Firebase quota: the old design had every
-// open tab writing a tick to Firebase every 12 seconds AND listening live for others' writes;
-// now Firebase carries zero market traffic at all, only player accounts/leaderboard/marketplace.
-const MARKET_JSON_PATH = 'market-data.json';
-const MARKET_POLL_MS = 10000; // the Action now ticks every 1 min — poll a few times per tick so updates feel near-instant
-
-async function fetchMarketData(){
-  try{
-    // cache-bust AND tell the browser not to reuse a cached response at all — belt and
-    // suspenders, since a stale cached copy would look exactly like "it's not updating"
-    const v = Date.now();
-    const res = await fetch(`${MARKET_JSON_PATH}?v=${v}`, { cache: 'no-store' });
-    if(!res.ok) return;
-    const m = await res.json();
-    syncOK = true;
-    applyMarketData(m);
-  } catch(e){ /* offline or the file isn't reachable yet — keep whatever's cached locally */ }
-}
-
-// show cached data immediately (no flash of "$--.--"), then get the real thing
-if(market.updatedAt) applyMarketData(market);
-fetchMarketData();
-setInterval(fetchMarketData, MARKET_POLL_MS);
+}, MARKET_TICK_MS);
 
 // Previously taxed BOTH buy and sell at a flat rate, which guaranteed a loss on every round
 // trip even when the price went up — that's what made it feel unbalanced. Now: no tax at all
