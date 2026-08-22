@@ -295,20 +295,24 @@
   .dropzone.drag-over{ border-color: var(--rust-2); background: rgba(217,122,63,0.08); }
   .dropzone-hint{ font-size:0.7rem; color: var(--muted); text-align:center; }
   .dropzone-chips{ display:flex; flex-wrap:wrap; gap:0.4rem; justify-content:center; }
-  .reactor-grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:0.8rem; }
-  .reactor-box{ border:1px solid var(--line); border-radius:4px; padding:0.8rem; background: rgba(0,0,0,0.15); display:flex; flex-direction:column; gap:0.6rem; }
-  .reactor-box.locked{ opacity:0.55; }
-  .rb-title{ font-weight:700; font-size:0.8rem; }
-  .rb-locked-msg{ font-size:0.7rem; color: var(--muted); }
-  .rb-zone{
-    min-height:70px; border:2px dashed var(--line); border-radius:4px; background: rgba(0,0,0,0.2);
-    padding:0.5rem; display:flex; flex-wrap:wrap; align-items:center; justify-content:center;
-    gap:0.4rem; transition: border-color 0.15s ease, background 0.15s ease;
+
+  /* Crafting bench — a single tool selector + one reactant tray + one product tray, click-based
+     (not drag-based) so it works identically and reliably on touch and desktop alike. */
+  .crafting-bench{ border:1px solid var(--line); border-radius:4px; padding:1rem; background: rgba(0,0,0,0.15); }
+  .bench-row{ display:flex; align-items:flex-start; gap:0.8rem; margin-bottom:0.7rem; }
+  .bench-row:last-of-type{ margin-bottom:0; }
+  .bench-label{ flex-shrink:0; width:80px; font-size:0.72rem; letter-spacing:0.05em; text-transform:uppercase; color: var(--muted); padding-top:0.5rem; }
+  .bench-zone{
+    flex:1; min-height:56px; border:2px dashed var(--line); border-radius:4px; background: rgba(0,0,0,0.2);
+    padding:0.5rem; display:flex; flex-wrap:wrap; align-items:center; gap:0.4rem;
   }
-  .rb-zone.drag-over{ border-color: var(--rust-2); background: rgba(217,122,63,0.08); }
-  .rb-pending-wrap{ display:flex; justify-content:center; }
-  .elem-chip.pending{ background: var(--rust-2); color:#fff; cursor:grab; }
-  #compoundsInventoryZone.drag-over{ outline:2px dashed var(--rust-2); outline-offset:3px; }
+  .bench-products{ border-style:solid; border-color: var(--rust-2); background: rgba(217,122,63,0.06); }
+  .bench-arrow{ text-align:center; color: var(--rust-2); font-size:1.1rem; margin-bottom:0.5rem; }
+  .bench-product-card{ display:flex; flex-direction:column; gap:0.2rem; }
+  .bench-product-card .bp-main{ font-weight:700; }
+  .bench-product-card .bp-byproduct{ font-size:0.72rem; color: var(--muted); }
+  #craftToolSelect option:disabled{ color: var(--muted); }
+
   .elem-chip{
     display:flex; align-items:center; gap:0.35rem; background: var(--paper-2); border:1px solid var(--rust-2);
     border-radius:3px; padding:0.3rem 0.5rem; font-size:0.8rem; color: var(--ink);
