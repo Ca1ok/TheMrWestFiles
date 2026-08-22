@@ -46,13 +46,27 @@
       <div id="ownedElementsList" class="owned-list"><div class="empty-history">You don't own any elements yet.</div></div>
 
       <div class="section-label">Tools</div>
-      <div class="page-sub" style="margin-bottom:0.6rem;">Unlock recipes for more complex compounds</div>
+      <div class="page-sub" style="margin-bottom:0.6rem;">Unlock more advanced reactions in the crafting bench below</div>
       <div id="toolsList" class="tools-grid"></div>
 
-      <div class="section-label">Craft a Compound</div>
-      <div class="page-sub" style="margin-bottom:0.6rem;">Simple recipes made from raw elements only — for advanced compounds made from other compounds, use the reactors on the Periodic Table page</div>
-      <div id="recipesList" class="recipes-grid"></div>
-      <div class="compound-result" id="craftResult"></div>
+      <div class="section-label">Crafting Bench</div>
+      <div class="page-sub" style="margin-bottom:0.6rem;">Click elements or compounds below to add them as reactants, pick a tool, then react. Works for anything from a simple binary compound to a multi-step organic synthesis — or a real reaction with two products, like an acid dissolving a metal.</div>
+      <div class="crafting-bench">
+        <div class="bench-row">
+          <span class="bench-label">Tool</span>
+          <select id="craftToolSelect"></select>
+        </div>
+        <div class="bench-row">
+          <span class="bench-label">Reactants</span>
+          <div id="craftReactants" class="bench-zone"><span class="dropzone-hint">Click an element or compound below to add it here</span></div>
+        </div>
+        <div class="bench-arrow">▼</div>
+        <div class="bench-row">
+          <span class="bench-label">Products</span>
+          <div id="craftProducts" class="bench-zone bench-products"><span class="dropzone-hint">Add matching reactants to see the product</span></div>
+        </div>
+        <button class="nav-btn" id="craftReactBtn" style="margin-top:0.8rem;" disabled>React</button>
+      </div>
 
       <div class="section-label">Your Compounds</div>
       <div id="ownedCompoundsList" class="owned-list"><div class="empty-history">You haven't made anything yet.</div></div>
@@ -88,6 +102,7 @@
 <script src="data/moderation-data.js"></script>
 <script src="data/economy-data.js"></script>
 
+<script src="market-model.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
