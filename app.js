@@ -164,7 +164,7 @@ const STORAGE_KEY = 'mrwestcoin_portfolio';
 
 function loadPortfolio(){
   const raw = localStorage.getItem(STORAGE_KEY);
-  if(!raw) return { cash:1000, lots:[], nextLotId:1, trades:[], elements:{}, compounds:{}, tools:['basic'], reactors:{}, reactorPending:{} };
+  if(!raw) return { cash:1000, lots:[], nextLotId:1, trades:[], elements:{}, compounds:{}, tools:['basic'], crafting:{elements:{},compounds:{}} };
   const p = JSON.parse(raw);
   // migrate old aggregate-holdings saves into a single lot so nothing is lost
   if(p.lots === undefined){
@@ -177,20 +177,20 @@ function loadPortfolio(){
   if(!p.elements) p.elements = {};
   if(!p.compounds) p.compounds = {};
   if(!p.tools) p.tools = ['basic'];
-  if(!p.reactors) p.reactors = {};
-  if(!p.reactorPending) p.reactorPending = {};
+  if(!p.crafting) p.crafting = { elements:{}, compounds:{} };
+  delete p.reactors; delete p.reactorPending; // superseded by the single-bench `crafting` field
   return p;
 }
 function savePortfolio(p){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
   if(db && investorId){
-    // this is what stops the stock (and elements/compounds/tools/in-progress reactors) you
+    // this is what stops the stock (and elements/compounds/tools/in-progress bench contents) you
     // have from disappearing — everything is backed up, not just the computed leaderboard
-    // number, so it survives a cleared cache, a new device, or closing the tab mid-craft
+    // number, so it survives a cleared cache, a new device, or closing the tab mid-reaction
     db.ref('players/' + investorId).set({
       cash: p.cash, lots: p.lots, trades: p.trades.slice(-200),
       elements: p.elements || {}, compounds: p.compounds || {}, tools: p.tools || ['basic'],
-      reactors: p.reactors || {}, reactorPending: p.reactorPending || {},
+      crafting: p.crafting || { elements:{}, compounds:{} },
       nameLocked: !!p.nameLocked, updatedAt: Date.now()
     }).catch(() => {});
   }
@@ -209,7 +209,7 @@ function loadPlayerData(uid){
       portfolio = {
         cash: remote.cash, lots: remote.lots || [], trades: remote.trades || [],
         elements: remote.elements || {}, compounds: remote.compounds || {}, tools: remote.tools || ['basic'],
-        reactors: remote.reactors || {}, reactorPending: remote.reactorPending || {},
+        crafting: remote.crafting || { elements:{}, compounds:{} },
         nameLocked: !!remote.nameLocked
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio));
@@ -218,8 +218,7 @@ function loadPlayerData(uid){
     }
     renderPortfolio(); renderHistory(); renderLots(); drawChart();
     if(typeof renderOwnedElements === 'function'){ renderOwnedElements(); renderOwnedCompounds(); renderTools(); }
-    if(typeof renderReactors === 'function') renderReactors();
-    if(typeof renderCompoundsInventory === 'function') renderCompoundsInventory();
+    if(typeof renderCraftingBench === 'function') renderCraftingBench();
     if(typeof refreshLeaderboardGateUI === 'function') refreshLeaderboardGateUI();
   }).catch(() => {});
 
@@ -1034,114 +1033,30 @@ function buildPeriodicTable(){
           </div>
         </div>`;
     });
-    setupElementDrag(cell);
   });
 
   renderLegend();
   applyPtFilter();
   applyPtColors();
 }
+buildPeriodicTable(); // called immediately after being defined — previously this ran hundreds of
+                       // lines later, after the entire Compound Lab + Element Economy sections,
+                       // so any error anywhere in between silently prevented the table from ever
+                       // rendering at all
 
-/* ================= COMPOUND LAB (reactor system, fully local, tied to real inventory) ================= */
-// Dragging uses raw Pointer Events (not native HTML5 drag-and-drop, which barely works on
-// touchscreens) so the exact same code path handles mouse, trackpad, and touch identically.
-// Each draggable already lives inside the pan/zoomable world map, so the critical thing is
-// stopping the drag's pointerdown from ever reaching the camera's own pan listener — otherwise
-// starting a drag would also start panning the whole board underneath it.
-//
-// Reusable for element tiles, owned compound chips, and pending crafted results — each just
-// supplies its own label/color and a list of drop targets (rects to test against on release).
-function setupGenericDrag(el, { label, color, onDropTargets }){
-  el.addEventListener('pointerdown', (e) => {
-    e.stopPropagation(); // critical: keeps the world-map camera from also starting a pan
-    const isTouch = e.pointerType === 'touch';
-    let dragging = false, armed = !isTouch;
-    const startX = e.clientX, startY = e.clientY;
-    const armTimer = isTouch ? setTimeout(() => {
-      armed = true;
-      el.classList.add('armed');
-      if(navigator.vibrate) navigator.vibrate(15);
-    }, 300) : null;
-    let ghost = null;
+/* ================= CRAFTING BENCH (Element Economy page only — one reactant tray, one tool
+   selector, one product preview; click to add/remove instead of dragging, so it behaves
+   identically on touch and desktop) ================= */
 
-    function startDrag(){
-      dragging = true;
-      ghost = document.createElement('div');
-      ghost.className = 'drag-ghost';
-      ghost.textContent = label;
-      ghost.style.background = color;
-      document.body.appendChild(ghost);
-    }
-    function findTarget(x, y){
-      for(const t of onDropTargets){
-        const tEl = t.getEl();
-        if(!tEl) continue;
-        const r = tEl.getBoundingClientRect();
-        if(x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return t;
-      }
-      return null;
-    }
-    function clearHighlights(){
-      onDropTargets.forEach(t => { const tEl = t.getEl(); if(tEl) tEl.classList.remove('drag-over'); });
-    }
-    function onMove(ev){
-      const dx = ev.clientX - startX, dy = ev.clientY - startY;
-      const moved = Math.hypot(dx, dy);
-      if(!armed){
-        if(moved > 10){ clearTimeout(armTimer); el.classList.remove('armed'); }
-        return;
-      }
-      if(!dragging && moved > 4) startDrag();
-      if(dragging && ghost){
-        ghost.style.left = ev.clientX + 'px';
-        ghost.style.top = ev.clientY + 'px';
-        clearHighlights();
-        const target = findTarget(ev.clientX, ev.clientY);
-        if(target){ const tEl = target.getEl(); if(tEl) tEl.classList.add('drag-over'); }
-      }
-    }
-    function onUp(ev){
-      clearTimeout(armTimer);
-      el.classList.remove('armed');
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-      if(dragging){
-        clearHighlights();
-        const target = findTarget(ev.clientX, ev.clientY);
-        if(target) target.onDrop();
-      }
-      if(ghost){ ghost.remove(); ghost = null; }
-    }
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
-  });
-}
-
-function setupElementDrag(cell){
-  const sym = cell.dataset.sym, cat = cell.dataset.cat;
-  setupGenericDrag(cell, {
-    label: sym, color: CATEGORY_COLORS[cat],
-    onDropTargets: TOOLS.map(t => ({ getEl: () => document.getElementById('reactorZone_' + t.id), onDrop: () => attemptAddElementToReactor(sym, t.id) }))
-  });
-}
-
-// Everything below is 100% local — no network calls. PubChem was removed after proving
-// unreliable (CORS failures, downtime); RECIPES in data/economy-data.js is now the only
-// source of truth for what a combination makes, and atomic masses from the periodic table
-// data give a real molecular weight without needing an external lookup.
+// Atomic masses aren't currently used for a live display anymore (recipe descriptions carry
+// the chemistry context instead), but kept here since other parts of the site may want them.
 const ATOMIC_MASS = {};
 ELEMENTS.forEach(([num, sym, name, mass]) => { ATOMIC_MASS[sym] = mass; });
 
-function molecularWeight(counts){
-  return Object.keys(counts).reduce((sum, sym) => sum + (ATOMIC_MASS[sym] || 0) * counts[sym], 0);
-}
-
-// Matches a reactor's current pool (elements AND compounds) against a recipe for that same
-// tool tier — exact makeup, not just string formula, so recipes can require other compounds
-// as ingredients (tiered crafting) alongside or instead of raw elements.
-function matchRecipeInPool(pool, toolId){
+// Matches the crafting bench's current pool (elements AND compounds) against a recipe for the
+// selected tool — exact makeup, not just string formula, so recipes can require other
+// compounds as ingredients (tiered synthesis) alongside or instead of raw elements.
+function matchRecipeForBench(pool, toolId){
   const haveE = Object.keys(pool.elements).filter(s => pool.elements[s] > 0);
   const haveC = Object.keys(pool.compounds).filter(s => pool.compounds[s] > 0);
   return RECIPES.find(r => {
@@ -1155,45 +1070,32 @@ function matchRecipeInPool(pool, toolId){
   });
 }
 
-// Reactor pools and pending results live on the portfolio itself (not module-level state) so
-// they're saved to Firebase/localStorage exactly like everything else — closing the tab
-// mid-craft won't strand elements you already dropped in.
-function getReactorPool(toolId){
-  if(!portfolio.reactors) portfolio.reactors = {};
-  if(!portfolio.reactors[toolId]) portfolio.reactors[toolId] = { elements:{}, compounds:{} };
-  return portfolio.reactors[toolId];
-}
-function getReactorPending(toolId){
-  if(!portfolio.reactorPending) portfolio.reactorPending = {};
-  return portfolio.reactorPending[toolId] || null;
-}
-function setReactorPending(toolId, formula){
-  if(!portfolio.reactorPending) portfolio.reactorPending = {};
-  if(formula) portfolio.reactorPending[toolId] = formula; else delete portfolio.reactorPending[toolId];
+// The bench's contents live on the portfolio itself (not module-level state) so they're saved
+// to Firebase/localStorage exactly like everything else — closing the tab mid-reaction won't
+// strand ingredients you already added.
+function getCraftingPool(){
+  if(!portfolio.crafting) portfolio.crafting = { elements:{}, compounds:{} };
+  return portfolio.crafting;
 }
 
-function attemptAddElementToReactor(sym, toolId){
-  if(!portfolio.tools.includes(toolId)) return; // reactor locked — don't own that tool
-  if(getReactorPending(toolId)) return; // collect the pending result first
-  if((portfolio.elements[sym] || 0) <= 0) return; // don't own this element — only owned stock can be used
+function addElementToBench(sym){
+  if((portfolio.elements[sym] || 0) <= 0) return; // only owned stock can be used
   portfolio.elements[sym]--;
-  const pool = getReactorPool(toolId);
+  const pool = getCraftingPool();
   pool.elements[sym] = (pool.elements[sym] || 0) + 1;
   saveEconomy();
-  renderOwnedElements(); renderReactors();
+  renderOwnedElements(); renderCraftingBench();
 }
-function attemptAddCompoundToReactor(formula, toolId){
-  if(!portfolio.tools.includes(toolId)) return;
-  if(getReactorPending(toolId)) return;
+function addCompoundToBench(formula){
   if((portfolio.compounds[formula] || 0) <= 0) return;
   portfolio.compounds[formula]--;
-  const pool = getReactorPool(toolId);
+  const pool = getCraftingPool();
   pool.compounds[formula] = (pool.compounds[formula] || 0) + 1;
   saveEconomy();
-  renderOwnedCompounds(); renderReactors();
+  renderOwnedCompounds(); renderCraftingBench();
 }
-function removeFromReactor(toolId, kind, key){
-  const pool = getReactorPool(toolId);
+function removeFromBench(kind, key){
+  const pool = getCraftingPool();
   const bucket = kind === 'compound' ? pool.compounds : pool.elements;
   if(bucket[key] > 0){
     bucket[key]--;
@@ -1201,99 +1103,88 @@ function removeFromReactor(toolId, kind, key){
     if(kind === 'compound') portfolio.compounds[key] = (portfolio.compounds[key] || 0) + 1;
     else portfolio.elements[key] = (portfolio.elements[key] || 0) + 1;
     saveEconomy();
-    renderOwnedElements(); renderOwnedCompounds(); renderReactors();
+    renderOwnedElements(); renderOwnedCompounds(); renderCraftingBench();
   }
 }
-function craftInReactor(toolId){
-  if(getReactorPending(toolId)) return;
-  const pool = getReactorPool(toolId);
-  const recipe = matchRecipeInPool(pool, toolId);
+
+function reactCraftingBench(){
+  const toolSelect = document.getElementById('craftToolSelect');
+  if(!toolSelect) return;
+  const toolId = toolSelect.value;
+  if(!portfolio.tools.includes(toolId)) return;
+  const pool = getCraftingPool();
+  const recipe = matchRecipeForBench(pool, toolId);
   if(!recipe) return;
-  // ingredients were already deducted from inventory the moment they were dropped in — clear
-  // the working pool and stage the finished compound for collection
+  // ingredients were already deducted from inventory the moment they were added to the bench —
+  // just clear the working pool and credit the outputs
   pool.elements = {}; pool.compounds = {};
-  setReactorPending(toolId, recipe.formula);
+  portfolio.compounds[recipe.formula] = (portfolio.compounds[recipe.formula] || 0) + 1;
+  (recipe.byproducts || []).forEach(bp => {
+    if(bp.type === 'element') portfolio.elements[bp.symbol] = (portfolio.elements[bp.symbol] || 0) + bp.qty;
+    else portfolio.compounds[bp.formula] = (portfolio.compounds[bp.formula] || 0) + bp.qty;
+  });
   saveEconomy();
-  renderReactors();
-}
-function collectPending(toolId){
-  const formula = getReactorPending(toolId);
-  if(!formula) return;
-  portfolio.compounds[formula] = (portfolio.compounds[formula] || 0) + 1;
-  setReactorPending(toolId, null);
-  saveEconomy();
-  renderOwnedCompounds(); renderReactors();
+  renderOwnedElements(); renderOwnedCompounds(); renderCraftingBench();
 }
 
-function renderReactors(){
-  const wrap = document.getElementById('reactorBoxes');
-  if(!wrap) return;
-  wrap.innerHTML = TOOLS.map(t => {
+function renderCraftingToolSelect(){
+  const sel = document.getElementById('craftToolSelect');
+  if(!sel) return;
+  const prevValue = sel.value;
+  sel.innerHTML = TOOLS.map(t => {
     const owned = portfolio.tools.includes(t.id);
-    const pool = getReactorPool(t.id);
-    const pendingFormula = getReactorPending(t.id);
-    const pendingRecipe = pendingFormula ? RECIPES.find(r => r.formula === pendingFormula) : null;
-    const chips = [
-      ...Object.keys(pool.elements).filter(s => pool.elements[s] > 0).map(sym => ({ kind:'element', key:sym, label:sym, qty:pool.elements[sym] })),
-      ...Object.keys(pool.compounds).filter(f => pool.compounds[f] > 0).map(f => {
-        const r = RECIPES.find(rc => rc.formula === f);
-        return { kind:'compound', key:f, label:`${r ? r.name : f} (${f})`, qty:pool.compounds[f] };
-      })
-    ];
-    const match = (!pendingRecipe && owned) ? matchRecipeInPool(pool, t.id) : null;
-    return `
-      <div class="reactor-box ${owned ? '' : 'locked'}">
-        <div class="rb-title">${t.name}</div>
-        ${!owned ? `<div class="rb-locked-msg">🔒 Buy this tool in the Element Economy to use it</div>` : `
-          <div class="rb-zone" id="reactorZone_${t.id}">
-            ${chips.length ? chips.map(c => `
-              <div class="elem-chip">${c.label}${c.qty > 1 ? ` ×${c.qty}` : ''}<span class="chip-remove" data-kind="${c.kind}" data-key="${c.key}" data-tool="${t.id}">✕</span></div>
-            `).join('') : '<span class="dropzone-hint">Drag an owned element (or compound) here</span>'}
-          </div>
-          ${pendingRecipe
-            ? `<div class="rb-pending-wrap"><div class="elem-chip pending" id="rbPending_${t.id}">${pendingRecipe.name} (${pendingRecipe.formula}) — drag or tap to collect ↓</div></div>`
-            : `<button class="tool-btn rb-craft" data-tool="${t.id}" ${match ? '' : 'disabled'}>${match ? 'Craft ' + match.name : 'Craft'}</button>`}
-        `}
+    return `<option value="${t.id}" ${owned ? '' : 'disabled'}>${t.name}${owned ? '' : ' (locked)'}</option>`;
+  }).join('');
+  // keep whatever was selected if it's still valid, otherwise fall back to the first owned tool
+  const stillValid = Array.from(sel.options).some(o => o.value === prevValue && !o.disabled);
+  sel.value = stillValid ? prevValue : (TOOLS.find(t => portfolio.tools.includes(t.id)) || TOOLS[0]).id;
+}
+
+function renderCraftingBench(){
+  const reactantsEl = document.getElementById('craftReactants');
+  const productsEl = document.getElementById('craftProducts');
+  const reactBtn = document.getElementById('craftReactBtn');
+  if(!reactantsEl || !productsEl || !reactBtn) return;
+
+  renderCraftingToolSelect();
+  const toolSelect = document.getElementById('craftToolSelect');
+  const toolId = toolSelect.value;
+  const pool = getCraftingPool();
+
+  const chips = [
+    ...Object.keys(pool.elements).filter(s => pool.elements[s] > 0).map(sym => ({ kind:'element', key:sym, label:sym, qty:pool.elements[sym] })),
+    ...Object.keys(pool.compounds).filter(f => pool.compounds[f] > 0).map(f => {
+      const r = RECIPES.find(rc => rc.formula === f);
+      return { kind:'compound', key:f, label:`${r ? r.name : f} (${f})`, qty:pool.compounds[f] };
+    })
+  ];
+  reactantsEl.innerHTML = chips.length
+    ? chips.map(c => `<div class="elem-chip">${c.label}${c.qty > 1 ? ` ×${c.qty}` : ''}<span class="chip-remove" data-kind="${c.kind}" data-key="${c.key}">✕</span></div>`).join('')
+    : '<span class="dropzone-hint">Click an element or compound below to add it here</span>';
+  reactantsEl.querySelectorAll('.chip-remove').forEach(btn => {
+    btn.addEventListener('click', () => removeFromBench(btn.dataset.kind, btn.dataset.key));
+  });
+
+  const match = chips.length ? matchRecipeForBench(pool, toolId) : null;
+  if(match){
+    const byproductText = (match.byproducts || []).map(bp => {
+      if(bp.type === 'element') return `+ ${bp.qty > 1 ? bp.qty + '× ' : ''}${bp.symbol}`;
+      const r = RECIPES.find(rc => rc.formula === bp.formula);
+      return `+ ${bp.qty > 1 ? bp.qty + '× ' : ''}${r ? r.name : bp.formula} (${bp.formula})`;
+    }).join('  ');
+    productsEl.innerHTML = `
+      <div class="bench-product-card">
+        <span class="bp-main">${match.name} (${match.formula})</span>
+        ${byproductText ? `<span class="bp-byproduct">${byproductText}</span>` : ''}
       </div>`;
-  }).join('');
-
-  wrap.querySelectorAll('.chip-remove').forEach(btn => {
-    btn.addEventListener('click', () => removeFromReactor(btn.dataset.tool, btn.dataset.kind, btn.dataset.key));
-  });
-  wrap.querySelectorAll('.rb-craft:not(:disabled)').forEach(btn => {
-    btn.addEventListener('click', () => craftInReactor(btn.dataset.tool));
-  });
-  TOOLS.forEach(t => {
-    const pendingEl = document.getElementById('rbPending_' + t.id);
-    if(!pendingEl) return;
-    pendingEl.addEventListener('click', () => collectPending(t.id));
-    setupGenericDrag(pendingEl, {
-      label: getReactorPending(t.id) || '?', color: 'var(--rust-2)',
-      onDropTargets: [{ getEl: () => document.getElementById('compoundsInventoryZone'), onDrop: () => collectPending(t.id) }]
-    });
-  });
-}
-
-function renderCompoundsInventory(){
-  const wrap = document.getElementById('compoundsInventoryZone');
-  if(!wrap) return;
-  const formulas = Object.keys(portfolio.compounds || {}).filter(f => portfolio.compounds[f] > 0);
-  if(formulas.length === 0){
-    wrap.innerHTML = '<div class="empty-history">Nothing collected yet — craft something below and drag it in.</div>';
-    return;
+  } else {
+    productsEl.innerHTML = '<span class="dropzone-hint">Add matching reactants to see the product</span>';
   }
-  wrap.innerHTML = formulas.map(f => {
-    const r = RECIPES.find(rc => rc.formula === f);
-    return `<div class="owned-chip" data-formula="${f}">${r ? r.name : f} <span class="oc-qty">×${portfolio.compounds[f]}</span></div>`;
-  }).join('');
-  wrap.querySelectorAll('.owned-chip[data-formula]').forEach(chip => {
-    const f = chip.dataset.formula;
-    setupGenericDrag(chip, {
-      label: f, color: '#e05a5a',
-      onDropTargets: TOOLS.map(t => ({ getEl: () => document.getElementById('reactorZone_' + t.id), onDrop: () => attemptAddCompoundToReactor(f, t.id) }))
-    });
-  });
+  reactBtn.disabled = !match;
 }
+
+document.getElementById('craftToolSelect') && document.getElementById('craftToolSelect').addEventListener('change', renderCraftingBench);
+document.getElementById('craftReactBtn') && document.getElementById('craftReactBtn').addEventListener('click', reactCraftingBench);
 
 /* ================= ELEMENT ECONOMY ================= */
 // Prices are illustrative, roughly ordered like real-world commodity prices (precious metals
@@ -1374,11 +1265,12 @@ function renderOwnedElements(){
   if(syms.length === 0){ wrap.innerHTML = '<div class="empty-history">You don\'t own any elements yet.</div>'; }
   else{
     wrap.innerHTML = syms.map(sym => `
-      <div class="owned-chip">${sym} <span class="oc-qty">×${portfolio.elements[sym]}</span>
+      <div class="owned-chip" data-sym="${sym}" title="Click to add to the crafting bench">${sym} <span class="oc-qty">×${portfolio.elements[sym]}</span>
         <button class="oc-sell" data-sym="${sym}">Sell 1</button>
       </div>`).join('');
     wrap.querySelectorAll('.oc-sell').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation(); // don't also trigger the chip's "add to bench" click
         const sym = btn.dataset.sym;
         if(portfolio.elements[sym] > 0){
           portfolio.elements[sym]--;
@@ -1388,9 +1280,11 @@ function renderOwnedElements(){
         }
       });
     });
+    wrap.querySelectorAll('.owned-chip[data-sym]').forEach(chip => {
+      chip.addEventListener('click', () => addElementToBench(chip.dataset.sym));
+    });
   }
-  renderRecipes(); // recipe availability depends on what you own
-  if(typeof renderReactors === 'function') renderReactors();
+  if(typeof renderCraftingBench === 'function') renderCraftingBench();
 }
 
 function renderTools(){
@@ -1414,62 +1308,10 @@ function renderTools(){
       portfolio.cash -= cost;
       portfolio.tools.push(toolId);
       saveEconomy();
-      renderPortfolio(); renderTools(); renderRecipes();
-      if(typeof renderReactors === 'function') renderReactors();
+      renderPortfolio(); renderTools();
+      if(typeof renderCraftingBench === 'function') renderCraftingBench();
     });
   });
-}
-
-function renderRecipes(){
-  const wrap = document.getElementById('recipesList');
-  if(!wrap) return;
-  // tiered recipes (needCompounds) require dragging a crafted compound in as an ingredient —
-  // that only makes sense in the Compound Lab's reactors, so this quick-craft list only shows
-  // element-only recipes; the rest are reachable from the Periodic Table region.
-  const simple = RECIPES.filter(r => !r.needCompounds || Object.keys(r.needCompounds).length === 0);
-  wrap.innerHTML = simple.map(r => {
-    const haveTool = portfolio.tools.includes(r.tool);
-    const haveElements = Object.keys(r.need).every(sym => (portfolio.elements[sym] || 0) >= r.need[sym]);
-    const needText = Object.keys(r.need).map(sym => `<b>${sym}×${r.need[sym]}</b>`).join(', ');
-    return `
-      <div class="recipe-card">
-        <div class="rc-name">${r.name}</div>
-        <div class="rc-formula">${r.formula}</div>
-        <div class="rc-need">Needs: ${needText}${!haveTool ? `<div class="rc-locked">🔒 Requires: ${TOOLS.find(t=>t.id===r.tool).name}</div>` : ''}</div>
-        <button class="rc-btn" data-formula="${r.formula}" ${(!haveTool || !haveElements) ? 'disabled' : ''}>Craft</button>
-      </div>`;
-  }).join('');
-  wrap.querySelectorAll('.rc-btn:not(:disabled)').forEach(btn => {
-    btn.addEventListener('click', () => craftCompound(btn.dataset.formula));
-  });
-}
-
-function craftCompound(formula){
-  const recipe = RECIPES.find(r => r.formula === formula);
-  if(!recipe) return;
-  // re-verify right before consuming — the button is only disabled at render time, so a stale
-  // button (or a double-click) could otherwise push element counts negative
-  const haveTool = portfolio.tools.includes(recipe.tool);
-  const haveElements = Object.keys(recipe.need).every(sym => (portfolio.elements[sym] || 0) >= recipe.need[sym]);
-  if(!haveTool || !haveElements) return;
-  Object.keys(recipe.need).forEach(sym => { portfolio.elements[sym] -= recipe.need[sym]; });
-  const materialCost = Object.keys(recipe.need).reduce((sum, sym) => sum + ELEMENT_PRICES[sym] * recipe.need[sym], 0);
-  const value = materialCost * 1.6; // crafting adds value over raw materials, like real manufacturing
-  portfolio.compounds[formula] = (portfolio.compounds[formula] || 0) + 1;
-  saveEconomy();
-  renderPortfolio(); renderOwnedElements(); renderOwnedCompounds();
-
-  // fully local — molecular weight comes straight from the periodic table's atomic masses,
-  // no external lookup needed or attempted
-  const mw = molecularWeight(recipe.need);
-  const resultEl = document.getElementById('craftResult');
-  if(resultEl) resultEl.innerHTML = `
-    <div class="compound-card">
-      <div class="cc-formula">${recipe.formula}</div>
-      <div class="cc-name">${recipe.name} — added to your collection (worth ~$${value.toFixed(2)})</div>
-      <div class="cc-props"><span>Molecular weight</span><b>${mw.toFixed(2)} g/mol</b></div>
-      <div class="cc-desc">${recipe.desc}</div>
-    </div>`;
 }
 
 function renderOwnedCompounds(){
@@ -1480,26 +1322,29 @@ function renderOwnedCompounds(){
   else{
     wrap.innerHTML = formulas.map(f => {
       const r = RECIPES.find(rc => rc.formula === f);
-      return `<div class="owned-chip">${r ? r.name : f} <span class="oc-qty">×${portfolio.compounds[f]}</span>
+      return `<div class="owned-chip" data-formula="${f}" title="Click to add to the crafting bench">${r ? r.name : f} <span class="oc-qty">×${portfolio.compounds[f]}</span>
         <button class="oc-sell" data-formula="${f}">Sell 1</button></div>`;
     }).join('');
     wrap.querySelectorAll('.oc-sell').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const f = btn.dataset.formula;
         const r = RECIPES.find(rc => rc.formula === f);
         if(portfolio.compounds[f] > 0 && r){
           portfolio.compounds[f]--;
-          const materialCost = Object.keys(r.need).reduce((sum, sym) => sum + ELEMENT_PRICES[sym] * r.need[sym], 0);
-          portfolio.cash += materialCost * 1.6 * 0.8; // same crafted value as when made, sold back at a discount
+          const materialCost = Object.keys(r.need || {}).reduce((sum, sym) => sum + ELEMENT_PRICES[sym] * r.need[sym], 0);
+          portfolio.cash += Math.max(materialCost, 1) * 1.6 * 0.8; // same crafted value as when made, sold back at a discount; tiered compounds with no raw `need` still fetch a small floor value
           saveEconomy();
           renderPortfolio(); renderOwnedCompounds();
         }
       });
     });
+    wrap.querySelectorAll('.owned-chip[data-formula]').forEach(chip => {
+      chip.addEventListener('click', () => addCompoundToBench(chip.dataset.formula));
+    });
   }
   if(typeof populateListSelect === 'function') populateListSelect();
-  if(typeof renderReactors === 'function') renderReactors();
-  if(typeof renderCompoundsInventory === 'function') renderCompoundsInventory();
+  if(typeof renderCraftingBench === 'function') renderCraftingBench();
 }
 
 /* --- Marketplace: shared Firebase listings, buyable by any player, elements or compounds --- */
@@ -1580,7 +1425,6 @@ populateElementSelects();
 populateListSelect();
 renderOwnedElements();
 renderTools();
-renderRecipes();
 renderOwnedCompounds();
 
 function swatchFor(cell){
@@ -1635,8 +1479,6 @@ document.querySelectorAll('.pt-mode-btn').forEach(btn => {
     applyPtColors();
   });
 });
-
-buildPeriodicTable();
 
 /* ================= CHEMISTRY DATABOOK ================= */
 // Independently compiled, publicly-known reference values — check against your
@@ -1813,7 +1655,7 @@ async function migrateAnonymousDataTo(newUid){
   await db.ref('players/' + newUid).set({
     cash: portfolio.cash, lots: portfolio.lots, trades: portfolio.trades.slice(-200),
     elements: portfolio.elements || {}, compounds: portfolio.compounds || {}, tools: portfolio.tools || ['basic'],
-    reactors: portfolio.reactors || {}, reactorPending: portfolio.reactorPending || {},
+    crafting: portfolio.crafting || { elements:{}, compounds:{} },
     nameLocked: !!portfolio.nameLocked, updatedAt: Date.now()
   }).catch(() => {});
   switchActiveAccount(newUid);
