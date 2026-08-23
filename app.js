@@ -42,6 +42,23 @@ document.querySelectorAll('#siteNav a').forEach(a => {
   }
 });
 
+/* ================= COOKIE BANNER (fake — this site doesn't use cookies, it's a bit) ================= */
+const cookieBannerEl = document.getElementById('cookieBanner');
+if(cookieBannerEl){
+  if(localStorage.getItem('mrwestcoin_cookie_choice')){
+    cookieBannerEl.style.display = 'none';
+  } else {
+    const hideCookieBanner = (choice) => {
+      localStorage.setItem('mrwestcoin_cookie_choice', choice);
+      cookieBannerEl.style.display = 'none';
+    };
+    const acceptBtn = document.getElementById('cookieAccept');
+    const rejectBtn = document.getElementById('cookieReject');
+    if(acceptBtn) acceptBtn.addEventListener('click', () => hideCookieBanner('accepted'));
+    if(rejectBtn) rejectBtn.addEventListener('click', () => hideCookieBanner('rejected'));
+  }
+}
+
 window.addEventListener('resize', () => {
   if(typeof positionVideoPopup === 'function') positionVideoPopup();
   if(typeof drawChart === 'function') drawChart();
@@ -1056,6 +1073,16 @@ ELEMENTS.forEach(([num, sym, name, mass]) => { ATOMIC_MASS[sym] = mass; });
 // Matches the crafting bench's current pool (elements AND compounds) against a recipe for the
 // selected tool — exact makeup, not just string formula, so recipes can require other
 // compounds as ingredients (tiered synthesis) alongside or instead of raw elements.
+let craftTemp = 25; // °C, only meaningful when the Bunsen Burner is selected — room temp by default
+
+function stateOfMatter(key, tempC){
+  const mp = MELTING_POINTS[key], bp = BOILING_POINTS[key];
+  if(mp === undefined || bp === undefined) return null; // no data — better to say nothing than guess
+  if(tempC < mp) return 'solid';
+  if(tempC < bp) return 'liquid';
+  return 'gas';
+}
+
 function matchRecipeForBench(pool, toolId){
   const haveE = Object.keys(pool.elements).filter(s => pool.elements[s] > 0);
   const haveC = Object.keys(pool.compounds).filter(s => pool.compounds[s] > 0);
@@ -1066,6 +1093,9 @@ function matchRecipeForBench(pool, toolId){
     if(haveE.length !== needE.length || haveC.length !== needC.length) return false;
     if(!haveE.every(s => (r.need || {})[s] === pool.elements[s])) return false;
     if(!haveC.every(s => (r.needCompounds || {})[s] === pool.compounds[s])) return false;
+    // the burner's flame has to actually be hot enough — an unlit or barely-warm burner can't
+    // oxidize a metal no matter what's sitting in it
+    if(toolId === 'burner' && r.minTemp !== undefined && craftTemp < r.minTemp) return false;
     return true;
   });
 }
@@ -1129,6 +1159,8 @@ function renderCraftingBench(){
   const reactantsEl = document.getElementById('craftReactants');
   const productsEl = document.getElementById('craftProducts');
   const reactBtn = document.getElementById('craftReactBtn');
+  const tempRow = document.getElementById('burnerTempRow');
+  const stateBadge = document.getElementById('stateOfMatterBadge');
   if(!reactantsEl || !productsEl || !reactBtn) return;
 
   // the selected tool might not be owned yet (e.g. fresh page load before any purchase) —
@@ -1154,6 +1186,25 @@ function renderCraftingBench(){
     btn.addEventListener('click', () => removeFromBench(btn.dataset.kind, btn.dataset.key));
   });
 
+  // Bunsen Burner only: a temperature control, plus — if there's exactly one distinct substance
+  // sitting in the tray — its physical state at that temperature. This isn't just flavor: the
+  // burner's minTemp-gated reactions (the metal-oxide recipes) actually check this value in
+  // matchRecipeForBench, so setting it too low genuinely stops the reaction from proceeding.
+  if(tempRow){
+    tempRow.style.display = toolId === 'burner' ? 'flex' : 'none';
+    if(toolId === 'burner' && stateBadge){
+      if(chips.length === 1){
+        const c = chips[0];
+        const state = stateOfMatter(c.key, craftTemp);
+        stateBadge.textContent = state
+          ? `${c.key} at ${craftTemp}°C: ${state.toUpperCase()} (${state === 'solid' ? 's' : state === 'liquid' ? 'l' : 'g'})`
+          : `No melting/boiling data for this substance`;
+      } else {
+        stateBadge.textContent = chips.length === 0 ? '' : 'Add exactly one substance to see its state';
+      }
+    }
+  }
+
   const match = chips.length ? matchRecipeForBench(pool, toolId) : null;
   if(match){
     const byproductText = (match.byproducts || []).map(bp => {
@@ -1166,6 +1217,18 @@ function renderCraftingBench(){
         <span class="bp-main">${match.name} (${match.formula})</span>
         ${byproductText ? `<span class="bp-byproduct">${byproductText}</span>` : ''}
       </div>`;
+  } else if(chips.length && toolId === 'burner'){
+    // give a specific hint when the ONLY thing stopping the match is temperature — much more
+    // useful than the generic "add matching reactants" message
+    const closeMatch = RECIPES.find(r => {
+      if(r.tool !== toolId || r.minTemp === undefined) return false;
+      const needE = Object.keys(r.need || {});
+      const haveE = Object.keys(pool.elements).filter(s => pool.elements[s] > 0);
+      return haveE.length === needE.length && haveE.every(s => (r.need || {})[s] === pool.elements[s]);
+    });
+    productsEl.innerHTML = closeMatch
+      ? `<span class="dropzone-hint">Needs at least ${closeMatch.minTemp}°C to react (currently ${craftTemp}°C)</span>`
+      : '<span class="dropzone-hint">Add matching reactants to see the product</span>';
   } else {
     productsEl.innerHTML = '<span class="dropzone-hint">Add matching reactants to see the product</span>';
   }
@@ -1174,6 +1237,11 @@ function renderCraftingBench(){
 }
 
 document.getElementById('craftReactBtn') && document.getElementById('craftReactBtn').addEventListener('click', reactCraftingBench);
+const burnerTempInput = document.getElementById('burnerTemp');
+if(burnerTempInput) burnerTempInput.addEventListener('input', () => {
+  craftTemp = parseFloat(burnerTempInput.value) || 25;
+  renderCraftingBench();
+});
 
 /* ================= ELEMENT ECONOMY ================= */
 // Prices are illustrative, roughly ordered like real-world commodity prices (precious metals
@@ -1694,11 +1762,20 @@ if(FIREBASE_CONFIGURED){
           migrateLocalIdDataTo(oldLocalId, user.uid);
         }
       }
+    } else {
+      // Genuinely no session — NOT "we haven't checked yet." Firebase guarantees this callback's
+      // FIRST call already reflects any persisted session restored from storage, so it's only
+      // safe to create a brand new anonymous identity here, inside the callback. Checking
+      // firebase.auth().currentUser synchronously right after registering this listener (the old
+      // code) is a race condition: that restore hasn't finished yet, so currentUser reads null
+      // almost every time even when a real persisted session exists — which meant a fresh
+      // anonymous identity got created on EVERY page load, abandoning all progress (tools,
+      // elements, everything) tied to the previous one. That was the actual cause of things
+      // "disappearing" when navigating between pages.
+      firebase.auth().signInAnonymously().catch(() => {});
     }
     updateAuthUI(user);
   });
-  // sign in anonymously in the background so linking (upgrading to Google/email) is possible later
-  if(!firebase.auth().currentUser) firebase.auth().signInAnonymously().catch(() => {});
 }
 
 async function migrateLocalIdDataTo(oldId, newId){
