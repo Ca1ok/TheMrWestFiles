@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Element Economy — The Mr West Files</title>
-<link rel="stylesheet" href="styles.css?v=20260821c">
+<link rel="stylesheet" href="styles.css?v=20260821d">
 </head>
 <body>
 
@@ -55,6 +55,11 @@
       <div class="section-label">Crafting Bench</div>
       <div class="page-sub" style="margin-bottom:0.6rem;">Click elements or compounds above to drop them into the reactants box below, using whichever tool is selected above. Works for anything from a simple binary compound to a multi-step organic synthesis — or a real reaction with two products, like an acid dissolving a metal.</div>
       <div class="crafting-bench">
+        <div class="bench-row" id="burnerTempRow" style="display:none;">
+          <span class="bench-label">Temp (°C)</span>
+          <input type="number" id="burnerTemp" value="25" step="25">
+          <span id="stateOfMatterBadge" class="state-badge"></span>
+        </div>
         <div class="bench-row">
           <span class="bench-label">Reactants</span>
           <div id="craftReactants" class="bench-zone bench-dropzone"><span class="dropzone-hint">Click an element or compound above to add it here</span></div>
@@ -92,13 +97,13 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
 
 <!-- Data files, split out so app.js stays focused on behavior -->
-<script src="data/wanted-data.js?v=20260821c"></script>
-<script src="data/periodic-table-data.js?v=20260821c"></script>
-<script src="data/databook-data.js?v=20260821c"></script>
-<script src="data/moderation-data.js?v=20260821c"></script>
-<script src="data/economy-data.js?v=20260821c"></script>
+<script src="data/wanted-data.js?v=20260821d"></script>
+<script src="data/periodic-table-data.js?v=20260821d"></script>
+<script src="data/databook-data.js?v=20260821d"></script>
+<script src="data/moderation-data.js?v=20260821d"></script>
+<script src="data/economy-data.js?v=20260821d"></script>
 
-<script src="market-model.js?v=20260821c"></script>
-<script src="app.js?v=20260821c"></script>
+<script src="market-model.js?v=20260821d"></script>
+<script src="app.js?v=20260821d"></script>
 </body>
 </html>
