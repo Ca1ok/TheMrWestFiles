@@ -33,7 +33,34 @@
   #siteNav a:hover{ color: var(--ink); border-color: var(--rust-2); }
   #siteNav a.active{ color: var(--rust-2); border-color: var(--rust-2); background: rgba(217,122,63,0.08); }
 
-  #pages{ max-width: 1180px; margin: 0 auto; padding: 2rem 1rem 4rem; }
+  #pages{ max-width: 1180px; margin: 0 auto; padding: 2rem 1rem 4rem; transition: margin-right 0.25s ease; }
+  #pages.recipes-open{ margin-right: 360px; }
+  @media (max-width: 900px){ #pages.recipes-open{ margin-right: 0; } } /* not enough room beside the content on small screens — panel just overlays instead */
+
+  #recipesToggleBtn{
+    position: fixed; top: 5rem; right: 1rem; z-index: 25;
+    background: var(--rust); color: var(--ink); border:none; padding:0.6rem 1rem;
+    font-family: inherit; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.04em;
+    cursor:pointer; box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+  }
+  #recipesPanel{
+    position: fixed; top:0; right:-360px; width:340px; height:100vh; z-index:24;
+    background: var(--paper); border-left:2px solid var(--line); box-shadow: -10px 0 30px rgba(0,0,0,0.5);
+    padding:1.2rem 1rem; overflow-y:auto; transition: right 0.25s ease;
+  }
+  #recipesPanel.open{ right:0; }
+  @media (max-width: 900px){ #recipesPanel{ width:88vw; right:-88vw; } #recipesPanel.open{ right:0; } }
+  .recipes-panel-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:0.8rem; }
+  .recipes-panel-head h3{ font-family:Georgia,serif; font-size:1rem; color: var(--ink); margin:0; }
+  #recipesCloseBtn{ background:none; border:none; color: var(--muted); font-size:1.1rem; cursor:pointer; }
+  .recipes-filter-toggle{ display:flex; align-items:center; gap:0.5rem; font-size:0.75rem; color: var(--muted); margin-bottom:1rem; cursor:pointer; }
+  .recipes-panel-list{ display:flex; flex-direction:column; gap:0.6rem; }
+  .rp-card{ background: var(--paper-2); border:1px solid var(--line); padding:0.6rem 0.7rem; font-size:0.75rem; }
+  .rp-card.makeable{ border-color: var(--gain); }
+  .rp-card .rp-name{ font-weight:700; color: var(--ink); margin-bottom:0.2rem; }
+  .rp-card .rp-tool{ color: var(--rust-2); font-size:0.68rem; text-transform:uppercase; margin-bottom:0.3rem; }
+  .rp-card .rp-ingredients{ color: var(--muted); line-height:1.5; }
+  .rp-card .rp-makeable-tag{ color: var(--gain); font-size:0.68rem; text-transform:uppercase; margin-top:0.3rem; display:block; }
 
   .region{ width:100%; }
   .region:not(.wide):not([data-role="hub"]){ max-width: 640px; margin: 0 auto; }
@@ -491,3 +518,14 @@
     background: var(--paper-2); color: var(--muted);
   }
   .cookie-btns button:hover{ filter: brightness(1.15); }
+
+  /* Every clickable button on the site matches the floating nav's own pill-shaped corner
+     radius, so the "bubble" look is consistent everywhere rather than just on the nav itself.
+     Grouped here (rather than edited into each class above) since it needs to win on
+     specificity over the button-specific rules already setting their own border-radius. */
+  .nav-btn, .tool-btn, .trade-btn, .tc-btn, .las-toggle, .lr-buy, .lr-cancel,
+  .ap-save, .ap-delete, .mini-invest, #recipesToggleBtn, #recipesCloseBtn,
+  .cookie-btns button, #buyBtn, #marketBuyBtn, #createListingBtn, #jumpLive,
+  #googleSignInBtn, #emailSignInBtn, #emailSignUpBtn, #signOutBtn{
+    border-radius: 999px;
+  }
