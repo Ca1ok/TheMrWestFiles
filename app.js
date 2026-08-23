@@ -1583,8 +1583,11 @@ function renderLeaderboard(entries){
     </div>`).join('');
 }
 
-// keeps your own leaderboard entry fresh in the background regardless of which page is open
-if(db) setInterval(pushLeaderboardEntry, 20000);
+// keeps your own leaderboard entry fresh in the background regardless of which page is open —
+// 60s (not more frequent) keeps this cheap: the leaderboard's live listener re-sends the WHOLE
+// leaderboard object to every viewer on every single player's push, so this interval matters for
+// everyone watching, not just you
+if(db) setInterval(pushLeaderboardEntry, 60000);
 
 if(nameInput){
   nameInput.value = investorName;
@@ -1675,18 +1678,51 @@ function updateAuthUI(user){
 if(FIREBASE_CONFIGURED){
   firebase.auth().onAuthStateChanged((user) => {
     if(user){
-      if(user.isAnonymous){
-        // real Firebase anonymous auth, separate from our own local random ID — used only so
-        // linking to a real account later is possible without losing data. Doesn't change
-        // which account is "active" on its own.
-      } else if(investorId !== user.uid){
+      // ALWAYS keep investorId synced to the real Firebase Auth UID — anonymous session or not.
+      // This matters because Firebase security rules check auth.uid against the data being
+      // written (e.g. a marketplace listing's sellerId, or the players/{id} key itself). Using a
+      // separately locally-generated ID for anonymous sessions meant those writes could be
+      // silently rejected by the rules — the .catch(()=>{}) on every write swallows the error, so
+      // it looked like nothing happened rather than showing a failure.
+      if(investorId !== user.uid){
+        const oldLocalId = investorId;
         switchActiveAccount(user.uid);
+        // if there's existing progress saved under the old locally-generated ID (from before
+        // this fix, or from earlier in this same session before Firebase responded), carry it
+        // over to the real UID instead of silently losing it
+        if(oldLocalId && oldLocalId !== user.uid && db){
+          migrateLocalIdDataTo(oldLocalId, user.uid);
+        }
       }
     }
     updateAuthUI(user);
   });
   // sign in anonymously in the background so linking (upgrading to Google/email) is possible later
   if(!firebase.auth().currentUser) firebase.auth().signInAnonymously().catch(() => {});
+}
+
+async function migrateLocalIdDataTo(oldId, newId){
+  try{
+    const oldSnap = await db.ref('players/' + oldId).once('value');
+    const oldData = oldSnap.val();
+    if(oldData){
+      const newSnap = await db.ref('players/' + newId).once('value');
+      if(!newSnap.val()){ // never clobber progress that already exists under the real UID
+        await db.ref('players/' + newId).set(oldData);
+        portfolio = {
+          cash: oldData.cash, lots: oldData.lots || [], trades: oldData.trades || [],
+          elements: oldData.elements || {}, compounds: oldData.compounds || {}, tools: oldData.tools || ['basic'],
+          crafting: oldData.crafting || { elements:{}, compounds:{} },
+          nameLocked: !!oldData.nameLocked
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio));
+        renderPortfolio(); renderHistory(); renderLots(); drawChart();
+        if(typeof renderOwnedElements === 'function'){ renderOwnedElements(); renderOwnedCompounds(); renderTools(); }
+        if(typeof renderCraftingBench === 'function') renderCraftingBench();
+      }
+      await db.ref('players/' + oldId).remove().catch(() => {}); // clean up the now-orphaned old record
+    }
+  } catch(e){ /* best-effort one-time migration — never worth blocking on */ }
 }
 
 const googleSignInBtnEl = document.getElementById('googleSignInBtn');
