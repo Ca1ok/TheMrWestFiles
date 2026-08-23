@@ -1108,9 +1108,7 @@ function removeFromBench(kind, key){
 }
 
 function reactCraftingBench(){
-  const toolSelect = document.getElementById('craftToolSelect');
-  if(!toolSelect) return;
-  const toolId = toolSelect.value;
+  const toolId = selectedToolId;
   if(!portfolio.tools.includes(toolId)) return;
   const pool = getCraftingPool();
   const recipe = matchRecipeForBench(pool, toolId);
@@ -1127,28 +1125,19 @@ function reactCraftingBench(){
   renderOwnedElements(); renderOwnedCompounds(); renderCraftingBench();
 }
 
-function renderCraftingToolSelect(){
-  const sel = document.getElementById('craftToolSelect');
-  if(!sel) return;
-  const prevValue = sel.value;
-  sel.innerHTML = TOOLS.map(t => {
-    const owned = portfolio.tools.includes(t.id);
-    return `<option value="${t.id}" ${owned ? '' : 'disabled'}>${t.name}${owned ? '' : ' (locked)'}</option>`;
-  }).join('');
-  // keep whatever was selected if it's still valid, otherwise fall back to the first owned tool
-  const stillValid = Array.from(sel.options).some(o => o.value === prevValue && !o.disabled);
-  sel.value = stillValid ? prevValue : (TOOLS.find(t => portfolio.tools.includes(t.id)) || TOOLS[0]).id;
-}
-
 function renderCraftingBench(){
   const reactantsEl = document.getElementById('craftReactants');
   const productsEl = document.getElementById('craftProducts');
   const reactBtn = document.getElementById('craftReactBtn');
   if(!reactantsEl || !productsEl || !reactBtn) return;
 
-  renderCraftingToolSelect();
-  const toolSelect = document.getElementById('craftToolSelect');
-  const toolId = toolSelect.value;
+  // the selected tool might not be owned yet (e.g. fresh page load before any purchase) —
+  // fall back to whatever's actually owned rather than silently pointing at nothing
+  if(!portfolio.tools.includes(selectedToolId)){
+    selectedToolId = portfolio.tools.includes('basic') ? 'basic' : portfolio.tools[0];
+  }
+  const toolId = selectedToolId;
+  const toolInfo = TOOLS.find(t => t.id === toolId);
   const pool = getCraftingPool();
 
   const chips = [
@@ -1160,7 +1149,7 @@ function renderCraftingBench(){
   ];
   reactantsEl.innerHTML = chips.length
     ? chips.map(c => `<div class="elem-chip">${c.label}${c.qty > 1 ? ` ×${c.qty}` : ''}<span class="chip-remove" data-kind="${c.kind}" data-key="${c.key}">✕</span></div>`).join('')
-    : '<span class="dropzone-hint">Click an element or compound below to add it here</span>';
+    : `<span class="dropzone-hint">Click an element or compound above to add it here (using ${toolInfo ? toolInfo.name : 'no tool'})</span>`;
   reactantsEl.querySelectorAll('.chip-remove').forEach(btn => {
     btn.addEventListener('click', () => removeFromBench(btn.dataset.kind, btn.dataset.key));
   });
@@ -1180,10 +1169,10 @@ function renderCraftingBench(){
   } else {
     productsEl.innerHTML = '<span class="dropzone-hint">Add matching reactants to see the product</span>';
   }
+  reactBtn.textContent = TOOL_ACTION_LABELS[toolId] || 'React';
   reactBtn.disabled = !match;
 }
 
-document.getElementById('craftToolSelect') && document.getElementById('craftToolSelect').addEventListener('change', renderCraftingBench);
 document.getElementById('craftReactBtn') && document.getElementById('craftReactBtn').addEventListener('click', reactCraftingBench);
 
 /* ================= ELEMENT ECONOMY ================= */
@@ -1264,22 +1253,9 @@ function renderOwnedElements(){
   const syms = Object.keys(portfolio.elements).filter(s => portfolio.elements[s] > 0);
   if(syms.length === 0){ wrap.innerHTML = '<div class="empty-history">You don\'t own any elements yet.</div>'; }
   else{
+    // click to add to the crafting bench — selling only happens via the Marketplace section now
     wrap.innerHTML = syms.map(sym => `
-      <div class="owned-chip" data-sym="${sym}" title="Click to add to the crafting bench">${sym} <span class="oc-qty">×${portfolio.elements[sym]}</span>
-        <button class="oc-sell" data-sym="${sym}">Sell 1</button>
-      </div>`).join('');
-    wrap.querySelectorAll('.oc-sell').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation(); // don't also trigger the chip's "add to bench" click
-        const sym = btn.dataset.sym;
-        if(portfolio.elements[sym] > 0){
-          portfolio.elements[sym]--;
-          portfolio.cash += ELEMENT_PRICES[sym] * 0.8; // sell back to the system at a discount
-          saveEconomy();
-          renderPortfolio(); renderOwnedElements();
-        }
-      });
-    });
+      <div class="owned-chip clickable" data-sym="${sym}" title="Click to add to the crafting bench">${sym} <span class="oc-qty">×${portfolio.elements[sym]}</span></div>`).join('');
     wrap.querySelectorAll('.owned-chip[data-sym]').forEach(chip => {
       chip.addEventListener('click', () => addElementToBench(chip.dataset.sym));
     });
@@ -1287,26 +1263,43 @@ function renderOwnedElements(){
   if(typeof renderCraftingBench === 'function') renderCraftingBench();
 }
 
+let selectedToolId = 'basic';
+const TOOL_ACTION_LABELS = {
+  basic: 'Combine', burner: 'Burn', electrolysis: 'Electrolyze', pressure: 'Pressurize',
+  catalysis: 'Catalyze', distillation: 'Distill', polymer: 'Polymerize', cryo: 'Condense'
+};
+
 function renderTools(){
   const wrap = document.getElementById('toolsList');
   if(!wrap) return;
   wrap.innerHTML = TOOLS.map(t => {
     const owned = portfolio.tools.includes(t.id);
+    const selected = owned && t.id === selectedToolId;
     return `
-      <div class="tool-card ${owned ? 'owned' : ''}">
+      <div class="tool-card ${owned ? 'owned' : ''} ${selected ? 'selected' : ''}" data-tool="${t.id}" ${owned ? 'tabindex="0"' : ''}>
         <div class="tc-name">${t.name}</div>
         <div class="tc-desc">${t.desc}</div>
-        <span class="tc-owned-tag">✓ Owned</span>
-        <button class="tc-btn" data-tool="${t.id}" data-cost="${t.cost}">Buy — $${t.cost}</button>
+        ${owned
+          ? `<span class="tc-owned-tag">${selected ? '● Selected for crafting' : '✓ Owned — click to select'}</span>`
+          : `<button class="tc-btn" data-tool="${t.id}" data-cost="${t.cost}">Buy — $${t.cost}</button>`}
       </div>`;
   }).join('');
+  wrap.querySelectorAll('.tool-card.owned').forEach(card => {
+    card.addEventListener('click', () => {
+      selectedToolId = card.dataset.tool;
+      renderTools();
+      if(typeof renderCraftingBench === 'function') renderCraftingBench();
+    });
+  });
   wrap.querySelectorAll('.tc-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation(); // don't let the click also bubble up as a card-select
       const toolId = btn.dataset.tool, cost = parseFloat(btn.dataset.cost);
       if(portfolio.tools.includes(toolId)) return;
       if(cost > portfolio.cash){ return; }
       portfolio.cash -= cost;
       portfolio.tools.push(toolId);
+      selectedToolId = toolId; // auto-select the tool you just bought
       saveEconomy();
       renderPortfolio(); renderTools();
       if(typeof renderCraftingBench === 'function') renderCraftingBench();
@@ -1322,23 +1315,8 @@ function renderOwnedCompounds(){
   else{
     wrap.innerHTML = formulas.map(f => {
       const r = RECIPES.find(rc => rc.formula === f);
-      return `<div class="owned-chip" data-formula="${f}" title="Click to add to the crafting bench">${r ? r.name : f} <span class="oc-qty">×${portfolio.compounds[f]}</span>
-        <button class="oc-sell" data-formula="${f}">Sell 1</button></div>`;
+      return `<div class="owned-chip clickable" data-formula="${f}" title="Click to add to the crafting bench">${r ? r.name : f} <span class="oc-qty">×${portfolio.compounds[f]}</span></div>`;
     }).join('');
-    wrap.querySelectorAll('.oc-sell').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const f = btn.dataset.formula;
-        const r = RECIPES.find(rc => rc.formula === f);
-        if(portfolio.compounds[f] > 0 && r){
-          portfolio.compounds[f]--;
-          const materialCost = Object.keys(r.need || {}).reduce((sum, sym) => sum + ELEMENT_PRICES[sym] * r.need[sym], 0);
-          portfolio.cash += Math.max(materialCost, 1) * 1.6 * 0.8; // same crafted value as when made, sold back at a discount; tiered compounds with no raw `need` still fetch a small floor value
-          saveEconomy();
-          renderPortfolio(); renderOwnedCompounds();
-        }
-      });
-    });
     wrap.querySelectorAll('.owned-chip[data-formula]').forEach(chip => {
       chip.addEventListener('click', () => addCompoundToBench(chip.dataset.formula));
     });
@@ -1426,6 +1404,11 @@ populateListSelect();
 renderOwnedElements();
 renderTools();
 renderOwnedCompounds();
+if(typeof renderCraftingBench === 'function') renderCraftingBench(); // was missing entirely before —
+                                                                       // this is why the tool selector
+                                                                       // showed nothing on a fresh page
+                                                                       // load until some other action
+                                                                       // happened to trigger a render
 
 function swatchFor(cell){
   return ptMode === 'state' ? STATE_COLORS[cell.dataset.state] :
