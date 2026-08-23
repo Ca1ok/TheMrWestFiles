@@ -308,6 +308,11 @@
   }
   .bench-products{ border-style:solid; border-color: var(--gain); background: rgba(74,145,90,0.06); }
   .bench-arrow{ text-align:center; color: var(--rust-2); font-size:1.1rem; margin-bottom:0.5rem; }
+  #burnerTemp{
+    background: var(--paper-2); border:1px solid var(--line); color: var(--ink);
+    font-family:inherit; font-size:0.85rem; padding:0.4rem 0.5rem; border-radius:3px; width:80px;
+  }
+  .state-badge{ font-size:0.75rem; color: var(--gain); font-weight:600; align-self:center; }
   .bench-product-card{ display:flex; flex-direction:column; gap:0.2rem; }
   .bench-product-card .bp-main{ font-weight:700; }
   .bench-product-card .bp-byproduct{ font-size:0.72rem; color: var(--muted); }
