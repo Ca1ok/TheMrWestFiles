@@ -617,29 +617,51 @@
   }
 
   /* ================= CURSOR BLACK HOLE ================= *
-   * A void + a spinning ring that track the mouse. Moving = small, subtle refraction hint.
-   * Stationary = smoothly grows into a black void with a warped, spinning "accretion disk" —
-   * the ring's own backdrop-filter blur+saturate is what actually visually warps whatever page
-   * content sits underneath it, not just a decorative graphic drawn on top. */
+   * Fully invisible while the mouse is moving — only appears once it's been stationary for a
+   * beat. Built as layered rings instead of one blurry blob:
+   *   cw-lens   — outermost. No visible graphic of its own; its backdrop-filter is what
+   *               actually warps/refracts the real page content sitting underneath it.
+   *   cw-disk   — the spinning accretion disk. Deliberately asymmetric (bright arc on one
+   *               side, dark on the other) rather than a uniform ring, since a uniform glow
+   *               is exactly what read as "just a blurry circle."
+   *   cw-photon — a thin, sharp, bright ring right at the edge of the void — real black hole
+   *               renders always have this crisp bright rim, which is most of what makes a
+   *               black hole look like a black hole rather than a dark smudge.
+   *   cw-void   — the event horizon itself: pure black, hard edge, no blur on the shape at all. */
   #cursorWarp{ position: fixed; top:0; left:0; width:0; height:0; pointer-events:none; z-index:9999; }
-  #cursorWarp .cw-ring, #cursorWarp .cw-void{
+  #cursorWarp > div{
     position:absolute; top:0; left:0; border-radius:50%; transform: translate(-50%,-50%);
-    transition: width 0.55s cubic-bezier(.16,.84,.24,1), height 0.55s cubic-bezier(.16,.84,.24,1), opacity 0.4s ease, backdrop-filter 0.55s ease;
-  }
-  #cursorWarp .cw-void{
-    width:16px; height:16px; background: radial-gradient(circle, #000 60%, rgba(0,0,0,0) 100%);
-    opacity:0.85;
-  }
-  #cursorWarp .cw-ring{
     width:0; height:0; opacity:0;
-    background: conic-gradient(from 0deg, transparent, rgba(217,122,63,0.55), transparent 35%, rgba(244,236,216,0.35), transparent 65%, rgba(217,122,63,0.4), transparent);
+    transition: width 0.6s cubic-bezier(.16,.84,.24,1), height 0.6s cubic-bezier(.16,.84,.24,1),
+                opacity 0.35s ease, backdrop-filter 0.6s ease;
   }
-  #cursorWarp.moving .cw-ring{ width:34px; height:34px; opacity:0.4; backdrop-filter: blur(1px) saturate(1.15); -webkit-backdrop-filter: blur(1px) saturate(1.15); }
-  #cursorWarp.moving .cw-void{ width:14px; height:14px; }
-  #cursorWarp.idle .cw-void{ width:22px; height:22px; opacity:0.95; }
-  #cursorWarp.idle .cw-ring{
-    width:170px; height:170px; opacity:0.85; animation: cw-spin 2.2s linear infinite;
-    backdrop-filter: blur(3px) saturate(1.5); -webkit-backdrop-filter: blur(3px) saturate(1.5);
+
+  #cursorWarp .cw-void{ background:#000; z-index:4; }
+  #cursorWarp .cw-photon{
+    z-index:3; background:transparent;
+    box-shadow: 0 0 10px 2px rgba(255,222,178,0.85), inset 0 0 6px 1px rgba(255,236,210,0.7);
+    border: 1.5px solid rgba(255,232,198,0.9);
+  }
+  #cursorWarp .cw-disk{
+    z-index:2; filter: blur(1.5px);
+    background: conic-gradient(from 0deg,
+      rgba(255,224,180,0.95) 0deg, rgba(217,122,63,0.7) 25deg, rgba(120,60,30,0.15) 70deg,
+      rgba(0,0,0,0) 130deg, rgba(0,0,0,0) 210deg, rgba(140,70,35,0.25) 270deg,
+      rgba(217,122,63,0.65) 325deg, rgba(255,224,180,0.95) 360deg);
+    animation: cw-spin 1.6s linear infinite;
+    animation-play-state: paused;
+  }
+  #cursorWarp .cw-lens{ z-index:1; }
+
+  #cursorWarp.idle .cw-void{ width:24px; height:24px; opacity:1; }
+  #cursorWarp.idle .cw-photon{ width:36px; height:36px; opacity:1; transition-delay:0.08s; }
+  #cursorWarp.idle .cw-disk{
+    width:150px; height:150px; opacity:0.95; animation-play-state: running; transition-delay:0.05s;
+  }
+  #cursorWarp.idle .cw-lens{
+    width:170px; height:170px; opacity:1;
+    backdrop-filter: blur(3px) saturate(1.6) contrast(1.1);
+    -webkit-backdrop-filter: blur(3px) saturate(1.6) contrast(1.1);
   }
   @keyframes cw-spin{ to{ transform: translate(-50%,-50%) rotate(360deg); } }
   @media (pointer: coarse){ #cursorWarp{ display:none; } }
