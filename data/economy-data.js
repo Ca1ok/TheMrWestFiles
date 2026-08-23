@@ -18,6 +18,35 @@ const ELEMENT_PRICES = {
   Au: 62000, Hg: 35, Pb: 2, Bi: 25, U: 100
 }; // approx USD per "unit" (rough mole-scale analogy)
 
+// Approximate real-world melting/boiling points in °C at 1 atm — used by the Bunsen Burner's
+// temperature control to work out whether a single substance sitting in the reactants tray is
+// solid, liquid, or gas at the temperature you've set. Not exhaustive for every compound in
+// RECIPES — anything missing here just shows "state unknown" rather than breaking.
+const MELTING_POINTS = {
+  H:-259, He:-272, Li:180, Be:1287, B:2076, C:3550, N:-210, O:-218, F:-220, Ne:-249,
+  Na:98, Mg:650, Al:660, Si:1414, P:44, S:115, Cl:-101, Ar:-189, K:63, Ca:842,
+  Sc:1541, Ti:1668, V:1910, Cr:1907, Mn:1246, Fe:1538, Co:1495, Ni:1455, Cu:1085, Zn:420,
+  Ga:30, Ge:938, As:817, Se:221, Br:-7, Kr:-157, Sr:777, Zr:1855, Mo:2623, Rh:1964,
+  Pd:1555, Ag:962, Cd:321, Sn:232, Sb:631, I:114, Xe:-112, Ba:727, W:3422, Pt:1768,
+  Au:1064, Hg:-39, Pb:327, Bi:271, U:1132,
+  H2O:0, CO2:-78, NaCl:801, HCl:-114, NH3:-78, CH4:-182, H2SO4:10, HNO3:-42, NaOH:318, KOH:360,
+  C2H5OH:-114, CH3OH:-98, CH3COOH:17, C6H6:6, H2:-259, O2:-218, N2:-210, CaCO3:825, Fe2O3:1565,
+  CuSO4:110, ZnO:1975, SiO2:1713, Al2O3:2072, MgO:2852, KCl:770, MgCl2:714, CaCl2:772,
+  C2H4:-169, C2H2:-81, C2H6:-183, C3H8:-188, C6H12O6:146
+};
+const BOILING_POINTS = {
+  H:-253, He:-269, Li:1342, Be:2470, B:3927, C:4827, N:-196, O:-183, F:-188, Ne:-246,
+  Na:883, Mg:1090, Al:2470, Si:3265, P:280, S:445, Cl:-34, Ar:-186, K:759, Ca:1484,
+  Sc:2836, Ti:3287, V:3407, Cr:2671, Mn:2061, Fe:2862, Co:2927, Ni:2913, Cu:2562, Zn:907,
+  Ga:2204, Ge:2833, As:614, Se:685, Br:59, Kr:-153, Sr:1382, Zr:4409, Mo:4639, Rh:3695,
+  Pd:2963, Ag:2162, Cd:767, Sn:2602, Sb:1587, I:184, Xe:-108, Ba:1897, W:5555, Pt:3825,
+  Au:2856, Hg:357, Pb:1749, Bi:1564, U:4131,
+  H2O:100, CO2:-57, NaCl:1465, HCl:-85, NH3:-33, CH4:-162, H2SO4:337, HNO3:83, NaOH:1388, KOH:1327,
+  C2H5OH:78, CH3OH:65, CH3COOH:118, C6H6:80, H2:-253, O2:-183, N2:-196, CaCO3:1339, Fe2O3:3414,
+  CuSO4:650, ZnO:2360, SiO2:2950, Al2O3:2977, MgO:3600, KCl:1420, MgCl2:1412, CaCl2:1935,
+  C2H4:-104, C2H2:-84, C2H6:-89, C3H8:-42, C6H12O6:290
+};
+
 const TOOLS = [
   { id:'basic', name:'Basic Glassware', cost:0, desc:'Beakers and tubing — free, unlocks simple combinations at room temperature.' },
   { id:'burner', name:'Bunsen Burner', cost:50, desc:'Unlocks combustion and heat-driven reactions.' },
@@ -58,25 +87,25 @@ const RECIPES = [
   { formula:'CH4', name:'Methane', need:{C:1,H:4}, tool:'burner', desc:'The simplest hydrocarbon, and the main component of natural gas.' },
   { formula:'CO', name:'Carbon Monoxide', need:{C:1,O:1}, tool:'burner', desc:'Formed by incomplete combustion — colorless, odorless, and dangerous.' },
   { formula:'SO2', name:'Sulfur Dioxide', need:{S:1,O:2}, tool:'burner', desc:'Produced when sulfur burns — a major component of acid rain.' },
-  { formula:'Li2O', name:'Lithium Oxide', need:{Li:2,O:1}, tool:'burner', desc:'Used in specialty glasses and ceramic glazes.' },
-  { formula:'BeO', name:'Beryllium Oxide', need:{Be:1,O:1}, tool:'burner', desc:'An excellent electrical insulator with unusually high thermal conductivity for a ceramic.' },
-  { formula:'B2O3', name:'Boron Trioxide', need:{B:2,O:3}, tool:'burner', desc:'The main ingredient of borosilicate (Pyrex-style) glass.' },
-  { formula:'TiO2', name:'Titanium Dioxide', need:{Ti:1,O:2}, tool:'burner', desc:'The white pigment in most paint, sunscreen, and toothpaste.' },
-  { formula:'Cr2O3', name:'Chromium(III) Oxide', need:{Cr:2,O:3}, tool:'burner', desc:'A green pigment, and the abrasive in green rouge polishing compound.' },
-  { formula:'MnO2', name:'Manganese Dioxide', need:{Mn:1,O:2}, tool:'burner', desc:'The cathode material in ordinary alkaline batteries.' },
-  { formula:'NiO', name:'Nickel(II) Oxide', need:{Ni:1,O:1}, tool:'burner', desc:'A green solid used to color ceramic glazes and in battery electrodes.' },
-  { formula:'Fe2O3', name:'Iron(III) Oxide (Rust)', need:{Fe:2,O:3}, tool:'burner', desc:'What iron becomes when it oxidizes over time.' },
+  { formula:'Li2O', name:'Lithium Oxide', need:{Li:2,O:1}, tool:'burner', minTemp:500, desc:'Used in specialty glasses and ceramic glazes.' },
+  { formula:'BeO', name:'Beryllium Oxide', need:{Be:1,O:1}, tool:'burner', minTemp:500, desc:'An excellent electrical insulator with unusually high thermal conductivity for a ceramic.' },
+  { formula:'B2O3', name:'Boron Trioxide', need:{B:2,O:3}, tool:'burner', minTemp:500, desc:'The main ingredient of borosilicate (Pyrex-style) glass.' },
+  { formula:'TiO2', name:'Titanium Dioxide', need:{Ti:1,O:2}, tool:'burner', minTemp:500, desc:'The white pigment in most paint, sunscreen, and toothpaste.' },
+  { formula:'Cr2O3', name:'Chromium(III) Oxide', need:{Cr:2,O:3}, tool:'burner', minTemp:500, desc:'A green pigment, and the abrasive in green rouge polishing compound.' },
+  { formula:'MnO2', name:'Manganese Dioxide', need:{Mn:1,O:2}, tool:'burner', minTemp:500, desc:'The cathode material in ordinary alkaline batteries.' },
+  { formula:'NiO', name:'Nickel(II) Oxide', need:{Ni:1,O:1}, tool:'burner', minTemp:500, desc:'A green solid used to color ceramic glazes and in battery electrodes.' },
+  { formula:'Fe2O3', name:'Iron(III) Oxide (Rust)', need:{Fe:2,O:3}, tool:'burner', minTemp:500, desc:'What iron becomes when it oxidizes over time.' },
   { formula:'CaCO3', name:'Calcium Carbonate', need:{Ca:1,C:1,O:3}, tool:'burner', desc:'The main component of limestone, marble, and seashells.' },
-  { formula:'ZnO', name:'Zinc Oxide', need:{Zn:1,O:1}, tool:'burner', desc:'A white pigment used in sunscreen and ointments.' },
-  { formula:'CuO', name:'Copper(II) Oxide', need:{Cu:1,O:1}, tool:'burner', desc:'A black solid formed when copper is heated in air.' },
-  { formula:'Ga2O3', name:'Gallium(III) Oxide', need:{Ga:2,O:3}, tool:'burner', desc:'A wide-bandgap semiconductor used in some power electronics.' },
-  { formula:'GeO2', name:'Germanium Dioxide', need:{Ge:1,O:2}, tool:'burner', desc:'Used to make high-refractive-index glass for camera and fiber-optic lenses.' },
-  { formula:'SiO2', name:'Silicon Dioxide (Quartz)', need:{Si:1,O:2}, tool:'burner', desc:'The main component of sand and most glass.' },
-  { formula:'SnO2', name:'Tin(IV) Oxide', need:{Sn:1,O:2}, tool:'burner', desc:'Used as a mild abrasive in polishing compounds and in transparent conductive coatings.' },
-  { formula:'PbO', name:'Lead(II) Oxide', need:{Pb:1,O:1}, tool:'burner', desc:'Known as "litharge" — used historically in lead-glass and old-style batteries.' },
-  { formula:'Bi2O3', name:'Bismuth(III) Oxide', need:{Bi:2,O:3}, tool:'burner', desc:'A yellow pigment and a component of some lead-free solders.' },
-  { formula:'SrO', name:'Strontium Oxide', need:{Sr:1,O:1}, tool:'burner', desc:'Reacts vigorously with water — used in some specialty ceramics.' },
-  { formula:'BaO', name:'Barium Oxide', need:{Ba:1,O:1}, tool:'burner', desc:'Used as a drying agent and in the manufacture of other barium compounds.' },
+  { formula:'ZnO', name:'Zinc Oxide', need:{Zn:1,O:1}, tool:'burner', minTemp:500, desc:'A white pigment used in sunscreen and ointments.' },
+  { formula:'CuO', name:'Copper(II) Oxide', need:{Cu:1,O:1}, tool:'burner', minTemp:500, desc:'A black solid formed when copper is heated in air.' },
+  { formula:'Ga2O3', name:'Gallium(III) Oxide', need:{Ga:2,O:3}, tool:'burner', minTemp:500, desc:'A wide-bandgap semiconductor used in some power electronics.' },
+  { formula:'GeO2', name:'Germanium Dioxide', need:{Ge:1,O:2}, tool:'burner', minTemp:500, desc:'Used to make high-refractive-index glass for camera and fiber-optic lenses.' },
+  { formula:'SiO2', name:'Silicon Dioxide (Quartz)', need:{Si:1,O:2}, tool:'burner', minTemp:500, desc:'The main component of sand and most glass.' },
+  { formula:'SnO2', name:'Tin(IV) Oxide', need:{Sn:1,O:2}, tool:'burner', minTemp:500, desc:'Used as a mild abrasive in polishing compounds and in transparent conductive coatings.' },
+  { formula:'PbO', name:'Lead(II) Oxide', need:{Pb:1,O:1}, tool:'burner', minTemp:500, desc:'Known as "litharge" — used historically in lead-glass and old-style batteries.' },
+  { formula:'Bi2O3', name:'Bismuth(III) Oxide', need:{Bi:2,O:3}, tool:'burner', minTemp:500, desc:'A yellow pigment and a component of some lead-free solders.' },
+  { formula:'SrO', name:'Strontium Oxide', need:{Sr:1,O:1}, tool:'burner', minTemp:500, desc:'Reacts vigorously with water — used in some specialty ceramics.' },
+  { formula:'BaO', name:'Barium Oxide', need:{Ba:1,O:1}, tool:'burner', minTemp:500, desc:'Used as a drying agent and in the manufacture of other barium compounds.' },
 
   // ---------- ELECTROLYSIS RIG: salts of transition metals, oxidizers, organics with O ----------
   { formula:'NaOH', name:'Sodium Hydroxide (Lye)', need:{Na:1,O:1,H:1}, tool:'electrolysis', desc:'A caustic base produced industrially via electrolysis of brine.' },
