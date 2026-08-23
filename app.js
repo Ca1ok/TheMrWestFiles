@@ -61,6 +61,37 @@ if(siteNavEl){
   });
 }
 
+/* ================= CURSOR BLACK HOLE (site-wide, self-contained) ================= */
+(function initCursorWarp(){
+  const skip = window.matchMedia && (
+    window.matchMedia('(pointer: coarse)').matches ||        // touch devices don't have a cursor to warp
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+  if(skip) return;
+  const warp = document.createElement('div');
+  warp.id = 'cursorWarp';
+  warp.innerHTML = '<div class="cw-ring"></div><div class="cw-void"></div>';
+  document.body.appendChild(warp);
+  let idleTimer = null;
+  document.addEventListener('mousemove', (e) => {
+    warp.style.left = e.clientX + 'px';
+    warp.style.top = e.clientY + 'px';
+    warp.classList.remove('idle');
+    warp.classList.add('moving');
+    clearTimeout(idleTimer);
+    // stop moving for a moment and the void smoothly grows into a full spinning black hole —
+    // the timing here is what "moving" vs "idle" hinges on
+    idleTimer = setTimeout(() => {
+      warp.classList.remove('moving');
+      warp.classList.add('idle');
+    }, 260);
+  });
+  document.addEventListener('mouseleave', () => {
+    clearTimeout(idleTimer);
+    warp.classList.remove('moving', 'idle');
+  });
+})();
+
 /* ================= COOKIE BANNER (fake — this site doesn't use cookies, it's a bit) ================= */
 const cookieBannerEl = document.getElementById('cookieBanner');
 if(cookieBannerEl){
