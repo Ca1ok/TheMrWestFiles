@@ -70,21 +70,17 @@ if(siteNavEl){
   if(skip) return;
   const warp = document.createElement('div');
   warp.id = 'cursorWarp';
-  warp.innerHTML = '<div class="cw-ring"></div><div class="cw-void"></div>';
+  // order matters: painted back-to-front, lens (outermost/behind) -> disk -> photon ring -> void (front/center)
+  warp.innerHTML = '<div class="cw-lens"></div><div class="cw-disk"></div><div class="cw-photon"></div><div class="cw-void"></div>';
   document.body.appendChild(warp);
   let idleTimer = null;
   document.addEventListener('mousemove', (e) => {
     warp.style.left = e.clientX + 'px';
     warp.style.top = e.clientY + 'px';
+    // completely invisible while actually moving — only appears after the cursor settles
     warp.classList.remove('idle');
-    warp.classList.add('moving');
     clearTimeout(idleTimer);
-    // stop moving for a moment and the void smoothly grows into a full spinning black hole —
-    // the timing here is what "moving" vs "idle" hinges on
-    idleTimer = setTimeout(() => {
-      warp.classList.remove('moving');
-      warp.classList.add('idle');
-    }, 260);
+    idleTimer = setTimeout(() => { warp.classList.add('idle'); }, 450);
   });
   document.addEventListener('mouseleave', () => {
     clearTimeout(idleTimer);
