@@ -574,6 +574,14 @@
     content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
     background: var(--glass-sheen); z-index:-1;
   }
+  /* #recipesPanel, #videoPopup, and #cookieBanner all need to stay fixed-position overlays —
+     the grouped glass rule above set position:relative on everything in its list (for the
+     ::after sheen layer to anchor to), which clobbered that for #recipesPanel and #videoPopup.
+     #cookieBanner wasn't even in that list but shares the same fixed-position requirement, so
+     it's reasserted here too for safety. Winning the cascade back here (after the glass block)
+     without touching the glass styling itself. */
+  #recipesPanel, #videoPopup{ position: fixed; }
+  #cookieBanner{ position: fixed; bottom: 0; left:0; right:0; }
 
   .owned-chip, .elem-chip, .bench-zone .elem-chip{
     background: var(--glass-bg-soft);
