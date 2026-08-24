@@ -62,53 +62,154 @@ if(siteNavEl){
 }
 
 /* ================= CURSOR BLACK HOLE (experimental — off by default, toggled in Settings) =====
-   Rebuilt to work on every browser and to center on the actual gravity/light distortion rather
-   than a disk graphic. Two changes from the previous version:
-   1. Cross-browser. SVG filters (feDisplacementMap) referenced from backdrop-filter only work in
-      Chromium — dropped entirely. Everything here now uses only backdrop-filter's blur/
-      saturate/contrast functions, which Chrome, Firefox (103+), and Safari all support, plus
-      mix-blend-mode (universally supported) for a chromatic-aberration rim.
-   2. The distortion IS the effect now, not a spinning disk. Four concentric rings, each with
-      its own backdrop-filter, layered innermost-strongest to outermost-weakest — this fakes a
-      radially-varying lens blur (which CSS can't do in a single filter) by stacking several
-      fixed-strength ones. That gradient of increasing warp toward the center is what actually
-      reads as gravity bending the light behind the cursor. A small black void sits at the true
-      center with a thin bright rim and a subtle red/cyan split right at its edge (chromatic
-      aberration — light splitting by wavelength is a real lensing artifact, not just decoration). */
+   Rebuilt on real WebGL shader distortion instead of CSS approximations, adapted from a working
+   Three.js reference. A fullscreen plane sits fixed behind all real page content (z-index: -1,
+   pointer-events: none — it never intercepts clicks or covers anything), textured with a
+   procedurally-drawn gradient matching this site's own color theme (not an external photo), and
+   a fragment shader pulls that texture's UV coordinates toward the cursor with inverse-distance
+   falloff — genuine pixel displacement, GPU-side, not a blur trick. WebGL itself has excellent
+   cross-browser support (better than the SVG-filter approach this replaces), so this actually
+   satisfies "every browser" more robustly than the CSS-only version did.
+   Three.js (~150KB) is only ever fetched via dynamic import() when the effect is switched on —
+   pages never pay for it while the toggle is off. The pull strength eases from near-zero while
+   the mouse is moving up to a stronger value once it's been stationary for a beat, so the warp
+   visibly builds rather than snapping to full strength — same "grows when idle" behavior asked
+   for originally, just driven by the shader's own uniform instead of CSS opacity. */
 const CURSOR_WARP_KEY = 'mrwestcoin_blackhole_enabled';
 function cursorWarpEnabled(){ return localStorage.getItem(CURSOR_WARP_KEY) === 'true'; }
 
-let cursorWarpEl = null, cursorWarpIdleTimer = null;
+let cwActive = false, cwMouseX = -9999, cwMouseY = -9999, cwIdle = false, cwIdleTimer = null;
+let cwVoidEl = null, cwRenderer = null, cwRAF = null, cwForce = 0.015;
 
-function onCursorWarpMove(e){
-  if(!cursorWarpEl) return;
-  cursorWarpEl.style.left = e.clientX + 'px';
-  cursorWarpEl.style.top = e.clientY + 'px';
-  cursorWarpEl.classList.remove('idle'); // fully invisible while actually moving
-  clearTimeout(cursorWarpIdleTimer);
-  cursorWarpIdleTimer = setTimeout(() => { if(cursorWarpEl) cursorWarpEl.classList.add('idle'); }, 450);
+function cwBuildThemeTexture(THREE){
+  // a small offscreen canvas gradient using this site's own palette, used as the WebGL plane's
+  // texture — matches the page's real background instead of an unrelated stock photo
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 512;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(256, 180, 20, 256, 256, 380);
+  g.addColorStop(0, '#2a2119');
+  g.addColorStop(0.55, '#1a1510');
+  g.addColorStop(1, '#0d0a07');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 512, 512);
+  // faint warm accent streaks so the distortion has something visible to actually bend
+  ctx.strokeStyle = 'rgba(217,122,63,0.12)';
+  for(let i = 0; i < 14; i++){
+    ctx.lineWidth = 1 + (i % 3);
+    ctx.beginPath();
+    ctx.moveTo(Math.random() * 512, 0);
+    ctx.lineTo(Math.random() * 512, 512);
+    ctx.stroke();
+  }
+  return new THREE.CanvasTexture(c);
 }
 
-function setupCursorWarp(){
-  if(cursorWarpEl) return; // already running
+async function setupCursorWarp(){
+  if(cwActive) return; // already running
   const skip = window.matchMedia && (
     window.matchMedia('(pointer: coarse)').matches ||
     window.matchMedia('(prefers-reduced-motion: reduce)').matches
   );
   if(skip) return;
-  cursorWarpEl = document.createElement('div');
-  cursorWarpEl.id = 'cursorWarp';
-  cursorWarpEl.innerHTML =
-    '<div class="cw-lens4"></div><div class="cw-lens3"></div><div class="cw-lens2"></div><div class="cw-lens1"></div>' +
-    '<div class="cw-chroma"></div><div class="cw-photon"></div><div class="cw-void"></div>';
-  document.body.appendChild(cursorWarpEl);
-  document.addEventListener('mousemove', onCursorWarpMove);
+  let THREE;
+  try{
+    THREE = await import('https://esm.sh/three@0.133.0/build/three.module.js');
+  } catch(e){ return; } // offline or blocked — fail silently, the rest of the site is unaffected
+  if(!cursorWarpEnabled()) return; // setting may have been switched off again while the import was loading
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 2000);
+  camera.position.z = 5;
+  cwRenderer = new THREE.WebGLRenderer({ alpha: true });
+  cwRenderer.setSize(window.innerWidth, window.innerHeight);
+  const canvasEl = cwRenderer.domElement;
+  canvasEl.id = 'cursorWarpCanvas';
+  document.body.appendChild(canvasEl);
+
+  const distortionMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      u_mouse: { value: new THREE.Vector2(-9999, -9999) },
+      u_resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+      u_texture: { value: cwBuildThemeTexture(THREE) },
+      u_force: { value: 0 },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+    `,
+    fragmentShader: `
+      uniform vec2 u_mouse, u_resolution;
+      uniform sampler2D u_texture;
+      uniform float u_force;
+      varying vec2 vUv;
+      void main(){
+        vec2 st = vUv;
+        vec2 mouse = u_mouse / u_resolution;
+        mouse.y = 1.0 - mouse.y;
+        float aspect = u_resolution.x / u_resolution.y;
+        vec2 scaledSt = st * vec2(aspect, 1.0);
+        float dist = distance(scaledSt, mouse * vec2(aspect, 1.0));
+        float distortion = u_force / max(dist, 0.02); // clamped so it can't blow up right at the cursor
+        vec2 distortedUv = st + (mouse - st) * distortion;
+        gl_FragColor = texture2D(u_texture, clamp(distortedUv, 0.0, 1.0));
+      }
+    `
+  });
+  const aspectRatio = window.innerWidth / window.innerHeight;
+  const size = 7.65;
+  const geometry = new THREE.PlaneGeometry(size * aspectRatio, size);
+  const mesh = new THREE.Mesh(geometry, distortionMaterial);
+  scene.add(mesh);
+
+  cwVoidEl = document.createElement('div');
+  cwVoidEl.id = 'cursorWarpVoid';
+  document.body.appendChild(cwVoidEl);
+
+  cwActive = true;
+
+  const onResize = () => {
+    cwRenderer.setSize(window.innerWidth, window.innerHeight);
+    distortionMaterial.uniforms.u_resolution.value.set(window.innerWidth, window.innerHeight);
+  };
+  window.addEventListener('resize', onResize);
+
+  const onMove = (e) => {
+    cwMouseX = e.clientX; cwMouseY = e.clientY;
+    cwVoidEl.style.left = cwMouseX + 'px';
+    cwVoidEl.style.top = cwMouseY + 'px';
+    cwIdle = false;
+    clearTimeout(cwIdleTimer);
+    cwIdleTimer = setTimeout(() => { cwIdle = true; }, 450);
+  };
+  document.addEventListener('mousemove', onMove);
+
+  function tick(){
+    if(!cwActive) return;
+    // eases toward the target force rather than snapping — this is the "smoothly increases
+    // when idle" behavior, now driven by the shader itself
+    const target = cwIdle ? 0.16 : 0.015;
+    cwForce += (target - cwForce) * 0.06;
+    distortionMaterial.uniforms.u_force.value = cwForce;
+    distortionMaterial.uniforms.u_mouse.value.set(cwMouseX, cwMouseY);
+    cwRenderer.render(scene, camera);
+    cwRAF = requestAnimationFrame(tick);
+  }
+  tick();
+
+  cwTeardown = () => {
+    cwActive = false;
+    clearTimeout(cwIdleTimer);
+    if(cwRAF) cancelAnimationFrame(cwRAF);
+    document.removeEventListener('mousemove', onMove);
+    window.removeEventListener('resize', onResize);
+    canvasEl.remove();
+    if(cwVoidEl){ cwVoidEl.remove(); cwVoidEl = null; }
+    cwRenderer.dispose();
+    cwRenderer = null;
+  };
 }
-function destroyCursorWarp(){
-  document.removeEventListener('mousemove', onCursorWarpMove);
-  clearTimeout(cursorWarpIdleTimer);
-  if(cursorWarpEl){ cursorWarpEl.remove(); cursorWarpEl = null; }
-}
+let cwTeardown = null;
+function destroyCursorWarp(){ if(cwTeardown) cwTeardown(); }
 
 if(cursorWarpEnabled()) setupCursorWarp();
 
@@ -124,7 +225,6 @@ if(blackholeToggle){
 
 /* ================= COOKIE BANNER (fake — this site doesn't use cookies, it's a bit) ================= */
 
-/* ================= COOKIE BANNER (fake — this site doesn't use cookies, it's a bit) ================= */
 const cookieBannerEl = document.getElementById('cookieBanner');
 if(cookieBannerEl){
   if(localStorage.getItem('mrwestcoin_cookie_choice')){
