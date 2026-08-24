@@ -61,24 +61,26 @@ if(siteNavEl){
   });
 }
 
-/* ================= CURSOR BLACK HOLE (site-wide, self-contained) ================= */
 /* ================= CURSOR BLACK HOLE (experimental — off by default, toggled in Settings) =====
-   Two things had to actually change from earlier attempts, not just be re-tuned:
-   1. Real distortion. backdrop-filter's blur/saturate/contrast never bend geometry — they can't
-      make anything "warp." Actual pixel displacement needs an SVG filter: feTurbulence generates
-      a noise field, feDisplacementMap uses it to push each backdrop pixel sideways by an amount
-      based on that noise. Referencing that filter from backdrop-filter (backdrop-filter: url(#id))
-      is genuinely supported in Chromium browsers and does distort the real page content behind
-      the element — not a fake overlay graphic. Firefox/Safari support for this specific
-      combination is inconsistent, which is exactly why this whole feature is opt-in.
-   2. Reference-accurate look. Modeled on the actual visual structure of the EHT M87 image and
-      Interstellar's Gargantua: a thin, sharp, bright photon ring right at the shadow's edge, and
-      a disk that's brighter on one side than the other (relativistic beaming) rather than a
-      uniform glow — a uniform ring is what reads as "just a blurry circle." */
+   Rebuilt using canvas 2D drawing instead of a flat CSS conic-gradient ring, based on how real
+   black hole renders (EHT's M87 image, Interstellar's Gargantua, and the open-source WebGL
+   references at github.com/oseiskar/black-hole and the CS184 black hole raymarcher project) are
+   actually structured. The thing a flat conic-gradient ring can never produce — which is exactly
+   what made it read as "a CD disk" — is that a real lensed accretion disk shows up as TWO
+   separate bands: the near side of the disk in front of/around the sphere, AND a second, thinner
+   arc of the disk's FAR side bent by gravity so it appears ABOVE the sphere too. That second arc
+   is the actual signature of gravitational lensing, and needs real path drawing (not a single
+   ring gradient) to exist at all.
+   Distortion of the real page content behind the cursor is still handled separately by the
+   .cw-lens layer's SVG-filter backdrop (feTurbulence + feDisplacementMap) — genuine pixel
+   displacement, not decorative. Support for that specific combination is Chromium-only, which is
+   why this whole effect is opt-in. */
 const CURSOR_WARP_KEY = 'mrwestcoin_blackhole_enabled';
 function cursorWarpEnabled(){ return localStorage.getItem(CURSOR_WARP_KEY) === 'true'; }
 
-let cursorWarpEl = null, cursorWarpIdleTimer = null, cursorWarpFilterInjected = false;
+let cursorWarpEl = null, cursorWarpCanvas = null, cursorWarpCtx = null;
+let cursorWarpIdleTimer = null, cursorWarpRAF = null, cursorWarpSpinning = false;
+let cursorWarpFilterInjected = false;
 
 function injectCursorWarpFilter(){
   if(cursorWarpFilterInjected) return;
@@ -95,13 +97,88 @@ function injectCursorWarpFilter(){
   document.body.appendChild(svg);
 }
 
+// Draws one frame of the black hole onto the canvas, rotated by `angle` radians. Two bands
+// (near-side disk + far-side lensed arc) plus a sharp sphere with a bright photon-ring rim.
+function drawBlackHoleFrame(angle){
+  const ctx = cursorWarpCtx, S = 220, cx = S/2, cy = S/2, R = 20; // R = event horizon radius
+  ctx.clearRect(0, 0, S, S);
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(angle);
+
+  // Near-side disk: a flattened ellipse band wrapping the sphere, brighter on the left
+  // (approaching side, relativistic beaming) and dimmer on the right.
+  ctx.save();
+  ctx.scale(1, 0.34); // flatten into a tilted-disk perspective
+  const nearGrad = ctx.createLinearGradient(-95, 0, 95, 0);
+  nearGrad.addColorStop(0.00, 'rgba(255,246,228,0.98)');
+  nearGrad.addColorStop(0.18, 'rgba(255,205,140,0.85)');
+  nearGrad.addColorStop(0.45, 'rgba(217,122,63,0.35)');
+  nearGrad.addColorStop(0.55, 'rgba(217,122,63,0.35)');
+  nearGrad.addColorStop(0.82, 'rgba(150,70,35,0.28)');
+  nearGrad.addColorStop(1.00, 'rgba(90,40,20,0.15)');
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 95, 95, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, R * 1.35, R * 1.35, 0, 0, Math.PI * 2, true); // punch out the center
+  ctx.fillStyle = nearGrad;
+  ctx.fill('evenodd');
+  ctx.restore();
+
+  // Far-side lensed arc: light from the back of the disk, bent by gravity to appear as a thin
+  // band directly above the sphere — this is the piece a flat ring gradient can't produce at all.
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(0, -R * 1.9, 34, Math.PI * 0.12, Math.PI * 0.88, false);
+  ctx.arc(0, -R * 1.9, 24, Math.PI * 0.88, Math.PI * 0.12, true);
+  ctx.closePath();
+  const farGrad = ctx.createLinearGradient(-30, -R * 1.9, 30, -R * 1.9);
+  farGrad.addColorStop(0, 'rgba(255,236,210,0.55)');
+  farGrad.addColorStop(0.5, 'rgba(255,246,228,0.85)');
+  farGrad.addColorStop(1, 'rgba(217,150,90,0.4)');
+  ctx.fillStyle = farGrad;
+  ctx.filter = 'blur(0.6px)';
+  ctx.fill();
+  ctx.restore();
+
+  ctx.restore(); // undo rotate/translate — sphere itself never rotates
+
+  // Event horizon: solid black, hard edge, no blur — sits on top of both bands.
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.fillStyle = '#000';
+  ctx.fill();
+
+  // Photon ring: thin, bright, right at the sphere's edge.
+  ctx.beginPath();
+  ctx.arc(cx, cy, R + 0.75, 0, Math.PI * 2);
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(255,244,224,0.95)';
+  ctx.shadowColor = 'rgba(255,230,190,0.9)';
+  ctx.shadowBlur = 4;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+function cursorWarpSpin(t){
+  if(!cursorWarpSpinning || !cursorWarpCtx) return;
+  drawBlackHoleFrame((t / 2600) * Math.PI * 2);
+  cursorWarpRAF = requestAnimationFrame(cursorWarpSpin);
+}
+
 function onCursorWarpMove(e){
   if(!cursorWarpEl) return;
   cursorWarpEl.style.left = e.clientX + 'px';
   cursorWarpEl.style.top = e.clientY + 'px';
   cursorWarpEl.classList.remove('idle'); // fully invisible while actually moving
+  cursorWarpSpinning = false;
+  if(cursorWarpRAF) cancelAnimationFrame(cursorWarpRAF);
   clearTimeout(cursorWarpIdleTimer);
-  cursorWarpIdleTimer = setTimeout(() => { if(cursorWarpEl) cursorWarpEl.classList.add('idle'); }, 450);
+  cursorWarpIdleTimer = setTimeout(() => {
+    if(!cursorWarpEl) return;
+    cursorWarpEl.classList.add('idle');
+    cursorWarpSpinning = true;
+    cursorWarpRAF = requestAnimationFrame(cursorWarpSpin);
+  }, 450);
 }
 
 function setupCursorWarp(){
@@ -114,14 +191,19 @@ function setupCursorWarp(){
   injectCursorWarpFilter();
   cursorWarpEl = document.createElement('div');
   cursorWarpEl.id = 'cursorWarp';
-  cursorWarpEl.innerHTML = '<div class="cw-lens"></div><div class="cw-disk"></div><div class="cw-photon"></div><div class="cw-void"></div>';
+  cursorWarpEl.innerHTML = '<div class="cw-lens"></div><canvas class="cw-canvas" width="220" height="220"></canvas>';
   document.body.appendChild(cursorWarpEl);
+  cursorWarpCanvas = cursorWarpEl.querySelector('.cw-canvas');
+  cursorWarpCtx = cursorWarpCanvas.getContext('2d');
+  drawBlackHoleFrame(0); // paint one static frame immediately so it's not blank before the first idle spin-up
   document.addEventListener('mousemove', onCursorWarpMove);
 }
 function destroyCursorWarp(){
   document.removeEventListener('mousemove', onCursorWarpMove);
   clearTimeout(cursorWarpIdleTimer);
-  if(cursorWarpEl){ cursorWarpEl.remove(); cursorWarpEl = null; }
+  cursorWarpSpinning = false;
+  if(cursorWarpRAF) cancelAnimationFrame(cursorWarpRAF);
+  if(cursorWarpEl){ cursorWarpEl.remove(); cursorWarpEl = null; cursorWarpCanvas = null; cursorWarpCtx = null; }
 }
 
 if(cursorWarpEnabled()) setupCursorWarp();
