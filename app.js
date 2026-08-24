@@ -62,31 +62,79 @@ if(siteNavEl){
 }
 
 /* ================= CURSOR BLACK HOLE (site-wide, self-contained) ================= */
-(function initCursorWarp(){
+/* ================= CURSOR BLACK HOLE (experimental — off by default, toggled in Settings) =====
+   Two things had to actually change from earlier attempts, not just be re-tuned:
+   1. Real distortion. backdrop-filter's blur/saturate/contrast never bend geometry — they can't
+      make anything "warp." Actual pixel displacement needs an SVG filter: feTurbulence generates
+      a noise field, feDisplacementMap uses it to push each backdrop pixel sideways by an amount
+      based on that noise. Referencing that filter from backdrop-filter (backdrop-filter: url(#id))
+      is genuinely supported in Chromium browsers and does distort the real page content behind
+      the element — not a fake overlay graphic. Firefox/Safari support for this specific
+      combination is inconsistent, which is exactly why this whole feature is opt-in.
+   2. Reference-accurate look. Modeled on the actual visual structure of the EHT M87 image and
+      Interstellar's Gargantua: a thin, sharp, bright photon ring right at the shadow's edge, and
+      a disk that's brighter on one side than the other (relativistic beaming) rather than a
+      uniform glow — a uniform ring is what reads as "just a blurry circle." */
+const CURSOR_WARP_KEY = 'mrwestcoin_blackhole_enabled';
+function cursorWarpEnabled(){ return localStorage.getItem(CURSOR_WARP_KEY) === 'true'; }
+
+let cursorWarpEl = null, cursorWarpIdleTimer = null, cursorWarpFilterInjected = false;
+
+function injectCursorWarpFilter(){
+  if(cursorWarpFilterInjected) return;
+  cursorWarpFilterInjected = true;
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('width', '0'); svg.setAttribute('height', '0');
+  svg.style.position = 'absolute';
+  svg.innerHTML = `
+    <filter id="cwLensFilter" x="-60%" y="-60%" width="220%" height="220%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.015 0.025" numOctaves="2" seed="11" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="55" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>`;
+  document.body.appendChild(svg);
+}
+
+function onCursorWarpMove(e){
+  if(!cursorWarpEl) return;
+  cursorWarpEl.style.left = e.clientX + 'px';
+  cursorWarpEl.style.top = e.clientY + 'px';
+  cursorWarpEl.classList.remove('idle'); // fully invisible while actually moving
+  clearTimeout(cursorWarpIdleTimer);
+  cursorWarpIdleTimer = setTimeout(() => { if(cursorWarpEl) cursorWarpEl.classList.add('idle'); }, 450);
+}
+
+function setupCursorWarp(){
+  if(cursorWarpEl) return; // already running
   const skip = window.matchMedia && (
-    window.matchMedia('(pointer: coarse)').matches ||        // touch devices don't have a cursor to warp
+    window.matchMedia('(pointer: coarse)').matches ||
     window.matchMedia('(prefers-reduced-motion: reduce)').matches
   );
   if(skip) return;
-  const warp = document.createElement('div');
-  warp.id = 'cursorWarp';
-  // order matters: painted back-to-front, lens (outermost/behind) -> disk -> photon ring -> void (front/center)
-  warp.innerHTML = '<div class="cw-lens"></div><div class="cw-disk"></div><div class="cw-photon"></div><div class="cw-void"></div>';
-  document.body.appendChild(warp);
-  let idleTimer = null;
-  document.addEventListener('mousemove', (e) => {
-    warp.style.left = e.clientX + 'px';
-    warp.style.top = e.clientY + 'px';
-    // completely invisible while actually moving — only appears after the cursor settles
-    warp.classList.remove('idle');
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => { warp.classList.add('idle'); }, 450);
+  injectCursorWarpFilter();
+  cursorWarpEl = document.createElement('div');
+  cursorWarpEl.id = 'cursorWarp';
+  cursorWarpEl.innerHTML = '<div class="cw-lens"></div><div class="cw-disk"></div><div class="cw-photon"></div><div class="cw-void"></div>';
+  document.body.appendChild(cursorWarpEl);
+  document.addEventListener('mousemove', onCursorWarpMove);
+}
+function destroyCursorWarp(){
+  document.removeEventListener('mousemove', onCursorWarpMove);
+  clearTimeout(cursorWarpIdleTimer);
+  if(cursorWarpEl){ cursorWarpEl.remove(); cursorWarpEl = null; }
+}
+
+if(cursorWarpEnabled()) setupCursorWarp();
+
+// Settings page toggle — the only place this can be turned on, since it's explicitly experimental
+const blackholeToggle = document.getElementById('blackholeToggle');
+if(blackholeToggle){
+  blackholeToggle.checked = cursorWarpEnabled();
+  blackholeToggle.addEventListener('change', () => {
+    localStorage.setItem(CURSOR_WARP_KEY, blackholeToggle.checked ? 'true' : 'false');
+    if(blackholeToggle.checked) setupCursorWarp(); else destroyCursorWarp();
   });
-  document.addEventListener('mouseleave', () => {
-    clearTimeout(idleTimer);
-    warp.classList.remove('moving', 'idle');
-  });
-})();
+}
 
 /* ================= COOKIE BANNER (fake — this site doesn't use cookies, it's a bit) ================= */
 const cookieBannerEl = document.getElementById('cookieBanner');
