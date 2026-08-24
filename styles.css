@@ -616,24 +616,22 @@
     background: var(--glass-sheen);
   }
 
-  /* ================= CURSOR BLACK HOLE ================= *
-   * Fully invisible while the mouse is moving — only appears once it's been stationary for a
-   * beat, fading in/out purely via opacity (alpha 0 <-> 1). Every layer stays at its real final
-   * size at all times; NOTHING animates width/height. That was the actual bug in the previous
-   * version — box-shadow blur radius and conic-gradient stops are fixed/relative to the
-   * element's OWN size, so animating an element from 0px up to full size while it also carries
-   * a shadow made the shadow dominate the shape for most of the transition, which is exactly
-   * what read as "just a blurry circle" instead of a crisp black hole. Fixed size + opacity
-   * fade avoids that distortion entirely.
-   *   cw-lens   — outermost. No visible graphic of its own; its backdrop-filter is what
-   *               actually warps/refracts the real page content sitting underneath it.
-   *   cw-disk   — the spinning accretion disk. Deliberately asymmetric (bright arc on one
-   *               side, dark on the other) rather than a uniform ring, since a uniform glow
-   *               is exactly what read as "just a blurry circle."
-   *   cw-photon — a thin, sharp, bright ring right at the edge of the void — real black hole
-   *               renders always have this crisp bright rim, which is most of what makes a
-   *               black hole look like a black hole rather than a dark smudge.
-   *   cw-void   — the event horizon itself: pure black, hard edge, no blur on the shape at all. */
+  /* ================= CURSOR BLACK HOLE (experimental, opt-in via Settings) ================= *
+   * Modeled on the actual visual structure of real black hole renders (EHT's M87 image,
+   * Interstellar's Gargantua): a thin sharp bright photon ring at the shadow's edge, and a disk
+   * that's asymmetric — brighter on one side than the other (relativistic beaming) — rather than
+   * a uniform glow. Fully invisible while the mouse is moving; fades in via opacity only once
+   * it's been stationary for a beat. Every layer stays at a fixed final size always — nothing
+   * animates width/height, since a shadow/gradient sized for the full element looks wrong at
+   * intermediate sizes during a resize transition.
+   *   cw-lens   — outermost. Its backdrop-filter chains an SVG feDisplacementMap filter
+   *               (injected by app.js) together with blur/saturate — the displacement map is
+   *               what actually bends the real page content behind it, not a decorative graphic.
+   *               Support for SVG filters inside backdrop-filter is Chromium-only right now,
+   *               which is exactly why this whole effect is opt-in/experimental.
+   *   cw-disk   — the spinning accretion disk, asymmetric brightness.
+   *   cw-photon — the thin bright rim right at the void's edge.
+   *   cw-void   — the event horizon: pure black, hard edge. */
   #cursorWarp{ position: fixed; top:0; left:0; width:0; height:0; pointer-events:none; z-index:9999; }
   #cursorWarp > div{
     position:absolute; top:0; left:0; border-radius:50%; transform: translate(-50%,-50%);
@@ -641,30 +639,34 @@
     transition: opacity 0.6s ease, backdrop-filter 0.6s ease;
   }
 
-  #cursorWarp .cw-void{ width:24px; height:24px; background:#000; z-index:4; }
+  #cursorWarp .cw-void{ width:22px; height:22px; background:#000; z-index:4; }
   #cursorWarp .cw-photon{
-    width:36px; height:36px; z-index:3; background:transparent;
-    box-shadow: 0 0 8px 1px rgba(255,222,178,0.7);
-    border: 1.5px solid rgba(255,232,198,0.9);
+    width:32px; height:32px; z-index:3; background:transparent;
+    box-shadow: 0 0 6px 1px rgba(255,238,210,0.85);
+    border: 1.5px solid rgba(255,244,224,0.95);
   }
   #cursorWarp .cw-disk{
-    width:150px; height:150px; z-index:2; filter: blur(1.5px);
-    background: conic-gradient(from 0deg,
-      rgba(255,224,180,0.95) 0deg, rgba(217,122,63,0.7) 25deg, rgba(120,60,30,0.15) 70deg,
-      rgba(0,0,0,0) 130deg, rgba(0,0,0,0) 210deg, rgba(140,70,35,0.25) 270deg,
-      rgba(217,122,63,0.65) 325deg, rgba(255,224,180,0.95) 360deg);
-    animation: cw-spin 1.6s linear infinite paused; /* the spin runs on its own — kept off the
+    width:160px; height:160px; z-index:2; filter: blur(1px);
+    background: conic-gradient(from 20deg,
+      rgba(255,244,224,0.98) 0deg, rgba(255,210,150,0.85) 15deg, rgba(217,122,63,0.55) 40deg,
+      rgba(120,55,25,0.12) 75deg, rgba(0,0,0,0) 120deg, rgba(0,0,0,0) 230deg,
+      rgba(90,40,20,0.18) 280deg, rgba(180,90,45,0.4) 320deg, rgba(255,244,224,0.98) 360deg);
+    animation: cw-spin 1.4s linear infinite paused; /* the spin runs on its own — kept off the
       shared opacity transition above so the two never fight over the transform property */
   }
-  #cursorWarp .cw-lens{ width:170px; height:170px; z-index:1; }
+  #cursorWarp .cw-lens{
+    width:190px; height:190px; z-index:1;
+    background: radial-gradient(circle, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.08) 55%, transparent 80%);
+  }
 
   #cursorWarp.idle .cw-void{ opacity:1; }
   #cursorWarp.idle .cw-photon{ opacity:1; transition-delay:0.08s; }
   #cursorWarp.idle .cw-disk{ opacity:0.95; animation-play-state:running; transition-delay:0.12s; }
   #cursorWarp.idle .cw-lens{
     opacity:1; transition-delay:0.05s;
-    backdrop-filter: blur(3px) saturate(1.6) contrast(1.1);
-    -webkit-backdrop-filter: blur(3px) saturate(1.6) contrast(1.1);
+    backdrop-filter: url(#cwLensFilter) blur(1px) saturate(1.5) contrast(1.1);
+    -webkit-backdrop-filter: blur(1px) saturate(1.5) contrast(1.1); /* Safari ignores SVG-filter
+      refs in backdrop-filter — falls back to the plain blur/saturate look instead of nothing */
   }
   @keyframes cw-spin{
     from{ transform: translate(-50%,-50%) rotate(0deg); }
