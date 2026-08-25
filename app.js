@@ -79,7 +79,7 @@ const CURSOR_WARP_KEY = 'mrwestcoin_blackhole_enabled';
 function cursorWarpEnabled(){ return localStorage.getItem(CURSOR_WARP_KEY) === 'true'; }
 
 let cwActive = false, cwMouseX = -9999, cwMouseY = -9999, cwIdle = false, cwIdleTimer = null;
-let cwVoidEl = null, cwRenderer = null, cwRAF = null, cwForce = 0.015;
+let cwVoidEl = null, cwLensEl = null, cwRenderer = null, cwRAF = null, cwForce = 0.015;
 
 function cwBuildThemeTexture(THREE){
   // a small offscreen canvas gradient using this site's own palette, used as the WebGL plane's
@@ -173,7 +173,8 @@ async function setupCursorWarp(){
     `
   });
   const aspectRatio = window.innerWidth / window.innerHeight;
-  const size = 7.65;
+  const size = 7.65 * 1.15; // small safety margin over the exact frustum-fill math, so the
+                             // plane can't fall short of covering every corner of the viewport
   const geometry = new THREE.PlaneGeometry(size * aspectRatio, size);
   const mesh = new THREE.Mesh(geometry, distortionMaterial);
   scene.add(mesh);
@@ -181,6 +182,18 @@ async function setupCursorWarp(){
   cwVoidEl = document.createElement('div');
   cwVoidEl.id = 'cursorWarpVoid';
   document.body.appendChild(cwVoidEl);
+
+  // Foreground lens — this is what actually distorts REAL text/buttons, not just the decorative
+  // WebGL background. The canvas above sits behind everything on purpose (so it never blocks a
+  // click), but that also means it structurally can't touch content sitting in front of it —
+  // and since every "liquid glass" panel is itself semi-opaque with its own blur, the canvas's
+  // fine distortion detail gets smoothed away wherever a panel sits on top of it anyway. This
+  // element sits ABOVE all page content instead and uses backdrop-filter (blur/saturate/
+  // contrast) to genuinely warp whatever's visually behind it at the cursor's position —
+  // universally supported, unlike the SVG-filter approach from an earlier attempt.
+  cwLensEl = document.createElement('div');
+  cwLensEl.id = 'cursorWarpLens';
+  document.body.appendChild(cwLensEl);
 
   cwActive = true;
 
@@ -192,10 +205,11 @@ async function setupCursorWarp(){
 
   const onMove = (e) => {
     cwMouseX = e.clientX; cwMouseY = e.clientY;
-    cwVoidEl.style.left = cwMouseX + 'px';
-    cwVoidEl.style.top = cwMouseY + 'px';
+    cwVoidEl.style.left = cwLensEl.style.left = cwMouseX + 'px';
+    cwVoidEl.style.top = cwLensEl.style.top = cwMouseY + 'px';
     cwVoidEl.classList.remove('idle'); // matches the earlier "invisible while moving" behavior —
                                         // this got dropped by accident in the WebGL rewrite
+    cwLensEl.classList.remove('idle');
     cwIdle = false;
     clearTimeout(cwIdleTimer);
     cwIdleTimer = setTimeout(() => { cwIdle = true; cwVoidEl.classList.add('idle'); }, 450);
@@ -223,6 +237,7 @@ async function setupCursorWarp(){
     window.removeEventListener('resize', onResize);
     canvasEl.remove();
     if(cwVoidEl){ cwVoidEl.remove(); cwVoidEl = null; }
+    if(cwLensEl){ cwLensEl.remove(); cwLensEl = null; }
     cwRenderer.dispose();
     cwRenderer = null;
   };
