@@ -83,19 +83,31 @@ let cwVoidEl = null, cwRenderer = null, cwRAF = null, cwForce = 0.015;
 
 function cwBuildThemeTexture(THREE){
   // a small offscreen canvas gradient using this site's own palette, used as the WebGL plane's
-  // texture — matches the page's real background instead of an unrelated stock photo
+  // texture — matches the page's real background instead of an unrelated stock photo. Made
+  // noticeably higher-contrast than the first version: a near-flat gradient still technically
+  // gets distorted by the shader, but the distortion is invisible if there's nothing with edges
+  // or contrast for the eye to see actually bending — a grid + brighter, thicker accent lines
+  // gives the warp something real to visibly grab onto.
   const c = document.createElement('canvas');
   c.width = 512; c.height = 512;
   const ctx = c.getContext('2d');
   const g = ctx.createRadialGradient(256, 180, 20, 256, 256, 380);
-  g.addColorStop(0, '#2a2119');
+  g.addColorStop(0, '#332920');
   g.addColorStop(0.55, '#1a1510');
-  g.addColorStop(1, '#0d0a07');
+  g.addColorStop(1, '#0a0705');
   ctx.fillStyle = g; ctx.fillRect(0, 0, 512, 512);
-  // faint warm accent streaks so the distortion has something visible to actually bend
-  ctx.strokeStyle = 'rgba(217,122,63,0.12)';
-  for(let i = 0; i < 14; i++){
-    ctx.lineWidth = 1 + (i % 3);
+  // a visible grid — evenly-spaced high-contrast lines make bending obvious in a way a few
+  // random faint streaks don't
+  ctx.strokeStyle = 'rgba(217,122,63,0.4)';
+  ctx.lineWidth = 1.5;
+  for(let i = 0; i <= 512; i += 32){
+    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 512); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke();
+  }
+  // brighter accent streaks on top of the grid for extra visible detail
+  ctx.strokeStyle = 'rgba(244,236,216,0.25)';
+  for(let i = 0; i < 10; i++){
+    ctx.lineWidth = 2 + (i % 3);
     ctx.beginPath();
     ctx.moveTo(Math.random() * 512, 0);
     ctx.lineTo(Math.random() * 512, 512);
@@ -111,27 +123,32 @@ async function setupCursorWarp(){
     window.matchMedia('(prefers-reduced-motion: reduce)').matches
   );
   if(skip) return;
-  let THREE;
+
   try{
-    THREE = await import('https://esm.sh/three@0.133.0/build/three.module.js');
-  } catch(e){ return; } // offline or blocked — fail silently, the rest of the site is unaffected
-  if(!cursorWarpEnabled()) return; // setting may have been switched off again while the import was loading
+    // Everything that can plausibly fail — the network fetch of Three.js AND WebGL context
+    // creation itself — now lives inside this one try block. Previously only the import() call
+    // was guarded; a WebGL context failure (unsupported browser, GPU blocklist, etc.) happening
+    // right after a successful import would have thrown unhandled and silently done nothing,
+    // which is exactly the kind of failure that looks like "doesn't work" with zero clue why.
+    const THREE = await import('https://esm.sh/three@0.133.0/build/three.module.js');
+    if(!cursorWarpEnabled()) return; // setting may have been switched off again while the import was loading
 
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 2000);
-  camera.position.z = 5;
-  cwRenderer = new THREE.WebGLRenderer({ alpha: true });
-  cwRenderer.setSize(window.innerWidth, window.innerHeight);
-  const canvasEl = cwRenderer.domElement;
-  canvasEl.id = 'cursorWarpCanvas';
-  document.body.appendChild(canvasEl);
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 2000);
+    camera.position.z = 5;
+    cwRenderer = new THREE.WebGLRenderer({ alpha: true });
+    cwRenderer.setPixelRatio(window.devicePixelRatio || 1); // crisp on Retina/high-DPI displays
+    cwRenderer.setSize(window.innerWidth, window.innerHeight);
+    const canvasEl = cwRenderer.domElement;
+    canvasEl.id = 'cursorWarpCanvas';
+    document.body.appendChild(canvasEl);
 
-  const distortionMaterial = new THREE.ShaderMaterial({
-    uniforms: {
-      u_mouse: { value: new THREE.Vector2(-9999, -9999) },
-      u_resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
-      u_texture: { value: cwBuildThemeTexture(THREE) },
-      u_force: { value: 0 },
+    const distortionMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        u_mouse: { value: new THREE.Vector2(-9999, -9999) },
+        u_resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+        u_texture: { value: cwBuildThemeTexture(THREE) },
+        u_force: { value: 0 },
     },
     vertexShader: `
       varying vec2 vUv;
@@ -177,9 +194,11 @@ async function setupCursorWarp(){
     cwMouseX = e.clientX; cwMouseY = e.clientY;
     cwVoidEl.style.left = cwMouseX + 'px';
     cwVoidEl.style.top = cwMouseY + 'px';
+    cwVoidEl.classList.remove('idle'); // matches the earlier "invisible while moving" behavior —
+                                        // this got dropped by accident in the WebGL rewrite
     cwIdle = false;
     clearTimeout(cwIdleTimer);
-    cwIdleTimer = setTimeout(() => { cwIdle = true; }, 450);
+    cwIdleTimer = setTimeout(() => { cwIdle = true; cwVoidEl.classList.add('idle'); }, 450);
   };
   document.addEventListener('mousemove', onMove);
 
@@ -206,6 +225,45 @@ async function setupCursorWarp(){
     if(cwVoidEl){ cwVoidEl.remove(); cwVoidEl = null; }
     cwRenderer.dispose();
     cwRenderer = null;
+  };
+  } catch(e){
+    // visible in devtools instead of silently doing nothing — the previous version's silent
+    // catch is exactly what made a real failure indistinguishable from "not implemented"
+    console.warn('[cursor black hole] WebGL setup failed, falling back to a simpler CSS-only version:', e);
+    setupCursorWarpFallback();
+  }
+}
+
+// Guaranteed-to-work fallback if the WebGL path fails for any reason (no network access to the
+// Three.js CDN, WebGL unsupported/blocklisted, etc.) — a small void plus one backdrop-filter
+// blur ring. Not the full light-bending shader effect, but real and visible rather than nothing.
+function setupCursorWarpFallback(){
+  if(cwActive) return;
+  cwVoidEl = document.createElement('div');
+  cwVoidEl.id = 'cursorWarpVoid';
+  cwVoidEl.className = 'cw-fallback';
+  document.body.appendChild(cwVoidEl);
+  const ring = document.createElement('div');
+  ring.id = 'cursorWarpFallbackRing';
+  document.body.appendChild(ring);
+  cwActive = true;
+
+  const onMove = (e) => {
+    cwVoidEl.style.left = ring.style.left = e.clientX + 'px';
+    cwVoidEl.style.top = ring.style.top = e.clientY + 'px';
+    ring.classList.remove('idle');
+    cwVoidEl.classList.remove('idle');
+    clearTimeout(cwIdleTimer);
+    cwIdleTimer = setTimeout(() => { ring.classList.add('idle'); cwVoidEl.classList.add('idle'); }, 450);
+  };
+  document.addEventListener('mousemove', onMove);
+
+  cwTeardown = () => {
+    cwActive = false;
+    clearTimeout(cwIdleTimer);
+    document.removeEventListener('mousemove', onMove);
+    if(cwVoidEl){ cwVoidEl.remove(); cwVoidEl = null; }
+    ring.remove();
   };
 }
 let cwTeardown = null;
