@@ -644,6 +644,21 @@
   }
   #cursorWarpVoid.idle{ opacity:1; }
 
+  /* Foreground lens — sits ABOVE all real page content (unlike the background canvas) so it
+     actually distorts text and buttons, not just the decorative background behind everything.
+     backdrop-filter genuinely blurs/saturates/contrasts whatever's visually behind this element,
+     including real rendered text and UI, wherever it's positioned. */
+  #cursorWarpLens{
+    position: fixed; top:0; left:0; width:0; height:0; border-radius:50%;
+    transform: translate(-50%,-50%); pointer-events:none; z-index:9998;
+    opacity:0; transition: width 0.5s ease, height 0.5s ease, opacity 0.4s ease, backdrop-filter 0.5s ease;
+  }
+  #cursorWarpLens.idle{
+    width:130px; height:130px; opacity:0.92;
+    backdrop-filter: blur(4px) saturate(1.6) contrast(1.25);
+    -webkit-backdrop-filter: blur(4px) saturate(1.6) contrast(1.25);
+  }
+
   /* Fallback path (see app.js) — used only if the WebGL setup fails for any reason. A single
      backdrop-filter blur ring around the same cursor-sized void, so the effect is still visibly
      real rather than silently doing nothing. */
