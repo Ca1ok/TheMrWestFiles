@@ -59,9 +59,9 @@
       <div class="settings-block">
         <label class="recipes-filter-toggle" style="cursor:pointer;">
           <input type="checkbox" id="blackholeToggle">
-          Cursor black hole effect — hold the mouse still and a warped black hole forms around it
+          Cursor black hole effect — hold the mouse still and gravity visibly bends the page behind it
         </label>
-        <p class="cc-desc" style="margin-top:0.5rem;">Distorts real page content behind the cursor using an SVG filter. Reliable in Chromium-based browsers (Chrome, Edge); other browsers will just show a plain glass blur instead of true distortion. Off by default since this is experimental.</p>
+        <p class="cc-desc" style="margin-top:0.5rem;">Uses a real WebGL shader (loaded on demand, only while this is on) to bend the page's background around the cursor — genuine pixel distortion, not just a blur. Needs a browser with WebGL, which is nearly everything; if that fails to load for any reason (offline, an old browser, a blocked script), it quietly falls back to a simpler blur-based version instead of doing nothing. Off by default since this is experimental — open your browser console if it seems inactive, a failure there will explain why.</p>
       </div>
 
       <a class="nav-btn" href="index.html" style="margin-top:1.6rem;">Back to the board</a>
