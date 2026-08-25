@@ -79,7 +79,7 @@ const CURSOR_WARP_KEY = 'mrwestcoin_blackhole_enabled';
 function cursorWarpEnabled(){ return localStorage.getItem(CURSOR_WARP_KEY) === 'true'; }
 
 let cwActive = false, cwMouseX = -9999, cwMouseY = -9999, cwIdle = false, cwIdleTimer = null;
-let cwVoidEl = null, cwLensEl = null, cwRenderer = null, cwRAF = null, cwForce = 0.015;
+let cwVoidEl = null, cwFullEl = null, cwRenderer = null, cwRAF = null, cwForce = 0.015;
 
 function cwBuildThemeTexture(THREE){
   // a small offscreen canvas gradient using this site's own palette, used as the WebGL plane's
@@ -183,17 +183,18 @@ async function setupCursorWarp(){
   cwVoidEl.id = 'cursorWarpVoid';
   document.body.appendChild(cwVoidEl);
 
-  // Foreground lens — this is what actually distorts REAL text/buttons, not just the decorative
-  // WebGL background. The canvas above sits behind everything on purpose (so it never blocks a
-  // click), but that also means it structurally can't touch content sitting in front of it —
-  // and since every "liquid glass" panel is itself semi-opaque with its own blur, the canvas's
-  // fine distortion detail gets smoothed away wherever a panel sits on top of it anyway. This
-  // element sits ABOVE all page content instead and uses backdrop-filter (blur/saturate/
-  // contrast) to genuinely warp whatever's visually behind it at the cursor's position —
-  // universally supported, unlike the SVG-filter approach from an earlier attempt.
-  cwLensEl = document.createElement('div');
-  cwLensEl.id = 'cursorWarpLens';
-  document.body.appendChild(cwLensEl);
+  // Foreground distortion — a SINGLE element that always covers the entire page exactly
+  // (top:0/left:0/right:0/bottom:0, never resized or repositioned), so it's structurally
+  // impossible for it to end up "confined to an area." The cursor-tracking part is done
+  // entirely differently from before: instead of moving a small circle around (which is what
+  // kept ending up mispositioned), this element's mask-image is a radial gradient whose CENTER
+  // moves via a CSS custom property. The element's own box never changes; only which part of
+  // its full-page backdrop-filter is actually visible does. That backdrop-filter is what
+  // genuinely distorts real text/buttons wherever the visible part of the mask currently is —
+  // not the decorative WebGL background, which stays as the separate ambient effect behind it.
+  cwFullEl = document.createElement('div');
+  cwFullEl.id = 'cursorWarpFull';
+  document.body.appendChild(cwFullEl);
 
   cwActive = true;
 
@@ -205,14 +206,20 @@ async function setupCursorWarp(){
 
   const onMove = (e) => {
     cwMouseX = e.clientX; cwMouseY = e.clientY;
-    cwVoidEl.style.left = cwLensEl.style.left = cwMouseX + 'px';
-    cwVoidEl.style.top = cwLensEl.style.top = cwMouseY + 'px';
+    cwVoidEl.style.left = cwMouseX + 'px';
+    cwVoidEl.style.top = cwMouseY + 'px';
+    cwFullEl.style.setProperty('--cw-x', cwMouseX + 'px');
+    cwFullEl.style.setProperty('--cw-y', cwMouseY + 'px');
     cwVoidEl.classList.remove('idle'); // matches the earlier "invisible while moving" behavior —
                                         // this got dropped by accident in the WebGL rewrite
-    cwLensEl.classList.remove('idle');
+    cwFullEl.classList.remove('idle');
     cwIdle = false;
     clearTimeout(cwIdleTimer);
-    cwIdleTimer = setTimeout(() => { cwIdle = true; cwVoidEl.classList.add('idle'); }, 450);
+    cwIdleTimer = setTimeout(() => {
+      cwIdle = true;
+      cwVoidEl.classList.add('idle');
+      cwFullEl.classList.add('idle');
+    }, 450);
   };
   document.addEventListener('mousemove', onMove);
 
@@ -237,7 +244,7 @@ async function setupCursorWarp(){
     window.removeEventListener('resize', onResize);
     canvasEl.remove();
     if(cwVoidEl){ cwVoidEl.remove(); cwVoidEl = null; }
-    if(cwLensEl){ cwLensEl.remove(); cwLensEl = null; }
+    if(cwFullEl){ cwFullEl.remove(); cwFullEl = null; }
     cwRenderer.dispose();
     cwRenderer = null;
   };
@@ -256,20 +263,21 @@ function setupCursorWarpFallback(){
   if(cwActive) return;
   cwVoidEl = document.createElement('div');
   cwVoidEl.id = 'cursorWarpVoid';
-  cwVoidEl.className = 'cw-fallback';
   document.body.appendChild(cwVoidEl);
-  const ring = document.createElement('div');
-  ring.id = 'cursorWarpFallbackRing';
-  document.body.appendChild(ring);
+  cwFullEl = document.createElement('div');
+  cwFullEl.id = 'cursorWarpFull';
+  document.body.appendChild(cwFullEl);
   cwActive = true;
 
   const onMove = (e) => {
-    cwVoidEl.style.left = ring.style.left = e.clientX + 'px';
-    cwVoidEl.style.top = ring.style.top = e.clientY + 'px';
-    ring.classList.remove('idle');
+    cwVoidEl.style.left = e.clientX + 'px';
+    cwVoidEl.style.top = e.clientY + 'px';
+    cwFullEl.style.setProperty('--cw-x', e.clientX + 'px');
+    cwFullEl.style.setProperty('--cw-y', e.clientY + 'px');
+    cwFullEl.classList.remove('idle');
     cwVoidEl.classList.remove('idle');
     clearTimeout(cwIdleTimer);
-    cwIdleTimer = setTimeout(() => { ring.classList.add('idle'); cwVoidEl.classList.add('idle'); }, 450);
+    cwIdleTimer = setTimeout(() => { cwFullEl.classList.add('idle'); cwVoidEl.classList.add('idle'); }, 450);
   };
   document.addEventListener('mousemove', onMove);
 
@@ -278,7 +286,7 @@ function setupCursorWarpFallback(){
     clearTimeout(cwIdleTimer);
     document.removeEventListener('mousemove', onMove);
     if(cwVoidEl){ cwVoidEl.remove(); cwVoidEl = null; }
-    ring.remove();
+    if(cwFullEl){ cwFullEl.remove(); cwFullEl = null; }
   };
 }
 let cwTeardown = null;
