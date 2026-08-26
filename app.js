@@ -477,6 +477,7 @@ function savePortfolio(p){
 }
 let portfolio = loadPortfolio();
 let playerCashListenerRef = null;
+let playerFieldListenerRefs = [];
 
 // Loads (or initializes) player data for whichever account ID is currently active. Called once
 // at startup, and again any time the active account switches (sign in, sign out, or upgrading
@@ -513,6 +514,34 @@ function loadPlayerData(uid){
       portfolio.cash = remoteCash;
       renderPortfolio();
     }
+  });
+
+  // Same problem, same fix, extended to every other field a save can clobber. Buying a tool,
+  // buying/crafting an element or compound, or changing what's sitting in the crafting bench in
+  // ONE open tab was previously invisible to any OTHER open tab — that tab's in-memory portfolio
+  // stayed stale until its next full page reload. If that stale tab then did anything that
+  // triggered its own save (which always writes the WHOLE player record), it would silently
+  // overwrite the other tab's change with old data — this is almost certainly why a purchased
+  // tool could "disappear": it was never actually lost, just overwritten by a second open tab
+  // a few actions later. Live-syncing each field means every open tab picks up every other tab's
+  // changes as they happen, so a stale tab's next save re-writes the CURRENT values, not old ones.
+  playerFieldListenerRefs.forEach(r => r.off());
+  playerFieldListenerRefs = ['tools', 'elements', 'compounds', 'crafting'].map(field => {
+    const ref = db.ref('players/' + uid + '/' + field);
+    ref.on('value', (snap) => {
+      const remote = snap.val();
+      if(remote === null || remote === undefined) return;
+      portfolio[field] = remote;
+      if(field === 'tools'){
+        if(typeof renderTools === 'function') renderTools();
+      } else if(field === 'elements'){
+        if(typeof renderOwnedElements === 'function') renderOwnedElements();
+      } else if(field === 'compounds'){
+        if(typeof renderOwnedCompounds === 'function') renderOwnedCompounds();
+      }
+      if(typeof renderCraftingBench === 'function') renderCraftingBench();
+    });
+    return ref;
   });
 }
 if(db && investorId) loadPlayerData(investorId);
