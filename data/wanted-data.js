@@ -3,7 +3,7 @@
 const WANTED_DATA = {
   missingDays: 1,
   charges: [
-    { count: '×6', text: "Skipping class (I'm disappointed)" },
+    { count: '×7', text: "Skipping class (I'm disappointed)" },
     { count: '×2', text: 'Child endangerment' },
     { count: '×2', text: 'Treason' },
     { count: '×1', text: 'Possession and use of perchlorate' },
@@ -12,7 +12,7 @@ const WANTED_DATA = {
     { count: '×1', text: 'Error, Skipping and No LP for SAC ' }
   ],
   sentence: [
-    { count: '—', text: '6 after-school detentions' },
+    { count: '—', text: '7 after-school detentions' },
     { count: '—', text: 'Tree(3) minutes of community service' },
     { count: '—', text: '28 years in federal prison' },
     { count: '—', text: 'The sulfuric acid chair' },
