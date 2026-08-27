@@ -46,6 +46,7 @@ const NAV_LINKS = [
   { href:'coin.html', label:'$WEST Exchange' },
   { href:'periodic.html', label:'Periodic Table' },
   { href:'market.html', label:'WestLab' },
+  { href:'cookin.html', label:'Minigames' },
   { href:'leaderboard.html', label:'Leaderboard' },
   { href:'databook.html', label:'Databook' },
   { href:'settings.html', label:'Settings' },
@@ -1186,7 +1187,7 @@ setInterval(fetchMarketCheckpoint, MARKET_CHECKPOINT_REFRESH_MS);
 // value in an already-fully-determined sequence, not something that needs to be fetched.
 setInterval(() => {
   if(!marketState || !marketRng) return;
-  const price = marketAdvanceOneTick(marketState, marketRng);
+  const price = marketAdvanceOneTick(marketState, marketRng, marketTickIndex + 1);
   marketTickIndex++;
   currentPrice = price;
   priceHistory.push({ price, t: Date.now() });
@@ -2247,3 +2248,360 @@ function renderAdminPanel(){
     });
   });
 }
+
+/* ================= MINIGAMES (cookin.html — shown everywhere as "Minigames") =================
+   Ten small chemistry/physics games sharing the exact same portfolio.cash as the rest of the
+   site — a win here spends the same way as a win on the Coin Exchange. Payouts are deliberately
+   small and diminish the more you replay the SAME game in one browser session (resets when the
+   tab closes), so this can't become a free way to print unlimited money — it's meant to be a
+   fun, light top-up, not a second economy. */
+const GAME_SESSION_KEY = 'mrwestcoin_game_session_plays';
+function getSessionPlays(gameId){
+  const raw = sessionStorage.getItem(GAME_SESSION_KEY);
+  const data = raw ? JSON.parse(raw) : {};
+  return data[gameId] || 0;
+}
+function bumpSessionPlays(gameId){
+  const raw = sessionStorage.getItem(GAME_SESSION_KEY);
+  const data = raw ? JSON.parse(raw) : {};
+  data[gameId] = (data[gameId] || 0) + 1;
+  sessionStorage.setItem(GAME_SESSION_KEY, JSON.stringify(data));
+  return data[gameId];
+}
+function awardGameCash(gameId, baseAmount, resultEl, label){
+  const plays = bumpSessionPlays(gameId);
+  const factor = Math.max(0.15, 1 - (plays - 1) * 0.12); // 100%, 88%, 76%... floors at 15%
+  const amount = Math.round(baseAmount * factor * 100) / 100;
+  portfolio.cash += amount;
+  saveEconomy();
+  if(typeof renderPortfolio === 'function') renderPortfolio();
+  if(resultEl) resultEl.innerHTML = `<div class="game-result win">${label || 'Correct!'} +$${amount.toFixed(2)}</div>`;
+}
+function showGameLoss(resultEl, label){
+  if(resultEl) resultEl.innerHTML = `<div class="game-result lose">${label || 'Not quite — try again!'}</div>`;
+}
+
+// ---------- 1. Titration Drop ----------
+function renderGameTitration(){
+  const target = 20 + Math.random() * 60;
+  let volume = 0;
+  const content = document.getElementById('gameContent');
+  content.innerHTML = `
+    <h3>Titration Drop</h3>
+    <p class="cc-desc">Add titrant one mL at a time and stop the instant the indicator changes color. You won't see the actual volume until you stop.</p>
+    <div style="font-size:2.2rem; margin:1rem 0;" id="titrationColor">🧪 Colorless</div>
+    <button class="nav-btn" id="titrationDropBtn" style="display:inline-block; margin:0 0.5rem 0 0;">Add 1 mL</button>
+    <button class="tool-btn" id="titrationStopBtn">Stop — it changed!</button>
+    <div id="titrationResult"></div>`;
+  document.getElementById('titrationDropBtn').addEventListener('click', () => {
+    volume += 1;
+    document.getElementById('titrationColor').textContent = volume >= target - 3 ? '🌸 Faint pink...' : '🧪 Colorless';
+  });
+  document.getElementById('titrationStopBtn').addEventListener('click', () => {
+    const diff = Math.abs(volume - target);
+    const resultEl = document.getElementById('titrationResult');
+    if(diff <= 2) awardGameCash('titration', 4, resultEl, `True endpoint was ${target.toFixed(1)} mL — within ${diff.toFixed(1)} mL!`);
+    else showGameLoss(resultEl, `True endpoint was ${target.toFixed(1)} mL — you were off by ${diff.toFixed(1)} mL.`);
+  });
+}
+
+// ---------- 2. Element Recall ----------
+function renderGameElementRecall(){
+  const content = document.getElementById('gameContent');
+  let correct = 0, round = 0;
+  const TOTAL = 5;
+  function nextRound(){
+    round++;
+    if(round > TOTAL){
+      content.innerHTML = `<h3>Element Recall — Finished</h3>`;
+      const resultEl = document.createElement('div');
+      content.appendChild(resultEl);
+      if(correct >= 4) awardGameCash('elementRecall', 3, resultEl, `${correct}/${TOTAL} correct!`);
+      else showGameLoss(resultEl, `${correct}/${TOTAL} correct — need 4+ to earn cash.`);
+      return;
+    }
+    const pool = ELEMENTS.filter(e => e[1] && e[2]);
+    const answer = pool[Math.floor(Math.random() * pool.length)];
+    const choices = [answer];
+    while(choices.length < 4){
+      const c = pool[Math.floor(Math.random() * pool.length)];
+      if(!choices.includes(c)) choices.push(c);
+    }
+    choices.sort(() => Math.random() - 0.5);
+    content.innerHTML = `
+      <h3>Element Recall (${round}/${TOTAL})</h3>
+      <div style="font-size:2.8rem; margin:1rem 0;">${answer[1]}</div>
+      <div style="display:flex; flex-direction:column; gap:0.5rem;">
+        ${choices.map(c => `<button class="tool-btn er-choice" data-name="${c[2]}">${c[2]}</button>`).join('')}
+      </div>`;
+    content.querySelectorAll('.er-choice').forEach(btn => {
+      btn.addEventListener('click', () => { if(btn.dataset.name === answer[2]) correct++; nextRound(); });
+    });
+  }
+  nextRound();
+}
+
+// ---------- 3. Half-Life Guess ----------
+function renderGameHalfLife(){
+  const content = document.getElementById('gameContent');
+  const startAmount = [50, 80, 100, 120][Math.floor(Math.random() * 4)];
+  const halfLives = 1 + Math.floor(Math.random() * 4);
+  const correctAnswer = startAmount / Math.pow(2, halfLives);
+  content.innerHTML = `
+    <h3>Half-Life Guess</h3>
+    <p class="cc-desc">You start with ${startAmount}g of a radioactive isotope. After ${halfLives} half-life period(s), how many grams remain?</p>
+    <input type="number" step="0.01" id="halfLifeInput" placeholder="grams remaining" style="width:140px;">
+    <button class="nav-btn" id="halfLifeSubmit" style="margin-left:0.5rem;">Submit</button>
+    <div id="halfLifeResult"></div>`;
+  document.getElementById('halfLifeSubmit').addEventListener('click', () => {
+    const guess = parseFloat(document.getElementById('halfLifeInput').value);
+    const resultEl = document.getElementById('halfLifeResult');
+    if(!isNaN(guess) && Math.abs(guess - correctAnswer) <= correctAnswer * 0.05 + 0.05){
+      awardGameCash('halfLife', 3, resultEl, `Correct — ${correctAnswer.toFixed(2)}g remained.`);
+    } else showGameLoss(resultEl, `Correct answer was ${correctAnswer.toFixed(2)}g.`);
+  });
+}
+
+// ---------- 4. Projectile Launch ----------
+function renderGameProjectile(){
+  const content = document.getElementById('gameContent');
+  const targetX = 120 + Math.random() * 260;
+  content.innerHTML = `
+    <h3>Projectile Launch</h3>
+    <p class="cc-desc">Hit the flag by choosing the right launch angle and speed (no air resistance, g = 9.8 m/s²).</p>
+    <canvas id="projCanvas" width="420" height="220" style="background:rgba(0,0,0,0.25); border:1px solid var(--line); max-width:100%;"></canvas><br>
+    <label>Angle: <input type="range" id="projAngle" min="10" max="80" value="45"> <span id="projAngleVal">45</span>°</label><br>
+    <label>Speed: <input type="range" id="projSpeed" min="10" max="40" value="25"> <span id="projSpeedVal">25</span> m/s</label><br>
+    <button class="nav-btn" id="projFireBtn" style="margin-top:0.5rem;">Fire</button>
+    <div id="projResult"></div>`;
+  const canvas = document.getElementById('projCanvas');
+  const ctx = canvas.getContext('2d');
+  const scale = 4; // px per meter
+  function drawScene(landingXpx){
+    ctx.clearRect(0, 0, 420, 220);
+    ctx.strokeStyle = 'rgba(244,236,216,0.4)'; ctx.beginPath(); ctx.moveTo(0, 200); ctx.lineTo(420, 200); ctx.stroke();
+    // target flag
+    const flagPx = targetX * scale / 10;
+    ctx.fillStyle = '#4fae5c'; ctx.fillRect(flagPx, 180, 4, 20); ctx.fillRect(flagPx, 178, 14, 8);
+    if(landingXpx !== undefined){
+      ctx.fillStyle = landingXpx !== null ? '#d97a3f' : '#c23b3b';
+    }
+  }
+  drawScene();
+  const angleInput = document.getElementById('projAngle'), speedInput = document.getElementById('projSpeed');
+  angleInput.addEventListener('input', () => document.getElementById('projAngleVal').textContent = angleInput.value);
+  speedInput.addEventListener('input', () => document.getElementById('projSpeedVal').textContent = speedInput.value);
+  document.getElementById('projFireBtn').addEventListener('click', () => {
+    const angleDeg = parseFloat(angleInput.value), speed = parseFloat(speedInput.value);
+    const rad = angleDeg * Math.PI / 180, g = 9.8;
+    const range = (speed * speed * Math.sin(2 * rad)) / g; // meters
+    drawScene();
+    // draw trajectory
+    ctx.strokeStyle = '#d97a3f'; ctx.beginPath();
+    for(let x = 0; x <= range; x += 0.5){
+      const t = x / (speed * Math.cos(rad));
+      const y = speed * Math.sin(rad) * t - 0.5 * g * t * t;
+      const px = x * scale / 10, py = 200 - y * scale / 2;
+      if(x === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    const resultEl = document.getElementById('projResult');
+    const diff = Math.abs(range - targetX);
+    if(diff <= 8) awardGameCash('projectile', 5, resultEl, `Landed ${range.toFixed(1)}m — target was ${targetX.toFixed(1)}m!`);
+    else showGameLoss(resultEl, `Landed ${range.toFixed(1)}m — target was ${targetX.toFixed(1)}m (off by ${diff.toFixed(1)}m).`);
+  });
+}
+
+// ---------- 5. Balance the Equation ----------
+function renderGameBalance(){
+  const content = document.getElementById('gameContent');
+  const equations = [
+    { text: '__ N2 + __ H2 → __ NH3', answer: [1, 3, 2] },
+    { text: '__ H2 + __ O2 → __ H2O', answer: [2, 1, 2] },
+    { text: '__ Fe + __ O2 → __ Fe2O3', answer: [4, 3, 2] },
+    { text: '__ CH4 + __ O2 → __ CO2 + __ H2O', answer: [1, 2, 1, 2] },
+    { text: '__ Na + __ Cl2 → __ NaCl', answer: [2, 1, 2] },
+  ];
+  const eq = equations[Math.floor(Math.random() * equations.length)];
+  const parts = eq.text.split('__');
+  let html = '<h3>Balance the Equation</h3><p class="cc-desc">Fill in the coefficients (whole numbers).</p><div style="font-size:1.1rem; line-height:2.2;">';
+  parts.forEach((p, i) => {
+    html += p;
+    if(i < eq.answer.length) html += `<input type="number" min="1" class="bal-input" data-i="${i}" style="width:44px; text-align:center;">`;
+  });
+  html += '</div><button class="nav-btn" id="balSubmit" style="margin-top:0.8rem;">Check</button><div id="balResult"></div>';
+  content.innerHTML = html;
+  document.getElementById('balSubmit').addEventListener('click', () => {
+    const inputs = content.querySelectorAll('.bal-input');
+    const guess = Array.from(inputs).map(i => parseInt(i.value, 10));
+    const resultEl = document.getElementById('balResult');
+    if(guess.every((v, i) => v === eq.answer[i])) awardGameCash('balance', 4, resultEl, 'Balanced correctly!');
+    else showGameLoss(resultEl, `Correct coefficients were: ${eq.answer.join(', ')}.`);
+  });
+}
+
+// ---------- 6. pH Match ----------
+function renderGamePhMatch(){
+  const content = document.getElementById('gameContent');
+  const items = [
+    { name: 'Battery acid', range: [0, 1] }, { name: 'Lemon juice', range: [2, 3] },
+    { name: 'Black coffee', range: [5, 5] }, { name: 'Pure water', range: [7, 7] },
+    { name: 'Sea water', range: [8, 8] }, { name: 'Baking soda solution', range: [9, 9] },
+    { name: 'Ammonia', range: [11, 12] }, { name: 'Drain cleaner', range: [13, 14] },
+  ];
+  const item = items[Math.floor(Math.random() * items.length)];
+  const choices = ['0–2 (strong acid)', '3–6 (weak acid)', '7 (neutral)', '8–11 (weak base)', '12–14 (strong base)'];
+  const correctIdx = item.range[0] <= 2 ? 0 : item.range[0] <= 6 ? 1 : item.range[0] === 7 ? 2 : item.range[0] <= 11 ? 3 : 4;
+  content.innerHTML = `
+    <h3>pH Match</h3>
+    <p class="cc-desc">What pH range does <b>${item.name}</b> fall into?</p>
+    <div style="display:flex; flex-direction:column; gap:0.5rem;">
+      ${choices.map((c, i) => `<button class="tool-btn ph-choice" data-i="${i}">${c}</button>`).join('')}
+    </div>
+    <div id="phResult"></div>`;
+  content.querySelectorAll('.ph-choice').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const resultEl = document.getElementById('phResult');
+      if(parseInt(btn.dataset.i, 10) === correctIdx) awardGameCash('phMatch', 2, resultEl, 'Correct!');
+      else showGameLoss(resultEl, `${item.name} is actually ${choices[correctIdx]}.`);
+    });
+  });
+}
+
+// ---------- 7. Reaction Timer ----------
+function renderGameReaction(){
+  const content = document.getElementById('gameContent');
+  content.innerHTML = `
+    <h3>Reaction Timer</h3>
+    <p class="cc-desc">Click the box the instant it turns green. Faster reactions pay more — but click too early and you get nothing.</p>
+    <div id="reactBox" style="width:100%; height:120px; background:#7a1f1f; display:flex; align-items:center; justify-content:center; color:#fff; cursor:pointer; border-radius:8px;">Wait for green...</div>
+    <div id="reactResult"></div>`;
+  const box = document.getElementById('reactBox');
+  let startTime = null, armed = false;
+  const delay = 1000 + Math.random() * 3000;
+  setTimeout(() => {
+    armed = true; startTime = performance.now();
+    box.style.background = '#4fae5c'; box.textContent = 'CLICK NOW!';
+  }, delay);
+  box.addEventListener('click', () => {
+    const resultEl = document.getElementById('reactResult');
+    if(!armed){ showGameLoss(resultEl, 'Too early! Wait for green.'); box.style.background = '#7a1f1f'; box.textContent = 'Too early'; return; }
+    const rt = performance.now() - startTime;
+    box.textContent = `${rt.toFixed(0)} ms`;
+    if(rt <= 400) awardGameCash('reaction', 3, resultEl, `${rt.toFixed(0)}ms reaction time!`);
+    else showGameLoss(resultEl, `${rt.toFixed(0)}ms — need 400ms or under to earn cash.`);
+    armed = false;
+  });
+}
+
+// ---------- 8. Ohm's Law Quick Math ----------
+function renderGameOhms(){
+  const content = document.getElementById('gameContent');
+  const V = Math.floor(2 + Math.random() * 22), R = [2, 4, 5, 10, 20][Math.floor(Math.random() * 5)];
+  const correctI = Math.round((V / R) * 100) / 100;
+  content.innerHTML = `
+    <h3>Ohm's Law Quick Math</h3>
+    <p class="cc-desc">A circuit has V = ${V}V and R = ${R}Ω. What's the current I (in amps)? (V = IR)</p>
+    <input type="number" step="0.01" id="ohmsInput" placeholder="amps" style="width:140px;">
+    <button class="nav-btn" id="ohmsSubmit" style="margin-left:0.5rem;">Submit</button>
+    <div id="ohmsResult"></div>`;
+  document.getElementById('ohmsSubmit').addEventListener('click', () => {
+    const guess = parseFloat(document.getElementById('ohmsInput').value);
+    const resultEl = document.getElementById('ohmsResult');
+    if(!isNaN(guess) && Math.abs(guess - correctI) <= 0.05) awardGameCash('ohms', 2, resultEl, `Correct — I = ${correctI}A.`);
+    else showGameLoss(resultEl, `Correct answer was I = ${correctI}A.`);
+  });
+}
+
+// ---------- 9. Molecule Speed Match ----------
+function renderGameMoleculeMatch(){
+  const content = document.getElementById('gameContent');
+  let correct = 0, round = 0;
+  const TOTAL = 5;
+  function nextRound(){
+    round++;
+    if(round > TOTAL){
+      content.innerHTML = `<h3>Molecule Speed Match — Finished</h3>`;
+      const resultEl = document.createElement('div');
+      content.appendChild(resultEl);
+      if(correct >= 4) awardGameCash('moleculeMatch', 3, resultEl, `${correct}/${TOTAL} correct!`);
+      else showGameLoss(resultEl, `${correct}/${TOTAL} correct — need 4+ to earn cash.`);
+      return;
+    }
+    const answer = RECIPES[Math.floor(Math.random() * RECIPES.length)];
+    const choices = [answer.formula];
+    while(choices.length < 4){
+      const c = RECIPES[Math.floor(Math.random() * RECIPES.length)].formula;
+      if(!choices.includes(c)) choices.push(c);
+    }
+    choices.sort(() => Math.random() - 0.5);
+    content.innerHTML = `
+      <h3>Molecule Speed Match (${round}/${TOTAL})</h3>
+      <div style="font-size:1.3rem; margin:1rem 0;">${answer.name}</div>
+      <div style="display:flex; flex-direction:column; gap:0.5rem;">
+        ${choices.map(c => `<button class="tool-btn mm-choice" data-f="${c}">${c}</button>`).join('')}
+      </div>`;
+    content.querySelectorAll('.mm-choice').forEach(btn => {
+      btn.addEventListener('click', () => { if(btn.dataset.f === answer.formula) correct++; nextRound(); });
+    });
+  }
+  nextRound();
+}
+
+// ---------- 10. Wave Match ----------
+function renderGameWaveMatch(){
+  const content = document.getElementById('gameContent');
+  const c = 3e8; // speed of light, m/s
+  const wavelengthNm = Math.floor(200 + Math.random() * 600); // visible-ish spectrum range
+  const wavelengthM = wavelengthNm * 1e-9;
+  const correctFreqTHz = Math.round((c / wavelengthM) / 1e12 * 100) / 100;
+  content.innerHTML = `
+    <h3>Wave Match</h3>
+    <p class="cc-desc">A light wave has a wavelength of ${wavelengthNm} nm. What's its frequency, in THz? (f = c / λ)</p>
+    <input type="number" step="0.01" id="waveInput" placeholder="THz" style="width:140px;">
+    <button class="nav-btn" id="waveSubmit" style="margin-left:0.5rem;">Submit</button>
+    <div id="waveResult"></div>`;
+  document.getElementById('waveSubmit').addEventListener('click', () => {
+    const guess = parseFloat(document.getElementById('waveInput').value);
+    const resultEl = document.getElementById('waveResult');
+    if(!isNaN(guess) && Math.abs(guess - correctFreqTHz) <= correctFreqTHz * 0.03) awardGameCash('waveMatch', 3, resultEl, `Correct — ${correctFreqTHz} THz.`);
+    else showGameLoss(resultEl, `Correct answer was ${correctFreqTHz} THz.`);
+  });
+}
+
+const GAMES = [
+  { id:'titration', icon:'🧪', name:'Titration Drop', desc:'Find the endpoint', render: renderGameTitration },
+  { id:'elementRecall', icon:'⚛️', name:'Element Recall', desc:'Symbol → name', render: renderGameElementRecall },
+  { id:'halfLife', icon:'☢️', name:'Half-Life Guess', desc:'Decay math', render: renderGameHalfLife },
+  { id:'projectile', icon:'🎯', name:'Projectile Launch', desc:'Hit the target', render: renderGameProjectile },
+  { id:'balance', icon:'⚖️', name:'Balance the Equation', desc:'Stoichiometry', render: renderGameBalance },
+  { id:'phMatch', icon:'🧫', name:'pH Match', desc:'Acid or base?', render: renderGamePhMatch },
+  { id:'reaction', icon:'⚡', name:'Reaction Timer', desc:'Test your reflexes', render: renderGameReaction },
+  { id:'ohms', icon:'🔌', name:"Ohm's Law", desc:'Quick circuit math', render: renderGameOhms },
+  { id:'moleculeMatch', icon:'🧬', name:'Molecule Speed Match', desc:'Name → formula', render: renderGameMoleculeMatch },
+  { id:'waveMatch', icon:'🌊', name:'Wave Match', desc:'Wavelength → frequency', render: renderGameWaveMatch },
+];
+
+function renderGamesGrid(){
+  const grid = document.getElementById('gamesGrid');
+  if(!grid) return; // only exists on cookin.html
+  grid.innerHTML = GAMES.map(g => `
+    <div class="game-tile" data-id="${g.id}">
+      <span class="gt-icon">${g.icon}</span>
+      <span class="gt-name">${g.name}</span>
+      <span class="gt-desc">${g.desc}</span>
+    </div>`).join('');
+  const playArea = document.getElementById('gamePlayArea');
+  grid.querySelectorAll('.game-tile').forEach(tile => {
+    tile.addEventListener('click', () => {
+      const game = GAMES.find(g => g.id === tile.dataset.id);
+      if(!game) return;
+      playArea.style.display = 'block';
+      playArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      game.render();
+    });
+  });
+  const closeBtn = document.getElementById('gameCloseBtn');
+  if(closeBtn) closeBtn.addEventListener('click', () => { playArea.style.display = 'none'; });
+}
+renderGamesGrid();
