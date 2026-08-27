@@ -2569,23 +2569,318 @@ function renderGameWaveMatch(){
   });
 }
 
+// ---------- 11. Ideal Gas Law Solver ----------
+function renderGameGasLaw(){
+  const content = document.getElementById('gameContent');
+  const R = 0.0821;
+  const n = Math.round((0.5 + Math.random() * 4) * 10) / 10;
+  const T = Math.round(250 + Math.random() * 100);
+  const V = Math.round((5 + Math.random() * 20) * 10) / 10;
+  const correctP = Math.round((n * R * T / V) * 100) / 100;
+  content.innerHTML = `
+    <h3>Ideal Gas Law Solver</h3>
+    <p class="cc-desc">n = ${n} mol, T = ${T} K, V = ${V} L. Solve for P (atm) using PV = nRT (R = 0.0821 L·atm/mol·K).</p>
+    <input type="number" step="0.01" id="gasInput" placeholder="atm" style="width:140px;">
+    <button class="nav-btn" id="gasSubmit" style="margin-left:0.5rem;">Submit</button>
+    <div id="gasResult"></div>`;
+  document.getElementById('gasSubmit').addEventListener('click', () => {
+    const guess = parseFloat(document.getElementById('gasInput').value);
+    const resultEl = document.getElementById('gasResult');
+    if(!isNaN(guess) && Math.abs(guess - correctP) <= correctP * 0.05 + 0.05) awardGameCash('gasLaw', 4, resultEl, `Correct — P = ${correctP} atm.`);
+    else showGameLoss(resultEl, `Correct answer was P = ${correctP} atm.`);
+  });
+}
+
+// ---------- 12. Isotope ID ----------
+function renderGameIsotope(){
+  const content = document.getElementById('gameContent');
+  const pool = ELEMENTS.filter(e => e[0] <= 30);
+  const el = pool[Math.floor(Math.random() * pool.length)];
+  const protons = el[0];
+  const neutrons = protons + Math.floor(Math.random() * 3);
+  const massNumber = protons + neutrons;
+  content.innerHTML = `
+    <h3>Isotope ID</h3>
+    <p class="cc-desc">An atom has ${protons} protons and ${neutrons} neutrons — an isotope of ${el[2]} (${el[1]}). What's its mass number?</p>
+    <input type="number" id="isoInput" placeholder="mass number" style="width:140px;">
+    <button class="nav-btn" id="isoSubmit" style="margin-left:0.5rem;">Submit</button>
+    <div id="isoResult"></div>`;
+  document.getElementById('isoSubmit').addEventListener('click', () => {
+    const guess = parseInt(document.getElementById('isoInput').value, 10);
+    const resultEl = document.getElementById('isoResult');
+    if(guess === massNumber) awardGameCash('isotope', 2, resultEl, `Correct — mass number ${massNumber}.`);
+    else showGameLoss(resultEl, `Correct mass number was ${massNumber}.`);
+  });
+}
+
+// ---------- 13. Element Memory Match ----------
+function renderGameMemoryMatch(){
+  const content = document.getElementById('gameContent');
+  const pool = ELEMENTS.filter(e => e[1] && e[2]).slice();
+  const chosen = [];
+  while(chosen.length < 6){
+    const e = pool[Math.floor(Math.random() * pool.length)];
+    if(!chosen.includes(e)) chosen.push(e);
+  }
+  let cards = [];
+  chosen.forEach(e => { cards.push({ key:e[1], label:e[1] }); cards.push({ key:e[1], label:e[2] }); });
+  cards.sort(() => Math.random() - 0.5);
+  let first = null, matchedCount = 0, lock = false;
+  content.innerHTML = `
+    <h3>Element Memory Match</h3>
+    <p class="cc-desc">Match each symbol to its element name.</p>
+    <div id="memGrid" style="display:grid; grid-template-columns:repeat(4,1fr); gap:0.5rem; max-width:420px;">
+      ${cards.map((c, i) => `<button class="tool-btn mem-card" data-i="${i}">?</button>`).join('')}
+    </div>
+    <div id="memResult"></div>`;
+  const btns = content.querySelectorAll('.mem-card');
+  btns.forEach((btn, i) => {
+    btn.addEventListener('click', () => {
+      if(lock || btn.classList.contains('matched') || btn === first) return;
+      btn.textContent = cards[i].label;
+      if(!first){ first = btn; first._idx = i; return; }
+      lock = true;
+      const secondIdx = i;
+      if(cards[first._idx].key === cards[secondIdx].key){
+        btn.classList.add('matched'); first.classList.add('matched');
+        matchedCount++;
+        first = null; lock = false;
+        if(matchedCount === 6) awardGameCash('memoryMatch', 4, document.getElementById('memResult'), 'All matched!');
+      } else {
+        const firstRef = first;
+        setTimeout(() => { btn.textContent = '?'; firstRef.textContent = '?'; }, 700);
+        first = null; lock = false;
+      }
+    });
+  });
+}
+
+// ---------- 14. Whack-an-Atom ----------
+function renderGameWhackAtom(){
+  const content = document.getElementById('gameContent');
+  let score = 0, timeLeft = 15;
+  content.innerHTML = `
+    <h3>Whack-an-Atom</h3>
+    <p class="cc-desc"><span id="whackTime">${timeLeft}</span>s left. Score: <span id="whackScore">0</span></p>
+    <div id="whackGrid" style="display:grid; grid-template-columns:repeat(3,1fr); gap:0.5rem; max-width:300px;">
+      ${Array.from({ length:9 }).map((_, i) => `<div class="whack-cell" data-i="${i}"></div>`).join('')}
+    </div>
+    <div id="whackResult"></div>`;
+  const cells = content.querySelectorAll('.whack-cell');
+  let activeIdx = -1;
+  function spawn(){
+    if(activeIdx >= 0) cells[activeIdx].textContent = '';
+    activeIdx = Math.floor(Math.random() * 9);
+    cells[activeIdx].textContent = '⚛️';
+  }
+  cells.forEach((cell, i) => {
+    cell.addEventListener('click', () => {
+      if(i === activeIdx){ score++; document.getElementById('whackScore').textContent = score; cell.textContent = ''; activeIdx = -1; spawn(); }
+    });
+  });
+  spawn();
+  const spawnTimer = setInterval(spawn, 900);
+  const countdownTimer = setInterval(() => {
+    timeLeft--;
+    const timeEl = document.getElementById('whackTime');
+    if(timeEl) timeEl.textContent = timeLeft;
+    if(timeLeft <= 0){
+      clearInterval(spawnTimer); clearInterval(countdownTimer);
+      cells.forEach(c => c.textContent = '');
+      const resultEl = document.getElementById('whackResult');
+      if(score >= 8) awardGameCash('whackAtom', 4, resultEl, `Score: ${score}!`);
+      else showGameLoss(resultEl, `Score: ${score} — need 8+ to earn cash.`);
+    }
+  }, 1000);
+}
+
+// ---------- 15. Atom Builder ----------
+function renderGameAtomBuilder(){
+  const content = document.getElementById('gameContent');
+  const targetP = 1 + Math.floor(Math.random() * 10);
+  const targetN = targetP + Math.floor(Math.random() * 3);
+  const targetE = targetP;
+  let p = 0, n = 0, e = 0;
+  function render(){
+    content.innerHTML = `
+      <h3>Atom Builder</h3>
+      <p class="cc-desc">Build a neutral atom with ${targetP} protons and ${targetN} neutrons.</p>
+      <div style="display:flex; gap:1.5rem; justify-content:center; margin:1rem 0;">
+        <div>Protons: ${p}<br><button class="tool-btn ab-btn" data-part="p" data-d="1">+</button> <button class="tool-btn ab-btn" data-part="p" data-d="-1">-</button></div>
+        <div>Neutrons: ${n}<br><button class="tool-btn ab-btn" data-part="n" data-d="1">+</button> <button class="tool-btn ab-btn" data-part="n" data-d="-1">-</button></div>
+        <div>Electrons: ${e}<br><button class="tool-btn ab-btn" data-part="e" data-d="1">+</button> <button class="tool-btn ab-btn" data-part="e" data-d="-1">-</button></div>
+      </div>
+      <button class="nav-btn" id="abCheck">Check</button>
+      <div id="abResult"></div>`;
+    content.querySelectorAll('.ab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const d = parseInt(btn.dataset.d, 10);
+        if(btn.dataset.part === 'p') p = Math.max(0, p + d);
+        if(btn.dataset.part === 'n') n = Math.max(0, n + d);
+        if(btn.dataset.part === 'e') e = Math.max(0, e + d);
+        render();
+      });
+    });
+    document.getElementById('abCheck').addEventListener('click', () => {
+      const resultEl = document.getElementById('abResult');
+      if(p === targetP && n === targetN && e === targetE) awardGameCash('atomBuilder', 3, resultEl, 'Correct atom built!');
+      else showGameLoss(resultEl, `Needed ${targetP}p/${targetN}n/${targetE}e — you had ${p}p/${n}n/${e}e.`);
+    });
+  }
+  render();
+}
+
+// ---------- 16. Falling Elements Catch ----------
+function renderGameFallingCatch(){
+  const content = document.getElementById('gameContent');
+  let round = 0, correct = 0;
+  const TOTAL = 6;
+  function nextRound(){
+    round++;
+    if(round > TOTAL){
+      content.innerHTML = `<h3>Falling Elements — Finished</h3>`;
+      const resultEl = document.createElement('div'); content.appendChild(resultEl);
+      if(correct >= 5) awardGameCash('fallingCatch', 3, resultEl, `${correct}/${TOTAL} caught!`);
+      else showGameLoss(resultEl, `${correct}/${TOTAL} caught — need 5+.`);
+      return;
+    }
+    const pool = ELEMENTS.filter(e => e[1]);
+    const answer = pool[Math.floor(Math.random() * pool.length)];
+    const choices = [answer];
+    while(choices.length < 4){ const c = pool[Math.floor(Math.random() * pool.length)]; if(!choices.includes(c)) choices.push(c); }
+    choices.sort(() => Math.random() - 0.5);
+    content.innerHTML = `
+      <h3>Falling Elements Catch (${round}/${TOTAL})</h3>
+      <p class="cc-desc">Catch: <b>${answer[2]}</b> — 2 seconds!</p>
+      <div style="display:flex; gap:0.6rem; justify-content:center;">
+        ${choices.map(c => `<button class="tool-btn fc-choice" data-sym="${c[1]}" style="font-size:1.3rem;">${c[1]}</button>`).join('')}
+      </div>`;
+    let answered = false;
+    const timer = setTimeout(() => { if(!answered){ answered = true; nextRound(); } }, 2000);
+    content.querySelectorAll('.fc-choice').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if(answered) return; answered = true; clearTimeout(timer);
+        if(btn.dataset.sym === answer[1]) correct++;
+        nextRound();
+      });
+    });
+  }
+  nextRound();
+}
+
+// ---------- 17. Wanted Poster Trivia ----------
+function renderGameTrivia(){
+  const content = document.getElementById('gameContent');
+  const questions = [
+    { q: 'How many days has Colin West been missing, according to the poster?', a: String(WANTED_DATA.missingDays) },
+    { q: 'How many charges are listed against Colin West?', a: String(WANTED_DATA.charges.length) },
+  ];
+  const item = questions[Math.floor(Math.random() * questions.length)];
+  content.innerHTML = `
+    <h3>Wanted Poster Trivia</h3>
+    <p class="cc-desc">${item.q}</p>
+    <input type="text" id="triviaInput" style="width:140px;">
+    <button class="nav-btn" id="triviaSubmit" style="margin-left:0.5rem;">Submit</button>
+    <div id="triviaResult"></div>`;
+  document.getElementById('triviaSubmit').addEventListener('click', () => {
+    const resultEl = document.getElementById('triviaResult');
+    if(document.getElementById('triviaInput').value.trim() === item.a) awardGameCash('trivia', 2, resultEl, 'Correct!');
+    else showGameLoss(resultEl, `Correct answer was ${item.a}.`);
+  });
+}
+
+// ---------- 18. Lucky Assay ----------
+function renderGameLuckyAssay(){
+  const content = document.getElementById('gameContent');
+  content.innerHTML = `
+    <h3>Lucky Assay</h3>
+    <p class="cc-desc">Pick a vial — most have a small payout, one is empty. Pure luck, not chemistry — that's why it's filed under "Other."</p>
+    <div style="display:flex; gap:0.6rem; justify-content:center;">
+      ${Array.from({ length:5 }).map((_, i) => `<button class="tool-btn assay-vial" data-i="${i}" style="font-size:1.5rem;">🧪</button>`).join('')}
+    </div>
+    <div id="assayResult"></div>`;
+  const emptyIdx = Math.floor(Math.random() * 5);
+  content.querySelectorAll('.assay-vial').forEach(btn => {
+    btn.addEventListener('click', () => {
+      content.querySelectorAll('.assay-vial').forEach(b => b.disabled = true);
+      const resultEl = document.getElementById('assayResult');
+      const i = parseInt(btn.dataset.i, 10);
+      if(i === emptyIdx) showGameLoss(resultEl, 'That vial was empty!');
+      else awardGameCash('luckyAssay', 1 + Math.random() * 2, resultEl, 'Found something!');
+    });
+  });
+}
+
+// ---------- 19. Word Scramble ----------
+function renderGameWordScramble(){
+  const content = document.getElementById('gameContent');
+  const words = ['CATALYST', 'ISOTOPE', 'MOLECULE', 'ELECTRON', 'SOLVENT', 'OXIDATION', 'POLYMER', 'VALENCE'];
+  const word = words[Math.floor(Math.random() * words.length)];
+  const scrambled = word.split('').sort(() => Math.random() - 0.5).join('');
+  content.innerHTML = `
+    <h3>Word Scramble</h3>
+    <p class="cc-desc">Unscramble this chemistry term: <b style="letter-spacing:0.2em;">${scrambled}</b></p>
+    <input type="text" id="scrambleInput" style="width:180px; text-transform:uppercase;">
+    <button class="nav-btn" id="scrambleSubmit" style="margin-left:0.5rem;">Submit</button>
+    <div id="scrambleResult"></div>`;
+  document.getElementById('scrambleSubmit').addEventListener('click', () => {
+    const resultEl = document.getElementById('scrambleResult');
+    if(document.getElementById('scrambleInput').value.trim().toUpperCase() === word) awardGameCash('wordScramble', 2, resultEl, 'Correct!');
+    else showGameLoss(resultEl, `The word was ${word}.`);
+  });
+}
+
+// ---------- 20. Guess the Boiling Point ----------
+function renderGameBoilingPoint(){
+  const content = document.getElementById('gameContent');
+  const keys = Object.keys(BOILING_POINTS);
+  const key = keys[Math.floor(Math.random() * keys.length)];
+  const correctBp = BOILING_POINTS[key];
+  content.innerHTML = `
+    <h3>Guess the Boiling Point</h3>
+    <p class="cc-desc">What's the boiling point of <b>${key}</b>, in °C? (within 15°C wins)</p>
+    <input type="number" id="bpInput" style="width:140px;">
+    <button class="nav-btn" id="bpSubmit" style="margin-left:0.5rem;">Submit</button>
+    <div id="bpResult"></div>`;
+  document.getElementById('bpSubmit').addEventListener('click', () => {
+    const guess = parseFloat(document.getElementById('bpInput').value);
+    const resultEl = document.getElementById('bpResult');
+    if(!isNaN(guess) && Math.abs(guess - correctBp) <= 15) awardGameCash('boilingPoint', 2, resultEl, `Correct — ${correctBp}°C.`);
+    else showGameLoss(resultEl, `Correct answer was ${correctBp}°C.`);
+  });
+}
+
 const GAMES = [
-  { id:'titration', icon:'🧪', name:'Titration Drop', desc:'Find the endpoint', render: renderGameTitration },
-  { id:'elementRecall', icon:'⚛️', name:'Element Recall', desc:'Symbol → name', render: renderGameElementRecall },
-  { id:'halfLife', icon:'☢️', name:'Half-Life Guess', desc:'Decay math', render: renderGameHalfLife },
-  { id:'projectile', icon:'🎯', name:'Projectile Launch', desc:'Hit the target', render: renderGameProjectile },
-  { id:'balance', icon:'⚖️', name:'Balance the Equation', desc:'Stoichiometry', render: renderGameBalance },
-  { id:'phMatch', icon:'🧫', name:'pH Match', desc:'Acid or base?', render: renderGamePhMatch },
-  { id:'reaction', icon:'⚡', name:'Reaction Timer', desc:'Test your reflexes', render: renderGameReaction },
-  { id:'ohms', icon:'🔌', name:"Ohm's Law", desc:'Quick circuit math', render: renderGameOhms },
-  { id:'moleculeMatch', icon:'🧬', name:'Molecule Speed Match', desc:'Name → formula', render: renderGameMoleculeMatch },
-  { id:'waveMatch', icon:'🌊', name:'Wave Match', desc:'Wavelength → frequency', render: renderGameWaveMatch },
+  { id:'titration', category:'educational', icon:'🧪', name:'Titration Drop', desc:'Find the endpoint', render: renderGameTitration },
+  { id:'elementRecall', category:'educational', icon:'⚛️', name:'Element Recall', desc:'Symbol → name', render: renderGameElementRecall },
+  { id:'halfLife', category:'educational', icon:'☢️', name:'Half-Life Guess', desc:'Decay math', render: renderGameHalfLife },
+  { id:'balance', category:'educational', icon:'⚖️', name:'Balance the Equation', desc:'Stoichiometry', render: renderGameBalance },
+  { id:'phMatch', category:'educational', icon:'🧫', name:'pH Match', desc:'Acid or base?', render: renderGamePhMatch },
+  { id:'ohms', category:'educational', icon:'🔌', name:"Ohm's Law", desc:'Quick circuit math', render: renderGameOhms },
+  { id:'moleculeMatch', category:'educational', icon:'🧬', name:'Molecule Speed Match', desc:'Name → formula', render: renderGameMoleculeMatch },
+  { id:'waveMatch', category:'educational', icon:'🌊', name:'Wave Match', desc:'Wavelength → frequency', render: renderGameWaveMatch },
+  { id:'gasLaw', category:'educational', icon:'💨', name:'Ideal Gas Law Solver', desc:'PV = nRT', render: renderGameGasLaw },
+  { id:'isotope', category:'educational', icon:'🔬', name:'Isotope ID', desc:'Protons + neutrons', render: renderGameIsotope },
+
+  { id:'reaction', category:'fun', icon:'⚡', name:'Reaction Timer', desc:'Test your reflexes', render: renderGameReaction },
+  { id:'projectile', category:'fun', icon:'🎯', name:'Projectile Launch', desc:'Hit the target', render: renderGameProjectile },
+  { id:'memoryMatch', category:'fun', icon:'🃏', name:'Element Memory Match', desc:'Flip and match', render: renderGameMemoryMatch },
+  { id:'whackAtom', category:'fun', icon:'🔨', name:'Whack-an-Atom', desc:'Fast clicking', render: renderGameWhackAtom },
+  { id:'atomBuilder', category:'fun', icon:'🧩', name:'Atom Builder', desc:'Build the atom', render: renderGameAtomBuilder },
+  { id:'fallingCatch', category:'fun', icon:'🎣', name:'Falling Elements Catch', desc:'Quick reflexes', render: renderGameFallingCatch },
+
+  { id:'trivia', category:'other', icon:'📜', name:'Wanted Poster Trivia', desc:'Site lore quiz', render: renderGameTrivia },
+  { id:'luckyAssay', category:'other', icon:'🍀', name:'Lucky Assay', desc:'Pick a vial', render: renderGameLuckyAssay },
+  { id:'wordScramble', category:'other', icon:'🔤', name:'Word Scramble', desc:'Unscramble the term', render: renderGameWordScramble },
+  { id:'boilingPoint', category:'other', icon:'🌡️', name:'Guess the Boiling Point', desc:'Thermal trivia', render: renderGameBoilingPoint },
 ];
 
+let currentGameCategory = 'all';
 function renderGamesGrid(){
   const grid = document.getElementById('gamesGrid');
   if(!grid) return; // only exists on cookin.html
-  grid.innerHTML = GAMES.map(g => `
+  const filtered = currentGameCategory === 'all' ? GAMES : GAMES.filter(g => g.category === currentGameCategory);
+  grid.innerHTML = filtered.map(g => `
     <div class="game-tile" data-id="${g.id}">
       <span class="gt-icon">${g.icon}</span>
       <span class="gt-name">${g.name}</span>
@@ -2604,4 +2899,12 @@ function renderGamesGrid(){
   const closeBtn = document.getElementById('gameCloseBtn');
   if(closeBtn) closeBtn.addEventListener('click', () => { playArea.style.display = 'none'; });
 }
+document.querySelectorAll('.game-cat-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.game-cat-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    currentGameCategory = tab.dataset.cat;
+    renderGamesGrid();
+  });
+});
 renderGamesGrid();
