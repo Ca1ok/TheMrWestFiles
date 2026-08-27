@@ -15,6 +15,7 @@ const MARKET_CALLS_PER_TICK = 5;          // ALWAYS exactly 5 random draws per t
                                            // branches that don't end up using all of them. This
                                            // fixed count is what makes the RNG seekable in O(1).
 const MARKET_BASE_VALUE = 12.50;          // fairValue reverts toward this — see note below
+const MARKET_DRIFT_PER_TICK = 1.000000008; // slight upward trend — see marketBaseValueAtTick()
 const MARKET_GENESIS_STATE = { fairValue: 12.50, momentum: 0, vol: 0.012, price: 12.50 };
 
 function marketTickIndexForTime(t){
@@ -22,6 +23,15 @@ function marketTickIndexForTime(t){
 }
 function marketTimeForTickIndex(i){
   return MARKET_GENESIS_T + i * MARKET_TICK_MS;
+}
+
+// A slight upward trend, but still a pure function of tick index — not real accumulated
+// randomness, and not anything fetched from a server. Every client (and the GitHub Action's
+// periodic checkpoint) computes the exact same base value for the exact same tick, so the trend
+// stays perfectly seed-synced without anyone needing to agree on it live. At 250ms/tick this
+// compounds to roughly +0.3%/day — noticeable over weeks, not a moon mission by lunchtime.
+function marketBaseValueAtTick(tickIndex){
+  return MARKET_BASE_VALUE * Math.pow(MARKET_DRIFT_PER_TICK, tickIndex);
 }
 
 // mulberry32, but seekable: rather than always starting from MARKET_SEED and calling next()
@@ -41,15 +51,17 @@ function marketRngFromCallCount(callsAlreadyMade){
   };
 }
 
-function marketAdvanceOneTick(state, rng){
-  // fairValue reverts toward MARKET_BASE_VALUE instead of doing an unanchored multiplicative
-  // random walk. This matters a lot more here than it did in the old 12-second-tick version:
-  // at 250ms/tick this model gets replayed for hundreds of millions of ticks over the site's
-  // lifetime, and an unanchored random walk is mathematically guaranteed to drift to an extreme
-  // (near-zero or huge) over that many compounding steps — it's not a "might happen" edge case,
-  // it's certain given enough ticks. Reverting toward a fixed base keeps the whole system
-  // statistically stationary indefinitely, however long this ends up running for.
-  state.fairValue += (MARKET_BASE_VALUE - state.fairValue) * 0.0004 + (rng() - 0.5) * 0.02;
+function marketAdvanceOneTick(state, rng, tickIndex){
+  // fairValue reverts toward a (slightly, deterministically drifting) base instead of doing an
+  // unanchored multiplicative random walk. This matters a lot more here than it did in the old
+  // 12-second-tick version: at 250ms/tick this model gets replayed for hundreds of millions of
+  // ticks over the site's lifetime, and an unanchored random walk is mathematically guaranteed
+  // to drift to an extreme (near-zero or huge) over that many compounding steps — it's not a
+  // "might happen" edge case, it's certain given enough ticks. Reverting toward a (slowly
+  // rising) base keeps the whole system statistically stationary around a moving target,
+  // instead of either flatlining forever or blowing up.
+  const base = marketBaseValueAtTick(tickIndex);
+  state.fairValue += (base - state.fairValue) * 0.0004 + (rng() - 0.5) * 0.02;
   state.fairValue = Math.max(0.5, state.fairValue);
   const volShock = Math.abs(rng() - 0.5) * 0.03;
   state.vol = Math.min(0.06, Math.max(0.004, state.vol * 0.85 + volShock * 0.15));
@@ -80,7 +92,7 @@ function marketSimulate(checkpoint, targetTickIndex){
   const rng = marketRngFromCallCount(startCall);
   const points = [];
   for(let i = fromTick + 1; i <= cappedTarget; i++){
-    const price = marketAdvanceOneTick(state, rng);
+    const price = marketAdvanceOneTick(state, rng, i);
     points.push({ price: Math.round(price * 10000) / 10000, t: marketTimeForTickIndex(i) });
   }
   return { state, points, tickIndex: cappedTarget, rng, nextTickIndex: cappedTarget + 1 };
