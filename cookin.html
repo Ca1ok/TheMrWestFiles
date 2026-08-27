@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Minigames — The Mr West Files</title>
+<link rel="stylesheet" href="styles.css?v=20260821z3">
+</head>
+<body>
+
+<nav id="siteNav"></nav>
+<div id="cookieBanner">
+  <div class="cookie-text">
+    We dont use cookies but you should still accept.
+    By clicking "Accept All" you agree *Redacted*
+  </div>
+  <div class="cookie-btns">
+    <button id="cookieReject">Reject All</button>
+    <button id="cookieAccept" class="accept">Accept All</button>
+  </div>
+</div>
+
+<div id="pages">
+  <div class="region wide" id="region-minigames" data-role="satellite">
+    <div class="region-inner">
+      <div class="page-title">Minigames</div>
+      <div class="page-sub">Small chemistry &amp; physics games — every payout is real $WEST cash, shared with the rest of the site</div>
+
+      <div id="gamesGrid" class="games-grid"></div>
+
+      <div id="gamePlayArea" class="game-play-area" style="display:none;">
+        <button class="tool-btn" id="gameCloseBtn" style="margin-bottom:0.8rem;">✕ Close Game</button>
+        <div id="gameContent"></div>
+      </div>
+
+      <a class="nav-btn" href="index.html" style="margin-top:1.6rem;">Back to the board</a>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase (compat SDK) -->
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+
+<!-- Data files, split out so app.js stays focused on behavior -->
+<script src="data/wanted-data.js?v=20260821z3"></script>
+<script src="data/periodic-table-data.js?v=20260821z3"></script>
+<script src="data/databook-data.js?v=20260821z3"></script>
+<script src="data/moderation-data.js?v=20260821z3"></script>
+<script src="data/economy-data.js?v=20260821z3"></script>
+
+<script src="market-model.js?v=20260821z3"></script>
+<script src="app.js?v=20260821z3"></script>
+</body>
+</html>
