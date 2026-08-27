@@ -688,3 +688,18 @@
   .game-result{ margin-top:0.8rem; font-size:var(--fs-base); font-weight:600; }
   .game-result.win{ color: var(--gain); }
   .game-result.lose{ color: var(--danger); }
+
+  .game-cat-tabs{ display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1rem; }
+  .game-cat-tab{
+    background: var(--paper-2); border:1px solid var(--line); color: var(--muted);
+    font-family: inherit; font-size: var(--fs-sm); padding:0.5rem 1rem; cursor:pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+  }
+  .game-cat-tab:hover{ color: var(--ink); border-color: var(--rust-2); }
+  .game-cat-tab.active{ color: var(--rust-2); border-color: var(--rust-2); background: rgba(217,122,63,0.1); }
+
+  .mem-card.matched{ opacity:0.45; pointer-events:none; }
+  .whack-cell{
+    height:70px; background: rgba(0,0,0,0.2); border-radius: var(--radius-panel);
+    display:flex; align-items:center; justify-content:center; font-size:1.5rem; cursor:pointer;
+  }
