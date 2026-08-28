@@ -1,7 +1,7 @@
 // Wanted-poster content — edit this file to change charges/sentence/missing-days
 // without touching any of the site's actual logic.
 const WANTED_DATA = {
-  missingDays: 1,
+  missingDays: 0,
   charges: [
     { count: '×7', text: "Skipping class (I'm disappointed)" },
     { count: '×2', text: 'Child endangerment' },
