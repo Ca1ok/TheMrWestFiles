@@ -53,7 +53,8 @@ const NAV_LINKS = [
 ];
 const siteNavEl = document.getElementById('siteNav');
 if(siteNavEl){
-  siteNavEl.innerHTML = NAV_LINKS.map(l => `<a href="${l.href}">${l.label}</a>`).join('');
+  siteNavEl.innerHTML = NAV_LINKS.map(l => `<a href="${l.href}">${l.label}</a>`).join('') +
+    '<span id="navCashDisplay" class="nav-cash">$--.--</span>';
   siteNavEl.querySelectorAll('a').forEach(a => {
     if(a.getAttribute('href') === location.pathname.split('/').pop() ||
        (a.getAttribute('href') === 'index.html' && (location.pathname === '/' || location.pathname.endsWith('/')))){
@@ -480,6 +481,15 @@ let portfolio = loadPortfolio();
 let playerCashListenerRef = null;
 let playerFieldListenerRefs = [];
 
+// Cash display in the top nav — present on every page since the nav itself is shared. Defined
+// here (not up where the nav HTML is built) specifically because `portfolio` doesn't exist yet
+// at that point in the file; calling this before now would throw.
+function updateNavCashDisplay(){
+  const el = document.getElementById('navCashDisplay');
+  if(el) el.textContent = '$' + portfolio.cash.toFixed(2);
+}
+updateNavCashDisplay(); // paint the locally-cached value immediately, before any Firebase round-trip
+
 // Loads (or initializes) player data for whichever account ID is currently active. Called once
 // at startup, and again any time the active account switches (sign in, sign out, or upgrading
 // from anonymous to a real account) — so the same logic handles all three cases identically.
@@ -499,6 +509,7 @@ function loadPlayerData(uid){
       savePortfolio(portfolio); // nothing backed up yet under this ID — protect what we have now
     }
     renderPortfolio(); renderHistory(); renderLots(); drawChart();
+    updateNavCashDisplay();
     if(typeof renderOwnedElements === 'function'){ renderOwnedElements(); renderOwnedCompounds(); renderTools(); }
     if(typeof renderCraftingBench === 'function') renderCraftingBench();
     if(typeof refreshLeaderboardGateUI === 'function') refreshLeaderboardGateUI();
@@ -514,6 +525,7 @@ function loadPlayerData(uid){
     if(typeof remoteCash === 'number' && remoteCash !== portfolio.cash){
       portfolio.cash = remoteCash;
       renderPortfolio();
+      updateNavCashDisplay();
     }
   });
 
@@ -1619,6 +1631,7 @@ ensureEconomyState(portfolio);
 
 function saveEconomy(){
   savePortfolio(portfolio); // reuses the existing cash/lots sync, now also carrying elements/compounds/tools
+  updateNavCashDisplay();
 }
 
 // populate the element dropdowns
@@ -2052,7 +2065,7 @@ if(nameInput){
 // because Firebase's security rules check this server-side (see the rules snippet given in
 // chat). This client-side constant only controls whether the admin UI is shown; it grants no
 // real access by itself.
-const ADMIN_EMAIL = 'YOUR_ADMIN_EMAIL@example.com';
+const ADMIN_EMAIL = 'kirattdhaliwal@gmail.com';
 
 const anonId = investorId; // the local random ID this browser started with, preserved so sign-out can return to it
 let currentUser = null;
@@ -2220,14 +2233,15 @@ function renderAdminPanel(){
   if(!wrap) return;
   db.ref('players').once('value').then(snap => {
     const val = snap.val() || {};
-    const ids = Object.keys(val);
+    const ids = Object.keys(val).sort((a, b) => (val[b].cash || 0) - (val[a].cash || 0)); // highest cash first — makes broken/exploited accounts easy to spot
     if(ids.length === 0){ wrap.innerHTML = '<div class="empty-history">No players yet.</div>'; return; }
     wrap.innerHTML = ids.map(id => `
       <div class="admin-player-row">
-        <span style="width:110px; overflow:hidden; text-overflow:ellipsis;">${id}</span>
+        <span style="width:110px; overflow:hidden; text-overflow:ellipsis;" title="${id}">${id}</span>
         <input type="number" class="ap-cash" data-id="${id}" value="${(val[id].cash||0).toFixed(2)}">
         <label><input type="checkbox" class="ap-lock" data-id="${id}" ${val[id].nameLocked ? 'checked' : ''}> Lock name</label>
         <button class="ap-save" data-id="${id}">Save</button>
+        <button class="ap-reset" data-id="${id}">Reset</button>
         <button class="ap-delete" data-id="${id}">Delete</button>
       </div>`).join('');
     wrap.querySelectorAll('.ap-save').forEach(btn => {
@@ -2236,6 +2250,22 @@ function renderAdminPanel(){
         const cash = parseFloat(wrap.querySelector(`.ap-cash[data-id="${id}"]`).value);
         const nameLocked = wrap.querySelector(`.ap-lock[data-id="${id}"]`).checked;
         db.ref('players/' + id).update({ cash, nameLocked }).catch(e => alert('Save failed: ' + e.message));
+      });
+    });
+    wrap.querySelectorAll('.ap-reset').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        if(!confirm(`Reset this player back to a fresh $1000 starting account? Their tools, elements, compounds, stock positions, and trade history will all be wiped — this is meant for cleaning up accounts broken by an old bug (e.g. impossible billions of dollars), not routine use.`)) return;
+        db.ref('players/' + id).set({
+          cash: 1000, lots: [], trades: [], elements: {}, compounds: {}, tools: ['basic'],
+          crafting: { elements:{}, compounds:{} }, nameLocked: !!val[id].nameLocked, updatedAt: Date.now()
+        }).then(() => {
+          // also fix their leaderboard entry — otherwise it keeps showing the old (possibly
+          // exploited) value until that player's own browser happens to push a fresh one, which
+          // could be a long time. This requires the admin-email exception on the leaderboard
+          // rule below; without it this update is silently rejected.
+          return db.ref('leaderboard/' + id).update({ value: 1000, elementsOwned: 0, compoundsMade: 0, updatedAt: Date.now() }).catch(() => {});
+        }).then(() => renderAdminPanel()).catch(e => alert('Reset failed: ' + e.message));
       });
     });
     wrap.querySelectorAll('.ap-delete').forEach(btn => {
@@ -2268,6 +2298,16 @@ function bumpSessionPlays(gameId){
   sessionStorage.setItem(GAME_SESSION_KEY, JSON.stringify(data));
   return data[gameId];
 }
+function lockGameContent(){
+  // Disabling this after ANY round resolves (win or lose) is what actually closes the exploit —
+  // every single-answer game funnels through awardGameCash/showGameLoss, so locking here covers
+  // all 20 games at once instead of needing a fix in each one individually. Without this, a
+  // "Submit" button stayed clickable forever with the same unchanged answer still in the input,
+  // so spam-clicking it just kept re-awarding the diminishing-returns floor amount indefinitely
+  // — a $2 base game floors at 15% = $0.30, which is exactly the "$0.30 every click" bug.
+  const content = document.getElementById('gameContent');
+  if(content) content.style.pointerEvents = 'none';
+}
 function awardGameCash(gameId, baseAmount, resultEl, label){
   const plays = bumpSessionPlays(gameId);
   const factor = Math.max(0.15, 1 - (plays - 1) * 0.12); // 100%, 88%, 76%... floors at 15%
@@ -2276,9 +2316,11 @@ function awardGameCash(gameId, baseAmount, resultEl, label){
   saveEconomy();
   if(typeof renderPortfolio === 'function') renderPortfolio();
   if(resultEl) resultEl.innerHTML = `<div class="game-result win">${label || 'Correct!'} +$${amount.toFixed(2)}</div>`;
+  lockGameContent();
 }
 function showGameLoss(resultEl, label){
   if(resultEl) resultEl.innerHTML = `<div class="game-result lose">${label || 'Not quite — try again!'}</div>`;
+  lockGameContent();
 }
 
 // ---------- 1. Titration Drop ----------
@@ -2893,6 +2935,8 @@ function renderGamesGrid(){
       if(!game) return;
       playArea.style.display = 'block';
       playArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      const contentEl = document.getElementById('gameContent');
+      if(contentEl) contentEl.style.pointerEvents = ''; // clear any lock left over from a previous round
       game.render();
     });
   });
