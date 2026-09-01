@@ -29,6 +29,14 @@ if(FIREBASE_CONFIGURED){
 
 // stable per-browser ID, used both to back up this player's portfolio and to identify them on the leaderboard
 let investorId = localStorage.getItem('mrwestcoin_investor_id');
+// Declared up here (not down near the auth-handling code that actually sets it) because
+// isSignedIn() — used by the leaderboard gate check — gets called synchronously during page
+// load on leaderboard.html, before execution ever reaches the auth section further down the
+// file. Referencing a `let` before its declaration line throws (temporal dead zone), and that
+// throw was happening BEFORE the leaderboard's own Firebase listener got registered a few lines
+// later — so the listener that reads and displays leaderboard data never even started running.
+// That's the actual reason real Firebase data wasn't showing up on the page at all.
+let currentUser = null;
 if(!investorId){
   investorId = 'inv_' + Math.random().toString(36).slice(2, 10);
   localStorage.setItem('mrwestcoin_investor_id', investorId);
@@ -2012,13 +2020,32 @@ function renderLeaderboard(entries){
     leaderboardListEl.innerHTML = '<div class="empty-history">No investors ranked yet.</div>';
     return;
   }
-  const sorted = entries.slice().sort((a,b) => b.value - a.value);
+  // Defensive: previously, a single malformed entry (missing/non-numeric value — very plausible
+  // given the old bugged version that produced impossible billion-dollar accounts, or any write
+  // that happened before a field existed) would throw inside .toFixed() partway through this
+  // render and silently kill the WHOLE leaderboard display. Firebase's .on('value') callback
+  // doesn't surface that error anywhere visible — it just looked like "nothing shows up" even
+  // though real data was sitting right there in the console. Coercing bad values instead of
+  // crashing on them means one broken record can't take down everyone else's ranking.
+  const cleaned = entries
+    .filter(e => e && e.name)
+    .map(e => ({
+      ...e,
+      value: (typeof e.value === 'number' && !isNaN(e.value)) ? e.value : 0,
+      elementsOwned: (typeof e.elementsOwned === 'number' && !isNaN(e.elementsOwned)) ? e.elementsOwned : 0,
+      compoundsMade: (typeof e.compoundsMade === 'number' && !isNaN(e.compoundsMade)) ? e.compoundsMade : 0,
+    }));
+  if(cleaned.length === 0){
+    leaderboardListEl.innerHTML = '<div class="empty-history">No investors ranked yet.</div>';
+    return;
+  }
+  const sorted = cleaned.slice().sort((a,b) => b.value - a.value);
   const medalClass = i => i===0 ? 'gold' : i===1 ? 'silver' : i===2 ? 'bronze' : '';
   leaderboardListEl.innerHTML = sorted.map((e,i) => `
     <div class="lb-row">
       <span class="lb-rank ${medalClass(i)}">#${i+1}</span>
       <span class="lb-name ${e.id===investorId ? 'you' : ''}">${e.name}${e.id===investorId ? ' (you)' : ''}
-        <span style="display:block; font-size:0.62rem; color:var(--muted);">${e.elementsOwned||0} elements owned · ${e.compoundsMade||0} compounds made</span>
+        <span style="display:block; font-size:0.62rem; color:var(--muted);">${e.elementsOwned} elements owned · ${e.compoundsMade} compounds made</span>
       </span>
       <span class="lb-value">$${e.value.toFixed(2)}</span>
     </div>`).join('');
@@ -2052,7 +2079,14 @@ if(nameInput){
     db.ref('leaderboard').on('value', (snap) => {
       const val = snap.val() || {};
       const entries = Object.keys(val).map(id => ({ id, name: val[id].name, value: val[id].value, elementsOwned: val[id].elementsOwned, compoundsMade: val[id].compoundsMade }));
-      renderLeaderboard(entries);
+      try{
+        renderLeaderboard(entries);
+      } catch(e){
+        // visible in devtools instead of silently leaving the leaderboard stuck on whatever it
+        // last showed — this is exactly the failure mode that made real Firebase data look like
+        // it "wasn't showing up" with zero indication of why
+        console.error('[leaderboard] render failed:', e);
+      }
     });
   } else {
     lbStatus.textContent = 'Leaderboard is local-only until a Firebase project is connected.';
@@ -2068,7 +2102,7 @@ if(nameInput){
 const ADMIN_EMAIL = 'kirattdhaliwal@gmail.com';
 
 const anonId = investorId; // the local random ID this browser started with, preserved so sign-out can return to it
-let currentUser = null;
+// (currentUser is declared near the top of the file — see the comment there for why)
 
 function switchActiveAccount(uid){
   investorId = uid;
