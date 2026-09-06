@@ -1391,6 +1391,108 @@ buildPeriodicTable(); // called immediately after being defined — previously t
                        // so any error anywhere in between silently prevented the table from ever
                        // rendering at all
 
+/* ================= COMPOUND LOOKUP (Periodic Table page only) =================
+   Lets you type a combination like "Hx2, S, Ox4" and get its name, molar mass, and other
+   properties back — matched against COMPOUND_LOOKUP (data/periodic-table-data.js) by its actual
+   elemental composition, not by string formula, so element order/spacing in what you type never
+   matters. Anything not in that list still resolves — you just get the computed formula, molar
+   mass, and elemental breakdown with no name attached, since it's a hypothetical/unlisted combo
+   rather than an error. */
+
+function elementBySymbol(sym){ return ELEMENTS.find(e => e[1] === sym); }
+
+function subscriptDigits(n){
+  const map = {'0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅','6':'₆','7':'₇','8':'₈','9':'₉'};
+  return String(n).split('').map(d => map[d]).join('');
+}
+
+// Hill system: carbon-containing compounds go C, H, then everything else alphabetically;
+// carbon-free compounds go straight alphabetically (including H). This is just for DISPLAY —
+// matching against COMPOUND_LOOKUP happens on the raw composition object, never on this string.
+function hillFormula(counts){
+  const syms = Object.keys(counts);
+  const order = counts.C
+    ? ['C', ...(counts.H ? ['H'] : []), ...syms.filter(s => s !== 'C' && s !== 'H').sort()]
+    : syms.slice().sort();
+  return order.filter(s => counts[s]).map(s => s + (counts[s] > 1 ? subscriptDigits(counts[s]) : '')).join('');
+}
+
+function compositionKey(counts){
+  return Object.keys(counts).filter(s => counts[s] > 0).sort().map(s => `${s}${counts[s]}`).join('.');
+}
+
+function lookupKnownCompound(counts){
+  const key = compositionKey(counts);
+  return COMPOUND_LOOKUP.find(c => compositionKey(c.comp) === key) || null;
+}
+
+// Accepts comma- or plus-separated tokens like "Hx2, S, Ox4" (case-insensitive, whitespace
+// anywhere is ignored) — a bare symbol with no "xN" means one atom of it.
+function parseCompoundInput(raw){
+  if(!raw || !raw.trim()) return { error: 'Type one or more elements, like Hx2, S, Ox4.' };
+  const tokens = raw.split(/[,+]/).map(t => t.replace(/\s+/g, '')).filter(Boolean);
+  if(!tokens.length) return { error: 'Type one or more elements, like Hx2, S, Ox4.' };
+  const counts = {};
+  for(const tok of tokens){
+    const m = tok.match(/^([A-Za-z]{1,2})(?:[xX](\d{1,3}))?$/);
+    if(!m) return { error: `Couldn't read "${tok}" — try a format like Hx2.` };
+    const sym = m[1][0].toUpperCase() + (m[1][1] ? m[1][1].toLowerCase() : '');
+    const n = m[2] ? parseInt(m[2], 10) : 1;
+    if(n <= 0) return { error: `${sym} needs a count of at least 1.` };
+    if(!elementBySymbol(sym)) return { error: `"${m[1]}" isn't an element symbol I know.` };
+    counts[sym] = (counts[sym] || 0) + n;
+  }
+  return { counts };
+}
+
+function renderCompoundLookup(){
+  const input = document.getElementById('compoundLookupInput');
+  const out = document.getElementById('compoundLookupResult');
+  if(!input || !out) return;
+
+  const parsed = parseCompoundInput(input.value);
+  if(parsed.error){ out.innerHTML = `<span class="meta">${parsed.error}</span>`; return; }
+
+  const counts = parsed.counts;
+  const formula = hillFormula(counts);
+  const known = lookupKnownCompound(counts);
+
+  let totalMass = 0;
+  const rows = Object.keys(counts).map(sym => {
+    const e = elementBySymbol(sym);
+    const contribution = e[3] * counts[sym];
+    totalMass += contribution;
+    return { sym, name: e[2], count: counts[sym], contribution };
+  });
+
+  const breakdown = rows.map(r =>
+    `<span>${r.name} (${r.sym}×${r.count})</span><b>${((r.contribution / totalMass) * 100).toFixed(1)}%</b>`
+  ).join('');
+
+  const singleElement = rows.length === 1 && rows[0].count === 1;
+
+  out.innerHTML = `
+    <div class="cl-formula">${formula}</div>
+    <div class="cl-name">${known ? known.name : (singleElement ? rows[0].name : 'Unrecognized combination')}</div>
+    ${known && known.common ? `<div class="cl-common">"${known.common}"</div>` : ''}
+    <div class="info-grid cl-info-grid">
+      <span>Molar mass</span><b>${totalMass.toFixed(2)} g/mol</b>
+      <span>Category</span><b>${known ? (CATEGORY_LOOKUP_LABELS[known.category] || known.category) : (singleElement ? 'Element' : 'Unknown / hypothetical')}</b>
+      ${known && known.ions ? `<span>Ions</span><b>${known.ions}</b>` : ''}
+    </div>
+    ${rows.length > 1 ? `<div class="info-grid cl-breakdown">${breakdown}</div>` : ''}
+    ${known && known.desc ? `<div class="cl-desc">${known.desc}</div>` : (!singleElement ? '<div class="cl-desc">Not in the known-compound list, but the numbers above are still accurate — could be a real, less-common compound, or not a stable one at all.</div>' : '')}
+  `;
+}
+
+(function setupCompoundLookup(){
+  const input = document.getElementById('compoundLookupInput');
+  const btn = document.getElementById('compoundLookupBtn');
+  if(!input || !btn) return;
+  btn.addEventListener('click', renderCompoundLookup);
+  input.addEventListener('keydown', e => { if(e.key === 'Enter') renderCompoundLookup(); });
+})();
+
 /* ================= CRAFTING BENCH (Element Economy page only — one reactant tray, one tool
    selector, one product preview; click to add/remove instead of dragging, so it behaves
    identically on touch and desktop) ================= */
