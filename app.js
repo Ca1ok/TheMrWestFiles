@@ -492,15 +492,29 @@ let playerFieldListenerRefs = [];
 // Cash display in the top nav — present on every page since the nav itself is shared. Defined
 // here (not up where the nav HTML is built) specifically because `portfolio` doesn't exist yet
 // at that point in the file; calling this before now would throw.
+function formatCashCompact(n){
+  // Full precision for ordinary amounts, but abbreviated above $1M — otherwise a large balance
+  // (an admin-fixed billions-dollar account is exactly the case that broke this) renders as a
+  // long string that overflows its fixed-width badge and visibly overlaps the nav buttons next
+  // to it. Abbreviating keeps the badge width bounded regardless of how large the number gets.
+  const abs = Math.abs(n);
+  if(abs >= 1e12) return (n / 1e12).toFixed(2) + 'T';
+  if(abs >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+  if(abs >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+  return n.toFixed(2);
+}
 function updateNavCashDisplay(){
   const el = document.getElementById('navCashDisplay');
-  if(el) el.textContent = '$' + portfolio.cash.toFixed(2);
+  if(el) el.textContent = '$' + formatCashCompact(portfolio.cash);
 }
 updateNavCashDisplay(); // paint the locally-cached value immediately, before any Firebase round-trip
 
 // Loads (or initializes) player data for whichever account ID is currently active. Called once
 // at startup, and again any time the active account switches (sign in, sign out, or upgrading
 // from anonymous to a real account) — so the same logic handles all three cases identically.
+let playerDataLoaded = !db; // no Firebase configured at all -> nothing to wait for, treat as already loaded
+let pendingEconomySave = false;
+
 function loadPlayerData(uid){
   if(!db || !uid) return;
   db.ref('players/' + uid).once('value').then(snap => {
@@ -516,12 +530,15 @@ function loadPlayerData(uid){
     } else {
       savePortfolio(portfolio); // nothing backed up yet under this ID — protect what we have now
     }
+    // Only from here on is it safe to save — see the comment on playerDataLoaded below for why.
+    playerDataLoaded = true;
+    if(pendingEconomySave){ pendingEconomySave = false; saveEconomy(); }
     renderPortfolio(); renderHistory(); renderLots(); drawChart();
     updateNavCashDisplay();
     if(typeof renderOwnedElements === 'function'){ renderOwnedElements(); renderOwnedCompounds(); renderTools(); }
     if(typeof renderCraftingBench === 'function') renderCraftingBench();
     if(typeof refreshLeaderboardGateUI === 'function') refreshLeaderboardGateUI();
-  }).catch(() => {});
+  }).catch(() => { playerDataLoaded = true; }); // even on failure, stop blocking saves forever
 
   // Marketplace sales (and admin edits) credit/adjust cash directly in Firebase, which could
   // otherwise get silently overwritten the next time this player's own client does a full save —
@@ -1638,6 +1655,17 @@ function ensureEconomyState(p){
 ensureEconomyState(portfolio);
 
 function saveEconomy(){
+  if(!playerDataLoaded){
+    // Don't let an action taken in the brief window before the initial Firebase fetch resolves
+    // save stale local data back over the real record. This is what let old (e.g. billions-
+    // dollar-bug) cached data on a player's own device silently overwrite an admin's manual
+    // correction the next time they visited — their browser would render + could act on the
+    // stale localStorage copy before the real fetch replaced it, and any save in that window
+    // pushed the wrong number straight back to Firebase. The save just waits and replays once
+    // the real data has actually loaded, instead of racing ahead of it.
+    pendingEconomySave = true;
+    return;
+  }
   savePortfolio(portfolio); // reuses the existing cash/lots sync, now also carrying elements/compounds/tools
   updateNavCashDisplay();
 }
