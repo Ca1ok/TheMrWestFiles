@@ -35,9 +35,23 @@
         </div>
       </div>
 
-      <div id="ptable"></div>
-      <div id="elemInfo"><span class="meta">Hover or click an element to see its details.</span></div>
-      <div class="legend" id="legend"></div>
+      <div class="pt-layout">
+        <div class="pt-main">
+          <div id="ptable"></div>
+          <div id="elemInfo"><span class="meta">Hover or click an element to see its details.</span></div>
+          <div class="legend" id="legend"></div>
+        </div>
+
+        <div class="pt-lookup panel-card">
+          <div class="elem-title">Compound Lookup</div>
+          <div class="cl-hint">Type elements like <b>Hx2, S, Ox4</b></div>
+          <div class="cl-input-row">
+            <input type="text" id="compoundLookupInput" placeholder="Hx2, S, Ox4">
+            <button id="compoundLookupBtn">Look up</button>
+          </div>
+          <div id="compoundLookupResult"><span class="meta">Enter a combination to see its name, mass, and more.</span></div>
+        </div>
+      </div>
 
       <div class="page-sub" style="margin-top:1.2rem;">Want to react these together? Buying, crafting, and selling all happen on the <a href="market.html" style="color:var(--rust-2);">Element Economy</a> page.</div>
 
