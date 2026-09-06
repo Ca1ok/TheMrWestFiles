@@ -339,6 +339,36 @@
   .legend-item{ display:flex; align-items:center; gap:0.4rem; font-size:var(--fs-sm); color: var(--muted); text-transform:uppercase; letter-spacing:0.05em; cursor:default; }
   .legend-swatch{ width:12px; height:12px; border:1px solid rgba(0,0,0,0.4); }
 
+  /* --- compound lookup panel --- */
+  .pt-layout{ display:flex; gap:1.4rem; align-items:flex-start; }
+  .pt-main{ flex:1; min-width:0; }
+  .pt-lookup{ width:320px; flex-shrink:0; padding:1.1rem 1.3rem; }
+  .cl-hint{ font-size:var(--fs-sm); color: var(--muted); margin-bottom:0.8rem; }
+  .cl-hint b{ color: var(--ink); }
+  .cl-input-row{ display:flex; gap:0.5rem; margin-bottom:1rem; }
+  #compoundLookupInput{
+    flex:1; min-width:0; background: var(--paper-2); border:1px solid var(--line); color: var(--ink);
+    font-family:inherit; font-size:var(--fs-base); padding:0.55rem 0.7rem; border-radius: var(--radius-panel);
+  }
+  #compoundLookupInput::placeholder{ color: var(--muted); }
+  #compoundLookupBtn{
+    background: var(--paper-2); border:1px solid var(--line); color: var(--rust-2); font-family:inherit;
+    font-size:var(--fs-sm); letter-spacing:0.05em; text-transform:uppercase; padding:0.5rem 0.9rem;
+    border-radius: var(--radius-panel); cursor:pointer; transition: all 0.15s ease; white-space:nowrap;
+  }
+  #compoundLookupBtn:hover{ color: var(--ink); border-color: var(--rust-2); }
+  #compoundLookupResult{ min-height: 60px; }
+  .cl-formula{ font-family: Georgia, serif; font-size:1.7rem; font-weight:900; color: var(--rust-2); line-height:1.2; }
+  .cl-name{ font-size:var(--fs-lg); color: var(--ink); margin-top:0.15rem; }
+  .cl-common{ font-size:var(--fs-sm); color: var(--muted); font-style:italic; margin-top:0.1rem; }
+  .cl-info-grid{ grid-template-columns: auto 1fr !important; margin-top:0.7rem; font-size:var(--fs-sm); }
+  .cl-breakdown{ grid-template-columns: 1fr auto !important; margin-top:0.6rem; font-size:var(--fs-sm); padding-top:0.6rem; border-top:1px solid var(--line); }
+  .cl-desc{ font-size:var(--fs-sm); color: var(--muted); margin-top:0.8rem; line-height:1.5; }
+  @media (max-width: 1150px){
+    .pt-layout{ flex-direction:column; }
+    .pt-lookup{ width:100%; }
+  }
+
   /* --- Compound Lab --- */
   .lab-wrap{ display:flex; gap:0.8rem; align-items:flex-start; flex-wrap:wrap; }
   .dropzone{
