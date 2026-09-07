@@ -2428,10 +2428,14 @@ function updateAuthUI(user){
 
 // Runs on EVERY page (not just Settings) — this is what keeps the signed-in account active as
 // you navigate between separate pages, since each page load re-establishes Firebase's
-// (persisted) auth session from scratch.
-if(FIREBASE_CONFIGURED){
-  firebase.auth().onAuthStateChanged((user) => {
-    if(user){
+// (persisted) auth session from scratch. Wrapped in try/catch because this is a single script —
+// an uncaught error ANYWHERE in it (e.g. Firebase failing to load — a blocked CDN request, an ad
+// blocker, a flaky network) would otherwise silently kill every line of code still to come,
+// including the entire Element Clicker and the minigames grid defined further down this file.
+try{
+  if(FIREBASE_CONFIGURED){
+    firebase.auth().onAuthStateChanged((user) => {
+      if(user){
       // ALWAYS keep investorId synced to the real Firebase Auth UID — anonymous session or not.
       // This matters because Firebase security rules check auth.uid against the data being
       // written (e.g. a marketplace listing's sellerId, or the players/{id} key itself). Using a
@@ -2461,7 +2465,10 @@ if(FIREBASE_CONFIGURED){
       firebase.auth().signInAnonymously().catch(() => {});
     }
     updateAuthUI(user);
-  });
+    });
+  }
+} catch(e){
+  console.error('[firebase-auth] setup failed — continuing without account sync so the rest of the site (minigames, Element Clicker, etc.) still works:', e);
 }
 
 async function migrateLocalIdDataTo(oldId, newId){
@@ -2991,7 +2998,7 @@ function setupElementClicker(){
 
   renderElementClicker();
 }
-setupElementClicker();
+try{ setupElementClicker(); } catch(e){ console.error('[element-clicker] setup failed:', e); }
 
 // Runs on EVERY page, same as the shared cash display — atoms accumulate site-wide, not just
 // while cookin.html happens to be open. Rendering (and the achievement-toast side effects) only
@@ -2999,21 +3006,25 @@ setupElementClicker();
 let ecLastFrame = Date.now();
 let ecLocalSaveLast = Date.now();
 function ecTickLoop(){
-  const now = Date.now();
-  const dt = (now - ecLastFrame) / 1000;
-  ecLastFrame = now;
-  if(portfolio.elementClicker && dt > 0 && dt < 5){ // ignore large gaps (tab was hidden) — that's handled by applyClickerOfflineProgress at load instead
-    const gained = ecTotalCps() * dt;
-    if(gained > 0){
-      portfolio.elementClicker.atoms += gained;
-      portfolio.elementClicker.totalAtoms += gained;
-      portfolio.elementClicker.runAtoms = (portfolio.elementClicker.runAtoms || 0) + gained;
+  try{
+    const now = Date.now();
+    const dt = (now - ecLastFrame) / 1000;
+    ecLastFrame = now;
+    if(portfolio.elementClicker && dt > 0 && dt < 5){ // ignore large gaps (tab was hidden) — that's handled by applyClickerOfflineProgress at load instead
+      const gained = ecTotalCps() * dt;
+      if(gained > 0){
+        portfolio.elementClicker.atoms += gained;
+        portfolio.elementClicker.totalAtoms += gained;
+        portfolio.elementClicker.runAtoms = (portfolio.elementClicker.runAtoms || 0) + gained;
+      }
+      portfolio.elementClicker.lastTick = now;
     }
-    portfolio.elementClicker.lastTick = now;
+    if(now - ecLocalSaveLast > 2000){ ecLocalSaveLast = now; localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio)); }
+    if(document.getElementById('ecPanel')) renderElementClicker();
+    ecCheckAchievements();
+  } catch(e){
+    console.error('[element-clicker] tick failed:', e); // log and keep ticking rather than let one bad frame silently stop the whole loop
   }
-  if(now - ecLocalSaveLast > 2000){ ecLocalSaveLast = now; localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio)); }
-  if(document.getElementById('ecPanel')) renderElementClicker();
-  ecCheckAchievements();
   requestAnimationFrame(ecTickLoop);
 }
 requestAnimationFrame(ecTickLoop);
