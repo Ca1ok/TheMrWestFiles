@@ -2883,7 +2883,8 @@ function ecSpawnFloatingGain(x, y, gain){
 }
 
 let ecActiveTab = 'buildings';
-function renderElementClicker(){
+// Cheap per-frame update — just text content, no DOM node creation, safe to call at 60fps.
+function renderElementClickerStats(){
   const panel = document.getElementById('ecPanel');
   if(!panel) return;
   const ec = portfolio.elementClicker;
@@ -2917,9 +2918,18 @@ function renderElementClicker(){
       offlineBanner.style.display = 'none';
     }
   }
+}
 
+// Expensive — rebuilds the whole Buildings/Upgrades/Achievements card grid. Only called on
+// actual state changes (tab switch, buy, transmute) and on a slow interval from the tick loop
+// (see ecTickLoop) — NOT every frame. Doing a full innerHTML rebuild of a dozen-plus cards 60
+// times a second was the actual cause of clicks/tabs going unresponsive after a few seconds: the
+// main thread falls further behind every frame until it can no longer keep up with input at all,
+// even though the underlying atom math (which never touches the DOM) keeps running fine.
+function renderElementClickerTabBody(){
   const body = document.getElementById('ecTabBody');
   if(!body) return;
+  const ec = portfolio.elementClicker;
   if(ecActiveTab === 'buildings'){
     body.innerHTML = CLICKER_BUILDINGS.map(b => {
       const owned = ec.buildings[b.id] || 0;
@@ -2969,6 +2979,14 @@ function renderElementClicker(){
   }
 }
 
+// Full render — stats + tab body together. Used by direct user actions (click, buy, tab switch,
+// transmute) where an immediate, complete visual update is expected and only happens once, not
+// 60 times a second. The tick loop uses the two pieces separately instead (see ecTickLoop).
+function renderElementClicker(){
+  renderElementClickerStats();
+  renderElementClickerTabBody();
+}
+
 function setupElementClicker(){
   const panel = document.getElementById('ecPanel');
   if(!panel) return; // only exists on cookin.html
@@ -3005,6 +3023,7 @@ try{ setupElementClicker(); } catch(e){ console.error('[element-clicker] setup f
 // actually does anything once #ecPanel exists in the DOM.
 let ecLastFrame = Date.now();
 let ecLocalSaveLast = Date.now();
+let ecTabBodyLastRender = 0;
 function ecTickLoop(){
   try{
     const now = Date.now();
@@ -3020,7 +3039,14 @@ function ecTickLoop(){
       portfolio.elementClicker.lastTick = now;
     }
     if(now - ecLocalSaveLast > 2000){ ecLocalSaveLast = now; localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio)); }
-    if(document.getElementById('ecPanel')) renderElementClicker();
+    if(document.getElementById('ecPanel')){
+      renderElementClickerStats(); // cheap — text only, safe every frame
+      // the buildings/upgrades/achievements grid is a full innerHTML rebuild — much more
+      // expensive, and doing it 60x/sec was what made clicks/tabs stop responding after a few
+      // seconds (the main thread falls behind faster than it can catch up). Refreshing it twice
+      // a second is still plenty responsive for "can I afford this yet" highlighting.
+      if(now - ecTabBodyLastRender > 500){ ecTabBodyLastRender = now; renderElementClickerTabBody(); }
+    }
     ecCheckAchievements();
   } catch(e){
     console.error('[element-clicker] tick failed:', e); // log and keep ticking rather than let one bad frame silently stop the whole loop
