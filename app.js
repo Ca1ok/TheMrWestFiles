@@ -1392,12 +1392,13 @@ buildPeriodicTable(); // called immediately after being defined — previously t
                        // rendering at all
 
 /* ================= COMPOUND LOOKUP (Periodic Table page only) =================
-   Lets you type a combination like "Hx2, S, Ox4" and get its name, molar mass, and other
-   properties back — matched against COMPOUND_LOOKUP (data/periodic-table-data.js) by its actual
-   elemental composition, not by string formula, so element order/spacing in what you type never
-   matters. Anything not in that list still resolves — you just get the computed formula, molar
-   mass, and elemental breakdown with no name attached, since it's a hypothetical/unlisted combo
-   rather than an error. */
+   Lets you type a combination like "Hx2, S, Ox4" — or an ion like "SO42-" / "NO3-" — and get its
+   name, molar mass, charge, and other properties back. Known compounds/ions are matched against
+   COMPOUND_LOOKUP / POLYATOMIC_IONS (data/periodic-table-data.js) by actual elemental
+   composition (+ charge for ions), not by string formula, so element order/spacing in what you
+   type never matters. A known entry's own curated `formula` string is what gets displayed (so
+   H2SO4 shows as "H2SO4", not some alphabetized reshuffle) — an UNlisted combination falls back
+   to a best-effort Hill-style ordering, since there's no "correct" convention to match anyway. */
 
 function elementBySymbol(sym){ return ELEMENTS.find(e => e[1] === sym); }
 
@@ -1405,44 +1406,143 @@ function subscriptDigits(n){
   const map = {'0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅','6':'₆','7':'₇','8':'₈','9':'₉'};
   return String(n).split('').map(d => map[d]).join('');
 }
+function superscriptDigits(n){
+  const map = {'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹'};
+  return String(n).split('').map(d => map[d]).join('');
+}
+// Renders a plain "H2SO4"-style string (digits, no charge) with proper subscripts.
+function displayFormula(str){
+  return str.replace(/\d+/g, d => subscriptDigits(d));
+}
+// Renders a charge as a trailing superscript, e.g. -2 -> "²⁻", 1 -> "⁺".
+function chargeSuperscript(charge){
+  const mag = Math.abs(charge);
+  return (mag > 1 ? superscriptDigits(mag) : '') + (charge < 0 ? '⁻' : '⁺');
+}
+function chargeLabel(charge){
+  const mag = Math.abs(charge);
+  return `${mag}${charge < 0 ? '−' : '+'}`;
+}
 
-// Hill system: carbon-containing compounds go C, H, then everything else alphabetically;
-// carbon-free compounds go straight alphabetically (including H). This is just for DISPLAY —
-// matching against COMPOUND_LOOKUP happens on the raw composition object, never on this string.
+// Fallback ordering for combinations that AREN'T in the known list — loosely follows the
+// classic "electronegativity order" table used to write covalent formulas (metals/H first,
+// central nonmetal next, O/halogens last), so even hypothetical combos come out looking
+// reasonable. This is a best-effort heuristic, not a guarantee — known compounds never use it,
+// since they carry their own correct `formula` string instead.
+const FORMULA_ORDER_LIST = ['B','Si','C','Sb','As','P','N','H','Te','Se','S','At','I','Br','Cl','O','F'];
+const METAL_CATEGORIES = new Set(['alkali-metal','alkaline-earth','transition-metal','post-transition','lanthanide','actinide']);
+function formulaOrderRank(sym){
+  const e = elementBySymbol(sym);
+  const idx = FORMULA_ORDER_LIST.indexOf(sym);
+  if(idx !== -1) return 1000 + idx;
+  if(e && METAL_CATEGORIES.has(e[4])) return e[0] - 100000; // metals first, ordered by atomic number
+  return (e ? e[0] : 0) + 500; // noble gases / anything else: after metals, before the main list
+}
 function hillFormula(counts){
-  const syms = Object.keys(counts);
-  const order = counts.C
-    ? ['C', ...(counts.H ? ['H'] : []), ...syms.filter(s => s !== 'C' && s !== 'H').sort()]
-    : syms.slice().sort();
+  const order = Object.keys(counts).sort((a, b) => formulaOrderRank(a) - formulaOrderRank(b));
   return order.filter(s => counts[s]).map(s => s + (counts[s] > 1 ? subscriptDigits(counts[s]) : '')).join('');
 }
 
 function compositionKey(counts){
   return Object.keys(counts).filter(s => counts[s] > 0).sort().map(s => `${s}${counts[s]}`).join('.');
 }
-
 function lookupKnownCompound(counts){
   const key = compositionKey(counts);
   return COMPOUND_LOOKUP.find(c => compositionKey(c.comp) === key) || null;
 }
+function lookupIon(counts, charge){
+  if(!charge) return null;
+  const key = compositionKey(counts);
+  return POLYATOMIC_IONS.find(i => i.charge === charge && compositionKey(i.comp) === key) || null;
+}
 
-// Accepts comma- or plus-separated tokens like "Hx2, S, Ox4" (case-insensitive, whitespace
-// anywhere is ignored) — a bare symbol with no "xN" means one atom of it.
-function parseCompoundInput(raw){
-  if(!raw || !raw.trim()) return { error: 'Type one or more elements, like Hx2, S, Ox4.' };
-  const tokens = raw.split(/[,+]/).map(t => t.replace(/\s+/g, '')).filter(Boolean);
-  if(!tokens.length) return { error: 'Type one or more elements, like Hx2, S, Ox4.' };
+// Parses a run of element symbols with counts, e.g. "SO4", "Hx2", "NaCl2" — no separators
+// between elements, just like a real formula. 'x'/'X' before a count is optional (kept for the
+// original "Hx2" style) since a bare number after a symbol already means its count.
+function parseFormulaBody(str){
+  let pos = 0;
   const counts = {};
-  for(const tok of tokens){
-    const m = tok.match(/^([A-Za-z]{1,2})(?:[xX](\d{1,3}))?$/);
-    if(!m) return { error: `Couldn't read "${tok}" — try a format like Hx2.` };
-    const sym = m[1][0].toUpperCase() + (m[1][1] ? m[1][1].toLowerCase() : '');
-    const n = m[2] ? parseInt(m[2], 10) : 1;
+  while(pos < str.length){
+    if(!/[A-Za-z]/.test(str[pos])) return { error: `Couldn't read "${str.slice(pos)}".` };
+    // Two-letter symbols must be cased exactly like real chemistry notation (e.g. "Na", not
+    // "NA" or "na") — this is what lets "NO" parse as N+O (nitrogen, oxygen) rather than being
+    // swallowed whole as "No" (Nobelium). Single letters are case-insensitive since there's no
+    // such ambiguity to protect against there.
+    const twoExact = str.substr(pos, 2);
+    const oneNorm = str[pos].toUpperCase();
+    let sym, consumed;
+    if(/^[A-Z][a-z]$/.test(twoExact) && elementBySymbol(twoExact)){ sym = twoExact; consumed = 2; }
+    else if(elementBySymbol(oneNorm)){ sym = oneNorm; consumed = 1; }
+    else return { error: `"${str.substr(pos, 2)}" isn't an element symbol I know.` };
+    pos += consumed;
+    if(str[pos] === 'x' || str[pos] === 'X') pos++;
+    const digitMatch = str.slice(pos).match(/^\d+/);
+    const n = digitMatch ? parseInt(digitMatch[0], 10) : 1;
+    if(digitMatch) pos += digitMatch[0].length;
     if(n <= 0) return { error: `${sym} needs a count of at least 1.` };
-    if(!elementBySymbol(sym)) return { error: `"${m[1]}" isn't an element symbol I know.` };
     counts[sym] = (counts[sym] || 0) + n;
   }
   return { counts };
+}
+
+// Parses one comma/plus-separated token, which may end in a charge sign ("SO42-", "NO3-",
+// "NH4+"). Charge magnitude is ambiguous purely from the text (is the last digit before the
+// sign an element count or the charge?), so when a token ends in a sign, both readings are
+// tried and whichever one matches a known ion wins; with no known match, the simpler "magnitude
+// 1" reading is used, since that's how most charges are actually written.
+function parseIonOrElementToken(token){
+  const signMatch = token.match(/([+-])$/);
+  if(!signMatch){
+    const r = parseFormulaBody(token);
+    return r.error ? r : { counts: r.counts, charge: 0 };
+  }
+  const sign = signMatch[1] === '-' ? -1 : 1;
+  const body = token.slice(0, -1);
+
+  const plain = parseFormulaBody(body);
+  const interp1 = plain.error ? null : { counts: plain.counts, charge: sign * 1 };
+
+  let interp2 = null;
+  const lastDigit = body.match(/(\d)$/);
+  if(lastDigit){
+    const magBody = parseFormulaBody(body.slice(0, -1));
+    if(!magBody.error) interp2 = { counts: magBody.counts, charge: sign * parseInt(lastDigit[1], 10) };
+  }
+
+  if(interp1 && lookupIon(interp1.counts, interp1.charge)) return interp1;
+  if(interp2 && lookupIon(interp2.counts, interp2.charge)) return interp2;
+  if(interp1) return interp1;
+  if(interp2) return interp2;
+  return { error: `Couldn't read "${token}" as an ion.` };
+}
+
+// Accepts comma- or plus-separated tokens, e.g. "Hx2, S, Ox4" or "Hx2+, SO42-" (whitespace
+// anywhere is ignored). Charges on individual tokens sum into a net charge for the whole thing —
+// zero net charge is treated as a neutral compound; nonzero is treated as an ion.
+function parseCompoundInput(raw){
+  if(!raw || !raw.trim()) return { error: 'Type elements like Hx2, S, Ox4 — or an ion like SO42-.' };
+  // Split on commas first (the primary separator), then also split each piece on '+' (the old
+  // "Hx2+Ox1" style) — but NEVER split off a token's own trailing '+', since that's a charge,
+  // not a separator.
+  const rawTokens = raw.split(',').map(t => t.replace(/\s+/g, '')).filter(Boolean);
+  const finalTokens = [];
+  rawTokens.forEach(t => {
+    // split on '+' EXCEPT when that '+' is the very last character (that's a charge, not a separator)
+    const endsWithPlus = /\+$/.test(t) && !/^[+-]$/.test(t);
+    const parts = endsWithPlus ? [t.slice(0, -1) + '\u0000PLUS\u0000'] : t.split('+');
+    parts.forEach(p => finalTokens.push(p.replace('\u0000PLUS\u0000', '+')));
+  });
+  if(!finalTokens.length) return { error: 'Type elements like Hx2, S, Ox4 — or an ion like SO42-.' };
+
+  const counts = {};
+  let netCharge = 0;
+  for(const tok of finalTokens){
+    const parsed = parseIonOrElementToken(tok);
+    if(parsed.error) return parsed;
+    Object.keys(parsed.counts).forEach(s => { counts[s] = (counts[s] || 0) + parsed.counts[s]; });
+    netCharge += parsed.charge;
+  }
+  return { counts, netCharge };
 }
 
 function renderCompoundLookup(){
@@ -1453,10 +1553,7 @@ function renderCompoundLookup(){
   const parsed = parseCompoundInput(input.value);
   if(parsed.error){ out.innerHTML = `<span class="meta">${parsed.error}</span>`; return; }
 
-  const counts = parsed.counts;
-  const formula = hillFormula(counts);
-  const known = lookupKnownCompound(counts);
-
+  const { counts, netCharge } = parsed;
   let totalMass = 0;
   const rows = Object.keys(counts).map(sym => {
     const e = elementBySymbol(sym);
@@ -1464,24 +1561,42 @@ function renderCompoundLookup(){
     totalMass += contribution;
     return { sym, name: e[2], count: counts[sym], contribution };
   });
-
   const breakdown = rows.map(r =>
     `<span>${r.name} (${r.sym}×${r.count})</span><b>${((r.contribution / totalMass) * 100).toFixed(1)}%</b>`
   ).join('');
-
   const singleElement = rows.length === 1 && rows[0].count === 1;
 
+  let formulaHtml, nameHtml, commonHtml = '', categoryLabel, ionsRow = '';
+
+  if(netCharge !== 0){
+    const ion = lookupIon(counts, netCharge);
+    const baseFormula = ion ? displayFormula(ion.formula) : hillFormula(counts);
+    formulaHtml = `${baseFormula}<sup>${chargeSuperscript(netCharge)}</sup>`;
+    nameHtml = ion ? ion.name : 'Unrecognized ion';
+    categoryLabel = rows.length === 1 ? 'Monatomic ion' : 'Polyatomic ion';
+    ionsRow = `<span>Charge</span><b>${chargeLabel(netCharge)}</b>`;
+  } else {
+    const known = lookupKnownCompound(counts);
+    formulaHtml = known ? displayFormula(known.formula) : hillFormula(counts);
+    nameHtml = known ? known.name : (singleElement ? rows[0].name : 'Unrecognized combination');
+    commonHtml = known && known.common ? `<div class="cl-common">"${known.common}"</div>` : '';
+    categoryLabel = known ? (CATEGORY_LOOKUP_LABELS[known.category] || known.category) : (singleElement ? 'Element' : 'Unknown / hypothetical');
+    ionsRow = known && known.ions ? `<span>Ions</span><b>${known.ions}</b>` : '';
+  }
+
+  const known = netCharge === 0 ? lookupKnownCompound(counts) : lookupIon(counts, netCharge);
+
   out.innerHTML = `
-    <div class="cl-formula">${formula}</div>
-    <div class="cl-name">${known ? known.name : (singleElement ? rows[0].name : 'Unrecognized combination')}</div>
-    ${known && known.common ? `<div class="cl-common">"${known.common}"</div>` : ''}
+    <div class="cl-formula">${formulaHtml}</div>
+    <div class="cl-name">${nameHtml}</div>
+    ${commonHtml}
     <div class="info-grid cl-info-grid">
       <span>Molar mass</span><b>${totalMass.toFixed(2)} g/mol</b>
-      <span>Category</span><b>${known ? (CATEGORY_LOOKUP_LABELS[known.category] || known.category) : (singleElement ? 'Element' : 'Unknown / hypothetical')}</b>
-      ${known && known.ions ? `<span>Ions</span><b>${known.ions}</b>` : ''}
+      <span>Category</span><b>${categoryLabel}</b>
+      ${ionsRow}
     </div>
     ${rows.length > 1 ? `<div class="info-grid cl-breakdown">${breakdown}</div>` : ''}
-    ${known && known.desc ? `<div class="cl-desc">${known.desc}</div>` : (!singleElement ? '<div class="cl-desc">Not in the known-compound list, but the numbers above are still accurate — could be a real, less-common compound, or not a stable one at all.</div>' : '')}
+    ${known && known.desc ? `<div class="cl-desc">${known.desc}</div>` : (!singleElement ? '<div class="cl-desc">Not in the known list, but the numbers above are still accurate — could be a real, less-common combination, or not a stable one at all.</div>' : '')}
   `;
 }
 
