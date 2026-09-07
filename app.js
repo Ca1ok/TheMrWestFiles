@@ -452,9 +452,20 @@ if(lasToggle){
 // and comparatively tiny.
 const STORAGE_KEY = 'mrwestcoin_portfolio';
 
+function defaultClickerState(){
+  const buildings = {};
+  CLICKER_BUILDINGS.forEach(b => { buildings[b.id] = 0; });
+  return {
+    atoms: 0, totalAtoms: 0, runAtoms: 0, totalClicks: 0,
+    buildings, upgrades: [], achievements: [],
+    prestige: { level: 0, shards: 0 },
+    lastTick: Date.now()
+  };
+}
+
 function loadPortfolio(){
   const raw = localStorage.getItem(STORAGE_KEY);
-  if(!raw) return { cash:1000, lots:[], nextLotId:1, trades:[], elements:{}, compounds:{}, tools:['basic'], crafting:{elements:{},compounds:{}} };
+  if(!raw) return { cash:1000, lots:[], nextLotId:1, trades:[], elements:{}, compounds:{}, tools:['basic'], crafting:{elements:{},compounds:{}}, elementClicker: defaultClickerState() };
   const p = JSON.parse(raw);
   // migrate old aggregate-holdings saves into a single lot so nothing is lost
   if(p.lots === undefined){
@@ -468,6 +479,21 @@ function loadPortfolio(){
   if(!p.compounds) p.compounds = {};
   if(!p.tools) p.tools = ['basic'];
   if(!p.crafting) p.crafting = { elements:{}, compounds:{} };
+  // older saves predate Element Clicker — same idea, fill in a fresh default state so the game
+  // (and the admin panel, which reads these fields unconditionally) never sees `undefined`
+  if(!p.elementClicker) p.elementClicker = defaultClickerState();
+  else {
+    const defaults = defaultClickerState();
+    p.elementClicker.buildings = { ...defaults.buildings, ...(p.elementClicker.buildings||{}) };
+    if(!p.elementClicker.upgrades) p.elementClicker.upgrades = [];
+    if(!p.elementClicker.achievements) p.elementClicker.achievements = [];
+    if(!p.elementClicker.prestige) p.elementClicker.prestige = { level:0, shards:0 };
+    if(typeof p.elementClicker.atoms !== 'number') p.elementClicker.atoms = 0;
+    if(typeof p.elementClicker.totalAtoms !== 'number') p.elementClicker.totalAtoms = 0;
+    if(typeof p.elementClicker.runAtoms !== 'number') p.elementClicker.runAtoms = 0;
+    if(typeof p.elementClicker.totalClicks !== 'number') p.elementClicker.totalClicks = 0;
+    if(!p.elementClicker.lastTick) p.elementClicker.lastTick = Date.now();
+  }
   delete p.reactors; delete p.reactorPending; // superseded by the single-bench `crafting` field
   return p;
 }
@@ -481,6 +507,7 @@ function savePortfolio(p){
       cash: p.cash, lots: p.lots, trades: p.trades.slice(-200),
       elements: p.elements || {}, compounds: p.compounds || {}, tools: p.tools || ['basic'],
       crafting: p.crafting || { elements:{}, compounds:{} },
+      elementClicker: p.elementClicker || defaultClickerState(),
       nameLocked: !!p.nameLocked, updatedAt: Date.now()
     }).catch(() => {});
   }
@@ -524,9 +551,15 @@ function loadPlayerData(uid){
         cash: remote.cash, lots: remote.lots || [], trades: remote.trades || [],
         elements: remote.elements || {}, compounds: remote.compounds || {}, tools: remote.tools || ['basic'],
         crafting: remote.crafting || { elements:{}, compounds:{} },
+        elementClicker: remote.elementClicker || defaultClickerState(),
         nameLocked: !!remote.nameLocked
       };
+      // fill in any building/upgrade keys added to the game since this save was written
+      const defaults = defaultClickerState();
+      portfolio.elementClicker.buildings = { ...defaults.buildings, ...(portfolio.elementClicker.buildings||{}) };
+      if(!portfolio.elementClicker.prestige) portfolio.elementClicker.prestige = { level:0, shards:0 };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio));
+      if(typeof applyClickerOfflineProgress === 'function') applyClickerOfflineProgress();
     } else {
       savePortfolio(portfolio); // nothing backed up yet under this ID — protect what we have now
     }
@@ -2362,6 +2395,7 @@ async function migrateAnonymousDataTo(newUid){
     cash: portfolio.cash, lots: portfolio.lots, trades: portfolio.trades.slice(-200),
     elements: portfolio.elements || {}, compounds: portfolio.compounds || {}, tools: portfolio.tools || ['basic'],
     crafting: portfolio.crafting || { elements:{}, compounds:{} },
+    elementClicker: portfolio.elementClicker || defaultClickerState(),
     nameLocked: !!portfolio.nameLocked, updatedAt: Date.now()
   }).catch(() => {});
   switchActiveAccount(newUid);
@@ -2442,6 +2476,7 @@ async function migrateLocalIdDataTo(oldId, newId){
           cash: oldData.cash, lots: oldData.lots || [], trades: oldData.trades || [],
           elements: oldData.elements || {}, compounds: oldData.compounds || {}, tools: oldData.tools || ['basic'],
           crafting: oldData.crafting || { elements:{}, compounds:{} },
+          elementClicker: oldData.elementClicker || defaultClickerState(),
           nameLocked: !!oldData.nameLocked
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio));
@@ -2510,19 +2545,67 @@ function renderAdminPanel(){
   if(!db) return;
   const wrap = document.getElementById('adminPlayerList');
   if(!wrap) return;
-  db.ref('players').once('value').then(snap => {
-    const val = snap.val() || {};
+  Promise.all([
+    db.ref('players').once('value'),
+    db.ref('leaderboard').once('value')
+  ]).then(([playersSnap, lbSnap]) => {
+    const val = playersSnap.val() || {};
+    const lb = lbSnap.val() || {};
     const ids = Object.keys(val).sort((a, b) => (val[b].cash || 0) - (val[a].cash || 0)); // highest cash first — makes broken/exploited accounts easy to spot
     if(ids.length === 0){ wrap.innerHTML = '<div class="empty-history">No players yet.</div>'; return; }
-    wrap.innerHTML = ids.map(id => `
-      <div class="admin-player-row">
-        <span style="width:110px; overflow:hidden; text-overflow:ellipsis;" title="${id}">${id}</span>
-        <input type="number" class="ap-cash" data-id="${id}" value="${(val[id].cash||0).toFixed(2)}">
-        <label><input type="checkbox" class="ap-lock" data-id="${id}" ${val[id].nameLocked ? 'checked' : ''}> Lock name</label>
-        <button class="ap-save" data-id="${id}">Save</button>
-        <button class="ap-reset" data-id="${id}">Reset</button>
-        <button class="ap-delete" data-id="${id}">Delete</button>
-      </div>`).join('');
+
+    wrap.innerHTML = ids.map(id => {
+      const p = val[id] || {};
+      const name = (lb[id] && lb[id].name) || '';
+      const ec = p.elementClicker || defaultClickerState();
+      const buildingRows = CLICKER_BUILDINGS.map(b => `
+        <label class="ap-field"><span>${b.icon} ${b.name}</span>
+          <input type="number" min="0" class="ap-ec-building" data-id="${id}" data-building="${b.id}" value="${ec.buildings[b.id]||0}">
+        </label>`).join('');
+      return `
+      <div class="admin-player-row-wrap" data-id="${id}">
+        <div class="admin-player-row">
+          <span style="width:110px; overflow:hidden; text-overflow:ellipsis;" title="${id}">${name || id}</span>
+          <input type="number" class="ap-cash" data-id="${id}" value="${(p.cash||0).toFixed(2)}">
+          <label><input type="checkbox" class="ap-lock" data-id="${id}" ${p.nameLocked ? 'checked' : ''}> Lock name</label>
+          <button class="ap-save" data-id="${id}">Save</button>
+          <button class="ap-manage" data-id="${id}">Manage ▾</button>
+          <button class="ap-reset" data-id="${id}">Reset</button>
+          <button class="ap-delete" data-id="${id}">Delete</button>
+        </div>
+        <div class="admin-manage-panel" id="apManage-${id}" style="display:none;">
+          <div class="ap-manage-grid">
+            <div class="ap-manage-col">
+              <div class="ap-manage-heading">Identity</div>
+              <label class="ap-field"><span>Display name</span><input type="text" class="ap-name" data-id="${id}" value="${(name||'').replace(/"/g,'&quot;')}" placeholder="(no leaderboard entry yet)"></label>
+              <label class="ap-field"><span>Cash ($WEST)</span><input type="number" step="0.01" class="ap-manage-cash" data-id="${id}" value="${(p.cash||0).toFixed(2)}"></label>
+
+              <div class="ap-manage-heading">Element Clicker — core stats</div>
+              <label class="ap-field"><span>⚛️ Atoms (current)</span><input type="number" class="ap-ec-atoms" data-id="${id}" value="${Math.round(ec.atoms||0)}"></label>
+              <label class="ap-field"><span>⚛️ Total atoms (lifetime)</span><input type="number" class="ap-ec-totalatoms" data-id="${id}" value="${Math.round(ec.totalAtoms||0)}"></label>
+              <label class="ap-field"><span>👆 Total clicks</span><input type="number" class="ap-ec-clicks" data-id="${id}" value="${Math.round(ec.totalClicks||0)}"></label>
+              <label class="ap-field"><span>🔮 Prestige level</span><input type="number" min="0" class="ap-ec-plevel" data-id="${id}" value="${ec.prestige.level||0}"></label>
+              <label class="ap-field"><span>🔷 Isotope shards</span><input type="number" min="0" class="ap-ec-shards" data-id="${id}" value="${ec.prestige.shards||0}"></label>
+            </div>
+            <div class="ap-manage-col">
+              <div class="ap-manage-heading">Element Clicker — buildings owned</div>
+              ${buildingRows}
+            </div>
+          </div>
+          <div class="ap-manage-heading">Advanced (raw JSON — edit with care)</div>
+          <div class="ap-manage-grid ap-manage-json">
+            <label class="ap-field ap-json-field"><span>Elements owned</span><textarea class="ap-json" data-id="${id}" data-field="elements" rows="3">${JSON.stringify(p.elements||{})}</textarea></label>
+            <label class="ap-field ap-json-field"><span>Compounds owned</span><textarea class="ap-json" data-id="${id}" data-field="compounds" rows="3">${JSON.stringify(p.compounds||{})}</textarea></label>
+            <label class="ap-field ap-json-field"><span>Tools owned</span><textarea class="ap-json" data-id="${id}" data-field="tools" rows="3">${JSON.stringify(p.tools||['basic'])}</textarea></label>
+            <label class="ap-field ap-json-field"><span>Clicker upgrades</span><textarea class="ap-json" data-id="${id}" data-field="clickerUpgrades" rows="3">${JSON.stringify(ec.upgrades||[])}</textarea></label>
+            <label class="ap-field ap-json-field"><span>Clicker achievements</span><textarea class="ap-json" data-id="${id}" data-field="clickerAchievements" rows="3">${JSON.stringify(ec.achievements||[])}</textarea></label>
+          </div>
+          <button class="ap-save-manage" data-id="${id}">Save all changes for this player</button>
+          <span class="ap-manage-msg" id="apManageMsg-${id}"></span>
+        </div>
+      </div>`;
+    }).join('');
+
     wrap.querySelectorAll('.ap-save').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.id;
@@ -2531,13 +2614,79 @@ function renderAdminPanel(){
         db.ref('players/' + id).update({ cash, nameLocked }).catch(e => alert('Save failed: ' + e.message));
       });
     });
+    wrap.querySelectorAll('.ap-manage').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const panel = document.getElementById('apManage-' + btn.dataset.id);
+        if(panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+      });
+    });
+    wrap.querySelectorAll('.ap-save-manage').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        const msgEl = document.getElementById('apManageMsg-' + id);
+        const g = sel => wrap.querySelector(`${sel}[data-id="${id}"]`);
+        const num = (el, fallback = 0) => { const v = parseFloat(el.value); return isNaN(v) ? fallback : v; };
+
+        // parse the raw-JSON fields defensively — one malformed field shouldn't block the rest
+        let parseErr = null;
+        const parseJsonField = (field, fallback) => {
+          try{ return JSON.parse(g(`.ap-json[data-field="${field}"]`).value); }
+          catch(e){ parseErr = `${field}: ${e.message}`; return fallback; }
+        };
+        const elements = parseJsonField('elements', {});
+        const compounds = parseJsonField('compounds', {});
+        const tools = parseJsonField('tools', ['basic']);
+        const clickerUpgrades = parseJsonField('clickerUpgrades', []);
+        const clickerAchievements = parseJsonField('clickerAchievements', []);
+        if(parseErr){ msgEl.style.color = 'var(--danger)'; msgEl.textContent = 'Bad JSON in ' + parseErr; return; }
+
+        const buildings = {};
+        CLICKER_BUILDINGS.forEach(b => {
+          const el = wrap.querySelector(`.ap-ec-building[data-id="${id}"][data-building="${b.id}"]`);
+          buildings[b.id] = Math.max(0, Math.round(num(el, 0)));
+        });
+
+        const newName = g('.ap-name').value.trim();
+
+        const updates = {
+          cash: num(g('.ap-manage-cash'), 0),
+          elements, compounds, tools,
+          elementClicker: {
+            atoms: num(g('.ap-ec-atoms'), 0),
+            totalAtoms: num(g('.ap-ec-totalatoms'), 0),
+            runAtoms: (val[id].elementClicker && val[id].elementClicker.runAtoms) || 0,
+            totalClicks: Math.max(0, Math.round(num(g('.ap-ec-clicks'), 0))),
+            buildings,
+            upgrades: clickerUpgrades,
+            achievements: clickerAchievements,
+            prestige: {
+              level: Math.max(0, Math.round(num(g('.ap-ec-plevel'), 0))),
+              shards: Math.max(0, Math.round(num(g('.ap-ec-shards'), 0)))
+            },
+            lastTick: Date.now()
+          },
+          updatedAt: Date.now()
+        };
+
+        const writes = [db.ref('players/' + id).update(updates)];
+        if(newName){
+          writes.push(db.ref('leaderboard/' + id).update({ name: newName, updatedAt: Date.now() }));
+        }
+        Promise.all(writes).then(() => {
+          msgEl.style.color = 'var(--gain)';
+          msgEl.textContent = 'Saved.';
+          renderAdminPanel();
+        }).catch(e => { msgEl.style.color = 'var(--danger)'; msgEl.textContent = 'Save failed: ' + e.message; });
+      });
+    });
     wrap.querySelectorAll('.ap-reset').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.id;
-        if(!confirm(`Reset this player back to a fresh $1000 starting account? Their tools, elements, compounds, stock positions, and trade history will all be wiped — this is meant for cleaning up accounts broken by an old bug (e.g. impossible billions of dollars), not routine use.`)) return;
+        if(!confirm(`Reset this player back to a fresh $1000 starting account? Their tools, elements, compounds, stock positions, Element Clicker progress, and trade history will all be wiped — this is meant for cleaning up accounts broken by an old bug (e.g. impossible billions of dollars), not routine use.`)) return;
         db.ref('players/' + id).set({
           cash: 1000, lots: [], trades: [], elements: {}, compounds: {}, tools: ['basic'],
-          crafting: { elements:{}, compounds:{} }, nameLocked: !!val[id].nameLocked, updatedAt: Date.now()
+          crafting: { elements:{}, compounds:{} }, elementClicker: defaultClickerState(),
+          nameLocked: !!val[id].nameLocked, updatedAt: Date.now()
         }).then(() => {
           // also fix their leaderboard entry — otherwise it keeps showing the old (possibly
           // exploited) value until that player's own browser happens to push a fresh one, which
@@ -2557,6 +2706,307 @@ function renderAdminPanel(){
     });
   });
 }
+
+/* ================= ELEMENT CLICKER (cookin.html — the flagship minigame) =================
+   A Cookie-Clicker-style idle game. State lives at portfolio.elementClicker, same object that's
+   already saved/loaded/migrated alongside cash/elements/etc (see loadPortfolio/savePortfolio and
+   loadPlayerData above). Ticks run in the background on EVERY page (like the shared cash
+   display) so atoms accumulate site-wide, but the actual panel only exists on cookin.html —
+   everything here checks for that before touching the DOM. Firebase writes are batched (see
+   scheduleClickerSave) instead of firing on every click/tick, since a raw click stream would
+   otherwise hammer the database. */
+
+function formatAtoms(n){
+  if(n == null || isNaN(n)) return '0';
+  const abs = Math.abs(n);
+  const tiers = [[1e18,'Qi'], [1e15,'Qa'], [1e12,'T'], [1e9,'B'], [1e6,'M'], [1e3,'K']];
+  for(const [v, suf] of tiers){ if(abs >= v) return (n / v).toFixed(2) + suf; }
+  return n.toFixed(abs < 10 ? 2 : 1);
+}
+
+function ecGlobalMultiplier(){
+  const ec = portfolio.elementClicker;
+  let mult = 1 + (ec.prestige.shards || 0) * CLICKER_SHARD_BONUS;
+  CLICKER_ACHIEVEMENTS.forEach(a => { if(ec.achievements.includes(a.id)) mult += a.globalBonus; });
+  return mult;
+}
+function ecClickPower(){
+  let mult = 1;
+  CLICKER_CLICK_UPGRADES.forEach(u => { if(portfolio.elementClicker.upgrades.includes(u.id)) mult *= u.mult; });
+  return mult * ecGlobalMultiplier();
+}
+function ecBuildingCost(id){
+  const b = CLICKER_BUILDINGS.find(x => x.id === id);
+  const owned = portfolio.elementClicker.buildings[id] || 0;
+  return Math.ceil(b.baseCost * Math.pow(CLICKER_COST_SCALE, owned));
+}
+function ecBuildingUnitCps(id){
+  const b = CLICKER_BUILDINGS.find(x => x.id === id);
+  let mult = 1;
+  CLICKER_BUILDING_UPGRADES.forEach(u => { if(u.building === id && portfolio.elementClicker.upgrades.includes(u.id)) mult *= u.mult; });
+  return b.baseCps * mult;
+}
+function ecTotalCps(){
+  let total = 0;
+  CLICKER_BUILDINGS.forEach(b => { total += (portfolio.elementClicker.buildings[b.id] || 0) * ecBuildingUnitCps(b.id); });
+  return total * ecGlobalMultiplier();
+}
+function ecFindUpgrade(id){
+  return CLICKER_CLICK_UPGRADES.find(u => u.id === id) || CLICKER_BUILDING_UPGRADES.find(u => u.id === id);
+}
+function ecTransmutePreview(){
+  return Math.floor(Math.sqrt((portfolio.elementClicker.runAtoms || 0) / 1000000));
+}
+
+let ecSaveTimer = null;
+function scheduleClickerSave(){
+  if(ecSaveTimer) return;
+  ecSaveTimer = setTimeout(() => {
+    ecSaveTimer = null;
+    if(!portfolio.elementClicker) return;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio));
+    if(db && investorId && playerDataLoaded){
+      db.ref('players/' + investorId + '/elementClicker').set(portfolio.elementClicker).catch(() => {});
+    }
+  }, 4000); // batches rapid clicking/idle ticks into one write roughly every 4s, not one per click
+}
+
+function ecShowAchievementToast(a){
+  const el = document.createElement('div');
+  el.className = 'ec-toast';
+  el.innerHTML = `<b>${a.icon} Achievement unlocked!</b><br>${a.name}${a.cash ? ` — +$${a.cash.toFixed(2)}` : ''}`;
+  document.body.appendChild(el);
+  setTimeout(() => el.classList.add('show'), 10);
+  setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 400); }, 4000);
+}
+function ecCheckAchievements(){
+  const ec = portfolio.elementClicker;
+  if(!ec) return;
+  const snap = { totalClicks: ec.totalClicks, totalAtoms: ec.totalAtoms, buildings: ec.buildings, cps: ecTotalCps(), prestige: ec.prestige };
+  let unlockedNew = false;
+  CLICKER_ACHIEVEMENTS.forEach(a => {
+    if(!ec.achievements.includes(a.id) && a.check(snap)){
+      ec.achievements.push(a.id);
+      portfolio.cash += a.cash || 0;
+      unlockedNew = true;
+      ecShowAchievementToast(a);
+    }
+  });
+  if(unlockedNew){
+    saveEconomy();
+    scheduleClickerSave();
+    if(typeof renderPortfolio === 'function') renderPortfolio();
+  }
+}
+
+function ecClick(){
+  const gain = ecClickPower();
+  const ec = portfolio.elementClicker;
+  ec.atoms += gain;
+  ec.totalAtoms += gain;
+  ec.runAtoms = (ec.runAtoms || 0) + gain;
+  ec.totalClicks += 1;
+  ecCheckAchievements();
+  scheduleClickerSave();
+  return gain;
+}
+function ecBuyBuilding(id){
+  const cost = ecBuildingCost(id);
+  const ec = portfolio.elementClicker;
+  if(ec.atoms < cost) return false;
+  ec.atoms -= cost;
+  ec.buildings[id] = (ec.buildings[id] || 0) + 1;
+  ecCheckAchievements();
+  scheduleClickerSave();
+  renderElementClicker();
+  return true;
+}
+function ecBuyUpgrade(u){
+  const ec = portfolio.elementClicker;
+  if(ec.upgrades.includes(u.id) || ec.atoms < u.cost) return false;
+  ec.atoms -= u.cost;
+  ec.upgrades.push(u.id);
+  scheduleClickerSave();
+  renderElementClicker();
+  return true;
+}
+function ecTransmute(){
+  const gain = ecTransmutePreview();
+  if(gain < 1) return false;
+  if(!confirm(`Transmute now for +${gain} Isotope Shard${gain === 1 ? '' : 's'}? This resets your Atoms, Buildings, and Upgrades for a permanent +${(gain * CLICKER_SHARD_BONUS * 100).toFixed(0)}% production boost. Achievements and shards are kept forever.`)) return false;
+  const ec = portfolio.elementClicker;
+  ec.atoms = 0;
+  ec.runAtoms = 0;
+  CLICKER_BUILDINGS.forEach(b => { ec.buildings[b.id] = 0; });
+  ec.upgrades = [];
+  ec.prestige.level = (ec.prestige.level || 0) + 1;
+  ec.prestige.shards = (ec.prestige.shards || 0) + gain;
+  ecCheckAchievements();
+  scheduleClickerSave();
+  renderElementClicker();
+  return true;
+}
+
+let ecPendingOfflineGain = null;
+function applyClickerOfflineProgress(){
+  const ec = portfolio.elementClicker;
+  if(!ec || !ec.lastTick) return;
+  const elapsed = Math.min((Date.now() - ec.lastTick) / 1000, CLICKER_OFFLINE_CAP_SECONDS);
+  ec.lastTick = Date.now();
+  if(elapsed < 60) return; // not worth a popup for under a minute away
+  const gain = ecTotalCps() * elapsed * CLICKER_OFFLINE_RATE;
+  if(gain > 0){
+    ec.atoms += gain; ec.totalAtoms += gain; ec.runAtoms = (ec.runAtoms || 0) + gain;
+    ecPendingOfflineGain = { gain, elapsed };
+    ecCheckAchievements();
+  }
+}
+
+function ecSpawnFloatingGain(x, y, gain){
+  const btn = document.getElementById('ecClickBtn');
+  if(!btn) return;
+  const rect = btn.getBoundingClientRect();
+  const el = document.createElement('div');
+  el.className = 'ec-float';
+  el.textContent = '+' + formatAtoms(gain);
+  el.style.left = ((x != null ? x : rect.left + rect.width / 2) - rect.left) + 'px';
+  el.style.top = ((y != null ? y : rect.top + rect.height / 2) - rect.top) + 'px';
+  btn.appendChild(el);
+  setTimeout(() => el.remove(), 900);
+}
+
+let ecActiveTab = 'buildings';
+function renderElementClicker(){
+  const panel = document.getElementById('ecPanel');
+  if(!panel) return;
+  const ec = portfolio.elementClicker;
+  const cps = ecTotalCps();
+
+  document.getElementById('ecAtoms').textContent = formatAtoms(ec.atoms);
+  document.getElementById('ecCps').textContent = formatAtoms(cps) + '/sec';
+  document.getElementById('ecClickPow').textContent = '+' + formatAtoms(ecClickPower()) + ' / click';
+  document.getElementById('ecMult').textContent = '×' + ecGlobalMultiplier().toFixed(2) + ' global';
+  document.getElementById('ecShards').textContent = ec.prestige.shards || 0;
+  document.getElementById('ecPrestigeLevel').textContent = ec.prestige.level || 0;
+
+  const transmuteGain = ecTransmutePreview();
+  const transmuteBtn = document.getElementById('ecTransmuteBtn');
+  if(transmuteBtn){
+    transmuteBtn.disabled = transmuteGain < 1;
+    transmuteBtn.textContent = transmuteGain >= 1
+      ? `🔮 Transmute (+${transmuteGain} shard${transmuteGain === 1 ? '' : 's'})`
+      : `🔮 Transmute (need ${formatAtoms(CLICKER_PRESTIGE_MIN_ATOMS)} run atoms)`;
+  }
+
+  const offlineBanner = document.getElementById('ecOfflineBanner');
+  if(offlineBanner){
+    if(ecPendingOfflineGain){
+      const hrs = Math.floor(ecPendingOfflineGain.elapsed / 3600);
+      const mins = Math.floor((ecPendingOfflineGain.elapsed % 3600) / 60);
+      offlineBanner.style.display = 'flex';
+      offlineBanner.querySelector('.ec-offline-text').textContent =
+        `Welcome back! While you were away (${hrs}h ${mins}m): +${formatAtoms(ecPendingOfflineGain.gain)} atoms`;
+    } else {
+      offlineBanner.style.display = 'none';
+    }
+  }
+
+  const body = document.getElementById('ecTabBody');
+  if(!body) return;
+  if(ecActiveTab === 'buildings'){
+    body.innerHTML = CLICKER_BUILDINGS.map(b => {
+      const owned = ec.buildings[b.id] || 0;
+      const cost = ecBuildingCost(b.id);
+      const afford = ec.atoms >= cost;
+      return `<div class="ec-row ${afford ? '' : 'ec-row-locked'}" data-action="buyBuilding" data-id="${b.id}" title="${b.desc}">
+        <span class="ec-row-icon">${b.icon}</span>
+        <span class="ec-row-main"><b>${b.name}</b><br><span class="ec-row-sub">${ecBuildingUnitCps(b.id).toFixed(2)}/sec each · owned ${owned}</span></span>
+        <span class="ec-row-cost">${formatAtoms(cost)}</span>
+      </div>`;
+    }).join('');
+  } else if(ecActiveTab === 'upgrades'){
+    const available = [...CLICKER_CLICK_UPGRADES, ...CLICKER_BUILDING_UPGRADES.filter(u => (ec.buildings[u.building] || 0) >= u.unlockOwned)]
+      .filter(u => !ec.upgrades.includes(u.id));
+    body.innerHTML = available.length ? available.map(u => {
+      const afford = ec.atoms >= u.cost;
+      return `<div class="ec-row ${afford ? '' : 'ec-row-locked'}" data-action="buyUpgrade" data-id="${u.id}" title="${u.desc}">
+        <span class="ec-row-icon">${u.icon}</span>
+        <span class="ec-row-main"><b>${u.name}</b><br><span class="ec-row-sub">${u.desc}</span></span>
+        <span class="ec-row-cost">${formatAtoms(u.cost)}</span>
+      </div>`;
+    }).join('') : '<div class="empty-history">No upgrades available yet — keep building!</div>';
+  } else if(ecActiveTab === 'achievements'){
+    body.innerHTML = CLICKER_ACHIEVEMENTS.map(a => {
+      const unlocked = ec.achievements.includes(a.id);
+      return `<div class="ec-row ${unlocked ? 'ec-row-done' : 'ec-row-locked'}">
+        <span class="ec-row-icon">${a.icon}</span>
+        <span class="ec-row-main"><b>${a.name}</b><br><span class="ec-row-sub">${a.desc}${a.cash ? ` · +$${a.cash.toFixed(2)}` : ''}${a.globalBonus ? ` · +${(a.globalBonus * 100).toFixed(0)}% global` : ''}</span></span>
+        <span class="ec-row-cost">${unlocked ? '✓' : '🔒'}</span>
+      </div>`;
+    }).join('');
+  }
+}
+
+function setupElementClicker(){
+  const panel = document.getElementById('ecPanel');
+  if(!panel) return; // only exists on cookin.html
+  const clickBtn = document.getElementById('ecClickBtn');
+  clickBtn.addEventListener('click', (e) => {
+    const gain = ecClick();
+    renderElementClicker();
+    ecSpawnFloatingGain(e.clientX, e.clientY, gain);
+  });
+  document.getElementById('ecTabBody').addEventListener('click', (e) => {
+    const row = e.target.closest('[data-action]');
+    if(!row) return;
+    if(row.dataset.action === 'buyBuilding') ecBuyBuilding(row.dataset.id);
+    else if(row.dataset.action === 'buyUpgrade'){ const u = ecFindUpgrade(row.dataset.id); if(u) ecBuyUpgrade(u); }
+  });
+  document.querySelectorAll('.ec-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.ec-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      ecActiveTab = tab.dataset.tab;
+      renderElementClicker();
+    });
+  });
+  document.getElementById('ecTransmuteBtn').addEventListener('click', ecTransmute);
+  const dismissBtn = document.getElementById('ecOfflineDismiss');
+  if(dismissBtn) dismissBtn.addEventListener('click', () => { ecPendingOfflineGain = null; renderElementClicker(); });
+
+  renderElementClicker();
+}
+setupElementClicker();
+
+// Runs on EVERY page, same as the shared cash display — atoms accumulate site-wide, not just
+// while cookin.html happens to be open. Rendering (and the achievement-toast side effects) only
+// actually does anything once #ecPanel exists in the DOM.
+let ecLastFrame = Date.now();
+let ecLocalSaveLast = Date.now();
+function ecTickLoop(){
+  const now = Date.now();
+  const dt = (now - ecLastFrame) / 1000;
+  ecLastFrame = now;
+  if(portfolio.elementClicker && dt > 0 && dt < 5){ // ignore large gaps (tab was hidden) — that's handled by applyClickerOfflineProgress at load instead
+    const gained = ecTotalCps() * dt;
+    if(gained > 0){
+      portfolio.elementClicker.atoms += gained;
+      portfolio.elementClicker.totalAtoms += gained;
+      portfolio.elementClicker.runAtoms = (portfolio.elementClicker.runAtoms || 0) + gained;
+    }
+    portfolio.elementClicker.lastTick = now;
+  }
+  if(now - ecLocalSaveLast > 2000){ ecLocalSaveLast = now; localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio)); }
+  if(document.getElementById('ecPanel')) renderElementClicker();
+  ecCheckAchievements();
+  requestAnimationFrame(ecTickLoop);
+}
+requestAnimationFrame(ecTickLoop);
+window.addEventListener('beforeunload', () => {
+  if(portfolio.elementClicker && db && investorId && playerDataLoaded){
+    db.ref('players/' + investorId + '/elementClicker').set(portfolio.elementClicker).catch(() => {});
+  }
+});
 
 /* ================= MINIGAMES (cookin.html — shown everywhere as "Minigames") =================
    Ten small chemistry/physics games sharing the exact same portfolio.cash as the rest of the
