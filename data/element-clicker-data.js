@@ -16,7 +16,7 @@ const CLICKER_BUILDINGS = [
   { id:'centrifuge',   name:'Centrifuge',            icon:'🌀', baseCost:12000,      baseCps:47,      desc:'Spins samples apart faster than you can label them.' },
   { id:'cyclotron',    name:'Cyclotron',             icon:'💫', baseCost:130000,     baseCps:260,     desc:'Particles chasing their own tail at relativistic speed.' },
   { id:'reactor',      name:'Fusion Reactor',        icon:'☢️', baseCost:1400000,    baseCps:1400,    desc:'A small, well-behaved star, mostly under control.' },
-  { id:'accelerator',  name:'Particle Accelerator',  icon:'🚀', baseCost:20000000,   baseCps:7800,    desc:'Kilometers of magnets pointed at nothing but progress.' },
+  { id:'accelerator',  name:'Particle Accelerator',  icon:'🚀', baseCost:20000000,   baseCps:7800,    desc:'Kilometers of magnets pointed at nothing.' },
   { id:'star',         name:'Neutron Star Core',     icon:'⭐', baseCost:330000000,  baseCps:44000,   desc:'Illegally dense. Extremely productive.' },
 ];
 
