@@ -2884,7 +2884,7 @@ function renderElementClicker(){
 
   document.getElementById('ecAtoms').textContent = formatAtoms(ec.atoms);
   document.getElementById('ecCps').textContent = formatAtoms(cps) + '/sec';
-  document.getElementById('ecClickPow').textContent = '+' + formatAtoms(ecClickPower()) + ' / click';
+  document.getElementById('ecClickPow').textContent = '+' + formatAtoms(ecClickPower());
   document.getElementById('ecMult').textContent = '×' + ecGlobalMultiplier().toFixed(2) + ' global';
   document.getElementById('ecShards').textContent = ec.prestige.shards || 0;
   document.getElementById('ecPrestigeLevel').textContent = ec.prestige.level || 0;
@@ -2919,9 +2919,14 @@ function renderElementClicker(){
       const cost = ecBuildingCost(b.id);
       const afford = ec.atoms >= cost;
       return `<div class="ec-row ${afford ? '' : 'ec-row-locked'}" data-action="buyBuilding" data-id="${b.id}" title="${b.desc}">
-        <span class="ec-row-icon">${b.icon}</span>
-        <span class="ec-row-main"><b>${b.name}</b><br><span class="ec-row-sub">${ecBuildingUnitCps(b.id).toFixed(2)}/sec each · owned ${owned}</span></span>
-        <span class="ec-row-cost">${formatAtoms(cost)}</span>
+        <div class="ec-row-top">
+          <span class="ec-row-icon">${b.icon}</span>
+          <span class="ec-row-main">${b.name}<span class="ec-row-sub">${ecBuildingUnitCps(b.id).toFixed(2)}/sec each · owned ${owned}</span></span>
+        </div>
+        <div class="ec-row-footer">
+          <span class="ec-row-footer-label">Cost</span>
+          <span class="ec-row-cost">⚛️ ${formatAtoms(cost)}</span>
+        </div>
       </div>`;
     }).join('');
   } else if(ecActiveTab === 'upgrades'){
@@ -2930,18 +2935,28 @@ function renderElementClicker(){
     body.innerHTML = available.length ? available.map(u => {
       const afford = ec.atoms >= u.cost;
       return `<div class="ec-row ${afford ? '' : 'ec-row-locked'}" data-action="buyUpgrade" data-id="${u.id}" title="${u.desc}">
-        <span class="ec-row-icon">${u.icon}</span>
-        <span class="ec-row-main"><b>${u.name}</b><br><span class="ec-row-sub">${u.desc}</span></span>
-        <span class="ec-row-cost">${formatAtoms(u.cost)}</span>
+        <div class="ec-row-top">
+          <span class="ec-row-icon">${u.icon}</span>
+          <span class="ec-row-main">${u.name}<span class="ec-row-sub">${u.desc}</span></span>
+        </div>
+        <div class="ec-row-footer">
+          <span class="ec-row-footer-label">Cost</span>
+          <span class="ec-row-cost">⚛️ ${formatAtoms(u.cost)}</span>
+        </div>
       </div>`;
     }).join('') : '<div class="empty-history">No upgrades available yet — keep building!</div>';
   } else if(ecActiveTab === 'achievements'){
     body.innerHTML = CLICKER_ACHIEVEMENTS.map(a => {
       const unlocked = ec.achievements.includes(a.id);
       return `<div class="ec-row ${unlocked ? 'ec-row-done' : 'ec-row-locked'}">
-        <span class="ec-row-icon">${a.icon}</span>
-        <span class="ec-row-main"><b>${a.name}</b><br><span class="ec-row-sub">${a.desc}${a.cash ? ` · +$${a.cash.toFixed(2)}` : ''}${a.globalBonus ? ` · +${(a.globalBonus * 100).toFixed(0)}% global` : ''}</span></span>
-        <span class="ec-row-cost">${unlocked ? '✓' : '🔒'}</span>
+        <div class="ec-row-top">
+          <span class="ec-row-icon">${a.icon}</span>
+          <span class="ec-row-main">${a.name}<span class="ec-row-sub">${a.desc}</span></span>
+        </div>
+        <div class="ec-row-footer">
+          <span class="ec-row-footer-label">${a.cash ? '+$' + a.cash.toFixed(2) : ''}${a.globalBonus ? ` · +${(a.globalBonus * 100).toFixed(0)}% global` : ''}</span>
+          <span class="ec-row-cost">${unlocked ? '✓ Done' : '🔒 Locked'}</span>
+        </div>
       </div>`;
     }).join('');
   }
