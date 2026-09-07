@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Minigames — The Mr West Files</title>
-<link rel="stylesheet" href="styles.css?v=20260821z6">
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
@@ -29,8 +29,17 @@
       <!-- ============ FLAGSHIP GAME: Element Clicker ============ -->
       <div id="ecPanel" class="ec-panel">
         <div class="ec-header">
-          <div class="ec-title">⚛️ Element Clicker</div>
-          <div class="ec-subtitle">Click atoms into existence, build a lab that runs itself, and Transmute for permanent power. Progress saves to your account automatically.</div>
+          <div class="ec-title-row">
+            <div>
+              <div class="ec-title">⚛️ Element Clicker</div>
+              <div class="ec-subtitle">Click atoms into existence, build a lab that runs itself, and Transmute for permanent power. Progress saves to your account automatically.</div>
+            </div>
+            <div class="ec-chip-row">
+              <span class="ec-chip">🔮 Prestige&nbsp;<b id="ecPrestigeLevel">0</b></span>
+              <span class="ec-chip">🔷&nbsp;<b id="ecShards">0</b>&nbsp;shards</span>
+              <span class="ec-chip ec-chip-accent" id="ecMult">×1.00 global</span>
+            </div>
+          </div>
         </div>
 
         <div id="ecOfflineBanner" class="ec-offline-banner" style="display:none;">
@@ -41,14 +50,23 @@
         <div class="ec-main">
           <div class="ec-click-side">
             <button id="ecClickBtn" class="ec-click-btn">⚛️</button>
-            <div class="ec-stat-big" id="ecAtoms">0</div>
-            <div class="ec-stat-sub" id="ecCps">0/sec</div>
-            <div class="ec-stat-sub" id="ecClickPow">+1 / click</div>
-            <div class="ec-stat-row">
-              <span>🔮 Prestige <span id="ecPrestigeLevel">0</span></span>
-              <span>🔷 <span id="ecShards">0</span> shards</span>
-              <span id="ecMult">×1.00 global</span>
+
+            <div class="ec-readout">
+              <div class="ec-readout-value" id="ecAtoms">0</div>
+              <div class="ec-readout-label">atoms</div>
             </div>
+
+            <div class="ec-mini-stats">
+              <div class="ec-mini-stat">
+                <span class="ec-mini-stat-label">Production</span>
+                <span class="ec-mini-stat-value" id="ecCps">0/sec</span>
+              </div>
+              <div class="ec-mini-stat">
+                <span class="ec-mini-stat-label">Per click</span>
+                <span class="ec-mini-stat-value" id="ecClickPow">+1</span>
+              </div>
+            </div>
+
             <button id="ecTransmuteBtn" class="ec-transmute-btn">🔮 Transmute</button>
           </div>
 
@@ -91,14 +109,14 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
 
 <!-- Data files, split out so app.js stays focused on behavior -->
-<script src="data/wanted-data.js?v=20260821z6"></script>
-<script src="data/periodic-table-data.js?v=20260821z6"></script>
-<script src="data/databook-data.js?v=20260821z6"></script>
-<script src="data/moderation-data.js?v=20260821z6"></script>
-<script src="data/economy-data.js?v=20260821z6"></script>
-<script src="data/element-clicker-data.js?v=20260821z6"></script>
+<script src="data/wanted-data.js"></script>
+<script src="data/periodic-table-data.js"></script>
+<script src="data/databook-data.js"></script>
+<script src="data/moderation-data.js"></script>
+<script src="data/economy-data.js"></script>
+<script src="data/element-clicker-data.js"></script>
 
-<script src="market-model.js?v=20260821z6"></script>
-<script src="app.js?v=20260821z6"></script>
+<script src="market-model.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
