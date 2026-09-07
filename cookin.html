@@ -26,6 +26,46 @@
       <div class="page-title">Minigames</div>
       <div class="page-sub">Small chemistry &amp; physics games — every payout is real $WEST cash, shared with the rest of the site</div>
 
+      <!-- ============ FLAGSHIP GAME: Element Clicker ============ -->
+      <div id="ecPanel" class="ec-panel">
+        <div class="ec-header">
+          <div class="ec-title">⚛️ Element Clicker</div>
+          <div class="ec-subtitle">Click atoms into existence, build a lab that runs itself, and Transmute for permanent power. Progress saves to your account automatically.</div>
+        </div>
+
+        <div id="ecOfflineBanner" class="ec-offline-banner" style="display:none;">
+          <span class="ec-offline-text"></span>
+          <button id="ecOfflineDismiss" class="tool-btn">Nice</button>
+        </div>
+
+        <div class="ec-main">
+          <div class="ec-click-side">
+            <button id="ecClickBtn" class="ec-click-btn">⚛️</button>
+            <div class="ec-stat-big" id="ecAtoms">0</div>
+            <div class="ec-stat-sub" id="ecCps">0/sec</div>
+            <div class="ec-stat-sub" id="ecClickPow">+1 / click</div>
+            <div class="ec-stat-row">
+              <span>🔮 Prestige <span id="ecPrestigeLevel">0</span></span>
+              <span>🔷 <span id="ecShards">0</span> shards</span>
+              <span id="ecMult">×1.00 global</span>
+            </div>
+            <button id="ecTransmuteBtn" class="ec-transmute-btn">🔮 Transmute</button>
+          </div>
+
+          <div class="ec-shop-side">
+            <div class="ec-tabs">
+              <button class="ec-tab active" data-tab="buildings">Buildings</button>
+              <button class="ec-tab" data-tab="upgrades">Upgrades</button>
+              <button class="ec-tab" data-tab="achievements">Quests &amp; Achievements</button>
+            </div>
+            <div id="ecTabBody" class="ec-tab-body"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="page-title" style="font-size:1.1rem; margin-top:2.2rem;">More Minigames</div>
+      <div class="page-sub">Quick, single-round games — every payout is real $WEST cash, shared with the rest of the site</div>
+
       <div class="game-cat-tabs">
         <button class="game-cat-tab active" data-cat="all">All</button>
         <button class="game-cat-tab" data-cat="educational">Educational</button>
@@ -56,6 +96,7 @@
 <script src="data/databook-data.js?v=20260821z6"></script>
 <script src="data/moderation-data.js?v=20260821z6"></script>
 <script src="data/economy-data.js?v=20260821z6"></script>
+<script src="data/element-clicker-data.js?v=20260821z6"></script>
 
 <script src="market-model.js?v=20260821z6"></script>
 <script src="app.js?v=20260821z6"></script>
