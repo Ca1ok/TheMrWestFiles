@@ -1950,6 +1950,16 @@ function ensureEconomyState(p){
 }
 ensureEconomyState(portfolio);
 
+// Never fires more than once per this window, no matter how many times something calls
+// saveEconomy() in a burst — collapses repeated calls into a single write instead of dropping
+// them (whatever triggered the LAST call still gets saved, just possibly a moment later). This
+// exists specifically to put a hard ceiling on Firebase write frequency/bandwidth regardless of
+// what's calling it — including from any future bug that ends up calling saveEconomy() far more
+// often than a normal buy/sell/craft action would.
+const ECONOMY_SAVE_MIN_INTERVAL_MS = 3000;
+let lastEconomySaveAt = 0;
+let economySaveTimer = null;
+
 function saveEconomy(){
   if(!playerDataLoaded){
     // Don't let an action taken in the brief window before the initial Firebase fetch resolves
@@ -1962,8 +1972,19 @@ function saveEconomy(){
     pendingEconomySave = true;
     return;
   }
-  savePortfolio(portfolio); // reuses the existing cash/lots sync, now also carrying elements/compounds/tools
-  updateNavCashDisplay();
+  const sinceLast = Date.now() - lastEconomySaveAt;
+  if(sinceLast >= ECONOMY_SAVE_MIN_INTERVAL_MS){
+    lastEconomySaveAt = Date.now();
+    savePortfolio(portfolio); // reuses the existing cash/lots sync, now also carrying elements/compounds/tools
+    updateNavCashDisplay();
+  } else if(!economySaveTimer){
+    economySaveTimer = setTimeout(() => {
+      economySaveTimer = null;
+      lastEconomySaveAt = Date.now();
+      savePortfolio(portfolio); // always reads the CURRENT (live) portfolio at write time, so this still saves whatever's true by then, not stale data from when the timer was scheduled
+      updateNavCashDisplay();
+    }, ECONOMY_SAVE_MIN_INTERVAL_MS - sinceLast);
+  }
 }
 
 // populate the element dropdowns
@@ -3088,6 +3109,7 @@ try{ setupElementClicker(); } catch(e){ console.error('[element-clicker] setup f
 let ecLastFrame = Date.now();
 let ecLocalSaveLast = Date.now();
 let ecTabBodyLastRender = 0;
+let ecAchievementCheckLast = 0;
 function ecTickLoop(){
   try{
     const now = Date.now();
@@ -3111,7 +3133,11 @@ function ecTickLoop(){
       // a second is still plenty responsive for "can I afford this yet" highlighting.
       if(now - ecTabBodyLastRender > 500){ ecTabBodyLastRender = now; renderElementClickerTabBody(); }
     }
-    ecCheckAchievements();
+    // Achievements don't need millisecond precision — checking once a second instead of 60
+    // times a second cuts this to 1/60th the work with no visible difference, and (more
+    // importantly) means even a bug that makes an achievement re-qualify repeatedly can save at
+    // most once a second, not 60 times, before ECONOMY_SAVE_MIN_INTERVAL_MS caps it further still.
+    if(now - ecAchievementCheckLast > 1000){ ecAchievementCheckLast = now; ecCheckAchievements(); }
   } catch(e){
     console.error('[element-clicker] tick failed:', e); // log and keep ticking rather than let one bad frame silently stop the whole loop
   }
