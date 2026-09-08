@@ -497,9 +497,16 @@ function loadPortfolio(){
   delete p.reactors; delete p.reactorPending; // superseded by the single-bench `crafting` field
   return p;
 }
+// How long each live field listener (below) ignores incoming Firebase values right after this
+// tab makes its own save — long enough to cover a normal round-trip plus a burst of quick clicks,
+// short enough that syncing a genuine change from another tab/device is barely delayed.
+const LOCAL_ECHO_IGNORE_MS = 2500;
+let lastLocalWriteAt = 0;
+
 function savePortfolio(p){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
   if(db && investorId){
+    lastLocalWriteAt = Date.now(); // see LOCAL_ECHO_IGNORE_MS — set BEFORE the write goes out, so the listener guard covers the full round-trip
     // this is what stops the stock (and elements/compounds/tools/in-progress bench contents) you
     // have from disappearing — everything is backed up, not just the computed leaderboard
     // number, so it survives a cleared cache, a new device, or closing the tab mid-reaction
@@ -546,7 +553,15 @@ function loadPlayerData(uid){
   if(!db || !uid) return;
   db.ref('players/' + uid).once('value').then(snap => {
     const remote = snap.val();
-    if(remote){
+    // If the person already clicked something (bought/crafted/moved an element into the bench,
+    // clicked the atom button, etc.) WHILE this fetch was still in flight, pendingEconomySave is
+    // now true — that action already changed the in-memory `portfolio` object, and blindly
+    // replacing it with this (now-stale-by-comparison) snapshot would silently throw that action
+    // away the moment the fetch happens to resolve. This was exactly why clicking right after a
+    // page load could visibly "undo itself" a moment later. When that's happened, keep the
+    // current (locally-modified) portfolio as-is instead — it's newer — and let the pending save
+    // push it up to Firebase below, overwriting this snapshot rather than the other way around.
+    if(remote && !pendingEconomySave){
       portfolio = {
         cash: remote.cash, lots: remote.lots || [], trades: remote.trades || [],
         elements: remote.elements || {}, compounds: remote.compounds || {}, tools: remote.tools || ['basic'],
@@ -560,7 +575,7 @@ function loadPlayerData(uid){
       if(!portfolio.elementClicker.prestige) portfolio.elementClicker.prestige = { level:0, shards:0 };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio));
       if(typeof applyClickerOfflineProgress === 'function') applyClickerOfflineProgress();
-    } else {
+    } else if(!remote){
       savePortfolio(portfolio); // nothing backed up yet under this ID — protect what we have now
     }
     // Only from here on is it safe to save — see the comment on playerDataLoaded below for why.
@@ -579,6 +594,9 @@ function loadPlayerData(uid){
   if(playerCashListenerRef) playerCashListenerRef.off();
   playerCashListenerRef = db.ref('players/' + uid + '/cash');
   playerCashListenerRef.on('value', (snap) => {
+    // Ignore this if it's just the echo of a write WE made a moment ago — see the long comment
+    // below on the 'tools'/'elements'/'compounds'/'crafting' listeners for why this guard exists.
+    if(Date.now() - lastLocalWriteAt < LOCAL_ECHO_IGNORE_MS) return;
     const remoteCash = snap.val();
     if(typeof remoteCash === 'number' && remoteCash !== portfolio.cash){
       portfolio.cash = remoteCash;
@@ -596,10 +614,20 @@ function loadPlayerData(uid){
   // tool could "disappear": it was never actually lost, just overwritten by a second open tab
   // a few actions later. Live-syncing each field means every open tab picks up every other tab's
   // changes as they happen, so a stale tab's next save re-writes the CURRENT values, not old ones.
+  //
+  // BUT: every save writes the whole player record in one shot, and each of these listeners fires
+  // for ANY change at its path — including the echo of a write this SAME tab just made. If you
+  // click a second element into the crafting bench before the first click's write has round-
+  // tripped back down, that first click's echo can arrive AFTER the second click and unconditio-
+  // nally overwrite portfolio[field] with its (now stale) value — visually "undoing" the second
+  // click. LOCAL_ECHO_IGNORE_MS below is how long each listener ignores incoming values right
+  // after this tab's own save, so our own echoes never fight our own more-recent local state.
+  // Genuine changes from another tab/device still come through as soon as that window passes.
   playerFieldListenerRefs.forEach(r => r.off());
   playerFieldListenerRefs = ['tools', 'elements', 'compounds', 'crafting'].map(field => {
     const ref = db.ref('players/' + uid + '/' + field);
     ref.on('value', (snap) => {
+      if(Date.now() - lastLocalWriteAt < LOCAL_ECHO_IGNORE_MS) return;
       const remote = snap.val();
       if(remote === null || remote === undefined) return;
       portfolio[field] = remote;
@@ -2767,6 +2795,13 @@ function ecTransmutePreview(){
 
 let ecSaveTimer = null;
 function scheduleClickerSave(){
+  // Same signal loadPlayerData checks before overwriting `portfolio` wholesale — a click/buy
+  // that happens before the initial account fetch resolves is a real local change, and without
+  // this flag that fetch would silently discard it the moment it finally comes back (see the
+  // long comment in loadPlayerData for the full story — this is what made clicking right after a
+  // page load appear to "undo itself" a moment later, for buildings/upgrades same as for
+  // buy/craft actions on market.html).
+  if(!playerDataLoaded) pendingEconomySave = true;
   if(ecSaveTimer) return;
   ecSaveTimer = setTimeout(() => {
     ecSaveTimer = null;
