@@ -2954,9 +2954,11 @@ function applyClickerOfflineProgress(){
   });
 }
 
+let ecActiveFloaters = 0;
+const EC_MAX_FLOATERS = 12; // hard cap — protects against unbounded DOM growth from very rapid/macro clicking
 function ecSpawnFloatingGain(x, y, gain){
   const btn = document.getElementById('ecClickBtn');
-  if(!btn) return;
+  if(!btn || ecActiveFloaters >= EC_MAX_FLOATERS) return;
   const rect = btn.getBoundingClientRect();
   const el = document.createElement('div');
   el.className = 'ec-float';
@@ -2964,7 +2966,8 @@ function ecSpawnFloatingGain(x, y, gain){
   el.style.left = ((x != null ? x : rect.left + rect.width / 2) - rect.left) + 'px';
   el.style.top = ((y != null ? y : rect.top + rect.height / 2) - rect.top) + 'px';
   btn.appendChild(el);
-  setTimeout(() => el.remove(), 900);
+  ecActiveFloaters++;
+  setTimeout(() => { el.remove(); ecActiveFloaters--; }, 900);
 }
 
 let ecActiveTab = 'buildings';
@@ -3106,10 +3109,20 @@ try{ setupElementClicker(); } catch(e){ console.error('[element-clicker] setup f
 // Runs on EVERY page, same as the shared cash display — atoms accumulate site-wide, not just
 // while cookin.html happens to be open. Rendering (and the achievement-toast side effects) only
 // actually does anything once #ecPanel exists in the DOM.
+//
+// Deliberately setInterval, NOT requestAnimationFrame. rAF runs at the DISPLAY'S refresh rate —
+// on a 120Hz/144Hz+ monitor (increasingly common) that's 2-3x more often than the 60fps this was
+// tuned and tested against, meaning every per-tick cost silently scales with the person's
+// hardware. A plain counter ticking up doesn't need anywhere near even 60 updates/sec to look
+// smooth — this runs at a fixed, hardware-independent 4 times a second, which is imperceptible
+// as a step-change to a human but is a full 15-60x less total work than the frame-rate-coupled
+// version, with a hard ceiling that no monitor or GPU can push higher.
+const EC_TICK_INTERVAL_MS = 250;
 let ecLastFrame = Date.now();
 let ecLocalSaveLast = Date.now();
 let ecTabBodyLastRender = 0;
 let ecAchievementCheckLast = 0;
+let ecPanelCache = undefined; // cached across ticks — see ecTickLoop, avoids a DOM lookup on every single tick
 function ecTickLoop(){
   try{
     const now = Date.now();
@@ -3125,25 +3138,25 @@ function ecTickLoop(){
       portfolio.elementClicker.lastTick = serverNow(); // NOT the local `now` above — this value anchors next session's offline-progress calc, so it has to be immune to the local clock too, not just the offline calc itself
     }
     if(now - ecLocalSaveLast > 2000){ ecLocalSaveLast = now; localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio)); }
-    if(document.getElementById('ecPanel')){
-      renderElementClickerStats(); // cheap — text only, safe every frame
+    if(ecPanelCache === undefined) ecPanelCache = document.getElementById('ecPanel'); // looked up once, ever — #ecPanel is static markup that never appears/disappears after page load
+    if(ecPanelCache){
+      renderElementClickerStats(); // cheap — text only, safe every tick
       // the buildings/upgrades/achievements grid is a full innerHTML rebuild — much more
-      // expensive, and doing it 60x/sec was what made clicks/tabs stop responding after a few
+      // expensive, and doing it too often was what made clicks/tabs stop responding after a few
       // seconds (the main thread falls behind faster than it can catch up). Refreshing it twice
       // a second is still plenty responsive for "can I afford this yet" highlighting.
       if(now - ecTabBodyLastRender > 500){ ecTabBodyLastRender = now; renderElementClickerTabBody(); }
     }
-    // Achievements don't need millisecond precision — checking once a second instead of 60
-    // times a second cuts this to 1/60th the work with no visible difference, and (more
-    // importantly) means even a bug that makes an achievement re-qualify repeatedly can save at
-    // most once a second, not 60 times, before ECONOMY_SAVE_MIN_INTERVAL_MS caps it further still.
+    // Achievements don't need much precision — checking once a second cuts this to a fraction of
+    // the work with no visible difference, and (more importantly) means even a bug that makes an
+    // achievement re-qualify repeatedly can save at most once a second, not many times, before
+    // ECONOMY_SAVE_MIN_INTERVAL_MS caps it further still.
     if(now - ecAchievementCheckLast > 1000){ ecAchievementCheckLast = now; ecCheckAchievements(); }
   } catch(e){
-    console.error('[element-clicker] tick failed:', e); // log and keep ticking rather than let one bad frame silently stop the whole loop
+    console.error('[element-clicker] tick failed:', e); // log and keep ticking rather than let one bad tick silently stop the whole loop
   }
-  requestAnimationFrame(ecTickLoop);
 }
-requestAnimationFrame(ecTickLoop);
+setInterval(ecTickLoop, EC_TICK_INTERVAL_MS);
 window.addEventListener('beforeunload', () => {
   if(portfolio.elementClicker && db && investorId && playerDataLoaded){
     db.ref('players/' + investorId + '/elementClicker').set(portfolio.elementClicker).catch(() => {});
