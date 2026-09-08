@@ -27,6 +27,24 @@ if(FIREBASE_CONFIGURED){
   } catch(e){ db = null; }
 }
 
+// Trustworthy clock for anything that must NOT be fakeable by changing the device's system time
+// (right now: Element Clicker offline-progress). Firebase's special `.info/serverTimeOffset`
+// path is answered by Firebase's own servers, not derived from the browser's clock — reading it
+// fresh, right now, gives (real server time − Date.now()) at THIS moment, so it's immune to
+// anything the person did to their local clock in the past (before this page load) or does to it
+// afterward (a live-session clock jump is separately capped by the dt<5s guard in the tick loop,
+// so it can't be used to fast-forward an open tab either). serverTimeOffsetReady resolves once a
+// fresh reading is in; anything that checks elapsed real-world time (i.e. offline progress)
+// awaits it first rather than risking the default of 0 (== "trust the local clock").
+let serverTimeOffset = 0;
+let serverTimeOffsetReady = Promise.resolve(0);
+if(db){
+  serverTimeOffsetReady = db.ref('.info/serverTimeOffset').once('value')
+    .then(snap => { serverTimeOffset = snap.val() || 0; return serverTimeOffset; })
+    .catch(() => 0);
+}
+function serverNow(){ return Date.now() + serverTimeOffset; }
+
 // stable per-browser ID, used both to back up this player's portfolio and to identify them on the leaderboard
 let investorId = localStorage.getItem('mrwestcoin_investor_id');
 // Declared up here (not down near the auth-handling code that actually sets it) because
@@ -459,7 +477,7 @@ function defaultClickerState(){
     atoms: 0, totalAtoms: 0, runAtoms: 0, totalClicks: 0,
     buildings, upgrades: [], achievements: [],
     prestige: { level: 0, shards: 0 },
-    lastTick: Date.now()
+    lastTick: serverNow()
   };
 }
 
@@ -492,7 +510,7 @@ function loadPortfolio(){
     if(typeof p.elementClicker.totalAtoms !== 'number') p.elementClicker.totalAtoms = 0;
     if(typeof p.elementClicker.runAtoms !== 'number') p.elementClicker.runAtoms = 0;
     if(typeof p.elementClicker.totalClicks !== 'number') p.elementClicker.totalClicks = 0;
-    if(!p.elementClicker.lastTick) p.elementClicker.lastTick = Date.now();
+    if(!p.elementClicker.lastTick) p.elementClicker.lastTick = serverNow();
   }
   delete p.reactors; delete p.reactorPending; // superseded by the single-bench `crafting` field
   return p;
@@ -2698,7 +2716,7 @@ function renderAdminPanel(){
               level: Math.max(0, Math.round(num(g('.ap-ec-plevel'), 0))),
               shards: Math.max(0, Math.round(num(g('.ap-ec-shards'), 0)))
             },
-            lastTick: Date.now()
+            lastTick: serverNow()
           },
           updatedAt: Date.now()
         };
@@ -2893,15 +2911,26 @@ let ecPendingOfflineGain = null;
 function applyClickerOfflineProgress(){
   const ec = portfolio.elementClicker;
   if(!ec || !ec.lastTick) return;
-  const elapsed = Math.min((Date.now() - ec.lastTick) / 1000, CLICKER_OFFLINE_CAP_SECONDS);
-  ec.lastTick = Date.now();
-  if(elapsed < 60) return; // not worth a popup for under a minute away
-  const gain = ecTotalCps() * elapsed * CLICKER_OFFLINE_RATE;
-  if(gain > 0){
-    ec.atoms += gain; ec.totalAtoms += gain; ec.runAtoms = (ec.runAtoms || 0) + gain;
-    ecPendingOfflineGain = { gain, elapsed };
-    ecCheckAchievements();
-  }
+  // Wait for a FRESH, server-verified "now" before trusting any elapsed-time math here — this is
+  // the one calculation in the whole game where the local clock cannot be trusted, since it's
+  // exactly what determines how much free progress a person gets just for having been away. See
+  // the comment on serverTimeOffset near the top of the file for why this is immune to a changed
+  // system clock, whichever direction and whenever it happened.
+  serverTimeOffsetReady.then(() => {
+    const now = serverNow();
+    const elapsed = Math.min((now - ec.lastTick) / 1000, CLICKER_OFFLINE_CAP_SECONDS);
+    ec.lastTick = now;
+    if(elapsed < 60) return; // not worth a popup for under a minute away
+    if(elapsed < 0) return; // clock weirdness of some kind — never award NEGATIVE-elapsed "progress"
+    const gain = ecTotalCps() * elapsed * CLICKER_OFFLINE_RATE;
+    if(gain > 0){
+      ec.atoms += gain; ec.totalAtoms += gain; ec.runAtoms = (ec.runAtoms || 0) + gain;
+      ecPendingOfflineGain = { gain, elapsed };
+      ecCheckAchievements();
+      renderElementClicker(); // the offline banner + updated totals only show once this (async) result is actually in
+      scheduleClickerSave();
+    }
+  });
 }
 
 function ecSpawnFloatingGain(x, y, gain){
@@ -3071,7 +3100,7 @@ function ecTickLoop(){
         portfolio.elementClicker.totalAtoms += gained;
         portfolio.elementClicker.runAtoms = (portfolio.elementClicker.runAtoms || 0) + gained;
       }
-      portfolio.elementClicker.lastTick = now;
+      portfolio.elementClicker.lastTick = serverNow(); // NOT the local `now` above — this value anchors next session's offline-progress calc, so it has to be immune to the local clock too, not just the offline calc itself
     }
     if(now - ecLocalSaveLast > 2000){ ecLocalSaveLast = now; localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio)); }
     if(document.getElementById('ecPanel')){
