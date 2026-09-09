@@ -30,18 +30,37 @@ if(FIREBASE_CONFIGURED){
 // Trustworthy clock for anything that must NOT be fakeable by changing the device's system time
 // (right now: Element Clicker offline-progress). Firebase's special `.info/serverTimeOffset`
 // path is answered by Firebase's own servers, not derived from the browser's clock — reading it
-// fresh, right now, gives (real server time − Date.now()) at THIS moment, so it's immune to
-// anything the person did to their local clock in the past (before this page load) or does to it
-// afterward (a live-session clock jump is separately capped by the dt<5s guard in the tick loop,
-// so it can't be used to fast-forward an open tab either). serverTimeOffsetReady resolves once a
-// fresh reading is in; anything that checks elapsed real-world time (i.e. offline progress)
-// awaits it first rather than risking the default of 0 (== "trust the local clock").
+// gives (real server time − Date.now()), immune to anything the person did to their local clock,
+// past or present (a live-session clock jump is separately capped by the dt<5s guard in the tick
+// loop, so it can't be used to fast-forward an open tab either).
+//
+// Uses .on('value'), NOT .once('value') — `.info/*` is a special synthetic path answered by the
+// SDK's own connection bookkeeping rather than a normal database read, and Firebase's own docs
+// specifically demonstrate it with a live listener; .once() on it is unofficial and, on at least
+// some connections, never resolves at all. A hung .once() here wouldn't crash anything by itself
+// — the failure mode is quieter and worse: applyClickerOfflineProgress's `.then()` callback (see
+// below) just never runs, silently freezing the Element Clicker's own local record of elapsed
+// time while the rest of the page carries on normally, which looks exactly like "it eventually
+// stops" without ever throwing an error to explain why. The 5s timeout below is a second,
+// independent safety net for the same reason: whatever the actual cause of a stall turns out to
+// be, this feature must never be able to hang anything else waiting on it.
 let serverTimeOffset = 0;
 let serverTimeOffsetReady = Promise.resolve(0);
 if(db){
-  serverTimeOffsetReady = db.ref('.info/serverTimeOffset').once('value')
-    .then(snap => { serverTimeOffset = snap.val() || 0; return serverTimeOffset; })
-    .catch(() => 0);
+  let resolveOffsetReady;
+  serverTimeOffsetReady = new Promise(resolve => { resolveOffsetReady = resolve; });
+  let offsetSettled = false;
+  try{
+    db.ref('.info/serverTimeOffset').on('value', (snap) => {
+      serverTimeOffset = snap.val() || 0;
+      if(!offsetSettled){ offsetSettled = true; resolveOffsetReady(serverTimeOffset); }
+    });
+  } catch(e){
+    if(!offsetSettled){ offsetSettled = true; resolveOffsetReady(0); }
+  }
+  setTimeout(() => {
+    if(!offsetSettled){ offsetSettled = true; resolveOffsetReady(0); } // never got a reading in time — fall back to trusting the local clock rather than hang forever
+  }, 5000);
 }
 function serverNow(){ return Date.now() + serverTimeOffset; }
 
@@ -2930,14 +2949,20 @@ function ecTransmute(){
 
 let ecPendingOfflineGain = null;
 function applyClickerOfflineProgress(){
-  const ec = portfolio.elementClicker;
-  if(!ec || !ec.lastTick) return;
+  if(!portfolio.elementClicker || !portfolio.elementClicker.lastTick) return;
+  const lastTickAtCallTime = portfolio.elementClicker.lastTick;
   // Wait for a FRESH, server-verified "now" before trusting any elapsed-time math here — this is
   // the one calculation in the whole game where the local clock cannot be trusted, since it's
   // exactly what determines how much free progress a person gets just for having been away. See
   // the comment on serverTimeOffset near the top of the file for why this is immune to a changed
   // system clock, whichever direction and whenever it happened.
   serverTimeOffsetReady.then(() => {
+    // Re-read portfolio.elementClicker HERE rather than reusing a reference captured before this
+    // async wait — if portfolio got reassigned in the meantime (a fresh account load, an admin
+    // edit landing, etc.) an old captured reference would silently mutate an orphaned object
+    // instead of the real one, quietly losing the whole calculation with no error to show for it.
+    const ec = portfolio.elementClicker;
+    if(!ec || ec.lastTick !== lastTickAtCallTime) return; // something else already moved lastTick forward (e.g. the tick loop) — don't double-count on top of that
     const now = serverNow();
     const elapsed = Math.min((now - ec.lastTick) / 1000, CLICKER_OFFLINE_CAP_SECONDS);
     ec.lastTick = now;
