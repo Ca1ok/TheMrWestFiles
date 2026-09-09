@@ -27,18 +27,6 @@ if(FIREBASE_CONFIGURED){
   } catch(e){ db = null; }
 }
 
-// Trustworthy clock for anything that must NOT be fakeable by changing the device's system time
-// (right now: Element Clicker offline-progress). Declared up here — not down by the market
-// checkpoint code that actually maintains it further below — because defaultClickerState() calls
-// serverNow() and runs synchronously during the very first line of script execution (loadPortfolio(),
-// a few lines down); a `let` referenced before its own declaration line has executed throws
-// (temporal dead zone), same reason investorId/isSignedIn live up here instead of near their
-// "natural" home. trustedTimeOffset itself gets set from market-data.json's `t` field — see the
-// long comment by fetchMarketCheckpoint() for why that's a trustworthy, un-fakeable source of
-// real-world time without needing a live server connection.
-let trustedTimeOffset = 0;
-function serverNow(){ return Date.now() + trustedTimeOffset; }
-
 // stable per-browser ID, used both to back up this player's portfolio and to identify them on the leaderboard
 let investorId = localStorage.getItem('mrwestcoin_investor_id');
 // Declared up here (not down near the auth-handling code that actually sets it) because
@@ -470,8 +458,7 @@ function defaultClickerState(){
   return {
     atoms: 0, totalAtoms: 0, runAtoms: 0, totalClicks: 0,
     buildings, upgrades: [], achievements: [],
-    prestige: { level: 0, shards: 0 },
-    lastTick: serverNow()
+    prestige: { level: 0, shards: 0 }
   };
 }
 
@@ -504,7 +491,8 @@ function loadPortfolio(){
     if(typeof p.elementClicker.totalAtoms !== 'number') p.elementClicker.totalAtoms = 0;
     if(typeof p.elementClicker.runAtoms !== 'number') p.elementClicker.runAtoms = 0;
     if(typeof p.elementClicker.totalClicks !== 'number') p.elementClicker.totalClicks = 0;
-    if(!p.elementClicker.lastTick) p.elementClicker.lastTick = serverNow();
+    // lastTick was for the (now removed) offline-progress feature — no longer written, but old
+    // saves may still have it; harmless to leave sitting there unused rather than strip it out
   }
   delete p.reactors; delete p.reactorPending; // superseded by the single-bench `crafting` field
   return p;
@@ -586,7 +574,6 @@ function loadPlayerData(uid){
       portfolio.elementClicker.buildings = { ...defaults.buildings, ...(portfolio.elementClicker.buildings||{}) };
       if(!portfolio.elementClicker.prestige) portfolio.elementClicker.prestige = { level:0, shards:0 };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio));
-      if(typeof applyClickerOfflineProgress === 'function') applyClickerOfflineProgress();
     } else if(!remote){
       savePortfolio(portfolio); // nothing backed up yet under this ID — protect what we have now
     }
@@ -1273,18 +1260,13 @@ async function fetchMarketCheckpoint(){
     if(cp && cp.tickIndex !== undefined && cp.state){
       syncOK = true;
       cacheCheckpointLocally(cp);
-      // cp.t is GitHub's clock, not this browser's — see the comment on trustedTimeOffset above.
-      // Recomputed on every successful fetch (this one runs on page load, then again every
-      // MARKET_CHECKPOINT_REFRESH_MS), so it also self-corrects over a long session rather than
-      // being one static reading taken only once at the start.
-      if(typeof cp.t === 'number') trustedTimeOffset = cp.t - Date.now();
       // only re-baseline if this checkpoint is actually newer than what we're already ticking
       // from — otherwise a slow/late response could yank the live price backwards
       if(!marketCheckpoint || cp.tickIndex > marketCheckpoint.tickIndex){
         catchUpAndStartTicking(cp);
       }
     }
-  } catch(e){ /* offline, or the file isn't reachable yet — keep ticking from what we have, and serverNow() just falls back to trusting the local clock until a fetch finally succeeds */ }
+  } catch(e){ /* offline, or the file isn't reachable yet — keep ticking from what we have */ }
 }
 
 // paint instantly from whatever's cached locally so there's no "$--.--" flash, then get a real
@@ -1294,12 +1276,7 @@ if(market && market.tickIndex !== undefined && market.state){
 } else {
   catchUpAndStartTicking(null); // starts from the fixed genesis — still fully deterministic
 }
-// Resolves once the first fetch attempt above has finished, one way or the other — used by
-// anything (i.e. Element Clicker's offline-progress calc) that wants a best-effort trustworthy
-// "now" before doing real-world-elapsed-time math, without needing its own separate network
-// round trip. This can't hang: fetchMarketCheckpoint() already catches every failure internally,
-// so this promise always settles as soon as that one attempt (success or failure) is done.
-let serverTimeOffsetReady = fetchMarketCheckpoint().then(() => trustedTimeOffset).catch(() => 0);
+fetchMarketCheckpoint();
 setInterval(fetchMarketCheckpoint, MARKET_CHECKPOINT_REFRESH_MS);
 
 // The actual live ticking — sub-second, entirely local, zero network calls. This is what makes
@@ -2740,8 +2717,7 @@ function renderAdminPanel(){
             prestige: {
               level: Math.max(0, Math.round(num(g('.ap-ec-plevel'), 0))),
               shards: Math.max(0, Math.round(num(g('.ap-ec-shards'), 0)))
-            },
-            lastTick: serverNow()
+            }
           },
           updatedAt: Date.now()
         };
@@ -2932,38 +2908,6 @@ function ecTransmute(){
   return true;
 }
 
-let ecPendingOfflineGain = null;
-function applyClickerOfflineProgress(){
-  if(!portfolio.elementClicker || !portfolio.elementClicker.lastTick) return;
-  const lastTickAtCallTime = portfolio.elementClicker.lastTick;
-  // Wait for a FRESH, server-verified "now" before trusting any elapsed-time math here — this is
-  // the one calculation in the whole game where the local clock cannot be trusted, since it's
-  // exactly what determines how much free progress a person gets just for having been away. See
-  // the comment on trustedTimeOffset (near the market checkpoint code) for why this is immune to
-  // a changed system clock, whichever direction and whenever it happened.
-  serverTimeOffsetReady.then(() => {
-    // Re-read portfolio.elementClicker HERE rather than reusing a reference captured before this
-    // async wait — if portfolio got reassigned in the meantime (a fresh account load, an admin
-    // edit landing, etc.) an old captured reference would silently mutate an orphaned object
-    // instead of the real one, quietly losing the whole calculation with no error to show for it.
-    const ec = portfolio.elementClicker;
-    if(!ec || ec.lastTick !== lastTickAtCallTime) return; // something else already moved lastTick forward (e.g. the tick loop) — don't double-count on top of that
-    const now = serverNow();
-    const elapsed = Math.min((now - ec.lastTick) / 1000, CLICKER_OFFLINE_CAP_SECONDS);
-    ec.lastTick = now;
-    if(elapsed < 60) return; // not worth a popup for under a minute away
-    if(elapsed < 0) return; // clock weirdness of some kind — never award NEGATIVE-elapsed "progress"
-    const gain = ecTotalCps() * elapsed * CLICKER_OFFLINE_RATE;
-    if(gain > 0){
-      ec.atoms += gain; ec.totalAtoms += gain; ec.runAtoms = (ec.runAtoms || 0) + gain;
-      ecPendingOfflineGain = { gain, elapsed };
-      ecCheckAchievements();
-      renderElementClicker(); // the offline banner + updated totals only show once this (async) result is actually in
-      scheduleClickerSave();
-    }
-  });
-}
-
 let ecActiveFloaters = 0;
 const EC_MAX_FLOATERS = 12; // hard cap — protects against unbounded DOM growth from very rapid/macro clicking
 function ecSpawnFloatingGain(x, y, gain){
@@ -3002,19 +2946,6 @@ function renderElementClickerStats(){
     transmuteBtn.textContent = transmuteGain >= 1
       ? `🔮 Transmute (+${transmuteGain} shard${transmuteGain === 1 ? '' : 's'})`
       : `🔮 Transmute (need ${formatAtoms(CLICKER_PRESTIGE_MIN_ATOMS)} run atoms)`;
-  }
-
-  const offlineBanner = document.getElementById('ecOfflineBanner');
-  if(offlineBanner){
-    if(ecPendingOfflineGain){
-      const hrs = Math.floor(ecPendingOfflineGain.elapsed / 3600);
-      const mins = Math.floor((ecPendingOfflineGain.elapsed % 3600) / 60);
-      offlineBanner.style.display = 'flex';
-      offlineBanner.querySelector('.ec-offline-text').textContent =
-        `Welcome back! While you were away (${hrs}h ${mins}m): +${formatAtoms(ecPendingOfflineGain.gain)} atoms`;
-    } else {
-      offlineBanner.style.display = 'none';
-    }
   }
 }
 
@@ -3109,8 +3040,6 @@ function setupElementClicker(){
     });
   });
   document.getElementById('ecTransmuteBtn').addEventListener('click', ecTransmute);
-  const dismissBtn = document.getElementById('ecOfflineDismiss');
-  if(dismissBtn) dismissBtn.addEventListener('click', () => { ecPendingOfflineGain = null; renderElementClicker(); });
 
   renderElementClicker();
 }
@@ -3138,14 +3067,13 @@ function ecTickLoop(){
     const now = Date.now();
     const dt = (now - ecLastFrame) / 1000;
     ecLastFrame = now;
-    if(portfolio.elementClicker && dt > 0 && dt < 5){ // ignore large gaps (tab was hidden) — that's handled by applyClickerOfflineProgress at load instead
+    if(portfolio.elementClicker && dt > 0 && dt < 5){ // ignore large/negative gaps (tab was hidden, or a clock change) rather than award or lose a burst of atoms for them
       const gained = ecTotalCps() * dt;
       if(gained > 0){
         portfolio.elementClicker.atoms += gained;
         portfolio.elementClicker.totalAtoms += gained;
         portfolio.elementClicker.runAtoms = (portfolio.elementClicker.runAtoms || 0) + gained;
       }
-      portfolio.elementClicker.lastTick = serverNow(); // NOT the local `now` above — this value anchors next session's offline-progress calc, so it has to be immune to the local clock too, not just the offline calc itself
     }
     if(now - ecLocalSaveLast > 2000){ ecLocalSaveLast = now; localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio)); }
     if(ecPanelCache === undefined) ecPanelCache = document.getElementById('ecPanel'); // looked up once, ever — #ecPanel is static markup that never appears/disappears after page load
