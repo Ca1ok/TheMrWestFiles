@@ -3050,13 +3050,10 @@ try{ setupElementClicker(); } catch(e){ console.error('[element-clicker] setup f
 // actually does anything once #ecPanel exists in the DOM.
 //
 // Deliberately setInterval, NOT requestAnimationFrame. rAF runs at the DISPLAY'S refresh rate —
-// on a 120Hz/144Hz+ monitor (increasingly common) that's 2-3x more often than the 60fps this was
-// tuned and tested against, meaning every per-tick cost silently scales with the person's
-// hardware. A plain counter ticking up doesn't need anywhere near even 60 updates/sec to look
-// smooth — this runs at a fixed, hardware-independent 4 times a second, which is imperceptible
-// as a step-change to a human but is a full 15-60x less total work than the frame-rate-coupled
-// version, with a hard ceiling that no monitor or GPU can push higher.
-const EC_TICK_INTERVAL_MS = 250;
+// on a 120Hz/144Hz+ monitor (increasingly common) that's several times more often than this was
+// originally tuned and tested against, meaning every per-tick cost silently scales with the
+// person's hardware. This runs at a fixed, hardware-independent rate instead.
+const EC_TICK_INTERVAL_MS = 100; // 10x/sec — snappier-looking atom counter than the original 250ms
 let ecLastFrame = Date.now();
 let ecLocalSaveLast = Date.now();
 let ecTabBodyLastRender = 0;
@@ -3067,8 +3064,19 @@ function ecTickLoop(){
     const now = Date.now();
     const dt = (now - ecLastFrame) / 1000;
     ecLastFrame = now;
-    if(portfolio.elementClicker && dt > 0 && dt < 5){ // ignore large/negative gaps (tab was hidden, or a clock change) rather than award or lose a burst of atoms for them
-      const gained = ecTotalCps() * dt;
+    // Browsers throttle setInterval in tabs that haven't had recent user interaction — even a
+    // foreground tab, on some browsers/power settings, not just backgrounded ones — so a "gap"
+    // between ticks bigger than EC_TICK_INTERVAL_MS is a NORMAL, expected occurrence here, not a
+    // sign anything is wrong. The old code capped dt at 5 seconds and threw away everything past
+    // that, meaning a throttled gap didn't just delay the count, it permanently LOST that time —
+    // atoms silently stopped accumulating and stayed stopped until something (e.g. a click, which
+    // resets the browser's "recently interacted with" clock and lifts the throttling) forced
+    // things to catch up. Awarding the FULL elapsed real time here — generously capped, not
+    // discarded — means the counter self-corrects the moment a tick finally does fire, with
+    // nothing lost while it was throttled.
+    if(portfolio.elementClicker && dt > 0){
+      const cappedDt = Math.min(dt, 300); // still bounded, just generous — guards against a genuine multi-minute system-sleep gap counting as active production, not against normal throttling
+      const gained = ecTotalCps() * cappedDt;
       if(gained > 0){
         portfolio.elementClicker.atoms += gained;
         portfolio.elementClicker.totalAtoms += gained;
@@ -3095,6 +3103,13 @@ function ecTickLoop(){
   }
 }
 setInterval(ecTickLoop, EC_TICK_INTERVAL_MS);
+// Belt-and-suspenders for the same throttling behavior: the instant the tab becomes visible
+// again (switching back to it, or the OS/browser waking it up), immediately run a tick rather
+// than waiting for the next scheduled interval fire — some browsers take one extra throttled
+// cycle to fully "unclamp" a timer even after the tab regains focus, so this skips that wait and
+// snaps the display to the correct value right away instead of visibly lagging for a moment.
+document.addEventListener('visibilitychange', () => { if(!document.hidden) ecTickLoop(); });
+window.addEventListener('focus', ecTickLoop);
 window.addEventListener('beforeunload', () => {
   if(portfolio.elementClicker && db && investorId && playerDataLoaded){
     db.ref('players/' + investorId + '/elementClicker').set(portfolio.elementClicker).catch(() => {});
