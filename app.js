@@ -28,41 +28,16 @@ if(FIREBASE_CONFIGURED){
 }
 
 // Trustworthy clock for anything that must NOT be fakeable by changing the device's system time
-// (right now: Element Clicker offline-progress). Firebase's special `.info/serverTimeOffset`
-// path is answered by Firebase's own servers, not derived from the browser's clock — reading it
-// gives (real server time − Date.now()), immune to anything the person did to their local clock,
-// past or present (a live-session clock jump is separately capped by the dt<5s guard in the tick
-// loop, so it can't be used to fast-forward an open tab either).
-//
-// Uses .on('value'), NOT .once('value') — `.info/*` is a special synthetic path answered by the
-// SDK's own connection bookkeeping rather than a normal database read, and Firebase's own docs
-// specifically demonstrate it with a live listener; .once() on it is unofficial and, on at least
-// some connections, never resolves at all. A hung .once() here wouldn't crash anything by itself
-// — the failure mode is quieter and worse: applyClickerOfflineProgress's `.then()` callback (see
-// below) just never runs, silently freezing the Element Clicker's own local record of elapsed
-// time while the rest of the page carries on normally, which looks exactly like "it eventually
-// stops" without ever throwing an error to explain why. The 5s timeout below is a second,
-// independent safety net for the same reason: whatever the actual cause of a stall turns out to
-// be, this feature must never be able to hang anything else waiting on it.
-let serverTimeOffset = 0;
-let serverTimeOffsetReady = Promise.resolve(0);
-if(db){
-  let resolveOffsetReady;
-  serverTimeOffsetReady = new Promise(resolve => { resolveOffsetReady = resolve; });
-  let offsetSettled = false;
-  try{
-    db.ref('.info/serverTimeOffset').on('value', (snap) => {
-      serverTimeOffset = snap.val() || 0;
-      if(!offsetSettled){ offsetSettled = true; resolveOffsetReady(serverTimeOffset); }
-    });
-  } catch(e){
-    if(!offsetSettled){ offsetSettled = true; resolveOffsetReady(0); }
-  }
-  setTimeout(() => {
-    if(!offsetSettled){ offsetSettled = true; resolveOffsetReady(0); } // never got a reading in time — fall back to trusting the local clock rather than hang forever
-  }, 5000);
-}
-function serverNow(){ return Date.now() + serverTimeOffset; }
+// (right now: Element Clicker offline-progress). Declared up here — not down by the market
+// checkpoint code that actually maintains it further below — because defaultClickerState() calls
+// serverNow() and runs synchronously during the very first line of script execution (loadPortfolio(),
+// a few lines down); a `let` referenced before its own declaration line has executed throws
+// (temporal dead zone), same reason investorId/isSignedIn live up here instead of near their
+// "natural" home. trustedTimeOffset itself gets set from market-data.json's `t` field — see the
+// long comment by fetchMarketCheckpoint() for why that's a trustworthy, un-fakeable source of
+// real-world time without needing a live server connection.
+let trustedTimeOffset = 0;
+function serverNow(){ return Date.now() + trustedTimeOffset; }
 
 // stable per-browser ID, used both to back up this player's portfolio and to identify them on the leaderboard
 let investorId = localStorage.getItem('mrwestcoin_investor_id');
@@ -1298,13 +1273,18 @@ async function fetchMarketCheckpoint(){
     if(cp && cp.tickIndex !== undefined && cp.state){
       syncOK = true;
       cacheCheckpointLocally(cp);
+      // cp.t is GitHub's clock, not this browser's — see the comment on trustedTimeOffset above.
+      // Recomputed on every successful fetch (this one runs on page load, then again every
+      // MARKET_CHECKPOINT_REFRESH_MS), so it also self-corrects over a long session rather than
+      // being one static reading taken only once at the start.
+      if(typeof cp.t === 'number') trustedTimeOffset = cp.t - Date.now();
       // only re-baseline if this checkpoint is actually newer than what we're already ticking
       // from — otherwise a slow/late response could yank the live price backwards
       if(!marketCheckpoint || cp.tickIndex > marketCheckpoint.tickIndex){
         catchUpAndStartTicking(cp);
       }
     }
-  } catch(e){ /* offline, or the file isn't reachable yet — keep ticking from what we have */ }
+  } catch(e){ /* offline, or the file isn't reachable yet — keep ticking from what we have, and serverNow() just falls back to trusting the local clock until a fetch finally succeeds */ }
 }
 
 // paint instantly from whatever's cached locally so there's no "$--.--" flash, then get a real
@@ -1314,7 +1294,12 @@ if(market && market.tickIndex !== undefined && market.state){
 } else {
   catchUpAndStartTicking(null); // starts from the fixed genesis — still fully deterministic
 }
-fetchMarketCheckpoint();
+// Resolves once the first fetch attempt above has finished, one way or the other — used by
+// anything (i.e. Element Clicker's offline-progress calc) that wants a best-effort trustworthy
+// "now" before doing real-world-elapsed-time math, without needing its own separate network
+// round trip. This can't hang: fetchMarketCheckpoint() already catches every failure internally,
+// so this promise always settles as soon as that one attempt (success or failure) is done.
+let serverTimeOffsetReady = fetchMarketCheckpoint().then(() => trustedTimeOffset).catch(() => 0);
 setInterval(fetchMarketCheckpoint, MARKET_CHECKPOINT_REFRESH_MS);
 
 // The actual live ticking — sub-second, entirely local, zero network calls. This is what makes
@@ -2954,8 +2939,8 @@ function applyClickerOfflineProgress(){
   // Wait for a FRESH, server-verified "now" before trusting any elapsed-time math here — this is
   // the one calculation in the whole game where the local clock cannot be trusted, since it's
   // exactly what determines how much free progress a person gets just for having been away. See
-  // the comment on serverTimeOffset near the top of the file for why this is immune to a changed
-  // system clock, whichever direction and whenever it happened.
+  // the comment on trustedTimeOffset (near the market checkpoint code) for why this is immune to
+  // a changed system clock, whichever direction and whenever it happened.
   serverTimeOffsetReady.then(() => {
     // Re-read portfolio.elementClicker HERE rather than reusing a reference captured before this
     // async wait — if portfolio got reassigned in the meantime (a fresh account load, an admin
