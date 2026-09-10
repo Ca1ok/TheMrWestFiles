@@ -623,12 +623,39 @@ function loadPlayerData(uid){
   // after this tab's own save, so our own echoes never fight our own more-recent local state.
   // Genuine changes from another tab/device still come through as soon as that window passes.
   playerFieldListenerRefs.forEach(r => r.off());
-  playerFieldListenerRefs = ['tools', 'elements', 'compounds', 'crafting'].map(field => {
+  playerFieldListenerRefs = ['tools', 'elements', 'compounds', 'crafting', 'elementClicker'].map(field => {
     const ref = db.ref('players/' + uid + '/' + field);
     ref.on('value', (snap) => {
       if(Date.now() - lastLocalWriteAt < LOCAL_ECHO_IGNORE_MS) return;
       const remote = snap.val();
       if(remote === null || remote === undefined) return;
+      if(field === 'elementClicker'){
+        // Element Clicker gets a gentler merge than the other fields, not a flat overwrite — its
+        // atoms/totalAtoms/runAtoms change every ~100ms from the idle tick loop (not just on
+        // discrete user actions like buying a tool does), so a live update landing right after
+        // LOCAL_ECHO_IGNORE_MS expires — even one that's just this SAME tab's own slightly-
+        // delayed echo — would otherwise roll the counter visibly backward every few seconds
+        // before ticking resumed forward from the lower number. Taking the higher of local vs
+        // remote for those three fields makes that impossible (an echo of our own older save can
+        // never beat what we've since ticked past) while still picking up a genuine bigger gain
+        // from another tab/device the moment it's actually ahead. Buildings/upgrades/
+        // achievements/prestige only change on discrete purchase/transmute actions — same
+        // infrequent-write pattern as tools/elements — so those sync the same direct way.
+        const ec = portfolio.elementClicker;
+        if(!ec) { portfolio.elementClicker = remote; }
+        else{
+          ec.atoms = Math.max(ec.atoms || 0, remote.atoms || 0);
+          ec.totalAtoms = Math.max(ec.totalAtoms || 0, remote.totalAtoms || 0);
+          ec.runAtoms = Math.max(ec.runAtoms || 0, remote.runAtoms || 0);
+          ec.totalClicks = Math.max(ec.totalClicks || 0, remote.totalClicks || 0);
+          if(remote.buildings) ec.buildings = remote.buildings;
+          if(remote.upgrades) ec.upgrades = remote.upgrades;
+          if(remote.achievements) ec.achievements = remote.achievements;
+          if(remote.prestige) ec.prestige = remote.prestige;
+        }
+        if(typeof renderElementClicker === 'function') renderElementClicker();
+        return;
+      }
       portfolio[field] = remote;
       if(field === 'tools'){
         if(typeof renderTools === 'function') renderTools();
@@ -2827,6 +2854,7 @@ function scheduleClickerSave(){
     if(!portfolio.elementClicker) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio));
     if(db && investorId && playerDataLoaded){
+      lastLocalWriteAt = Date.now(); // same self-echo guard the tools/elements/compounds/crafting/cash listeners use — without this, the live elementClicker listener (see loadPlayerData) can't tell this write's own echo apart from a genuine external change, and would occasionally roll the atom counter visibly backward when its echo arrived
       db.ref('players/' + investorId + '/elementClicker').set(portfolio.elementClicker).catch(() => {});
     }
   }, 4000); // batches rapid clicking/idle ticks into one write roughly every 4s, not one per click
