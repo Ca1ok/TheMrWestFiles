@@ -516,8 +516,22 @@ function savePortfolio(p){
       crafting: p.crafting || { elements:{}, compounds:{} },
       elementClicker: p.elementClicker || defaultClickerState(),
       nameLocked: !!p.nameLocked, updatedAt: Date.now()
-    }).catch(() => {});
+    }).catch(() => {
+      // A failed write (dropped connection, brief outage) used to just vanish here — nothing
+      // else would ever retry it unless the player happened to take another action later. Retry
+      // once, shortly after, with whatever the CURRENT portfolio is by then (not this stale
+      // snapshot) — self-healing rather than silently losing whatever prompted this save.
+      schedulePortfolioRetry();
+    });
   }
+}
+let portfolioRetryTimer = null;
+function schedulePortfolioRetry(){
+  if(portfolioRetryTimer) return;
+  portfolioRetryTimer = setTimeout(() => {
+    portfolioRetryTimer = null;
+    if(db && investorId) savePortfolio(portfolio);
+  }, 5000);
 }
 let portfolio = loadPortfolio();
 let playerCashListenerRef = null;
@@ -623,7 +637,7 @@ function loadPlayerData(uid){
   // after this tab's own save, so our own echoes never fight our own more-recent local state.
   // Genuine changes from another tab/device still come through as soon as that window passes.
   playerFieldListenerRefs.forEach(r => r.off());
-  playerFieldListenerRefs = ['tools', 'elements', 'compounds', 'crafting', 'elementClicker'].map(field => {
+  playerFieldListenerRefs = ['tools', 'elements', 'compounds', 'crafting', 'elementClicker', 'lots'].map(field => {
     const ref = db.ref('players/' + uid + '/' + field);
     ref.on('value', (snap) => {
       if(Date.now() - lastLocalWriteAt < LOCAL_ECHO_IGNORE_MS) return;
@@ -663,6 +677,11 @@ function loadPlayerData(uid){
         if(typeof renderOwnedElements === 'function') renderOwnedElements();
       } else if(field === 'compounds'){
         if(typeof renderOwnedCompounds === 'function') renderOwnedCompounds();
+      } else if(field === 'lots'){
+        // stock holdings — an admin correction or another open tab's buy/sell shows up here too,
+        // same reasoning as the comment above about tools "disappearing": without this, a stale
+        // tab's next save would silently overwrite a genuine change made somewhere else
+        if(typeof renderPortfolio === 'function') renderPortfolio();
       }
       if(typeof renderCraftingBench === 'function') renderCraftingBench();
     });
@@ -1969,6 +1988,12 @@ let lastEconomySaveAt = 0;
 let economySaveTimer = null;
 
 function saveEconomy(){
+  // Written immediately and unconditionally, every time — cheap and synchronous, so a hard
+  // refresh or crash can never lose more than this. Only the FIREBASE half of a save is
+  // throttled/deferred below; there was previously no reason for localStorage to wait on that
+  // same delay, and doing so meant a page close during the throttle window could lose an action
+  // that had otherwise fully succeeded from the person's point of view.
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio));
   if(!playerDataLoaded){
     // Don't let an action taken in the brief window before the initial Firebase fetch resolves
     // save stale local data back over the real record. This is what let old (e.g. billions-
@@ -1983,7 +2008,7 @@ function saveEconomy(){
   const sinceLast = Date.now() - lastEconomySaveAt;
   if(sinceLast >= ECONOMY_SAVE_MIN_INTERVAL_MS){
     lastEconomySaveAt = Date.now();
-    savePortfolio(portfolio); // reuses the existing cash/lots sync, now also carrying elements/compounds/tools
+    savePortfolio(portfolio); // re-writes localStorage too (harmless/idempotent) + does the actual Firebase sync
     updateNavCashDisplay();
   } else if(!economySaveTimer){
     economySaveTimer = setTimeout(() => {
@@ -2855,10 +2880,12 @@ function scheduleClickerSave(){
     localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio));
     if(db && investorId && playerDataLoaded){
       lastLocalWriteAt = Date.now(); // same self-echo guard the tools/elements/compounds/crafting/cash listeners use — without this, the live elementClicker listener (see loadPlayerData) can't tell this write's own echo apart from a genuine external change, and would occasionally roll the atom counter visibly backward when its echo arrived
-      db.ref('players/' + investorId + '/elementClicker').set(portfolio.elementClicker).catch(() => {});
+      db.ref('players/' + investorId + '/elementClicker').set(portfolio.elementClicker)
+        .catch(() => { if(!clickerRetryTimer) clickerRetryTimer = setTimeout(() => { clickerRetryTimer = null; scheduleClickerSave(); }, 5000); }); // a dropped write shouldn't just vanish — retry shortly with whatever's current by then, same as the main portfolio save does
     }
   }, 4000); // batches rapid clicking/idle ticks into one write roughly every 4s, not one per click
 }
+let clickerRetryTimer = null;
 
 function ecShowAchievementToast(a){
   const el = document.createElement('div');
@@ -3138,11 +3165,29 @@ setInterval(ecTickLoop, EC_TICK_INTERVAL_MS);
 // snaps the display to the correct value right away instead of visibly lagging for a moment.
 document.addEventListener('visibilitychange', () => { if(!document.hidden) ecTickLoop(); });
 window.addEventListener('focus', ecTickLoop);
-window.addEventListener('beforeunload', () => {
-  if(portfolio.elementClicker && db && investorId && playerDataLoaded){
-    db.ref('players/' + investorId + '/elementClicker').set(portfolio.elementClicker).catch(() => {});
+
+// Flushes anything still sitting in either debounce window (the clicker's own ~4s batch, and the
+// general economy's ~3s write-frequency floor) straight to Firebase, bypassing both delays.
+// Called whenever there's a real chance the tab is about to stop running JS at all — closing it
+// is the obvious case, but `beforeunload` alone isn't reliable enough to depend on: it doesn't
+// fire when a mobile browser simply suspends a backgrounded tab (which happens far more often
+// than an actual close), so `visibilitychange`→hidden is the one that actually catches most
+// real-world "this session might just end here" moments. Both are wired below; either firing
+// flushes the same one function, so nothing here depends on which one the browser honors.
+function flushPendingSaves(){
+  if(economySaveTimer){ clearTimeout(economySaveTimer); economySaveTimer = null; }
+  if(pendingEconomySave || playerDataLoaded){ // playerDataLoaded check mirrors saveEconomy()'s own guard — never push a save before the real data has loaded
+    if(playerDataLoaded){ lastEconomySaveAt = Date.now(); savePortfolio(portfolio); }
   }
-});
+  if(ecSaveTimer){ clearTimeout(ecSaveTimer); ecSaveTimer = null; }
+  if(portfolio.elementClicker && db && investorId && playerDataLoaded){
+    lastLocalWriteAt = Date.now();
+    db.ref('players/' + investorId + '/elementClicker').set(portfolio.elementClicker).catch(() => {}); // no retry scheduling here on purpose — the tab may already be gone by the time a retry would fire
+  }
+}
+document.addEventListener('visibilitychange', () => { if(document.hidden) flushPendingSaves(); });
+window.addEventListener('beforeunload', flushPendingSaves);
+window.addEventListener('pagehide', flushPendingSaves); // fires more reliably than beforeunload on iOS Safari specifically
 
 /* ================= MINIGAMES (cookin.html — shown everywhere as "Minigames") =================
    Ten small chemistry/physics games sharing the exact same portfolio.cash as the rest of the
