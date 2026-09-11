@@ -16,7 +16,7 @@ const CLICKER_BUILDINGS = [
   { id:'centrifuge',   name:'Centrifuge',            icon:'🌀', baseCost:12000,      baseCps:47,      desc:'Spins samples apart faster than you can label them.' },
   { id:'cyclotron',    name:'Cyclotron',             icon:'💫', baseCost:130000,     baseCps:260,     desc:'Particles chasing their own tail at relativistic speed.' },
   { id:'reactor',      name:'Fusion Reactor',        icon:'☢️', baseCost:1400000,    baseCps:1400,    desc:'A small, well-behaved star, mostly under control.' },
-  { id:'accelerator',  name:'Particle Accelerator',  icon:'🚀', baseCost:20000000,   baseCps:7800,    desc:'Kilometers of magnets pointed at nothing.' },
+  { id:'accelerator',  name:'Particle Accelerator',  icon:'🚀', baseCost:20000000,   baseCps:7800,    desc:'Kilometers of magnets pointed at nothing but progress.' },
   { id:'star',         name:'Neutron Star Core',     icon:'⭐', baseCost:330000000,  baseCps:44000,   desc:'Illegally dense. Extremely productive.' },
 ];
 
@@ -27,10 +27,16 @@ const CLICKER_CLICK_UPGRADES = [
   { id:'click3', name:'Laser Scalpel',     icon:'🔦', cost:5000,    mult:2, desc:'Doubles atoms per click again.' },
   { id:'click4', name:'Quantum Pincer',    icon:'🌌', cost:50000,   mult:2, desc:'Doubles atoms per click again.' },
   { id:'click5', name:'Singularity Grip',  icon:'🕳️', cost:500000,  mult:2, desc:'Doubles atoms per click again.' },
+  { id:'click6', name:'Antimatter Tongs',      icon:'✨', cost:5000000,       mult:2, desc:'Doubles atoms per click again.' },
+  { id:'click7', name:'Graviton Pincer',       icon:'🪐', cost:50000000,      mult:2, desc:'Doubles atoms per click again.' },
+  { id:'click8', name:'Neural-Linked Gauntlet', icon:'🧠', cost:500000000,     mult:2, desc:'Doubles atoms per click again.' },
+  { id:'click9', name:'Chrono-Displaced Claw', icon:'⏳', cost:5000000000,    mult:2, desc:'Doubles atoms per click again.' },
+  { id:'click10',name:'Hand of Creation',      icon:'🌟', cost:50000000000,   mult:2, desc:'Doubles atoms per click again.' },
 ];
 
 // Building upgrades — each DOUBLES that one building's per-unit production once unlocked (by
-// owning enough of it). Two tiers per building, same pattern Cookie Clicker uses.
+// owning enough of it). Four tiers per building (10/25/50/100 owned), same pattern Cookie
+// Clicker uses, extended one step further than the original two tiers.
 const CLICKER_BUILDING_UPGRADES = [
   { id:'electron_u1',    name:'Focused Electron Cloud',   icon:'⚛️', building:'electron',    unlockOwned:10, cost:150,          mult:2, desc:'Doubles Electron Cloud production.' },
   { id:'electron_u2',    name:'Bound Electron Shells',    icon:'⚛️', building:'electron',    unlockOwned:25, cost:900,          mult:2, desc:'Doubles Electron Cloud production again.' },
@@ -48,6 +54,40 @@ const CLICKER_BUILDING_UPGRADES = [
   { id:'accelerator_u2', name:'Cryogenic Focusing',       icon:'🚀', building:'accelerator', unlockOwned:25, cost:1200000000,   mult:2, desc:'Doubles Particle Accelerator production again.' },
   { id:'star_u1',        name:'Gravitic Stabilizers',     icon:'⭐', building:'star',        unlockOwned:10, cost:3300000000,   mult:2, desc:'Doubles Neutron Star Core production.' },
   { id:'star_u2',        name:'Exotic Matter Lattice',    icon:'⭐', building:'star',        unlockOwned:25, cost:19800000000,  mult:2, desc:'Doubles Neutron Star Core production again.' },
+  // --- tier 3 (owned 50) ---
+  { id:'electron_u3',    name:'Entangled Electron Pairs', icon:'⚛️', building:'electron',    unlockOwned:50, cost:5400,           mult:2, desc:'Doubles Electron Cloud production again.' },
+  { id:'burner_u3',      name:'Catalytic Burners',        icon:'🔥', building:'burner',      unlockOwned:50, cost:36000,          mult:2, desc:'Doubles Bunsen Burner production again.' },
+  { id:'beaker_u3',      name:'Magnetically Stirred Rig', icon:'⚗️', building:'beaker',      unlockOwned:50, cost:396000,         mult:2, desc:'Doubles Beaker Rig production again.' },
+  { id:'centrifuge_u3',  name:'Ferrofluid Bearings',      icon:'🌀', building:'centrifuge',  unlockOwned:50, cost:4320000,        mult:2, desc:'Doubles Centrifuge production again.' },
+  { id:'cyclotron_u3',   name:'Resonant Cavity Array',    icon:'💫', building:'cyclotron',   unlockOwned:50, cost:46800000,       mult:2, desc:'Doubles Cyclotron production again.' },
+  { id:'reactor_u3',     name:'Deuterium Injectors',      icon:'☢️', building:'reactor',     unlockOwned:50, cost:504000000,      mult:2, desc:'Doubles Fusion Reactor production again.' },
+  { id:'accelerator_u3', name:'Superfluid Cooling Loop',  icon:'🚀', building:'accelerator', unlockOwned:50, cost:7200000000,     mult:2, desc:'Doubles Particle Accelerator production again.' },
+  { id:'star_u3',        name:'Event Horizon Skimmer',    icon:'⭐', building:'star',        unlockOwned:50, cost:118800000000,   mult:2, desc:'Doubles Neutron Star Core production again.' },
+  // --- tier 4 (owned 100) ---
+  { id:'electron_u4',    name:'Zero-Point Harvester',     icon:'⚛️', building:'electron',    unlockOwned:100, cost:32400,           mult:2, desc:'Doubles Electron Cloud production again.' },
+  { id:'burner_u4',      name:'Plasma-Core Burners',      icon:'🔥', building:'burner',      unlockOwned:100, cost:216000,          mult:2, desc:'Doubles Bunsen Burner production again.' },
+  { id:'beaker_u4',      name:'Autonomous Titration Rig', icon:'⚗️', building:'beaker',      unlockOwned:100, cost:2376000,         mult:2, desc:'Doubles Beaker Rig production again.' },
+  { id:'centrifuge_u4',  name:'Cryo-Centrifuge Array',    icon:'🌀', building:'centrifuge',  unlockOwned:100, cost:25920000,        mult:2, desc:'Doubles Centrifuge production again.' },
+  { id:'cyclotron_u4',   name:'Overdriven Magnet Ring',   icon:'💫', building:'cyclotron',   unlockOwned:100, cost:280800000,       mult:2, desc:'Doubles Cyclotron production again.' },
+  { id:'reactor_u4',     name:'Tokamak Overclock',        icon:'☢️', building:'reactor',     unlockOwned:100, cost:3024000000,      mult:2, desc:'Doubles Fusion Reactor production again.' },
+  { id:'accelerator_u4', name:'Twin-Ring Collider Mode',  icon:'🚀', building:'accelerator', unlockOwned:100, cost:43200000000,     mult:2, desc:'Doubles Particle Accelerator production again.' },
+  { id:'star_u4',        name:'Hawking Radiation Tap',    icon:'⭐', building:'star',        unlockOwned:100, cost:712800000000,    mult:2, desc:'Doubles Neutron Star Core production again.' },
+];
+
+// Global upgrades — unlocked by TOTAL buildings owned across every type (not any one building),
+// each adding a flat percentage to ALL production at once. A different progression axis than the
+// per-building tiers above: these reward breadth (a varied lab) rather than stacking into one
+// building, and stack additively with each other and multiplicatively with everything else
+// (prestige shards, achievement bonuses, per-building upgrades).
+const CLICKER_GLOBAL_UPGRADES = [
+  { id:'global_u1', name:'Lab Assistant',          icon:'🧑‍🔬', unlockTotalOwned:20,  cost:50000,         bonus:0.10, desc:'+10% production from every building, unlocked by owning 20 buildings total.' },
+  { id:'global_u2', name:'Research Grant',         icon:'📜',   unlockTotalOwned:50,  cost:500000,        bonus:0.15, desc:'+15% production from every building, unlocked by owning 50 buildings total.' },
+  { id:'global_u3', name:'Shared Infrastructure',  icon:'🏗️',   unlockTotalOwned:100, cost:5000000,       bonus:0.20, desc:'+20% production from every building, unlocked by owning 100 buildings total.' },
+  { id:'global_u4', name:'Automated Logistics',    icon:'🤖',   unlockTotalOwned:200, cost:50000000,      bonus:0.25, desc:'+25% production from every building, unlocked by owning 200 buildings total.' },
+  { id:'global_u5', name:'AI-Optimized Scheduling',icon:'🧠',   unlockTotalOwned:350, cost:500000000,     bonus:0.30, desc:'+30% production from every building, unlocked by owning 350 buildings total.' },
+  { id:'global_u6', name:'Quantum Computing Grid', icon:'🖥️',   unlockTotalOwned:500, cost:5000000000,    bonus:0.35, desc:'+35% production from every building, unlocked by owning 500 buildings total.' },
+  { id:'global_u7', name:'Orbital Research Array', icon:'🛰️',   unlockTotalOwned:750, cost:50000000000,   bonus:0.40, desc:'+40% production from every building, unlocked by owning 750 buildings total.' },
+  { id:'global_u8', name:'Dyson Swarm Logistics',  icon:'☀️',   unlockTotalOwned:1000,cost:500000000000,  bonus:0.50, desc:'+50% production from every building, unlocked by owning 1,000 buildings total.' },
 ];
 
 // Achievements double as the game's "quests" — each has a short/long-term flavor, a one-time
