@@ -4,12 +4,12 @@ const WANTED_DATA = {
   missingDays: 0,
   charges: [
     { count: '×7', text: "Skipping class (I'm disappointed)" },
-    { count: '×2', text: 'Child endangerment' },
+    { count: '×4', text: 'Child endangerment' },
     { count: '×2', text: 'Treason' },
     { count: '×1', text: 'Possession and use of perchlorate' },
     { count: '×1', text: 'Accepting bribes' },
     { count: '×1', text: 'Possession of radioactive material' },
-    { count: '×1', text: 'Error, Skipping and No LP for SAC ' }
+    { count: '∞', text: 'Mistake, Typo, No LP. In work, SAC or S task' }
   ],
   sentence: [
     { count: '—', text: '7 after-school detentions' },
