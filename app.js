@@ -2836,6 +2836,16 @@ function ecGlobalMultiplier(){
   CLICKER_ACHIEVEMENTS.forEach(a => { if(ec.achievements.includes(a.id)) mult += a.globalBonus; });
   return mult;
 }
+// Sum of all owned "breadth" upgrades (unlocked by total buildings owned across every type,
+// rather than any one building) — additive with each other, applied on top of (multiplied with)
+// everything else in ecTotalCps(). Deliberately separate from ecGlobalMultiplier(): these boost
+// BUILDING production specifically, not click power, per how they're described to the player.
+function ecGlobalUpgradeBonus(){
+  const ec = portfolio.elementClicker;
+  let bonus = 0;
+  CLICKER_GLOBAL_UPGRADES.forEach(u => { if(ec.upgrades.includes(u.id)) bonus += u.bonus; });
+  return 1 + bonus;
+}
 function ecClickPower(){
   let mult = 1;
   CLICKER_CLICK_UPGRADES.forEach(u => { if(portfolio.elementClicker.upgrades.includes(u.id)) mult *= u.mult; });
@@ -2852,13 +2862,19 @@ function ecBuildingUnitCps(id){
   CLICKER_BUILDING_UPGRADES.forEach(u => { if(u.building === id && portfolio.elementClicker.upgrades.includes(u.id)) mult *= u.mult; });
   return b.baseCps * mult;
 }
+function ecTotalBuildingsOwned(){
+  const ec = portfolio.elementClicker;
+  return CLICKER_BUILDINGS.reduce((sum, b) => sum + (ec.buildings[b.id] || 0), 0);
+}
 function ecTotalCps(){
   let total = 0;
   CLICKER_BUILDINGS.forEach(b => { total += (portfolio.elementClicker.buildings[b.id] || 0) * ecBuildingUnitCps(b.id); });
-  return total * ecGlobalMultiplier();
+  return total * ecGlobalUpgradeBonus() * ecGlobalMultiplier();
 }
 function ecFindUpgrade(id){
-  return CLICKER_CLICK_UPGRADES.find(u => u.id === id) || CLICKER_BUILDING_UPGRADES.find(u => u.id === id);
+  return CLICKER_CLICK_UPGRADES.find(u => u.id === id)
+    || CLICKER_BUILDING_UPGRADES.find(u => u.id === id)
+    || CLICKER_GLOBAL_UPGRADES.find(u => u.id === id);
 }
 function ecTransmutePreview(){
   return Math.floor(Math.sqrt((portfolio.elementClicker.runAtoms || 0) / 1000000));
@@ -3031,7 +3047,12 @@ function renderElementClickerTabBody(){
       </div>`;
     }).join('');
   } else if(ecActiveTab === 'upgrades'){
-    const available = [...CLICKER_CLICK_UPGRADES, ...CLICKER_BUILDING_UPGRADES.filter(u => (ec.buildings[u.building] || 0) >= u.unlockOwned)]
+    const totalOwned = ecTotalBuildingsOwned();
+    const available = [
+        ...CLICKER_CLICK_UPGRADES,
+        ...CLICKER_BUILDING_UPGRADES.filter(u => (ec.buildings[u.building] || 0) >= u.unlockOwned),
+        ...CLICKER_GLOBAL_UPGRADES.filter(u => totalOwned >= u.unlockTotalOwned),
+      ]
       .filter(u => !ec.upgrades.includes(u.id));
     body.innerHTML = available.length ? available.map(u => {
       const afford = ec.atoms >= u.cost;
