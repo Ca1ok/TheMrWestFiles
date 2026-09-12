@@ -15,7 +15,8 @@ const MARKET_CALLS_PER_TICK = 5;          // ALWAYS exactly 5 random draws per t
                                            // branches that don't end up using all of them. This
                                            // fixed count is what makes the RNG seekable in O(1).
 const MARKET_BASE_VALUE = 12.50;          // fairValue reverts toward this — see note below
-const MARKET_DRIFT_PER_TICK = 1.000000008; // slight upward trend — see marketBaseValueAtTick()
+const MARKET_TICKS_PER_DAY = 86400000 / MARKET_TICK_MS; // 345600 at 250ms/tick — ticks in one real day
+const MARKET_DAILY_DRIFT = 1.00;           // dollars the base value rises by per real day — see marketBaseValueAtTick()
 const MARKET_GENESIS_STATE = { fairValue: 12.50, momentum: 0, vol: 0.012, price: 12.50 };
 
 function marketTickIndexForTime(t){
@@ -25,13 +26,16 @@ function marketTimeForTickIndex(i){
   return MARKET_GENESIS_T + i * MARKET_TICK_MS;
 }
 
-// A slight upward trend, but still a pure function of tick index — not real accumulated
-// randomness, and not anything fetched from a server. Every client (and the GitHub Action's
-// periodic checkpoint) computes the exact same base value for the exact same tick, so the trend
-// stays perfectly seed-synced without anyone needing to agree on it live. At 250ms/tick this
-// compounds to roughly +0.3%/day — noticeable over weeks, not a moon mission by lunchtime.
+// A steady, VISIBLE upward trend — roughly +$1.00/real day — but still a pure function of tick
+// index, not accumulated randomness or anything fetched live from a server. Every client (and
+// the GitHub Action's periodic checkpoint) computes the exact same base value for the exact same
+// tick, so the trend stays perfectly seed-synced without anyone needing to agree on it live.
+// Linear rather than compounding on purpose: a flat $/day is easy to reason about (day 30 is
+// ~+$30, not some fuzzier percentage) and, unlike a compounding rate, can never itself become the
+// dominant driver of the price at large tick counts — it just keeps climbing at the same steady
+// pace the site's whole lifetime, with the existing daily/short-term noise layered on top of it.
 function marketBaseValueAtTick(tickIndex){
-  return MARKET_BASE_VALUE * Math.pow(MARKET_DRIFT_PER_TICK, tickIndex);
+  return MARKET_BASE_VALUE + (tickIndex / MARKET_TICKS_PER_DAY) * MARKET_DAILY_DRIFT;
 }
 
 // mulberry32, but seekable: rather than always starting from MARKET_SEED and calling next()
@@ -101,6 +105,7 @@ function marketSimulate(checkpoint, targetTickIndex){
 if(typeof module !== 'undefined' && module.exports){
   module.exports = {
     MARKET_SEED, MARKET_GENESIS_T, MARKET_TICK_MS, MARKET_CALLS_PER_TICK, MARKET_GENESIS_STATE,
-    marketTickIndexForTime, marketTimeForTickIndex, marketRngFromCallCount, marketAdvanceOneTick, marketSimulate
+    MARKET_BASE_VALUE, MARKET_TICKS_PER_DAY, MARKET_DAILY_DRIFT,
+    marketTickIndexForTime, marketTimeForTickIndex, marketBaseValueAtTick, marketRngFromCallCount, marketAdvanceOneTick, marketSimulate
   };
 }
