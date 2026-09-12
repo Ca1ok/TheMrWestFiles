@@ -20,7 +20,18 @@ const CLICKER_BUILDINGS = [
   { id:'star',         name:'Neutron Star Core',     icon:'⭐', baseCost:330000000,  baseCps:44000,   desc:'Illegally dense. Extremely productive.' },
 ];
 
-// Click-power upgrades — flat multiplier stack applied to the base click value (1 atom).
+// Click-power upgrades. The first 10 are flat multipliers (each simply doubles click power) —
+// great early/mid-game when buildings haven't caught up yet, but a flat number like that becomes
+// meaningless once idle production reaches the billions/sec: doubling a tiny number stays tiny.
+// The four "synergy" upgrades below fix that WITHOUT letting clicking become the dominant
+// strategy (which is what "broken" would look like here) — each adds a small, capped percentage
+// of your CURRENT production per click (via cpsPercent, read in ecClickPower()) instead of
+// another flat multiplier, so a click stays meaningfully rewarding at any stage of the game while
+// never being worth more than a modest fraction of a second of idle output. All four together
+// only ever add up to 7% of your cps per click — clicking stays a nice boost, not a shortcut that
+// makes buildings optional. Unlocked by production milestones (unlockCps, checked in the
+// upgrades-tab render) rather than cost/ownership like everything else, since they're meant to
+// show up as your idle output actually grows, not as soon as you can afford them.
 const CLICKER_CLICK_UPGRADES = [
   { id:'click1', name:'Sharper Tweezers',  icon:'🥢', cost:50,      mult:2, desc:'Doubles atoms per click.' },
   { id:'click2', name:'Diamond Forceps',   icon:'💎', cost:500,     mult:2, desc:'Doubles atoms per click again.' },
@@ -32,6 +43,10 @@ const CLICKER_CLICK_UPGRADES = [
   { id:'click8', name:'Neural-Linked Gauntlet', icon:'🧠', cost:500000000,     mult:2, desc:'Doubles atoms per click again.' },
   { id:'click9', name:'Chrono-Displaced Claw', icon:'⏳', cost:5000000000,    mult:2, desc:'Doubles atoms per click again.' },
   { id:'click10',name:'Hand of Creation',      icon:'🌟', cost:50000000000,   mult:2, desc:'Doubles atoms per click again.' },
+  { id:'click_synergy1', name:'Harmonized Grip',      icon:'🔗', cost:2000000,        unlockCps:100,      cpsPercent:0.01,  desc:'Each click also delivers 1% of your current production. Unlocks once you reach 100 atoms/sec.' },
+  { id:'click_synergy2', name:'Synced Extraction',    icon:'🔗', cost:200000000,      unlockCps:10000,    cpsPercent:0.015, desc:'Each click also delivers 1.5% of your current production. Unlocks at 10,000 atoms/sec.' },
+  { id:'click_synergy3', name:'Resonant Clicking',    icon:'🔗', cost:20000000000,    unlockCps:1000000,  cpsPercent:0.02,  desc:'Each click also delivers 2% of your current production. Unlocks at 1,000,000 atoms/sec.' },
+  { id:'click_synergy4', name:'Unified Field Tap',    icon:'🔗', cost:2000000000000,  unlockCps:100000000,cpsPercent:0.025, desc:'Each click also delivers 2.5% of your current production. Unlocks at 100,000,000 atoms/sec.' },
 ];
 
 // Building upgrades — each DOUBLES that one building's per-unit production once unlocked (by
@@ -72,6 +87,24 @@ const CLICKER_BUILDING_UPGRADES = [
   { id:'reactor_u4',     name:'Tokamak Overclock',        icon:'☢️', building:'reactor',     unlockOwned:100, cost:3024000000,      mult:2, desc:'Doubles Fusion Reactor production again.' },
   { id:'accelerator_u4', name:'Twin-Ring Collider Mode',  icon:'🚀', building:'accelerator', unlockOwned:100, cost:43200000000,     mult:2, desc:'Doubles Particle Accelerator production again.' },
   { id:'star_u4',        name:'Hawking Radiation Tap',    icon:'⭐', building:'star',        unlockOwned:100, cost:712800000000,    mult:2, desc:'Doubles Neutron Star Core production again.' },
+  // --- tier 5 (owned 200) ---
+  { id:'electron_u5',    name:'Casimir Effect Array',     icon:'⚛️', building:'electron',    unlockOwned:200, cost:194400,             mult:2, desc:'Doubles Electron Cloud production again.' },
+  { id:'burner_u5',      name:'Combustion Cascade',       icon:'🔥', building:'burner',      unlockOwned:200, cost:1296000,            mult:2, desc:'Doubles Bunsen Burner production again.' },
+  { id:'beaker_u5',      name:'Parallel Reaction Racks',  icon:'⚗️', building:'beaker',      unlockOwned:200, cost:14256000,           mult:2, desc:'Doubles Beaker Rig production again.' },
+  { id:'centrifuge_u5',  name:'Contra-Rotating Drums',    icon:'🌀', building:'centrifuge',  unlockOwned:200, cost:155520000,          mult:2, desc:'Doubles Centrifuge production again.' },
+  { id:'cyclotron_u5',   name:'Harmonic Frequency Lock',  icon:'💫', building:'cyclotron',   unlockOwned:200, cost:1684800000,         mult:2, desc:'Doubles Cyclotron production again.' },
+  { id:'reactor_u5',     name:'Breeder Core Conversion',  icon:'☢️', building:'reactor',     unlockOwned:200, cost:18144000000,        mult:2, desc:'Doubles Fusion Reactor production again.' },
+  { id:'accelerator_u5', name:'Beam Splitter Array',      icon:'🚀', building:'accelerator', unlockOwned:200, cost:259200000000,       mult:2, desc:'Doubles Particle Accelerator production again.' },
+  { id:'star_u5',        name:'Accretion Disk Funnel',    icon:'⭐', building:'star',        unlockOwned:200, cost:4276800000000,      mult:2, desc:'Doubles Neutron Star Core production again.' },
+  // --- tier 6 (owned 500) ---
+  { id:'electron_u6',    name:'Vacuum Fluctuation Tap',   icon:'⚛️', building:'electron',    unlockOwned:500, cost:1166400,            mult:2, desc:'Doubles Electron Cloud production again.' },
+  { id:'burner_u6',      name:'Self-Replicating Flame',   icon:'🔥', building:'burner',      unlockOwned:500, cost:7776000,            mult:2, desc:'Doubles Bunsen Burner production again.' },
+  { id:'beaker_u6',      name:'Fractal Distillation',     icon:'⚗️', building:'beaker',      unlockOwned:500, cost:85536000,           mult:2, desc:'Doubles Beaker Rig production again.' },
+  { id:'centrifuge_u6',  name:'Nested Rotor Assembly',    icon:'🌀', building:'centrifuge',  unlockOwned:500, cost:933120000,          mult:2, desc:'Doubles Centrifuge production again.' },
+  { id:'cyclotron_u6',   name:'Recursive Beam Folding',   icon:'💫', building:'cyclotron',   unlockOwned:500, cost:10108800000,        mult:2, desc:'Doubles Cyclotron production again.' },
+  { id:'reactor_u6',     name:'Cascading Fusion Chain',   icon:'☢️', building:'reactor',     unlockOwned:500, cost:108864000000,       mult:2, desc:'Doubles Fusion Reactor production again.' },
+  { id:'accelerator_u6', name:'Recursive Collision Loop', icon:'🚀', building:'accelerator', unlockOwned:500, cost:1555200000000,      mult:2, desc:'Doubles Particle Accelerator production again.' },
+  { id:'star_u6',        name:'Singularity Feedback Loop',icon:'⭐', building:'star',        unlockOwned:500, cost:25660800000000,     mult:2, desc:'Doubles Neutron Star Core production again.' },
 ];
 
 // Global upgrades — unlocked by TOTAL buildings owned across every type (not any one building),
