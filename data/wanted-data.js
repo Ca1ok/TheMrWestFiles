@@ -9,7 +9,7 @@ const WANTED_DATA = {
     { count: '×1', text: 'Possession and use of perchlorate' },
     { count: '×1', text: 'Accepting bribes' },
     { count: '×1', text: 'Possession of radioactive material' },
-    { count: '∞', text: 'Mistake, Typo, No LP. In work, SAC or S task' }
+    { count: 'infinite', text: 'Mistake, Typo, No LP (In work, SAC or S task)' }
   ],
   sentence: [
     { count: '—', text: '7 after-school detentions' },
