@@ -2847,9 +2847,20 @@ function ecGlobalUpgradeBonus(){
   return 1 + bonus;
 }
 function ecClickPower(){
+  const owned = portfolio.elementClicker.upgrades;
   let mult = 1;
-  CLICKER_CLICK_UPGRADES.forEach(u => { if(portfolio.elementClicker.upgrades.includes(u.id)) mult *= u.mult; });
-  return mult * ecGlobalMultiplier();
+  let cpsPercent = 0;
+  CLICKER_CLICK_UPGRADES.forEach(u => {
+    if(!owned.includes(u.id)) return;
+    if(u.mult) mult *= u.mult;
+    if(u.cpsPercent) cpsPercent += u.cpsPercent;
+  });
+  // The flat multiplier stack applies first (and gets the global multiplier too, same as
+  // before); the cps-synergy upgrades then ADD a slice of current production on top, so a click
+  // never becomes worthless once buildings dwarf the flat number, but is also never worth more
+  // than a small, fixed fraction of a second of idle output — see the comment on
+  // CLICKER_CLICK_UPGRADES in the data file for why that split exists.
+  return (mult * ecGlobalMultiplier()) + (cpsPercent * ecTotalCps());
 }
 function ecBuildingCost(id){
   const b = CLICKER_BUILDINGS.find(x => x.id === id);
@@ -3048,8 +3059,9 @@ function renderElementClickerTabBody(){
     }).join('');
   } else if(ecActiveTab === 'upgrades'){
     const totalOwned = ecTotalBuildingsOwned();
+    const currentCps = ecTotalCps();
     const available = [
-        ...CLICKER_CLICK_UPGRADES,
+        ...CLICKER_CLICK_UPGRADES.filter(u => u.unlockCps === undefined || currentCps >= u.unlockCps),
         ...CLICKER_BUILDING_UPGRADES.filter(u => (ec.buildings[u.building] || 0) >= u.unlockOwned),
         ...CLICKER_GLOBAL_UPGRADES.filter(u => totalOwned >= u.unlockTotalOwned),
       ]
