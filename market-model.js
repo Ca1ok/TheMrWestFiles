@@ -34,8 +34,20 @@ function marketTimeForTickIndex(i){
 // ~+$30, not some fuzzier percentage) and, unlike a compounding rate, can never itself become the
 // dominant driver of the price at large tick counts — it just keeps climbing at the same steady
 // pace the site's whole lifetime, with the existing daily/short-term noise layered on top of it.
-function marketBaseValueAtTick(tickIndex){
-  return MARKET_BASE_VALUE + (tickIndex / MARKET_TICKS_PER_DAY) * MARKET_DAILY_DRIFT;
+//
+// `adjustments` is the (small, rare) list of admin-triggered raise/drop actions — each a plain
+// {tickIndex, delta} pair, PERMANENTLY summed in here for every tick from that point on. This is
+// what makes an admin adjustment "stick" rather than get slowly eroded by the normal reversion
+// pulling fairValue back toward an un-adjusted base — the base ITSELF already reflects it, so
+// there's nothing to revert away from afterward. See marketAdvanceOneTick() for the matching
+// one-time INSTANT step that makes the adjustment show up as a clean jump right when it happens,
+// rather than a gradual drift toward this now-higher target.
+function marketBaseValueAtTick(tickIndex, adjustments){
+  let base = MARKET_BASE_VALUE + (tickIndex / MARKET_TICKS_PER_DAY) * MARKET_DAILY_DRIFT;
+  if(adjustments){
+    for(const adj of adjustments){ if(adj.tickIndex <= tickIndex) base += adj.delta; }
+  }
+  return base;
 }
 
 // mulberry32, but seekable: rather than always starting from MARKET_SEED and calling next()
@@ -55,7 +67,7 @@ function marketRngFromCallCount(callsAlreadyMade){
   };
 }
 
-function marketAdvanceOneTick(state, rng, tickIndex){
+function marketAdvanceOneTick(state, rng, tickIndex, adjustments){
   // fairValue reverts toward a (slightly, deterministically drifting) base instead of doing an
   // unanchored multiplicative random walk. This matters a lot more here than it did in the old
   // 12-second-tick version: at 250ms/tick this model gets replayed for hundreds of millions of
@@ -64,7 +76,17 @@ function marketAdvanceOneTick(state, rng, tickIndex){
   // "might happen" edge case, it's certain given enough ticks. Reverting toward a (slowly
   // rising) base keeps the whole system statistically stationary around a moving target,
   // instead of either flatlining forever or blowing up.
-  const base = marketBaseValueAtTick(tickIndex);
+  const base = marketBaseValueAtTick(tickIndex, adjustments);
+  // An admin raise/drop lands as a clean, one-time INSTANT step exactly on its own tick — not a
+  // slow multi-day drift toward a nudged target. Since marketBaseValueAtTick() above ALREADY
+  // includes this adjustment permanently (tickIndex <= this tick), the ordinary reversion below
+  // has nothing left to "pull back" afterward; this step is purely what makes the moment itself
+  // look like a real, deliberate market action instead of the trend just quietly bending.
+  if(adjustments){
+    for(const adj of adjustments){
+      if(adj.tickIndex === tickIndex){ state.fairValue += adj.delta; state.price = Math.max(0.01, state.price + adj.delta); }
+    }
+  }
   state.fairValue += (base - state.fairValue) * 0.0004 + (rng() - 0.5) * 0.02;
   state.fairValue = Math.max(0.5, state.fairValue);
   const volShock = Math.abs(rng() - 0.5) * 0.03;
@@ -88,7 +110,7 @@ function marketAdvanceOneTick(state, rng, tickIndex){
 // call take an unreasonable amount of time — the price just catches up in the next call instead.
 const MARKET_MAX_TICKS_PER_CALL = 2000000; // ~140 hours' worth at 250ms/tick — generous, still fast
 
-function marketSimulate(checkpoint, targetTickIndex){
+function marketSimulate(checkpoint, targetTickIndex, adjustments){
   const fromTick = checkpoint ? checkpoint.tickIndex : -1;
   const cappedTarget = Math.min(targetTickIndex, fromTick + MARKET_MAX_TICKS_PER_CALL);
   const state = checkpoint ? { ...checkpoint.state } : { ...MARKET_GENESIS_STATE };
@@ -96,7 +118,7 @@ function marketSimulate(checkpoint, targetTickIndex){
   const rng = marketRngFromCallCount(startCall);
   const points = [];
   for(let i = fromTick + 1; i <= cappedTarget; i++){
-    const price = marketAdvanceOneTick(state, rng, i);
+    const price = marketAdvanceOneTick(state, rng, i, adjustments);
     points.push({ price: Math.round(price * 10000) / 10000, t: marketTimeForTickIndex(i) });
   }
   return { state, points, tickIndex: cappedTarget, rng, nextTickIndex: cappedTarget + 1 };
