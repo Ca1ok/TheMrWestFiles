@@ -18,6 +18,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4    # pins a Node version with global fetch() built in — tick-market.js now needs it to read admin adjustments from Firebase
+        with:
+          node-version: '20'
+
       - name: Advance the market
         run: node .github/scripts/tick-market.js
 
