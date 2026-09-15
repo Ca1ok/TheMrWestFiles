@@ -52,6 +52,21 @@
       <div id="adminPanelWrap" style="display:none;">
         <div class="section-label">Admin Panel</div>
         <p class="cc-desc">Edit or delete any player's record. This only works because Firebase's own security rules check your signed-in email — not because of anything in this page's code.</p>
+
+        <div class="admin-market-controls">
+          <div class="admin-market-row">
+            <span>Current price</span><b id="adminMarketPrice">$--.--</b>
+          </div>
+          <div class="admin-market-row">
+            <input type="number" id="adminMarketDelta" step="0.01" placeholder="Amount ($)">
+            <button class="tool-btn" id="adminMarketRaiseBtn">Raise</button>
+            <button class="tool-btn" id="adminMarketDropBtn">Drop</button>
+          </div>
+          <p class="cc-desc" style="margin:0.3rem 0 0;">Jumps the price instantly by this amount, then the market continues normally from there — same trend, same volatility, permanently reflected for every visitor and in the price history from this moment on.</p>
+          <div class="compound-status" id="adminMarketMsg"></div>
+          <div id="adminMarketLog" class="admin-market-log"></div>
+        </div>
+
         <div id="adminPlayerList"></div>
       </div>
 
