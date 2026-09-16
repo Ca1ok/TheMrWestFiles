@@ -1,12 +1,12 @@
 {
-  "tickIndex": 9257198,
+  "tickIndex": 9298939,
   "state": {
-    "fairValue": 138.9149,
-    "momentum": 0.004952,
-    "vol": 0.0082,
-    "price": 142.5728
+    "fairValue": 139.3216,
+    "momentum": 0.004558,
+    "vol": 0.010441,
+    "price": 142.3123
   },
-  "t": 1789584699541,
+  "t": 1789595134891,
   "adjustments": [
     {
       "at": 1789435986368,
