@@ -1305,10 +1305,21 @@ function catchUpAndStartTicking(checkpoint){
   // reaching "now," instead of continuing from however far this call really got.
   marketCheckpoint = { tickIndex: result.tickIndex, state: result.state };
 
-  // seed the visible chart history from whatever we just replayed (bounded — checkpoints are
-  // refreshed every few minutes, so this is at most a few thousand points, never unbounded)
-  if(result.points.length) priceHistory = result.points;
-  else if(priceHistory.length === 0) priceHistory = [{ price: currentPrice, t: Date.now() }];
+  // Merge onto whatever we already have, rather than replacing wholesale — preserves the user's
+  // chart zoom/pan (viewStart/viewEnd, see the brush-timeline code above) across every re-sync.
+  // Replacing priceHistory outright was silently resetting anyone's zoomed-in view to just the
+  // newest sliver of data every time this ran — this used to only happen on the ~5-minute
+  // periodic refresh (rarely enough nobody noticed), but the new live admin-adjustment listener
+  // calls this far more often, making it obvious: it looked exactly like "the chart reset to a
+  // new stock," and could hide a real, correct price change from view if you were looking at
+  // older history right when a sync landed.
+  if(result.points.length){
+    const firstNewT = result.points[0].t;
+    priceHistory = priceHistory.filter(p => p.t < firstNewT).concat(result.points);
+    if(priceHistory.length > 20000) priceHistory = priceHistory.slice(-20000); // bound long-session growth
+  } else if(priceHistory.length === 0){
+    priceHistory = [{ price: currentPrice, t: Date.now() }];
+  }
 }
 
 async function fetchMarketCheckpoint(){
@@ -1353,7 +1364,15 @@ if(db){
     // fresh page load or the GitHub Action's own replay, with no separate logic that could ever
     // disagree with those. Cheap to call — it's a bounded replay from the last known checkpoint
     // to "now," typically well under a second of ticks, not from genesis.
-    if(marketCheckpoint) catchUpAndStartTicking(marketCheckpoint);
+    if(marketCheckpoint){
+      catchUpAndStartTicking(marketCheckpoint);
+      // Paint immediately rather than waiting for the next scheduled ~250ms tick — this is
+      // specifically what makes an admin action feel instant instead of just "usually fast."
+      if(typeof updatePriceDisplays === 'function') updatePriceDisplays();
+      if(typeof drawChart === 'function') drawChart();
+      if(typeof renderPortfolio === 'function') renderPortfolio();
+      if(typeof renderLots === 'function') renderLots();
+    }
     if(typeof renderAdminMarketLog === 'function') renderAdminMarketLog(); // no-op unless the admin market panel is actually on screen (settings.html, signed in as admin)
   });
 }
