@@ -22,14 +22,40 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Advance the market
-        run: node .github/scripts/tick-market.js
-
-      - name: Commit updated market data
+      - name: Advance and commit market data
         run: |
           git config user.name "mrwestcoin-bot"
           git config user.email "actions@github.com"
-          git add market-data.json history/
-          git diff --staged --quiet || git commit -m "Update MrWestCoin market data"
-          git pull --rebase --autostash
-          git push
+          # Retry-by-recomputing instead of merge/rebase: market-data.json changes on EVERY
+          # field EVERY run (tickIndex, fairValue, momentum, vol, price all move together), so
+          # if two runs' commits ever land close together, a line-based git merge or rebase has
+          # no sensible way to reconcile "two different already-computed snapshots of the same
+          # numbers" — it's not a case of two different PARTS of the file changing, it's the
+          # same lines holding two different computed values, which is exactly what triggers a
+          # merge/rebase conflict every time it happens. The fix is to never attempt that merge
+          # at all: if a push is rejected (another run finished first), reset straight to
+          # whatever's now on origin and RECOMPUTE FRESH from that — tick-market.js re-reads
+          # market-data.json/history/ from disk each time, so this naturally picks up the other
+          # run's result and adds this run's own tick cleanly on top, with nothing to reconcile.
+          success=false
+          for i in 1 2 3 4 5; do
+            node .github/scripts/tick-market.js
+            git add market-data.json history/
+            if git diff --staged --quiet; then
+              echo "Nothing changed this run."
+              success=true
+              break
+            fi
+            git commit -m "Update MrWestCoin market data"
+            if git push; then
+              success=true
+              break
+            fi
+            echo "Push rejected (likely a race with another run) — resetting to the latest origin and recomputing fresh (attempt $i)..."
+            git fetch origin main
+            git reset --hard origin/main
+          done
+          if [ "$success" != "true" ]; then
+            echo "::error::Could not push updated market data after 5 attempts."
+            exit 1
+          fi
