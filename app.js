@@ -1292,7 +1292,26 @@ function cacheCheckpointLocally(cp){
 // the fixed genesis if we don't have one yet), then keeps ticking forward locally from there.
 function catchUpAndStartTicking(checkpoint){
   const targetTick = marketTickIndexForTime(Date.now());
-  const result = marketSimulate(checkpoint, targetTick, marketAdjustments);
+  // A single marketSimulate() call is capped (MARKET_MAX_TICKS_PER_CALL) so one wildly stale
+  // checkpoint can't freeze the tab computing tens of millions of ticks in one go. But stopping
+  // there and letting the ~250ms live ticker close the REMAINING gap one tick at a time means a
+  // checkpoint that's meaningfully behind (e.g. from a period where the GitHub Action was
+  // failing to push — see the retry-loop fix for that) could take a very long time to actually
+  // reach "now" on its own. That's a real problem for anything tied to the CURRENT tick, like an
+  // admin raise/drop: the live listener only fires once per action, so if the first catch-up
+  // attempt falls short, nothing gives it a second chance — it would just sit applied-but-
+  // invisible until the ticker eventually grinds its way there, possibly days later. Looping
+  // here instead — each chunk is ~800ms of plain number-crunching, no I/O — means even a
+  // multi-week-stale checkpoint fully catches up in a few seconds instead of a few days. Capped
+  // at 5 iterations (~10M ticks ≈ 29 days of catch-up) purely as a last-resort safety valve; if
+  // the checkpoint is somehow stale beyond that, the periodic 5-minute checkpoint refetch will
+  // pick up a fresher one from GitHub and finish the job from there instead.
+  let result = marketSimulate(checkpoint, targetTick, marketAdjustments);
+  let iterations = 1;
+  while(result.tickIndex < targetTick && iterations < 5){
+    result = marketSimulate({ tickIndex: result.tickIndex, state: result.state }, targetTick, marketAdjustments);
+    iterations++;
+  }
   marketState = result.state;
   marketTickIndex = result.tickIndex;
   marketRng = marketRngFromCallCount((marketTickIndex + 1) * MARKET_CALLS_PER_TICK);
@@ -1362,17 +1381,18 @@ if(db){
     // catchUpAndStartTicking means an admin action gets the exact same correct, deterministic
     // instant-jump treatment (see marketAdvanceOneTick in market-model.js) as it would from a
     // fresh page load or the GitHub Action's own replay, with no separate logic that could ever
-    // disagree with those. Cheap to call — it's a bounded replay from the last known checkpoint
-    // to "now," typically well under a second of ticks, not from genesis.
-    if(marketCheckpoint){
-      catchUpAndStartTicking(marketCheckpoint);
-      // Paint immediately rather than waiting for the next scheduled ~250ms tick — this is
-      // specifically what makes an admin action feel instant instead of just "usually fast."
-      if(typeof updatePriceDisplays === 'function') updatePriceDisplays();
-      if(typeof drawChart === 'function') drawChart();
-      if(typeof renderPortfolio === 'function') renderPortfolio();
-      if(typeof renderLots === 'function') renderLots();
-    }
+    // disagree with those. marketCheckpoint being null is a valid input here (means "no real
+    // checkpoint has loaded yet, start from genesis") — skipping this call in that case was
+    // itself a real bug: if this listener's very first delivery landed in the brief window
+    // before this tab's own first sync had happened, the adjustment would be silently dropped
+    // for this tab, with nothing left to apply it later.
+    catchUpAndStartTicking(marketCheckpoint);
+    // Paint immediately rather than waiting for the next scheduled ~250ms tick — this is
+    // specifically what makes an admin action feel instant instead of just "usually fast."
+    if(typeof updatePriceDisplays === 'function') updatePriceDisplays();
+    if(typeof drawChart === 'function') drawChart();
+    if(typeof renderPortfolio === 'function') renderPortfolio();
+    if(typeof renderLots === 'function') renderLots();
     if(typeof renderAdminMarketLog === 'function') renderAdminMarketLog(); // no-op unless the admin market panel is actually on screen (settings.html, signed in as admin)
   });
 }
