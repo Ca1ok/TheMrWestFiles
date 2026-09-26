@@ -1271,16 +1271,20 @@ function updatePriceDisplays(){
 // tick since a fixed genesis date — after that one fetch, ticking runs entirely client-side,
 // completely offline-capable, with zero further requests needed to "stay in sync."
 const MARKET_JSON_PATH = 'market-data.json';
-const MARKET_CHECKPOINT_REFRESH_MS = 5 * 60 * 1000; // just keeps the baseline from getting stale over a long session — not required for correctness, only for keeping replay-to-now cheap
+// market-data.json is a plain static file served by GitHub Pages' CDN, NOT a Firebase read — so
+// polling it doesn't touch Firebase's free-tier limits at all, only GitHub Pages bandwidth,
+// which is far more generous. Polling it fairly often (rather than every 5 minutes) is what lets
+// every OTHER open tab pick up an admin's raise/drop reasonably promptly WITHOUT keeping a
+// persistent Firebase connection open — see the admin-adjustment section further down for why
+// that persistent connection was removed.
+const MARKET_CHECKPOINT_REFRESH_MS = 30 * 1000;
 
-let marketCheckpoint = null; // last known {tickIndex, state} from GitHub
+let marketCheckpoint = null; // last known {tickIndex, state} — see the live ticker below for why this now tracks the CURRENT tick, not just the last explicit re-sync
 let marketState = null;      // live working state, ticked forward locally every MARKET_TICK_MS
 let marketRng = null;        // live rng continuing from wherever marketState currently is
 let marketTickIndex = -1;
 // Admin-triggered raise/drop actions (see settings.html) — a small, rare list of {tickIndex,
-// delta} entries. Bootstrapped from market-data.json's own `adjustments` field below (so it's
-// correct even before Firebase answers), then kept live via a Firebase listener a few lines down
-// so an admin action shows up on every open tab within moments, not on the next 5-minute refresh.
+// delta} entries. Bootstrapped from market-data.json's own `adjustments` field below.
 let marketAdjustments = [];
 
 function cacheCheckpointLocally(cp){
@@ -1293,19 +1297,11 @@ function cacheCheckpointLocally(cp){
 function catchUpAndStartTicking(checkpoint){
   const targetTick = marketTickIndexForTime(Date.now());
   // A single marketSimulate() call is capped (MARKET_MAX_TICKS_PER_CALL) so one wildly stale
-  // checkpoint can't freeze the tab computing tens of millions of ticks in one go. But stopping
-  // there and letting the ~250ms live ticker close the REMAINING gap one tick at a time means a
-  // checkpoint that's meaningfully behind (e.g. from a period where the GitHub Action was
-  // failing to push — see the retry-loop fix for that) could take a very long time to actually
-  // reach "now" on its own. That's a real problem for anything tied to the CURRENT tick, like an
-  // admin raise/drop: the live listener only fires once per action, so if the first catch-up
-  // attempt falls short, nothing gives it a second chance — it would just sit applied-but-
-  // invisible until the ticker eventually grinds its way there, possibly days later. Looping
-  // here instead — each chunk is ~800ms of plain number-crunching, no I/O — means even a
-  // multi-week-stale checkpoint fully catches up in a few seconds instead of a few days. Capped
-  // at 5 iterations (~10M ticks ≈ 29 days of catch-up) purely as a last-resort safety valve; if
-  // the checkpoint is somehow stale beyond that, the periodic 5-minute checkpoint refetch will
-  // pick up a fresher one from GitHub and finish the job from there instead.
+  // checkpoint can't freeze the tab computing tens of millions of ticks in one go. Looping here
+  // means even a multi-week-stale checkpoint (e.g. from a period the GitHub Action was failing
+  // to push — see the retry-loop fix for that) fully catches up in a few seconds rather than
+  // however long the live ticker alone would need to close a multi-million-tick gap one tick at
+  // a time. Capped at 5 iterations (~29 days of catch-up capacity) as a last-resort safety valve.
   let result = marketSimulate(checkpoint, targetTick, marketAdjustments);
   let iterations = 1;
   while(result.tickIndex < targetTick && iterations < 5){
@@ -1316,22 +1312,21 @@ function catchUpAndStartTicking(checkpoint){
   marketTickIndex = result.tickIndex;
   marketRng = marketRngFromCallCount((marketTickIndex + 1) * MARKET_CALLS_PER_TICK);
   currentPrice = marketState.price;
-  // Reflects where the simulation ACTUALLY ended up, not the checkpoint we started from — those
-  // two differ whenever MARKET_MAX_TICKS_PER_CALL trims a very stale catch-up short. Pinning
-  // marketCheckpoint to the (potentially far older) input here was a real bug: anything that
-  // later re-syncs from marketCheckpoint — the live admin-adjustment listener below, in
-  // particular — would keep re-capping at that same old boundary forever, never actually
-  // reaching "now," instead of continuing from however far this call really got.
   marketCheckpoint = { tickIndex: result.tickIndex, state: result.state };
 
   // Merge onto whatever we already have, rather than replacing wholesale — preserves the user's
-  // chart zoom/pan (viewStart/viewEnd, see the brush-timeline code above) across every re-sync.
-  // Replacing priceHistory outright was silently resetting anyone's zoomed-in view to just the
-  // newest sliver of data every time this ran — this used to only happen on the ~5-minute
-  // periodic refresh (rarely enough nobody noticed), but the new live admin-adjustment listener
-  // calls this far more often, making it obvious: it looked exactly like "the chart reset to a
-  // new stock," and could hide a real, correct price change from view if you were looking at
-  // older history right when a sync landed.
+  // chart zoom/pan (viewStart/viewEnd, see the brush-timeline code above), and — much more
+  // importantly — avoids ever OVERWRITING history the live ticker has already computed and shown
+  // with a freshly re-derived version of the same time range. That used to be a real, serious
+  // bug: marketCheckpoint previously only got updated by an explicit re-sync like this one, while
+  // the live ticker (below) advanced marketState/marketTickIndex independently every ~250ms
+  // WITHOUT updating marketCheckpoint — so by the time anything called catchUpAndStartTicking
+  // again, it would replay from a stale starting point using a DIFFERENT RNG continuation than
+  // what the ticker had already used, silently rewriting recently-shown history to different
+  // (though individually "valid") values. The live ticker now keeps marketCheckpoint continuously
+  // current (see below), so any future replay here starts from virtually the same point the
+  // ticker's already at — the gap it actually has to fill is tiny, and the result naturally
+  // matches what was already on screen instead of contradicting it.
   if(result.points.length){
     const firstNewT = result.points[0].t;
     priceHistory = priceHistory.filter(p => p.t < firstNewT).concat(result.points);
@@ -1349,52 +1344,22 @@ async function fetchMarketCheckpoint(){
     if(cp && cp.tickIndex !== undefined && cp.state){
       syncOK = true;
       cacheCheckpointLocally(cp);
-      // Bootstrap adjustments from the checkpoint itself — correct even before the live Firebase
-      // listener below has attached/answered, and a reasonable fallback if Firebase is ever
-      // unreachable from this browser for some reason (the static file still has everything
-      // baked in as of the last Action run).
-      if(Array.isArray(cp.adjustments) && marketAdjustments.length === 0){
+      // Adjustments this tab doesn't already know about (e.g. another admin session's raise/
+      // drop, now baked into the checkpoint by the GitHub Action) — merged in by comparing
+      // count rather than blindly overwritten, so an adjustment this tab already applied
+      // locally isn't lost if this fetch happens to answer before the Action has picked it up.
+      if(Array.isArray(cp.adjustments) && cp.adjustments.length > marketAdjustments.length){
         marketAdjustments = cp.adjustments;
       }
       // only re-baseline if this checkpoint is actually newer than what we're already ticking
-      // from — otherwise a slow/late response could yank the live price backwards
+      // from — otherwise a slow/late response could yank the live price backwards. With
+      // marketCheckpoint now kept continuously current by the live ticker, this will almost
+      // always be false once a tab has been open a few seconds — exactly what we want.
       if(!marketCheckpoint || cp.tickIndex > marketCheckpoint.tickIndex){
         catchUpAndStartTicking(cp);
       }
     }
   } catch(e){ /* offline, or the file isn't reachable yet — keep ticking from what we have */ }
-}
-
-// Live cross-tab/cross-visitor sync for admin raise/drop actions — this is what makes an admin
-// action "feel live" rather than waiting for the GitHub Action's next run (~1 min) plus this
-// tab's next periodic checkpoint refetch (~5 min). world-readable, same as the other market
-// paths — see the Firebase rules note in the admin panel setup section further down.
-if(db){
-  db.ref('marketAdjustments').on('value', (snap) => {
-    const raw = snap.val();
-    const list = raw ? Object.values(raw)
-      .filter(a => a && typeof a.tickIndex === 'number' && typeof a.delta === 'number')
-      .sort((a, b) => a.tickIndex - b.tickIndex) : [];
-    marketAdjustments = list;
-    // Re-run the exact same replay that a periodic checkpoint refresh already does — this is
-    // deliberately NOT a bespoke "patch the running state directly" shortcut: reusing
-    // catchUpAndStartTicking means an admin action gets the exact same correct, deterministic
-    // instant-jump treatment (see marketAdvanceOneTick in market-model.js) as it would from a
-    // fresh page load or the GitHub Action's own replay, with no separate logic that could ever
-    // disagree with those. marketCheckpoint being null is a valid input here (means "no real
-    // checkpoint has loaded yet, start from genesis") — skipping this call in that case was
-    // itself a real bug: if this listener's very first delivery landed in the brief window
-    // before this tab's own first sync had happened, the adjustment would be silently dropped
-    // for this tab, with nothing left to apply it later.
-    catchUpAndStartTicking(marketCheckpoint);
-    // Paint immediately rather than waiting for the next scheduled ~250ms tick — this is
-    // specifically what makes an admin action feel instant instead of just "usually fast."
-    if(typeof updatePriceDisplays === 'function') updatePriceDisplays();
-    if(typeof drawChart === 'function') drawChart();
-    if(typeof renderPortfolio === 'function') renderPortfolio();
-    if(typeof renderLots === 'function') renderLots();
-    if(typeof renderAdminMarketLog === 'function') renderAdminMarketLog(); // no-op unless the admin market panel is actually on screen (settings.html, signed in as admin)
-  });
 }
 
 // paint instantly from whatever's cached locally so there's no "$--.--" flash, then get a real
@@ -1415,6 +1380,11 @@ setInterval(() => {
   const price = marketAdvanceOneTick(marketState, marketRng, marketTickIndex + 1, marketAdjustments);
   marketTickIndex++;
   currentPrice = price;
+  // Keeps marketCheckpoint from ever going stale relative to where the ticker actually is — see
+  // the long comment in catchUpAndStartTicking() for why this specifically is what fixes the
+  // "history gets silently rewritten to different values" bug. Just two field writes, negligible
+  // cost at 4x/sec.
+  marketCheckpoint = { tickIndex: marketTickIndex, state: marketState };
   priceHistory.push({ price, t: Date.now() });
   if(priceHistory.length > 20000) priceHistory.shift(); // bound in-memory growth for very long sessions
   clampScroll();
@@ -2924,20 +2894,43 @@ function setupAdminMarketControls(){
     // (rather than letting each replayer guess "now" separately) is what pins the instant jump
     // to one specific, agreed-upon point in the price's history rather than leaving it fuzzy.
     const tickIndex = marketTickIndexForTime(Date.now());
-    db.ref('marketAdjustments').push({ tickIndex, delta, at: Date.now() })
+    const entry = { tickIndex, delta, at: Date.now() };
+
+    // Apply directly to THIS tab's own already-running live state — no replay, no round trip
+    // needed to see it. This used to go through the same catchUpAndStartTicking() replay a
+    // periodic refresh uses, driven by a persistent Firebase listener so every open tab picked
+    // it up live — but that meant firing a full replay on every admin action (and, before a
+    // related fix, a genuinely buggy one — see the notes on marketCheckpoint above). A direct,
+    // one-line bump is simpler, can't desync from what's already on screen, and needs no
+    // standing Firebase connection at all. Other tabs pick this up via the existing cheap
+    // static-file poll (market-data.json, not Firebase) once the GitHub Action bakes it in.
+    if(marketState){
+      marketState.fairValue += delta;
+      marketState.price = Math.max(0.01, marketState.price + delta);
+      currentPrice = marketState.price;
+      marketCheckpoint = { tickIndex: marketTickIndex, state: marketState };
+      priceHistory.push({ price: currentPrice, t: Date.now() });
+      marketAdjustments = marketAdjustments.concat([entry]);
+      if(typeof updatePriceDisplays === 'function') updatePriceDisplays();
+      if(typeof drawChart === 'function') drawChart();
+      if(typeof renderPortfolio === 'function') renderPortfolio();
+      if(typeof renderLots === 'function') renderLots();
+      renderAdminMarketLog();
+    }
+
+    // Persisted so it's permanent, syncs to other tabs (via the static-file poll once the Action
+    // has run), and gets baked into the deterministic seed history by the GitHub Action.
+    db.ref('marketAdjustments').push(entry)
       .then(() => {
         msgEl.style.color = 'var(--gain)';
-        msgEl.textContent = `Applied ${delta >= 0 ? '+' : ''}$${delta.toFixed(2)} — live for everyone now, permanent in the price history from this point on.`;
+        msgEl.textContent = `Applied ${delta >= 0 ? '+' : ''}$${delta.toFixed(2)} — permanent in the price history from this point on, other tabs will pick it up within about ${Math.round(MARKET_CHECKPOINT_REFRESH_MS / 1000)}s to a minute or so.`;
         deltaInput.value = '';
       })
-      .catch(e => { msgEl.style.color = 'var(--danger)'; msgEl.textContent = 'Failed: ' + e.message; });
+      .catch(e => { msgEl.style.color = 'var(--danger)'; msgEl.textContent = 'Saved locally, but failed to persist: ' + e.message; });
   };
   document.getElementById('adminMarketRaiseBtn').addEventListener('click', () => applyAdjustment(1));
   document.getElementById('adminMarketDropBtn').addEventListener('click', () => applyAdjustment(-1));
 
-  // The same live listener that drives the actual price also calls renderAdminMarketLog() (see
-  // its callback earlier in this file) — no polling needed, this just paints the current state
-  // immediately so the log isn't empty until the next Firebase event happens to fire.
   renderAdminMarketLog();
 }
 
