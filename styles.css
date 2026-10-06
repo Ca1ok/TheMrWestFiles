@@ -178,6 +178,18 @@
     border-radius: var(--radius-panel); cursor:pointer; opacity:0.6;
   }
   .range-jump.visible{ opacity:1; color: var(--rust-2); border-color: var(--rust-2); }
+  .range-btns{ display:flex; gap:0.25rem; flex-wrap:wrap; }
+  .range-btn{
+    background:none; border:1px solid var(--line); color: var(--muted); font-family:inherit;
+    font-size:var(--fs-xs); letter-spacing:0.04em; text-transform:uppercase; padding:0.35rem 0.55rem;
+    border-radius: var(--radius-panel); cursor:pointer; transition: all 0.15s ease;
+  }
+  .range-btn:hover{ color: var(--rust-2); border-color: var(--rust-2); }
+  .range-btn.active{ background: var(--rust); color: var(--ink); border-color: var(--rust-2); }
+  .admin-market-select{
+    background: var(--paper-2); border:1px solid var(--line); color: var(--ink); font-family:inherit;
+    font-size:var(--fs-sm); padding:0.45rem 0.4rem; border-radius: var(--radius-panel); max-width:100%;
+  }
   .stats{ display:grid; grid-template-columns: repeat(3,1fr); gap:0.75rem; text-align:center; margin-bottom:1.4rem; }
   .stat-label{ font-size:var(--fs-xs); letter-spacing:0.15em; text-transform:uppercase; color: var(--muted); margin-bottom:0.3rem; }
   .stat-value{ font-size:var(--fs-lg); font-weight:700; }
