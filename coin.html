@@ -44,8 +44,16 @@
         <canvas id="brushChart"></canvas>
       </div>
       <div class="chart-controls">
-        <span class="brush-hint" id="brushHint">Drag the handles to pick a range</span>
-        <button class="range-jump" id="jumpLive">Jump to live</button>
+        <div class="range-btns" role="group" aria-label="Chart range">
+          <button class="range-btn" data-range="LIVE">Live</button>
+          <button class="range-btn" data-range="1H">1H</button>
+          <button class="range-btn" data-range="6H">6H</button>
+          <button class="range-btn active" data-range="1D">1D</button>
+          <button class="range-btn" data-range="1W">1W</button>
+          <button class="range-btn" data-range="ALL">All</button>
+        </div>
+        <span class="brush-hint" id="brushHint">Drag the handles or scroll to zoom</span>
+        <button class="range-jump" id="jumpLive">Back to live</button>
       </div>
       <div class="stats">
         <div><div class="stat-label">Cash</div><div class="stat-value" id="cash">$0.00</div></div>
