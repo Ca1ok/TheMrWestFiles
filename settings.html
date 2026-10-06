@@ -58,11 +58,17 @@
             <span>Current price</span><b id="adminMarketPrice">$--.--</b>
           </div>
           <div class="admin-market-row">
-            <input type="number" id="adminMarketDelta" step="0.01" placeholder="Amount ($)">
+            <input type="number" id="adminMarketDelta" step="0.01" min="0" placeholder="Amount ($)">
+            <select id="adminMarketFade" class="admin-market-select" aria-label="How long the move lasts">
+              <option value="0">Permanent shift</option>
+              <option value="300">Spike · fades over 5 min</option>
+              <option value="1800">Spike · fades over 30 min</option>
+              <option value="7200">Spike · fades over 2 h</option>
+            </select>
             <button class="tool-btn" id="adminMarketRaiseBtn">Raise</button>
             <button class="tool-btn" id="adminMarketDropBtn">Drop</button>
           </div>
-          <p class="cc-desc" style="margin:0.3rem 0 0;">Jumps the price instantly by this amount, then the market continues normally from there — same trend, same volatility, permanently reflected for every visitor and in the price history from this moment on.</p>
+          <p class="cc-desc" style="margin:0.3rem 0 0;">Jumps the price instantly by this amount at this exact moment, the same moment for every visitor. <b>Permanent shift</b> moves the whole market up or down from here on; <b>Spike</b> jumps and then fades back toward the trend. The market keeps its normal trend and volatility, and each action shows up as a marked line on the price chart.</p>
           <div class="compound-status" id="adminMarketMsg"></div>
           <div id="adminMarketLog" class="admin-market-log"></div>
         </div>
