@@ -693,9 +693,6 @@ if(db && investorId) loadPlayerData(investorId);
 let currentPrice = 12.50;
 let priceHistory = [{ price: 12.50, t: Date.now() }];
 let syncOK = false;
-// keeps a cached checkpoint alive for next page load (paints instantly instead of flashing
-// "$--.--") — not the source of truth for ticking (that's marketState/marketRng below)
-let market = JSON.parse(localStorage.getItem('mrwestcoin_market_cache') || 'null') || { updatedAt: 0 };
 
 const priceEl = document.getElementById('price'), changeEl = document.getElementById('change');
 const miniPriceEl = document.getElementById('miniPrice'), miniChangeEl = document.getElementById('miniChange');
@@ -715,37 +712,6 @@ document.querySelectorAll('.tool-btn').forEach(btn => {
     drawChart();
   });
 });
-
-/* --- hover over the chart to see the value at that point (crosshair tooltip) --- */
-let lastChartGeometry = null;
-const chartHoverTip = document.getElementById('chartHoverTip');
-
-if(canvas){
-  canvas.addEventListener('pointermove', (e) => {
-    if(chartDragging || !lastChartGeometry) return;
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const { points, xOf, LEFT_PAD, RIGHT_PAD, cssW } = lastChartGeometry;
-    if(mx < LEFT_PAD || mx > cssW - RIGHT_PAD || points.length === 0){
-      chartHoverTip.classList.remove('show');
-      return;
-    }
-    // find nearest data point to the cursor's x position
-    let nearestIdx = 0, nearestDist = Infinity;
-    points.forEach((p, i) => {
-      const d = Math.abs(xOf(i) - mx);
-      if(d < nearestDist){ nearestDist = d; nearestIdx = i; }
-    });
-    const p = points[nearestIdx];
-    chartHoverTip.textContent = '$' + p.price.toFixed(2) + '  ·  ' + new Date(p.t).toLocaleTimeString([], { hour:'numeric', minute:'2-digit', second:'2-digit' }) + (p.closed ? '  (market closed)' : '');
-    const tipX = Math.min(Math.max(xOf(nearestIdx), 60), cssW - 60);
-    chartHoverTip.style.left = tipX + 'px';
-    chartHoverTip.style.top = '6px';
-    chartHoverTip.style.transform = 'translateX(-50%)';
-    chartHoverTip.classList.add('show');
-  });
-  canvas.addEventListener('pointerleave', () => chartHoverTip.classList.remove('show'));
-}
 
 const jumpLiveBtn = document.getElementById('jumpLive');
 
@@ -787,359 +753,393 @@ function renderLots(){
   });
 }
 
-/* --- fence-style brush timeline: shows the full history, drag the handles to pick a window --- */
+/* ================= PRICE CHART =================
+   A real stock-style timeline: x is TIME (not point index), so data of different resolutions can
+   share one chart — 250ms ticks for the recent past, 1-minute / 5-minute / 1-hour candles for
+   older stretches (see the market section below). Whatever the zoom, the line is decimated to at
+   most a few points per pixel column keeping each column's first, lowest, highest and last value,
+   so spikes and dips never get averaged away. Range buttons (LIVE / 1H / 6H / 1D / 1W / ALL) follow
+   the live edge; dragging, the brush, or the mouse wheel switch to a custom window. */
 const brushCanvas = document.getElementById('brushChart');
 const brushCtx = brushCanvas ? brushCanvas.getContext('2d') : null;
-let viewStart = null, viewEnd = null; // absolute timestamps; null = "live" (always show the latest window)
+let viewStart = null, viewEnd = null; // absolute timestamps; null = follow the live edge using rangePreset
+let rangePreset = '1D';
+const RANGE_PRESETS = { 'LIVE': 2 * 60 * 1000, '1H': 3600000, '6H': 6 * 3600000, '1D': 86400000, '1W': 7 * 86400000, 'ALL': Infinity };
 const MIN_WINDOW_MS = 8000; // can't shrink the selection below ~8 seconds of data
+const CHART_UP = '#4fae5c', CHART_DOWN = '#c23b3b';
+
+// first index whose t >= the given time (priceHistory is always sorted by time)
+function lowerBoundT(arr, t){
+  let lo = 0, hi = arr.length;
+  while(lo < hi){ const mid = (lo + hi) >> 1; if(arr[mid].t < t) lo = mid + 1; else hi = mid; }
+  return lo;
+}
 
 function currentWindow(){
   if(priceHistory.length === 0) return { start: 0, end: 0, live: true };
   const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
   if(viewStart === null || viewEnd === null){
-    return { start: Math.max(earliestT, latestT - 120000), end: latestT, live: true }; // trailing 2-minute live window
+    const span = RANGE_PRESETS[rangePreset] !== undefined ? RANGE_PRESETS[rangePreset] : RANGE_PRESETS['1D'];
+    return { start: Math.max(earliestT, latestT - span), end: latestT, live: true };
   }
   return { start: Math.max(earliestT, viewStart), end: Math.min(latestT, viewEnd), live: false };
 }
 
-function visibleHistory(){
+// the points inside the window, plus ONE point before it so the line reaches the left edge
+function visibleHistory(w){
   if(priceHistory.length === 0) return [];
-  const w = currentWindow();
-  let points = priceHistory.filter(p => p.t >= w.start && p.t <= w.end);
-  if(points.length < 2) points = priceHistory.slice(-2);
-  return points;
-}
-function clampScroll(){
-  if(jumpLiveBtn) jumpLiveBtn.classList.toggle('visible', viewStart !== null);
+  w = w || currentWindow();
+  const i0 = Math.max(0, lowerBoundT(priceHistory, w.start) - 1);
+  const i1 = lowerBoundT(priceHistory, w.end + 1);
+  const pts = priceHistory.slice(i0, i1);
+  return pts.length < 2 ? priceHistory.slice(-2) : pts;
 }
 
-function formatAxisTime(t, spanMs){
-  const d = new Date(t);
-  if(spanMs <= 2 * 86400000) return d.toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
-  return d.toLocaleDateString([], { month:'short', day:'numeric' });
+function clampScroll(){
+  if(jumpLiveBtn) jumpLiveBtn.classList.toggle('visible', viewStart !== null);
+  document.querySelectorAll('.range-btn').forEach(b => b.classList.toggle('active', viewStart === null && b.dataset.range === rangePreset));
 }
+
+// Keeps the first, lowest, highest and last point of every pixel column (in time order). When
+// there are already only a few points per column the data is returned untouched.
+function decimateForDraw(points, startT, endT, cols){
+  cols = Math.max(1, Math.floor(cols));
+  if(points.length <= cols * 3) return points;
+  const span = (endT - startT) || 1;
+  const out = [];
+  let col = -1, first = null, last = null, mn = null, mx = null;
+  const flush = () => {
+    if(!first) return;
+    const set = [first];
+    [mn, mx].sort((a, b) => a.t - b.t).forEach(p => { if(set.indexOf(p) < 0) set.push(p); });
+    if(set.indexOf(last) < 0) set.push(last);
+    set.sort((a, b) => a.t - b.t).forEach(p => out.push(p));
+  };
+  for(let i = 0; i < points.length; i++){
+    const p = points[i];
+    const c = Math.max(0, Math.min(cols - 1, Math.floor(((p.t - startT) / span) * cols)));
+    if(c !== col){ flush(); col = c; first = last = mn = mx = p; }
+    else { last = p; if(p.price < mn.price) mn = p; if(p.price > mx.price) mx = p; }
+  }
+  flush();
+  return out;
+}
+
+// price at n evenly spaced moments across the window — gives avg/σ/trend a time-weighted view
+// instead of letting a dense stretch of 250ms ticks outvote a sparse stretch of candles
+function resampleUniform(points, startT, endT, n){
+  const out = [], span = endT - startT;
+  let j = 0;
+  for(let s = 0; s < n; s++){
+    const t = startT + span * s / (n - 1);
+    while(j < points.length - 1 && points[j+1].t <= t) j++;
+    out.push(points[j].price);
+  }
+  return out;
+}
+
+// "nice" axis tick times (on round local clock/calendar boundaries) for any window size
+function niceTimeTicks(startT, endT, maxTicks){
+  const STEPS = [60e3, 2*60e3, 5*60e3, 10*60e3, 15*60e3, 30*60e3, 3600e3, 2*3600e3, 3*3600e3, 6*3600e3, 12*3600e3, 86400e3, 2*86400e3, 7*86400e3, 14*86400e3, 30*86400e3];
+  const span = endT - startT;
+  let step = STEPS[STEPS.length - 1];
+  for(let i = 0; i < STEPS.length; i++){ if(span / STEPS[i] <= maxTicks){ step = STEPS[i]; break; } }
+  const off = new Date(startT).getTimezoneOffset() * 60000;
+  const ticks = [];
+  for(let t = Math.ceil((startT - off) / step) * step + off; t <= endT; t += step) ticks.push(t);
+  return { ticks, step };
+}
+function formatTickLabel(t, step){
+  const d = new Date(t);
+  if(step >= 86400e3) return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  if(d.getHours() === 0 && d.getMinutes() === 0) return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+function formatMoneyCompact(v){
+  const a = Math.abs(v);
+  return (v < 0 ? '−' : '+') + '$' + (a >= 1000 ? a.toFixed(0) : a >= 100 ? a.toFixed(0) : a.toFixed(2));
+}
+
+let lastChartGeometry = null;
+let chartDragging = false;
+const chartHoverTip = document.getElementById('chartHoverTip');
 
 function drawChart(){
   if(!canvas) return;
   const dpr = window.devicePixelRatio || 1;
   const cssW = canvas.offsetWidth, cssH = canvas.offsetHeight;
   if(cssW === 0 || cssH === 0) return;
-  canvas.width = cssW * dpr; canvas.height = cssH * dpr;
+  const bw = Math.round(cssW * dpr), bh = Math.round(cssH * dpr);
+  if(canvas.width !== bw || canvas.height !== bh){ canvas.width = bw; canvas.height = bh; }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0,0,cssW,cssH);
+  ctx.clearRect(0, 0, cssW, cssH);
 
-  const points = visibleHistory();
-  if(points.length < 2) { drawBrush(); return; }
+  const w = currentWindow();
+  const raw = visibleHistory(w);
+  if(raw.length < 2 || w.end <= w.start){ lastChartGeometry = null; drawBrush(); return; }
 
-  const LEFT_PAD = 46, RIGHT_PAD = 6, TOP_PAD = 10, BOTTOM_PAD = 24;
+  const LEFT_PAD = 50, RIGHT_PAD = 62, TOP_PAD = 24, BOTTOM_PAD = 22;
   const plotW = cssW - LEFT_PAD - RIGHT_PAD, plotH = cssH - TOP_PAD - BOTTOM_PAD;
-  const prices = points.map(p => p.price);
-  const rawMin = Math.min(...prices), rawMax = Math.max(...prices);
-  const pad = (rawMax - rawMin) * 0.12 || rawMax * 0.05 || 1;
-  const min = rawMin - pad, max = rawMax + pad, range = (max - min) || 1;
+  const spanT = w.end - w.start;
+  const xOfT = t => LEFT_PAD + ((t - w.start) / spanT) * plotW;
+
+  let rawMin = Infinity, rawMax = -Infinity;
+  for(let i = 0; i < raw.length; i++){ const v = raw[i].price; if(v < rawMin) rawMin = v; if(v > rawMax) rawMax = v; }
+  const pad = (rawMax - rawMin) * 0.1 || rawMax * 0.02 || 1;
+  const min = Math.max(0, rawMin - pad), max = rawMax + pad, range = (max - min) || 1; // a price can't go below $0, so neither does the axis
   const yOf = v => TOP_PAD + plotH - ((v - min) / range) * plotH;
-  const xOf = i => LEFT_PAD + (i / (points.length - 1)) * plotW;
 
-  const spanMs = points[points.length-1].t - points[0].t;
-  const X_LABELS = 4;
+  const points = decimateForDraw(raw, w.start, w.end, plotW);
+  const firstInWindow = raw.find(p => p.t >= w.start) || raw[0];
+  const lastPoint = raw[raw.length - 1];
+  const up = lastPoint.price >= firstInWindow.price;
+  const lineColor = up ? CHART_UP : CHART_DOWN;
+
+  // --- grid + axes ---
   ctx.font = '9px Courier New, monospace';
-  ctx.fillStyle = '#a89678';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  for(let x = 0; x <= X_LABELS; x++){
-    const idx = Math.round((x / X_LABELS) * (points.length - 1));
-    const px = xOf(idx);
-    ctx.fillText(formatAxisTime(points[idx].t, spanMs), Math.min(Math.max(px, LEFT_PAD+20), cssW-RIGHT_PAD-20), cssH - BOTTOM_PAD + 6);
-  }
-
   const GRID_LINES = 4;
-  ctx.font = '9px Courier New, monospace';
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
   for(let g = 0; g <= GRID_LINES; g++){
-    const v = min + (range * g / GRID_LINES);
-    const y = yOf(v);
-    ctx.strokeStyle = 'rgba(107,90,65,0.35)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(LEFT_PAD, y);
-    ctx.lineTo(cssW - RIGHT_PAD, y);
-    ctx.stroke();
+    const v = min + (range * g / GRID_LINES), y = yOf(v);
+    ctx.strokeStyle = 'rgba(107,90,65,0.28)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(LEFT_PAD, y); ctx.lineTo(cssW - RIGHT_PAD, y); ctx.stroke();
     ctx.fillStyle = '#a89678';
-    ctx.fillText('$' + v.toFixed(2), LEFT_PAD - 6, y);
+    ctx.fillText('$' + v.toFixed(v >= 1000 ? 0 : 2), LEFT_PAD - 6, y);
   }
+  const tickInfo = niceTimeTicks(w.start, w.end, Math.max(2, Math.floor(plotW / 80)));
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  tickInfo.ticks.forEach(t => {
+    const x = xOfT(t);
+    if(x < LEFT_PAD + 14 || x > cssW - RIGHT_PAD - 14) return;
+    ctx.strokeStyle = 'rgba(107,90,65,0.18)';
+    ctx.beginPath(); ctx.moveTo(x, TOP_PAD); ctx.lineTo(x, TOP_PAD + plotH); ctx.stroke();
+    ctx.fillStyle = '#a89678';
+    ctx.fillText(formatTickLabel(t, tickInfo.step), x, cssH - BOTTOM_PAD + 6);
+  });
 
-  // Render the line/fill slightly wider than the visible plot area, then clip tightly to the
-  // exact plot rect — this way the edges always reach flush to the boundary with room to spare,
-  // instead of any sub-pixel rounding ever being able to leave a hairline gap the player would see.
-  const OVERDRAW = 4;
+  // --- everything inside the plot rect is clipped to it ---
   ctx.save();
+  ctx.beginPath(); ctx.rect(LEFT_PAD, TOP_PAD, plotW, plotH); ctx.clip();
+
+  // price line (straight segments — smoothing would round off exactly the spikes we want to see)
   ctx.beginPath();
-  ctx.rect(LEFT_PAD, TOP_PAD, plotW, plotH);
-  ctx.clip();
+  points.forEach((p, i) => { const x = xOfT(p.t), y = yOf(p.price); if(i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+  ctx.strokeStyle = lineColor; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.stroke();
+  // soft gradient under the line
+  ctx.lineTo(xOfT(points[points.length-1].t), TOP_PAD + plotH);
+  ctx.lineTo(xOfT(points[0].t), TOP_PAD + plotH);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0, TOP_PAD, 0, TOP_PAD + plotH);
+  grad.addColorStop(0, up ? 'rgba(79,174,92,0.22)' : 'rgba(194,59,59,0.22)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad; ctx.fill();
 
-  // draw the line as a sequence of segments, switching style whenever we cross a
-  // closed/live boundary — this is what actually renders the "market closed" bridge distinctly
-  let segStart = 0;
-  for(let i = 1; i <= points.length; i++){
-    const boundary = i === points.length || !!points[i].closed !== !!points[segStart].closed;
-    if(!boundary) continue;
-    const segPoints = points.slice(segStart, i);
-    const isClosed = !!points[segStart].closed;
+  // admin raise/drop/spike events — a marker line exactly where each one happened
+  let lastLabelRight = -1e9;
+  const markerLabels = [];
+  marketAdjustments.forEach(a => {
+    const t = marketTimeForTickIndex(a.tickIndex);
+    if(t < w.start || t > w.end) return;
+    const x = xOfT(t), col = a.delta >= 0 ? CHART_UP : CHART_DOWN;
+    ctx.beginPath(); ctx.strokeStyle = col; ctx.globalAlpha = 0.55; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+    ctx.moveTo(x, TOP_PAD); ctx.lineTo(x, TOP_PAD + plotH); ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+    markerLabels.push({ x, col, text: formatMoneyCompact(a.delta) + (a.fadeSec > 0 ? ' spike' : '') });
+  });
+  ctx.restore();
 
-    ctx.beginPath();
-    ctx.strokeStyle = isClosed ? 'rgba(168,150,120,0.55)' : '#d97a3f';
-    ctx.lineWidth = isClosed ? 1.3 : 1.6;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    ctx.setLineDash(isClosed ? [5, 4] : []);
-    segPoints.forEach((p, j) => {
-      const gi = segStart + j;
-      // overdraw the very first/last point of the WHOLE chart a little past the edge, so the
-      // rounded line-cap always fully covers the boundary rather than potentially falling short
-      const overshoot = (gi === 0 ? -OVERDRAW : gi === points.length - 1 ? OVERDRAW : 0);
-      const x = xOf(gi) + overshoot, y = yOf(p.price);
-      if(j === 0){ ctx.moveTo(x, y); }
-      else{
-        const prevOvershoot = (gi-1 === 0 ? -OVERDRAW : 0);
-        const prevX = xOf(gi-1) + prevOvershoot, prevY = yOf(points[gi-1].price);
-        const midX = (prevX + x) / 2, midY = (prevY + y) / 2;
-        ctx.quadraticCurveTo(prevX, prevY, midX, midY);
-      }
-    });
-    // connect to the first point of the next segment so there's no visible gap at the boundary
-    if(i < points.length){ ctx.lineTo(xOf(i), yOf(points[i].price)); }
-    ctx.stroke();
-    ctx.setLineDash([]);
+  ctx.font = '9px Courier New, monospace'; ctx.textBaseline = 'middle';
+  markerLabels.forEach(m => {
+    const tw = ctx.measureText(m.text).width + 8;
+    const bx = Math.min(Math.max(m.x - tw / 2, LEFT_PAD), cssW - RIGHT_PAD - tw);
+    if(bx < lastLabelRight + 3) return; // would overlap the previous label — the line itself still shows
+    lastLabelRight = bx + tw;
+    ctx.fillStyle = 'rgba(26,21,16,0.92)'; ctx.fillRect(bx, TOP_PAD + 2, tw, 13);
+    ctx.strokeStyle = m.col; ctx.lineWidth = 1; ctx.strokeRect(bx + 0.5, TOP_PAD + 2.5, tw - 1, 12);
+    ctx.fillStyle = m.col; ctx.textAlign = 'center';
+    ctx.fillText(m.text, bx + tw / 2, TOP_PAD + 9);
+  });
 
-    // fill under THIS segment only — never under the closed bridge, so there's no stray tint there
-    if(!isClosed){
-      const segEndIdx = i < points.length ? i : points.length - 1;
-      const endOvershoot = segEndIdx === points.length - 1 ? OVERDRAW : 0;
-      const startOvershoot = segStart === 0 ? -OVERDRAW : 0;
-      ctx.lineTo(xOf(segEndIdx) + endOvershoot, TOP_PAD + plotH);
-      ctx.lineTo(xOf(segStart) + startOvershoot, TOP_PAD + plotH);
-      ctx.closePath();
-      ctx.fillStyle = 'rgba(217,122,63,0.08)';
-      ctx.fill();
-    }
-
-    segStart = i;
-  }
-  ctx.restore(); // drop the clip — everything drawn after this (labels, legend, etc.) is unaffected
-
-  // "Market Closed" label centered under any closed stretch
-  const closedIdxs = points.map((p,i) => p.closed ? i : -1).filter(i => i >= 0);
-  if(closedIdxs.length > 0){
-    const midIdx = closedIdxs[Math.floor(closedIdxs.length/2)];
-    const labelX = xOf(midIdx);
-    ctx.font = '9px Courier New, monospace';
-    ctx.fillStyle = 'rgba(168,150,120,0.85)';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('MARKET CLOSED', Math.min(Math.max(labelX, LEFT_PAD+50), cssW-RIGHT_PAD-50), TOP_PAD + plotH/2);
+  // last price: dashed guide line + tag on the right edge, like a real trading chart
+  const lastY = yOf(lastPoint.price);
+  ctx.beginPath(); ctx.strokeStyle = lineColor; ctx.globalAlpha = 0.6; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+  ctx.moveTo(LEFT_PAD, lastY); ctx.lineTo(cssW - RIGHT_PAD, lastY); ctx.stroke();
+  ctx.setLineDash([]); ctx.globalAlpha = 1;
+  const tag = '$' + lastPoint.price.toFixed(2), tagW = RIGHT_PAD - 6;
+  ctx.fillStyle = lineColor; ctx.fillRect(cssW - RIGHT_PAD + 2, lastY - 8, tagW, 16);
+  ctx.fillStyle = '#10100d'; ctx.font = 'bold 9px Courier New, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(tag, cssW - RIGHT_PAD + 2 + tagW / 2, lastY);
+  if(w.live){
+    ctx.beginPath(); ctx.arc(xOfT(lastPoint.t), lastY, 3, 0, Math.PI * 2);
+    ctx.fillStyle = '#f4ecd8'; ctx.fill();
   }
 
-  const lastX = xOf(points.length-1), lastY = yOf(points[points.length-1].price);
-
-  if(currentWindow().live){
-    ctx.beginPath();
-    ctx.arc(lastX, lastY, 2.6, 0, Math.PI*2);
-    ctx.fillStyle = '#f4ecd8';
-    ctx.fill();
-  }
+  // header: which window this is and how far the price moved across it
+  const chg = lastPoint.price - firstInWindow.price, chgPct = firstInWindow.price ? chg / firstInWindow.price * 100 : 0;
+  ctx.font = 'bold 10px Courier New, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#a89678';
+  const label = (viewStart === null ? rangePreset : 'CUSTOM') + '  ';
+  ctx.fillText(label, LEFT_PAD + 2, 11);
+  const labelW = ctx.measureText(label).width;
+  ctx.fillStyle = lineColor;
+  ctx.fillText((up ? '▲ ' : '▼ ') + formatMoneyCompact(chg) + ' (' + (chgPct >= 0 ? '+' : '') + chgPct.toFixed(2) + '%)', LEFT_PAD + 2 + labelW, 11);
 
   // numbered horizontal lines marking where each open position was bought
   if(typeof portfolio !== 'undefined' && portfolio.lots){
     portfolio.lots.forEach(lot => {
       if(lot.buyPrice < min || lot.buyPrice > max) return; // off the current price range — skip rather than clutter
       const y = yOf(lot.buyPrice);
-      ctx.beginPath();
-      ctx.strokeStyle = 'rgba(244,236,216,0.5)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 4]);
-      ctx.moveTo(LEFT_PAD, y);
-      ctx.lineTo(cssW - RIGHT_PAD, y);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      const label = '#' + lot.id;
+      ctx.beginPath(); ctx.strokeStyle = 'rgba(244,236,216,0.5)'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+      ctx.moveTo(LEFT_PAD, y); ctx.lineTo(cssW - RIGHT_PAD, y); ctx.stroke(); ctx.setLineDash([]);
+      const lbl = '#' + lot.id;
       ctx.font = '9px Courier New, monospace';
-      const labelW = ctx.measureText(label).width + 8;
-      ctx.fillStyle = 'rgba(26,21,16,0.9)';
-      ctx.fillRect(cssW - RIGHT_PAD - labelW, y - 8, labelW, 16);
-      ctx.strokeStyle = '#f4ecd8';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(cssW - RIGHT_PAD - labelW + 0.5, y - 8 + 0.5, labelW - 1, 15);
-      ctx.fillStyle = '#f4ecd8';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(label, cssW - RIGHT_PAD - labelW/2, y);
+      const labelBoxW = ctx.measureText(lbl).width + 8, bx = cssW - RIGHT_PAD - labelBoxW - 2;
+      ctx.fillStyle = 'rgba(26,21,16,0.9)'; ctx.fillRect(bx, y - 8, labelBoxW, 16);
+      ctx.strokeStyle = '#f4ecd8'; ctx.lineWidth = 1; ctx.strokeRect(bx + 0.5, y - 8 + 0.5, labelBoxW - 1, 15);
+      ctx.fillStyle = '#f4ecd8'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(lbl, bx + labelBoxW / 2, y);
     });
   }
 
-  // --- analysis tool overlays ---
-  const meanPrice = prices.reduce((a,b) => a+b, 0) / prices.length;
-  const variance = prices.reduce((a,b) => a + (b-meanPrice)*(b-meanPrice), 0) / prices.length;
-  const stdDev = Math.sqrt(variance);
-
-  if(activeTools.has('avg')){
-    ctx.beginPath();
-    ctx.strokeStyle = '#5aa9f0';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([2,3]);
-    ctx.moveTo(LEFT_PAD, yOf(meanPrice));
-    ctx.lineTo(cssW - RIGHT_PAD, yOf(meanPrice));
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = '#5aa9f0';
-    ctx.font = '9px Courier New, monospace';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'bottom';
-    ctx.fillText('avg $' + meanPrice.toFixed(2), LEFT_PAD + 4, yOf(meanPrice) - 2);
-  }
-
+  // --- analysis tool overlays (stats are time-weighted via uniform resampling) ---
+  const sample = resampleUniform(raw, Math.max(w.start, raw[0].t), w.end, 240);
+  const meanPrice = sample.reduce((a, b) => a + b, 0) / sample.length;
+  const stdDev = Math.sqrt(sample.reduce((a, b) => a + (b - meanPrice) * (b - meanPrice), 0) / sample.length);
+  const hline = (v, color, dash, text) => {
+    const y = yOf(v);
+    ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.setLineDash(dash);
+    ctx.moveTo(LEFT_PAD, y); ctx.lineTo(cssW - RIGHT_PAD, y); ctx.stroke(); ctx.setLineDash([]);
+    if(text){ ctx.fillStyle = color; ctx.font = '9px Courier New, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.fillText(text, LEFT_PAD + 4, y - 2); }
+  };
+  if(activeTools.has('avg')) hline(meanPrice, '#5aa9f0', [2, 3], 'avg $' + meanPrice.toFixed(2));
   if(activeTools.has('bands') && stdDev > 0){
     ctx.fillStyle = 'rgba(90,169,240,0.08)';
-    ctx.fillRect(LEFT_PAD, yOf(meanPrice+stdDev), plotW, yOf(meanPrice-stdDev)-yOf(meanPrice+stdDev));
-    [meanPrice+stdDev, meanPrice-stdDev].forEach(v => {
-      ctx.beginPath();
-      ctx.strokeStyle = 'rgba(90,169,240,0.4)';
-      ctx.lineWidth = 1;
-      ctx.moveTo(LEFT_PAD, yOf(v));
-      ctx.lineTo(cssW - RIGHT_PAD, yOf(v));
-      ctx.stroke();
-    });
+    ctx.fillRect(LEFT_PAD, yOf(meanPrice + stdDev), plotW, yOf(meanPrice - stdDev) - yOf(meanPrice + stdDev));
+    hline(meanPrice + stdDev, 'rgba(90,169,240,0.4)', [], null); hline(meanPrice - stdDev, 'rgba(90,169,240,0.4)', [], null);
   }
-
-  if(activeTools.has('trend') && points.length >= 2){
-    // simple linear regression over the visible points
-    const n = points.length;
-    let sumX=0,sumY=0,sumXY=0,sumXX=0;
-    points.forEach((p,i) => { sumX+=i; sumY+=p.price; sumXY+=i*p.price; sumXX+=i*i; });
-    const slope = (n*sumXY - sumX*sumY) / (n*sumXX - sumX*sumX || 1);
-    const intercept = (sumY - slope*sumX) / n;
-    const y0 = intercept, y1 = intercept + slope*(n-1);
-    ctx.beginPath();
-    ctx.strokeStyle = slope >= 0 ? '#4fae5c' : '#c23b3b';
-    ctx.lineWidth = 1.4;
-    ctx.moveTo(LEFT_PAD, yOf(y0));
-    ctx.lineTo(cssW - RIGHT_PAD, yOf(y1));
-    ctx.stroke();
+  if(activeTools.has('trend')){
+    const n = sample.length; let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+    sample.forEach((v, i) => { sumX += i; sumY += v; sumXY += i * v; sumXX += i * i; });
+    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX || 1), intercept = (sumY - slope * sumX) / n;
+    ctx.beginPath(); ctx.strokeStyle = slope >= 0 ? CHART_UP : CHART_DOWN; ctx.lineWidth = 1.4;
+    ctx.moveTo(LEFT_PAD, yOf(intercept)); ctx.lineTo(cssW - RIGHT_PAD, yOf(intercept + slope * (n - 1))); ctx.stroke();
   }
-
   if(activeTools.has('highlow')){
-    const maxP = Math.max(...prices), minP = Math.min(...prices);
-    [{v:maxP,c:'#4fae5c',label:'high'},{v:minP,c:'#c23b3b',label:'low'}].forEach(h => {
-      ctx.beginPath();
-      ctx.strokeStyle = h.c;
-      ctx.lineWidth = 1;
-      ctx.setLineDash([2,3]);
-      ctx.moveTo(LEFT_PAD, yOf(h.v));
-      ctx.lineTo(cssW - RIGHT_PAD, yOf(h.v));
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = h.c;
-      ctx.font = '9px Courier New, monospace';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(h.label + ' $' + h.v.toFixed(2), LEFT_PAD + 4, yOf(h.v) - 2);
-    });
+    hline(rawMax, CHART_UP, [2, 3], 'high $' + rawMax.toFixed(2));
+    hline(rawMin, CHART_DOWN, [2, 3], 'low $' + rawMin.toFixed(2));
   }
-
   if(activeTools.has('vol')){
-    ctx.fillStyle = 'rgba(244,236,216,0.8)';
-    ctx.font = '10px Courier New, monospace';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'top';
-    ctx.fillText('σ $' + stdDev.toFixed(3), cssW - RIGHT_PAD - 4, TOP_PAD + 4);
+    ctx.fillStyle = 'rgba(244,236,216,0.8)'; ctx.font = '10px Courier New, monospace';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+    ctx.fillText('σ $' + stdDev.toFixed(3), cssW - RIGHT_PAD - 4, TOP_PAD + 18);
   }
 
   // stash geometry so the hover handler can map a mouse x back to a data point
-  lastChartGeometry = { points, xOf, yOf, LEFT_PAD, RIGHT_PAD, TOP_PAD, plotW, plotH, cssW, cssH };
-
+  lastChartGeometry = { points, w, xOfT, LEFT_PAD, RIGHT_PAD, plotW, cssW };
   drawBrush();
 }
 
-/* --- the brush strip itself: a compressed sparkline of ALL history, with two draggable
-   handles ("fence posts") marking the selected window, plus a draggable middle to pan it --- */
+/* --- the brush strip: a compressed overview of ALL history, with two draggable handles marking
+   the selected window, plus a draggable middle to pan it. Admin events show as small ticks. --- */
 function drawBrush(){
+  if(!brushCanvas) return;
   const dpr = window.devicePixelRatio || 1;
   const cssW = brushCanvas.offsetWidth, cssH = brushCanvas.offsetHeight;
   if(cssW === 0 || cssH === 0 || priceHistory.length < 2) return;
-  brushCanvas.width = cssW * dpr; brushCanvas.height = cssH * dpr;
+  const bw = Math.round(cssW * dpr), bh = Math.round(cssH * dpr);
+  if(brushCanvas.width !== bw || brushCanvas.height !== bh){ brushCanvas.width = bw; brushCanvas.height = bh; }
   brushCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  brushCtx.clearRect(0,0,cssW,cssH);
+  brushCtx.clearRect(0, 0, cssW, cssH);
 
   const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
   const totalSpan = Math.max(1, latestT - earliestT);
-  const prices = priceHistory.map(p => p.price);
-  const min = Math.min(...prices), max = Math.max(...prices), range = (max-min) || 1;
+  const pts = decimateForDraw(priceHistory, earliestT, latestT, cssW);
+  let min = Infinity, max = -Infinity;
+  for(let i = 0; i < pts.length; i++){ const v = pts[i].price; if(v < min) min = v; if(v > max) max = v; }
+  const range = (max - min) || 1;
   const tToX = t => ((t - earliestT) / totalSpan) * cssW;
-  const priceToY = p => cssH - ((p - min) / range) * (cssH - 6) - 3;
+  const priceToY = p => cssH - ((p - min) / range) * (cssH - 8) - 4;
 
-  // full-history sparkline — the entire priceHistory array, always, regardless of what the main chart shows
   brushCtx.beginPath();
-  priceHistory.forEach((p, i) => {
-    const x = tToX(p.t), y = priceToY(p.price);
-    if(i === 0) brushCtx.moveTo(x, y); else brushCtx.lineTo(x, y);
+  pts.forEach((p, i) => { const x = tToX(p.t), y = priceToY(p.price); if(i === 0) brushCtx.moveTo(x, y); else brushCtx.lineTo(x, y); });
+  brushCtx.strokeStyle = '#c9a876'; brushCtx.lineWidth = 1.2; brushCtx.lineJoin = 'round'; brushCtx.stroke();
+  brushCtx.lineTo(tToX(pts[pts.length-1].t), cssH); brushCtx.lineTo(tToX(pts[0].t), cssH); brushCtx.closePath();
+  brushCtx.fillStyle = 'rgba(201,168,118,0.12)'; brushCtx.fill();
+
+  marketAdjustments.forEach(a => {
+    const x = tToX(marketTimeForTickIndex(a.tickIndex));
+    if(x < 0 || x > cssW) return;
+    brushCtx.fillStyle = a.delta >= 0 ? CHART_UP : CHART_DOWN;
+    brushCtx.fillRect(x - 0.5, 0, 1.5, 6);
   });
-  brushCtx.strokeStyle = '#c9a876';
-  brushCtx.lineWidth = 1.4;
-  brushCtx.lineJoin = 'round';
-  brushCtx.stroke();
 
-  // light fill under it so the shape reads clearly even at a glance
-  brushCtx.lineTo(tToX(priceHistory[priceHistory.length-1].t), cssH);
-  brushCtx.lineTo(tToX(priceHistory[0].t), cssH);
-  brushCtx.closePath();
-  brushCtx.fillStyle = 'rgba(201,168,118,0.12)';
-  brushCtx.fill();
-
-  // small dot at the very latest point so it's obvious this is live, real data
   const lastP = priceHistory[priceHistory.length-1];
-  brushCtx.beginPath();
-  brushCtx.arc(tToX(lastP.t), priceToY(lastP.price), 2, 0, Math.PI*2);
-  brushCtx.fillStyle = '#f4ecd8';
-  brushCtx.fill();
+  brushCtx.beginPath(); brushCtx.arc(tToX(lastP.t), priceToY(lastP.price), 2, 0, Math.PI * 2);
+  brushCtx.fillStyle = '#f4ecd8'; brushCtx.fill();
 
-  // selected window highlight + handles
   const w = currentWindow();
   const x0 = tToX(w.start), x1 = tToX(w.end);
-  brushCtx.fillStyle = 'rgba(217,122,63,0.16)';
-  brushCtx.fillRect(x0, 0, Math.max(2, x1 - x0), cssH);
-  brushCtx.strokeStyle = 'rgba(217,122,63,0.5)';
-  brushCtx.lineWidth = 1;
+  brushCtx.fillStyle = 'rgba(217,122,63,0.16)'; brushCtx.fillRect(x0, 0, Math.max(2, x1 - x0), cssH);
+  brushCtx.strokeStyle = 'rgba(217,122,63,0.5)'; brushCtx.lineWidth = 1;
   brushCtx.strokeRect(x0, 0.5, Math.max(2, x1 - x0), cssH - 1);
-
-  // wide gate posts with a grip notch, so they're obviously separate from the pannable middle
   [x0, x1].forEach(hx => {
-    brushCtx.fillStyle = '#d97a3f';
-    brushCtx.fillRect(hx - 3, 0, 6, cssH);
-    brushCtx.fillStyle = '#f4ecd8';
-    brushCtx.fillRect(hx - 1, cssH/2 - 6, 2, 12);
+    brushCtx.fillStyle = '#d97a3f'; brushCtx.fillRect(hx - 3, 0, 6, cssH);
+    brushCtx.fillStyle = '#f4ecd8'; brushCtx.fillRect(hx - 1, cssH / 2 - 6, 2, 12);
   });
 }
 
 if(canvas){
   jumpLiveBtn.addEventListener('click', () => { viewStart = null; viewEnd = null; clampScroll(); drawChart(); });
+  document.querySelectorAll('.range-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      rangePreset = btn.dataset.range; viewStart = null; viewEnd = null;
+      clampScroll(); drawChart();
+    });
+  });
+  clampScroll();
+
+  /* hover over the chart to see the value at that point */
+  canvas.addEventListener('pointermove', (e) => {
+    if(chartDragging || !lastChartGeometry){ chartHoverTip.classList.remove('show'); return; }
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const { points, w, xOfT, LEFT_PAD, RIGHT_PAD, plotW, cssW } = lastChartGeometry;
+    if(mx < LEFT_PAD || mx > cssW - RIGHT_PAD || points.length === 0){ chartHoverTip.classList.remove('show'); return; }
+    const t = w.start + ((mx - LEFT_PAD) / plotW) * (w.end - w.start);
+    let i = lowerBoundT(points, t);
+    if(i >= points.length) i = points.length - 1;
+    if(i > 0 && Math.abs(points[i-1].t - t) <= Math.abs(points[i].t - t)) i--;
+    const p = points[i];
+    const longSpan = (w.end - w.start) > 86400000;
+    const when = new Date(p.t);
+    const whenText = p.c || longSpan
+      ? when.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+      : when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    chartHoverTip.textContent = '$' + p.price.toFixed(2) + '  ·  ' + whenText;
+    chartHoverTip.style.left = Math.min(Math.max(xOfT(p.t), 70), cssW - 70) + 'px';
+    chartHoverTip.style.top = '6px';
+    chartHoverTip.style.transform = 'translateX(-50%)';
+    chartHoverTip.classList.add('show');
+  });
+  canvas.addEventListener('pointerleave', () => chartHoverTip.classList.remove('show'));
 
   /* dragging on the main chart pans the current window left/right */
-  let chartDragging = false, chartDragStartX = 0, chartDragStartWindow = null;
+  let chartDragStartX = 0, chartDragStartWindow = null;
   chartWrap.addEventListener('pointerdown', (e) => {
     chartDragging = true;
     chartWrap.classList.add('grabbing');
+    chartHoverTip.classList.remove('show');
     chartDragStartX = e.clientX;
     chartDragStartWindow = currentWindow();
     e.stopPropagation();
   });
   window.addEventListener('pointermove', (e) => {
-    if(!chartDragging) return;
+    if(!chartDragging || priceHistory.length < 2) return;
     const w = chartDragStartWindow;
     const spanMs = w.end - w.start;
     const pxPerMs = canvas.offsetWidth / (spanMs || 1);
-    const dx = e.clientX - chartDragStartX;
-    const shift = -dx / pxPerMs;
+    const shift = -(e.clientX - chartDragStartX) / pxPerMs;
     const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
     let newStart = w.start + shift, newEnd = w.end + shift;
     if(newStart < earliestT){ newEnd += (earliestT - newStart); newStart = earliestT; }
@@ -1150,6 +1150,24 @@ if(canvas){
     drawChart();
   });
   window.addEventListener('pointerup', () => { chartDragging = false; chartWrap.classList.remove('grabbing'); });
+
+  /* mouse wheel / trackpad scroll zooms the window around the cursor */
+  chartWrap.addEventListener('wheel', (e) => {
+    if(priceHistory.length < 2 || !lastChartGeometry) return;
+    e.preventDefault();
+    const w = currentWindow();
+    const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
+    const { LEFT_PAD, plotW } = lastChartGeometry;
+    const mx = e.clientX - canvas.getBoundingClientRect().left;
+    const frac = Math.min(1, Math.max(0, (mx - LEFT_PAD) / plotW));
+    const tAt = w.start + frac * (w.end - w.start);
+    const span = Math.min(latestT - earliestT, Math.max(MIN_WINDOW_MS, (w.end - w.start) * (e.deltaY < 0 ? 0.8 : 1.25)));
+    let ns = tAt - frac * span, ne = ns + span;
+    if(ns < earliestT){ ne += earliestT - ns; ns = earliestT; }
+    if(ne > latestT){ ns -= ne - latestT; ne = latestT; }
+    viewStart = Math.max(earliestT, ns); viewEnd = Math.min(latestT, ne);
+    clampScroll(); drawChart();
+  }, { passive: false });
 
   /* dragging the brush handles resizes the window; dragging the middle pans it */
   var brushWrap = document.querySelector('.brush-wrap');
@@ -1171,17 +1189,12 @@ if(canvas){
     const x0 = ((w.start - earliestT) / (latestT - earliestT || 1)) * cssW;
     const x1 = ((w.end - earliestT) / (latestT - earliestT || 1)) * cssW;
     const HANDLE_HIT = 20;
-    if(Math.abs(px - x0) <= HANDLE_HIT || Math.abs(px - x1) <= HANDLE_HIT){
-      brushCanvas.style.cursor = 'ew-resize';
-    } else if(px > x0 && px < x1){
-      brushCanvas.style.cursor = 'grab';
-    } else {
-      brushCanvas.style.cursor = 'crosshair';
-    }
+    if(Math.abs(px - x0) <= HANDLE_HIT || Math.abs(px - x1) <= HANDLE_HIT){ brushCanvas.style.cursor = 'ew-resize'; }
+    else if(px > x0 && px < x1){ brushCanvas.style.cursor = 'grab'; }
+    else { brushCanvas.style.cursor = 'crosshair'; }
   });
 
   let brushGrabOffsetMs = 0; // keeps the handle at a fixed offset from the cursor instead of snapping to it
-
   brushWrap.addEventListener('pointerdown', (e) => {
     if(priceHistory.length < 2) return;
     const rect = brushCanvas.getBoundingClientRect();
@@ -1193,22 +1206,11 @@ if(canvas){
     const x1 = ((w.end - earliestT) / (latestT - earliestT || 1)) * cssW;
     const HANDLE_HIT = 20; // wide, easy-to-grab hit zone right at each gate
     const distToLeft = Math.abs(px - x0), distToRight = Math.abs(px - x1);
-
-    // whichever gate is genuinely closer wins whenever a click is within reach of either —
-    // no fallback branch that silently favors one side over the other
-    if(distToLeft <= HANDLE_HIT || distToRight <= HANDLE_HIT){
-      brushMode = distToLeft <= distToRight ? 'left' : 'right';
-    } else if(px > x0 && px < x1){
-      brushMode = 'move';
-    } else {
-      brushMode = px < x0 ? 'left' : 'right';
-    }
-
+    if(distToLeft <= HANDLE_HIT || distToRight <= HANDLE_HIT){ brushMode = distToLeft <= distToRight ? 'left' : 'right'; }
+    else if(px > x0 && px < x1){ brushMode = 'move'; }
+    else { brushMode = px < x0 ? 'left' : 'right'; }
     const clickedT = brushPxToTime(px);
-    // remember exactly how far off-center the click was, so the handle doesn't jump to snap
-    // under the cursor the instant you grab it — it keeps the same relative offset all the way through
     brushGrabOffsetMs = brushMode === 'left' ? w.start - clickedT : brushMode === 'right' ? w.end - clickedT : 0;
-
     brushDragStartX = e.clientX;
     brushDragStartWindow = w;
     brushWrap.classList.add('dragging');
@@ -1218,10 +1220,8 @@ if(canvas){
     if(!brushMode || priceHistory.length < 2) return;
     const earliestT = priceHistory[0].t, latestT = priceHistory[priceHistory.length-1].t;
     const cssW = brushCanvas.offsetWidth;
-    const rect = brushCanvas.getBoundingClientRect();
-    const px = e.clientX - rect.left;
+    const px = e.clientX - brushCanvas.getBoundingClientRect().left;
     const t = Math.min(latestT, Math.max(earliestT, brushPxToTime(px) + brushGrabOffsetMs));
-
     if(brushMode === 'left'){
       viewStart = Math.min(t, brushDragStartWindow.end - MIN_WINDOW_MS);
       viewEnd = brushDragStartWindow.end;
@@ -1229,8 +1229,7 @@ if(canvas){
       viewStart = brushDragStartWindow.start;
       viewEnd = Math.max(t, brushDragStartWindow.start + MIN_WINDOW_MS);
     } else if(brushMode === 'move'){
-      const dxPx = e.clientX - brushDragStartX;
-      const dxMs = (dxPx / cssW) * (latestT - earliestT);
+      const dxMs = ((e.clientX - brushDragStartX) / cssW) * (latestT - earliestT);
       let ns = brushDragStartWindow.start + dxMs, ne = brushDragStartWindow.end + dxMs;
       if(ns < earliestT){ ne += (earliestT - ns); ns = earliestT; }
       if(ne > latestT){ ns -= (ne - latestT); ne = latestT; }
@@ -1242,157 +1241,370 @@ if(canvas){
   window.addEventListener('pointerup', () => { brushMode = null; brushWrap.classList.remove('dragging'); });
 }
 
+/* ================= MrWestCoin: the live, deterministic market =================
+   Displayed price(tick) = seeded noise(tick) x trend level(tick)  — see market-model.js.
+
+   What this means for the network: NOTHING is needed to know the price. Every browser starts from
+   the genesis snapshot baked into this file (or a newer one cached in localStorage), re-derives
+   the current state, fast-forwards to "now" locally (~25ns per
+   tick) and keeps ticking from the shared clock. The network is only used for:
+     - a tiny conditional fetch of market-data.json (304 when unchanged) — latest ledger + clock check
+     - the candle history files, ONLY on the chart page (17 KB + ~30 KB uncompressed, gzipped ~15 KB)
+     - ONE Firebase child_added listener on the admin ledger — which transfers data only when an
+       admin actually presses Raise/Drop, over the websocket the site already keeps open.
+   Admin actions are part of the trend-level function, not of the noise state, so any browser that
+   hears about one — instantly, or an hour late — recomputes the exact same prices and chart. */
+const MARKET_JSON_PATH = 'market-data.json';
+const MARKET_RECENT_PATH = 'history/recent.json';
+const MARKET_HOURLY_PATH = 'history/hourly.json';
+const MARKET_CHECKPOINT_REFRESH_MS = 5 * 60 * 1000; // conditional re-check (304 when unchanged) + 1 clock sample; never needed for correctness
+const FINE_KEEP_TICKS = 28800;   // 2 hours of full 250ms-resolution ticks kept in memory
+const COMPACT_RES_TICKS = 240;   // older local ticks fold into 1-minute candles (4 points each)
+const HISTORY_ON = !!canvas;     // only the chart page keeps/loads long history
+const NON_CHART_KEEP = 1500;     // other pages only need the last few minutes
+
+// Built-in starting point: the fixed genesis state (always valid, deterministic) plus the admin
+// ledger as it stood when this file was last updated, so a first-ever visit paints the right
+// price immediately. Everything newer arrives through the checkpoint file / Firebase listener.
+const MARKET_BOOT = {
+  tickIndex: -1, state: MARKET_GENESIS_STATE, dayAgo: null,
+  adjustments: [
+    { tickIndex: 8662345, delta: 10, at: 1789435986368 }, { tickIndex: 8731227, delta: 10, at: 1789453206976 },
+    { tickIndex: 8731327, delta: -10, at: 1789453231974 }, { tickIndex: 8731398, delta: -10, at: 1789453249528 },
+    { tickIndex: 8731665, delta: 100, at: 1789453316275 }, { tickIndex: 9312969, delta: -100, at: 1789598642252 },
+    { tickIndex: 9370373, delta: 100, at: 1789612993423 }, { tickIndex: 10022811, delta: 100, at: 1789776102877 }
+  ]
+};
+
+let marketState = null;          // live noise state, ticked forward locally
+let marketRng = null;            // rng continuing from wherever marketState is
+let marketTickIndex = -1;        // the tick marketState is currently AT
+let marketCheckpoint = null;     // the snapshot {tickIndex,state} the live state was started from
+let marketCoarse = [];           // candle points from the history files (chart page only)
+let marketAdjustments = [];      // append-only admin ledger: {id?, tickIndex, delta, at, fadeSec?}
+let marketDayAgo = null;         // {tickIndex, n} from the checkpoint: price ~24h before it
+let marketLastAdjKey = null;     // newest ledger key already baked into market-data.json
+let marketAdjListenerStarted = false;
+
+// validated cache of the last checkpoint seen, so the next page load starts from it instantly
+let market = (() => {
+  try{
+    const m = JSON.parse(localStorage.getItem('mrwestcoin_market_cache') || 'null');
+    if(m && m.model === MARKET_MODEL_VERSION && m.state && typeof m.tickIndex === 'number') return m;
+  } catch(e){}
+  return { updatedAt: 0 };
+})();
+
+/* --- shared clock: every browser's own clock is a little off, so ticks are counted against the
+   SERVER's clock, learned for free from the HTTP Date header of requests we already make --- */
+let marketClockOffset = Number(localStorage.getItem('mrwestcoin_clock_offset')) || 0; // server minus local, ms
+function marketNow(){ return Date.now() + marketClockOffset; } // the shared market clock
+let marketClockSamples = []; // {s: offset estimate, at: performance.now() when taken}
+function marketPerfNow(){ return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); }
+// One sample from a request we make anyway. The Date header only has whole-second resolution, so a
+// single sample is a lower bound that is off by 0-1000ms; the MAXIMUM across samples taken at
+// different phases of the second converges on the truth. Samples expire after 20 minutes so a
+// changed device clock heals itself.
+function noteServerDate(res, sentAt, receivedAt){
+  try{
+    if(receivedAt - sentAt > 3000) return; // too slow to be a good measurement
+    const dh = res.headers.get('Date');
+    const d = dh ? Date.parse(dh) : NaN;
+    if(isNaN(d)) return;
+    const age = Number(res.headers.get('Age')) || 0;
+    const sample = (d + age * 1000) - (sentAt + receivedAt) / 2;
+    if(Math.abs(sample) > 3 * 86400000) return; // nonsense — ignore
+    const nowP = marketPerfNow();
+    marketClockSamples = marketClockSamples.filter(x => nowP - x.at < 20 * 60 * 1000);
+    marketClockSamples.push({ s: sample, at: nowP });
+    if(marketClockSamples.length > 12) marketClockSamples.shift();
+    const best = Math.max.apply(null, marketClockSamples.map(x => x.s));
+    const jumped = Math.abs(best - marketClockOffset) > 1500;
+    marketClockOffset = best;
+    try{ localStorage.setItem('mrwestcoin_clock_offset', String(Math.round(best))); } catch(e){}
+    if(jumped) marketRealign();
+  } catch(e){}
+}
+// HEAD requests with a unique query string bypass any cache, so the Date header is fresh. Each is
+// a few hundred bytes with no body. 3 spaced samples at page load, then 1 per refresh.
+async function calibrateMarketClock(samples){
+  for(let i = 0; i < samples; i++){
+    try{
+      const t0 = Date.now();
+      const res = await fetch(`${MARKET_JSON_PATH}?c=${t0}`, { method: 'HEAD', cache: 'no-store' });
+      noteServerDate(res, t0, Date.now());
+    } catch(e){}
+    if(i < samples - 1) await new Promise(r => setTimeout(r, 330 + i * 90));
+  }
+}
+
+/* --- admin ledger --- */
+function marketAdjKey(a){ return a.id || (a.tickIndex + ':' + a.delta + ':' + (a.at || 0)); }
+function cleanMarketAdj(id, a){
+  if(!a || typeof a.tickIndex !== 'number' || typeof a.delta !== 'number') return null;
+  if(!isFinite(a.tickIndex) || !isFinite(a.delta) || a.tickIndex < 0 || Math.abs(a.delta) > 1e7) return null;
+  const out = { tickIndex: Math.floor(a.tickIndex), delta: a.delta, at: typeof a.at === 'number' ? a.at : 0 };
+  if(id) out.id = id; else if(a.id) out.id = a.id;
+  if(typeof a.fadeSec === 'number' && a.fadeSec > 0 && a.fadeSec <= 30 * 86400) out.fadeSec = a.fadeSec;
+  return out;
+}
+// returns true if the ledger actually changed. Safe to call repeatedly with the same entry
+// (Firebase echoes, the checkpoint file and the live listener all report the same actions).
+function addMarketAdjustment(raw){
+  const a = cleanMarketAdj(null, raw);
+  if(!a) return false;
+  const key = marketAdjKey(a), legacy = a.tickIndex + ':' + a.delta + ':' + (a.at || 0);
+  const idx = marketAdjustments.findIndex(x => marketAdjKey(x) === key || (a.id && !x.id && marketAdjKey(x) === legacy));
+  if(idx >= 0){
+    if(a.id && !marketAdjustments[idx].id) marketAdjustments[idx] = a; // legacy entry now known by its Firebase id
+    return false;
+  }
+  marketAdjustments = marketAdjustments.concat([a]).sort((x, y) => x.tickIndex - y.tickIndex || (x.at || 0) - (y.at || 0));
+  return true;
+}
+// Prices before an entry's tick are untouched by it, so only the tail needs recomputing.
+function recomputePricesFrom(tick){
+  if(!priceHistory.length) return;
+  let lo = 0, hi = priceHistory.length;
+  while(lo < hi){ const mid = (lo + hi) >> 1; if(priceHistory[mid].k < tick) lo = mid + 1; else hi = mid; }
+  for(let i = lo; i < priceHistory.length; i++) priceHistory[i].price = marketDisplayPrice(priceHistory[i].n, priceHistory[i].k, marketAdjustments);
+  for(let i = 0; i < marketCoarse.length; i++){ // the cached candle points share objects with priceHistory when adopted, but may not after a re-init
+    if(marketCoarse[i].k >= tick) marketCoarse[i].price = marketDisplayPrice(marketCoarse[i].n, marketCoarse[i].k, marketAdjustments);
+  }
+  currentPrice = priceHistory[priceHistory.length - 1].price;
+}
+function mergeMarketAdjustments(list){
+  if(!Array.isArray(list)) return;
+  let earliest = Infinity;
+  list.forEach(raw => { if(addMarketAdjustment(raw)) earliest = Math.min(earliest, Math.floor(raw.tickIndex)); });
+  if(earliest !== Infinity) onMarketLedgerChanged(earliest);
+}
+function onMarketLedgerChanged(fromTick){
+  recomputePricesFrom(fromTick);
+  refreshMarketUI();
+  if(typeof renderAdminMarketLog === 'function') renderAdminMarketLog();
+}
+
+// the single Firebase listener: only NEW entries cross the wire (everything the checkpoint file
+// already contains is skipped by starting at its newest key; push keys sort by creation time)
+function startMarketAdjustmentSync(){
+  if(marketAdjListenerStarted || !db) return;
+  marketAdjListenerStarted = true;
+  const ref = db.ref('marketAdjustments');
+  const q = marketLastAdjKey ? ref.orderByKey().startAt(marketLastAdjKey) : ref;
+  q.on('child_added', (snap) => {
+    const a = cleanMarketAdj(snap.key, snap.val());
+    if(a && addMarketAdjustment(a)) onMarketLedgerChanged(a.tickIndex);
+  }, (err) => { console.warn('market ledger listener:', err && err.message); });
+}
+
+/* --- simulation state / history --- */
+function marketPointFor(tick, n, isCoarse){
+  const p = { k: tick, t: marketTimeForTickIndex(tick), n: n, price: marketDisplayPrice(n, tick, marketAdjustments) };
+  if(isCoarse) p.c = 1;
+  return p;
+}
+function candleToPoints(bucket, resTicks, candle){
+  const ticks = marketCandleTicks(bucket, resTicks);
+  return ticks.map((k, i) => marketPointFor(k, candle[i], true));
+}
+// Starts (or restarts) the live simulation from a snapshot of the noise state. Deterministic —
+// restarting from any valid snapshot reproduces exactly the same prices.
+function initMarketFrom(snap, coarsePoints){
+  const s = snap.state;
+  marketState = { fairValue: s.fairValue, momentum: s.momentum, vol: s.vol, spike: s.spike || 0, price: s.price };
+  marketTickIndex = snap.tickIndex;
+  marketRng = marketRngFromCallCount((snap.tickIndex + 1) * MARKET_CALLS_PER_TICK);
+  marketCheckpoint = { tickIndex: snap.tickIndex, state: s };
+  marketCoarse = coarsePoints || [];
+  priceHistory = marketCoarse.slice();
+  const target = marketTickIndexForTime(marketNow());
+  while(marketTickIndex < target) marketAdvanceTo(target, 4000000); // ~0.1s per 4M ticks
+  if(!priceHistory.length) priceHistory.push(marketPointFor(marketTickIndex, marketState.price, false));
+  currentPrice = priceHistory[priceHistory.length - 1].price;
+}
+// Steps the simulation forward to `target` (no-op if already there). Ticks older than the
+// full-resolution window go straight into 1-minute candles, so catching up after a long sleep
+// never builds a giant array.
+function marketAdvanceTo(target, maxTicks){
+  if(!marketState || target <= marketTickIndex) return false;
+  const limit = Math.min(target, marketTickIndex + (maxTicks || 3000000));
+  let fineStart = Math.max(marketTickIndex + 1, limit - FINE_KEEP_TICKS + 1);
+  fineStart = Math.max(marketTickIndex + 1, Math.floor(fineStart / COMPACT_RES_TICKS) * COMPACT_RES_TICKS);
+  if(fineStart > marketTickIndex + 1){
+    const keep = HISTORY_ON && marketCoarse.length > 0; // candles only extend a history baseline that exists
+    const builder = keep ? marketCandleBuilder(COMPACT_RES_TICKS, (b, c) => {
+      const lastK = priceHistory.length ? priceHistory[priceHistory.length - 1].k : -1;
+      candleToPoints(b, COMPACT_RES_TICKS, c).forEach(p => { if(p.k > lastK) priceHistory.push(p); }); // a bucket that starts before the join skips its early samples
+    }) : null;
+    for(let i = marketTickIndex + 1; i < fineStart; i++){
+      const n = marketAdvanceOneTick(marketState, marketRng);
+      if(builder) builder.push(i, n);
+    }
+    if(builder) builder.flush();
+    marketTickIndex = fineStart - 1;
+  }
+  for(let i = marketTickIndex + 1; i <= limit; i++){
+    const n = marketAdvanceOneTick(marketState, marketRng);
+    priceHistory.push(marketPointFor(i, n, false));
+  }
+  marketTickIndex = limit;
+  currentPrice = priceHistory[priceHistory.length - 1].price;
+  return true;
+}
+// Folds fine ticks older than the 2-hour window into 1-minute candles (4 points per minute).
+function compactOldTicks(){
+  const cutoff = Math.floor((marketTickIndex - FINE_KEEP_TICKS) / COMPACT_RES_TICKS) * COMPACT_RES_TICKS;
+  let i0 = 0;
+  while(i0 < priceHistory.length && priceHistory[i0].c) i0++;
+  if(i0 >= priceHistory.length) return;
+  let i1 = i0;
+  while(i1 < priceHistory.length && priceHistory[i1].k < cutoff) i1++;
+  if(i1 - i0 < COMPACT_RES_TICKS) return;
+  // only whole minute-buckets are folded; a leading partial bucket stays as fine points
+  const startK = priceHistory[i0].k;
+  let from = i0;
+  if(startK % COMPACT_RES_TICKS !== 0){
+    const nextBoundary = (Math.floor(startK / COMPACT_RES_TICKS) + 1) * COMPACT_RES_TICKS;
+    while(from < i1 && priceHistory[from].k < nextBoundary) from++;
+  }
+  if(from >= i1) return;
+  const folded = [];
+  const builder = marketCandleBuilder(COMPACT_RES_TICKS, (b, c) => { candleToPoints(b, COMPACT_RES_TICKS, c).forEach(p => folded.push(p)); });
+  for(let j = from; j < i1; j++) builder.push(priceHistory[j].k, priceHistory[j].n);
+  builder.flush();
+  priceHistory.splice(from, i1 - from, ...folded);
+}
+// the device clock was corrected by more than a second or so — re-derive the current tick
+function marketRealign(){
+  if(!marketCheckpoint) return;
+  const target = marketTickIndexForTime(marketNow());
+  if(target < marketTickIndex - 2){ // we're AHEAD of the corrected clock — rewind by restarting from the snapshot
+    initMarketFrom(marketCheckpoint, marketCoarse);
+    refreshMarketUI();
+  }
+}
+
+async function loadMarketHistory(){
+  if(!HISTORY_ON) return;
+  try{
+    const [rRes, hRes] = await Promise.all([
+      fetch(MARKET_RECENT_PATH, { cache: 'no-cache' }),
+      fetch(MARKET_HOURLY_PATH, { cache: 'no-cache' }).catch(() => null)
+    ]);
+    if(!rRes.ok) return;
+    const recent = await rRes.json();
+    const hourly = (hRes && hRes.ok) ? await hRes.json() : null;
+    if(!recent || !Array.isArray(recent.c) || !recent.state || typeof recent.end !== 'number') return; // written by the Action alongside the candles
+    const coarse = [];
+    const recentStartTick = recent.b0 * recent.res;
+    if(hourly && Array.isArray(hourly.c)){
+      hourly.c.forEach((c, i) => { if((i + 1) * hourly.res - 1 < recentStartTick) candleToPoints(i, hourly.res, c).forEach(p => coarse.push(p)); });
+    }
+    recent.c.forEach((c, i) => candleToPoints(recent.b0 + i, recent.res, c).forEach(p => coarse.push(p)));
+    // restart from the snapshot that sits exactly where the candles end, so history is contiguous
+    initMarketFrom({ tickIndex: recent.end, state: recent.state }, coarse);
+    refreshMarketUI();
+  } catch(e){ /* offline or files not published yet — the live ticks still work */ }
+}
+
+function cacheCheckpointLocally(cp){
+  market = { model: cp.model, updatedAt: cp.t, tickIndex: cp.tickIndex, state: cp.state, adjustments: cp.adjustments || [], lastAdjKey: cp.lastAdjKey || null, dayAgo: cp.dayAgo || null };
+  try{ localStorage.setItem('mrwestcoin_market_cache', JSON.stringify(market)); } catch(e){}
+}
+async function fetchMarketCheckpoint(){
+  try{
+    const res = await fetch(MARKET_JSON_PATH, { cache: 'no-cache' });
+    if(!res.ok) return;
+    const cp = await res.json();
+    if(!cp || cp.model !== MARKET_MODEL_VERSION || !cp.state || typeof cp.tickIndex !== 'number') return;
+    syncOK = true;
+    cacheCheckpointLocally(cp);
+    if(cp.dayAgo) marketDayAgo = cp.dayAgo;
+    if(cp.lastAdjKey) marketLastAdjKey = cp.lastAdjKey;
+    mergeMarketAdjustments(cp.adjustments);
+    updatePriceDisplays();
+  } catch(e){ /* offline, or the file isn't reachable yet — keep ticking from what we have */ }
+}
+
+// first paint: the baked boot snapshot (always valid, deterministic) or a newer cached checkpoint
+(function startMarket(){
+  const boot = MARKET_BOOT;
+  const cached = (market && market.model === MARKET_MODEL_VERSION && market.tickIndex > boot.tickIndex) ? market : null;
+  const snap = cached || boot;
+  marketDayAgo = (cached && cached.dayAgo) || boot.dayAgo || null;
+  marketLastAdjKey = (cached && cached.lastAdjKey) || null;
+  mergeMarketAdjustments(boot.adjustments);
+  if(cached) mergeMarketAdjustments(cached.adjustments);
+  initMarketFrom({ tickIndex: snap.tickIndex, state: snap.state }, null);
+  updatePriceDisplays();
+  fetchMarketCheckpoint().then(() => { startMarketAdjustmentSync(); });
+  setTimeout(startMarketAdjustmentSync, 3000); // don't wait forever if the file can't be fetched
+  calibrateMarketClock(3);
+  loadMarketHistory();
+  setInterval(() => { fetchMarketCheckpoint(); calibrateMarketClock(1); }, MARKET_CHECKPOINT_REFRESH_MS);
+})();
+
+function refreshMarketUI(){
+  if(typeof clampScroll === 'function') clampScroll();
+  updatePriceDisplays();
+  if(!document.hidden) drawChart();
+  renderPortfolio();
+  renderLots();
+}
+
+// The live ticker: wake up often, but only do work when the shared clock says a new tick is due.
+// Counting ticks against the clock (instead of "one per timer fire") is what keeps every browser
+// on the same price even when a tab is throttled, backgrounded or asleep for a while.
+let lastCompactCheck = 0;
+function marketTickLoop(){
+  if(!marketState) return;
+  const target = marketTickIndexForTime(marketNow());
+  if(!marketAdvanceTo(target)) return;
+  const nowMs = Date.now();
+  if(HISTORY_ON){
+    if(nowMs - lastCompactCheck > 30000){ lastCompactCheck = nowMs; compactOldTicks(); }
+  } else if(priceHistory.length > NON_CHART_KEEP * 2){
+    priceHistory.splice(0, priceHistory.length - NON_CHART_KEEP);
+  }
+  refreshMarketUI();
+}
+setInterval(marketTickLoop, 100);
+document.addEventListener('visibilitychange', () => { if(!document.hidden){ marketTickLoop(); refreshMarketUI(); } });
+
+function marketReferencePrice(){
+  // price ~24 hours ago: from the history we hold if it reaches back that far, else from the checkpoint's marker
+  if(priceHistory.length > 1){
+    const latestT = priceHistory[priceHistory.length - 1].t, want = latestT - 86400000;
+    if(priceHistory[0].t <= want + 60000){
+      const i = lowerBoundT(priceHistory, want);
+      return priceHistory[Math.min(i, priceHistory.length - 1)].price;
+    }
+  }
+  if(marketDayAgo) return marketDisplayPrice(marketDayAgo.n, marketDayAgo.tickIndex, marketAdjustments);
+  return priceHistory.length ? priceHistory[0].price : currentPrice;
+}
+
 function updatePriceDisplays(){
-  const prevPrice = priceHistory.length > 1 ? priceHistory[priceHistory.length-2].price : currentPrice;
-  const changePct = prevPrice ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
+  const ref = marketReferencePrice();
+  const changePct = ref ? ((currentPrice - ref) / ref) * 100 : 0;
   const priceText = '$' + currentPrice.toFixed(2);
   if(priceEl) priceEl.textContent = priceText;
   if(miniPriceEl) miniPriceEl.textContent = priceText;
   const adminPriceEl = document.getElementById('adminMarketPrice');
   if(adminPriceEl) adminPriceEl.textContent = priceText;
   const isUp = changePct >= 0;
-  const changeText = (isUp?'▲ ':'▼ ') + Math.abs(changePct).toFixed(2) + '%' + (syncOK ? '' : ' (unverified)');
-  if(changeEl){ changeEl.textContent = changeText; changeEl.className = 'change ' + (isUp?'up':'down'); }
-  if(miniChangeEl){ miniChangeEl.textContent = changeText; miniChangeEl.className = 'change ' + (isUp?'up':'down'); }
+  const changeText = (isUp ? '▲ ' : '▼ ') + Math.abs(changePct).toFixed(2) + '% · 24h' + (syncOK ? '' : ' (unverified)');
+  if(changeEl){ changeEl.textContent = changeText; changeEl.className = 'change ' + (isUp ? 'up' : 'down'); }
+  if(miniChangeEl){ miniChangeEl.textContent = changeText; miniChangeEl.className = 'change ' + (isUp ? 'up' : 'down'); }
 
   const hint = document.getElementById('marketUpdatedHint');
   if(hint){
     hint.textContent = syncOK
-      ? 'Ticking live, computed locally — same price for everyone, no server needed'
-      : 'Waiting for a checkpoint from GitHub to sync against...';
+      ? 'Ticking live, computed locally from a shared seed and clock — the same price for everyone'
+      : 'Ticking from the built-in seed — checking GitHub for the latest checkpoint...';
   }
 }
-
-// --- Deterministic, seeded market — see market-model.js for the actual price math. Nobody's
-// browser ever asks anybody else "what's the price right now" — every browser computes it
-// independently from the same fixed seed and arrives at the identical number. The only reason
-// to talk to the network at all is to fetch an occasional CHECKPOINT (a static JSON file
-// committed by a scheduled GitHub Action) so a fresh page load doesn't have to replay every
-// tick since a fixed genesis date — after that one fetch, ticking runs entirely client-side,
-// completely offline-capable, with zero further requests needed to "stay in sync."
-const MARKET_JSON_PATH = 'market-data.json';
-// market-data.json is a plain static file served by GitHub Pages' CDN, NOT a Firebase read — so
-// polling it doesn't touch Firebase's free-tier limits at all, only GitHub Pages bandwidth,
-// which is far more generous. Polling it fairly often (rather than every 5 minutes) is what lets
-// every OTHER open tab pick up an admin's raise/drop reasonably promptly WITHOUT keeping a
-// persistent Firebase connection open — see the admin-adjustment section further down for why
-// that persistent connection was removed.
-const MARKET_CHECKPOINT_REFRESH_MS = 30 * 1000;
-
-let marketCheckpoint = null; // last known {tickIndex, state} — see the live ticker below for why this now tracks the CURRENT tick, not just the last explicit re-sync
-let marketState = null;      // live working state, ticked forward locally every MARKET_TICK_MS
-let marketRng = null;        // live rng continuing from wherever marketState currently is
-let marketTickIndex = -1;
-// Admin-triggered raise/drop actions (see settings.html) — a small, rare list of {tickIndex,
-// delta} entries. Bootstrapped from market-data.json's own `adjustments` field below.
-let marketAdjustments = [];
-
-function cacheCheckpointLocally(cp){
-  market = { updatedAt: cp.t, tickIndex: cp.tickIndex, state: cp.state };
-  localStorage.setItem('mrwestcoin_market_cache', JSON.stringify(market));
-}
-
-// Jumps the live simulation forward to "right now" from whatever checkpoint we have (or from
-// the fixed genesis if we don't have one yet), then keeps ticking forward locally from there.
-function catchUpAndStartTicking(checkpoint){
-  const targetTick = marketTickIndexForTime(Date.now());
-  // A single marketSimulate() call is capped (MARKET_MAX_TICKS_PER_CALL) so one wildly stale
-  // checkpoint can't freeze the tab computing tens of millions of ticks in one go. Looping here
-  // means even a multi-week-stale checkpoint (e.g. from a period the GitHub Action was failing
-  // to push — see the retry-loop fix for that) fully catches up in a few seconds rather than
-  // however long the live ticker alone would need to close a multi-million-tick gap one tick at
-  // a time. Capped at 5 iterations (~29 days of catch-up capacity) as a last-resort safety valve.
-  let result = marketSimulate(checkpoint, targetTick, marketAdjustments);
-  let iterations = 1;
-  while(result.tickIndex < targetTick && iterations < 5){
-    result = marketSimulate({ tickIndex: result.tickIndex, state: result.state }, targetTick, marketAdjustments);
-    iterations++;
-  }
-  marketState = result.state;
-  marketTickIndex = result.tickIndex;
-  marketRng = marketRngFromCallCount((marketTickIndex + 1) * MARKET_CALLS_PER_TICK);
-  currentPrice = marketState.price;
-  marketCheckpoint = { tickIndex: result.tickIndex, state: result.state };
-
-  // Merge onto whatever we already have, rather than replacing wholesale — preserves the user's
-  // chart zoom/pan (viewStart/viewEnd, see the brush-timeline code above), and — much more
-  // importantly — avoids ever OVERWRITING history the live ticker has already computed and shown
-  // with a freshly re-derived version of the same time range. That used to be a real, serious
-  // bug: marketCheckpoint previously only got updated by an explicit re-sync like this one, while
-  // the live ticker (below) advanced marketState/marketTickIndex independently every ~250ms
-  // WITHOUT updating marketCheckpoint — so by the time anything called catchUpAndStartTicking
-  // again, it would replay from a stale starting point using a DIFFERENT RNG continuation than
-  // what the ticker had already used, silently rewriting recently-shown history to different
-  // (though individually "valid") values. The live ticker now keeps marketCheckpoint continuously
-  // current (see below), so any future replay here starts from virtually the same point the
-  // ticker's already at — the gap it actually has to fill is tiny, and the result naturally
-  // matches what was already on screen instead of contradicting it.
-  if(result.points.length){
-    const firstNewT = result.points[0].t;
-    priceHistory = priceHistory.filter(p => p.t < firstNewT).concat(result.points);
-    if(priceHistory.length > 20000) priceHistory = priceHistory.slice(-20000); // bound long-session growth
-  } else if(priceHistory.length === 0){
-    priceHistory = [{ price: currentPrice, t: Date.now() }];
-  }
-}
-
-async function fetchMarketCheckpoint(){
-  try{
-    const res = await fetch(`${MARKET_JSON_PATH}?v=${Date.now()}`, { cache: 'no-store' });
-    if(!res.ok) return;
-    const cp = await res.json();
-    if(cp && cp.tickIndex !== undefined && cp.state){
-      syncOK = true;
-      cacheCheckpointLocally(cp);
-      // Adjustments this tab doesn't already know about (e.g. another admin session's raise/
-      // drop, now baked into the checkpoint by the GitHub Action) — merged in by comparing
-      // count rather than blindly overwritten, so an adjustment this tab already applied
-      // locally isn't lost if this fetch happens to answer before the Action has picked it up.
-      if(Array.isArray(cp.adjustments) && cp.adjustments.length > marketAdjustments.length){
-        marketAdjustments = cp.adjustments;
-      }
-      // only re-baseline if this checkpoint is actually newer than what we're already ticking
-      // from — otherwise a slow/late response could yank the live price backwards. With
-      // marketCheckpoint now kept continuously current by the live ticker, this will almost
-      // always be false once a tab has been open a few seconds — exactly what we want.
-      if(!marketCheckpoint || cp.tickIndex > marketCheckpoint.tickIndex){
-        catchUpAndStartTicking(cp);
-      }
-    }
-  } catch(e){ /* offline, or the file isn't reachable yet — keep ticking from what we have */ }
-}
-
-// paint instantly from whatever's cached locally so there's no "$--.--" flash, then get a real
-// checkpoint from GitHub to make sure we're anchored correctly
-if(market && market.tickIndex !== undefined && market.state){
-  catchUpAndStartTicking({ tickIndex: market.tickIndex, state: market.state });
-} else {
-  catchUpAndStartTicking(null); // starts from the fixed genesis — still fully deterministic
-}
-fetchMarketCheckpoint();
-setInterval(fetchMarketCheckpoint, MARKET_CHECKPOINT_REFRESH_MS);
-
-// The actual live ticking — sub-second, entirely local, zero network calls. This is what makes
-// the chart move in near real time without "constant syncing": each tick is just the next
-// value in an already-fully-determined sequence, not something that needs to be fetched.
-setInterval(() => {
-  if(!marketState || !marketRng) return;
-  const price = marketAdvanceOneTick(marketState, marketRng, marketTickIndex + 1, marketAdjustments);
-  marketTickIndex++;
-  currentPrice = price;
-  // Keeps marketCheckpoint from ever going stale relative to where the ticker actually is — see
-  // the long comment in catchUpAndStartTicking() for why this specifically is what fixes the
-  // "history gets silently rewritten to different values" bug. Just two field writes, negligible
-  // cost at 4x/sec.
-  marketCheckpoint = { tickIndex: marketTickIndex, state: marketState };
-  priceHistory.push({ price, t: Date.now() });
-  if(priceHistory.length > 20000) priceHistory.shift(); // bound in-memory growth for very long sessions
-  clampScroll();
-  updatePriceDisplays();
-  drawChart();
-  renderPortfolio();
-  renderLots();
-}, MARKET_TICK_MS);
 
 // Previously taxed BOTH buy and sell at a flat rate, which guaranteed a loss on every round
 // trip even when the price went up — that's what made it feel unbalanced. Now: no tax at all
@@ -2870,10 +3082,11 @@ function renderAdminMarketLog(){
   const logEl = document.getElementById('adminMarketLog');
   if(!logEl) return;
   if(!marketAdjustments.length){ logEl.innerHTML = '<div class="empty-history">No manual adjustments yet.</div>'; return; }
-  const rows = marketAdjustments.slice().reverse().slice(0, 10).map(a => {
-    const sign = a.delta >= 0 ? '+' : '';
-    const when = a.at ? new Date(a.at).toLocaleString() : '';
-    return `<div class="admin-market-log-row"><span>${sign}$${a.delta.toFixed(2)}</span><span>${when}</span></div>`;
+  const rows = marketAdjustments.slice().sort((x, y) => (y.at || 0) - (x.at || 0)).slice(0, 10).map(a => {
+    const sign = a.delta >= 0 ? '+' : '−';
+    const kind = a.fadeSec > 0 ? ` · spike, fades over ${a.fadeSec >= 3600 ? (a.fadeSec / 3600) + 'h' : Math.round(a.fadeSec / 60) + 'm'}` : ' · permanent';
+    const when = a.at ? new Date(a.at).toLocaleString() : new Date(marketTimeForTickIndex(a.tickIndex)).toLocaleString();
+    return `<div class="admin-market-log-row"><span>${sign}$${Math.abs(a.delta).toFixed(2)}${kind}</span><span>${when}</span></div>`;
   }).join('');
   logEl.innerHTML = rows;
 }
@@ -2884,49 +3097,48 @@ function setupAdminMarketControls(){
   if(!db) return;
 
   const deltaInput = document.getElementById('adminMarketDelta');
+  const fadeSelect = document.getElementById('adminMarketFade');
   const msgEl = document.getElementById('adminMarketMsg');
+  const say = (ok, text) => { msgEl.style.color = ok ? 'var(--gain)' : 'var(--danger)'; msgEl.textContent = text; };
   const applyAdjustment = (sign) => {
     const raw = parseFloat(deltaInput.value);
-    if(isNaN(raw) || raw <= 0){ msgEl.style.color = 'var(--danger)'; msgEl.textContent = 'Enter a positive dollar amount first.'; return; }
+    if(isNaN(raw) || raw <= 0){ say(false, 'Enter a positive dollar amount first.'); return; }
     const delta = sign * Math.abs(raw);
-    // "Right now" for the deterministic model — the SAME tickIndex this and every other browser,
-    // and the GitHub Action, would independently compute for this exact moment. Fixing it here
-    // (rather than letting each replayer guess "now" separately) is what pins the instant jump
-    // to one specific, agreed-upon point in the price's history rather than leaving it fuzzy.
-    const tickIndex = marketTickIndexForTime(Date.now());
+    const fadeSec = fadeSelect ? parseInt(fadeSelect.value, 10) || 0 : 0;
+    // The moment of the action, on the SHARED market clock (not just this device's clock), so the
+    // jump lands at the same point in every viewer's history. The adjustment is NOT baked into the
+    // simulation state — it only changes the trend level (see market-model.js) — so recording it
+    // here and recomputing is all it takes: no replay, no double-apply, same result for everyone.
+    const tickIndex = marketTickIndexForTime(marketNow()) + 1;
+    const ref = db.ref('marketAdjustments').push();
     const entry = { tickIndex, delta, at: Date.now() };
+    if(fadeSec > 0) entry.fadeSec = fadeSec;
+    entry.id = ref.key;
 
-    // Apply directly to THIS tab's own already-running live state — no replay, no round trip
-    // needed to see it. This used to go through the same catchUpAndStartTicking() replay a
-    // periodic refresh uses, driven by a persistent Firebase listener so every open tab picked
-    // it up live — but that meant firing a full replay on every admin action (and, before a
-    // related fix, a genuinely buggy one — see the notes on marketCheckpoint above). A direct,
-    // one-line bump is simpler, can't desync from what's already on screen, and needs no
-    // standing Firebase connection at all. Other tabs pick this up via the existing cheap
-    // static-file poll (market-data.json, not Firebase) once the GitHub Action bakes it in.
-    if(marketState){
-      marketState.fairValue += delta;
-      marketState.price = Math.max(0.01, marketState.price + delta);
-      currentPrice = marketState.price;
-      marketCheckpoint = { tickIndex: marketTickIndex, state: marketState };
-      priceHistory.push({ price: currentPrice, t: Date.now() });
-      marketAdjustments = marketAdjustments.concat([entry]);
-      if(typeof updatePriceDisplays === 'function') updatePriceDisplays();
-      if(typeof drawChart === 'function') drawChart();
-      if(typeof renderPortfolio === 'function') renderPortfolio();
-      if(typeof renderLots === 'function') renderLots();
-      renderAdminMarketLog();
+    // refuse anything that would push the trend level below $1 (a price that can't stay positive)
+    const trial = marketAdjustments.concat([entry]);
+    if(marketLevelAtTick(tickIndex, trial) < 1){
+      say(false, 'That drop is too large — it would push the price below $1. Try a smaller amount.');
+      return;
     }
 
-    // Persisted so it's permanent, syncs to other tabs (via the static-file poll once the Action
-    // has run), and gets baked into the deterministic seed history by the GitHub Action.
-    db.ref('marketAdjustments').push(entry)
+    // instant on this device (the same recompute every other device does when it hears about it)
+    if(addMarketAdjustment(entry)) onMarketLedgerChanged(tickIndex);
+
+    const toStore = { tickIndex, delta, at: entry.at };
+    if(fadeSec > 0) toStore.fadeSec = fadeSec;
+    ref.set(toStore)
       .then(() => {
-        msgEl.style.color = 'var(--gain)';
-        msgEl.textContent = `Applied ${delta >= 0 ? '+' : ''}$${delta.toFixed(2)} — permanent in the price history from this point on, other tabs will pick it up within about ${Math.round(MARKET_CHECKPOINT_REFRESH_MS / 1000)}s to a minute or so.`;
+        const kind = fadeSec > 0 ? 'a spike that fades out' : 'a permanent shift';
+        say(true, `Applied ${delta >= 0 ? '+' : '−'}$${Math.abs(delta).toFixed(2)} (${kind}). Open tabs show it within seconds; everyone else sees it the moment they load the site.`);
         deltaInput.value = '';
       })
-      .catch(e => { msgEl.style.color = 'var(--danger)'; msgEl.textContent = 'Saved locally, but failed to persist: ' + e.message; });
+      .catch(e => {
+        // saving failed, so undo it here too — otherwise this device would show a price nobody else sees
+        marketAdjustments = marketAdjustments.filter(x => x.id !== entry.id);
+        onMarketLedgerChanged(tickIndex);
+        say(false, 'Not applied — saving it failed: ' + e.message);
+      });
   };
   document.getElementById('adminMarketRaiseBtn').addEventListener('click', () => applyAdjustment(1));
   document.getElementById('adminMarketDropBtn').addEventListener('click', () => applyAdjustment(-1));
