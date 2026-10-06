@@ -2,7 +2,7 @@ name: Update MrWestCoin Market
 
 on:
   schedule:
-    - cron: '* * * * *'   # every minute — the fastest interval GitHub Actions cron supports
+    - cron: '*/10 * * * *'   # every 10 min. GitHub treats cron as best-effort anyway (runs can slip by minutes to hours) — that's fine, the market is deterministic so a late run just simulates the longer gap and gets the exact same numbers
   workflow_dispatch:       # lets you trigger it manually from the Actions tab too
 
 permissions:
@@ -27,7 +27,7 @@ jobs:
           git config user.name "mrwestcoin-bot"
           git config user.email "actions@github.com"
           # Retry-by-recomputing instead of merge/rebase: market-data.json changes on EVERY
-          # field EVERY run (tickIndex, fairValue, momentum, vol, price all move together), so
+          # field EVERY run (tickIndex and the whole noise state move together), so
           # if two runs' commits ever land close together, a line-based git merge or rebase has
           # no sensible way to reconcile "two different already-computed snapshots of the same
           # numbers" — it's not a case of two different PARTS of the file changing, it's the
