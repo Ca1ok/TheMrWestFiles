@@ -146,7 +146,10 @@ function hourlyFromFiveMinute(twelve){
     hourly.c.push(hourlyFromFiveMinute(combined.slice(from5, from5 + FIVE_PER_HOUR)));
   }
 
-  const keepFrom = Math.max(0, combined.length - RECENT_BUCKETS);
+  // start the 5-minute window on a whole-hour boundary so it joins the hourly file with no gap
+  let keepFrom = Math.max(0, combined.length - RECENT_BUCKETS);
+  const absStart = combinedStart + keepFrom;
+  keepFrom = Math.max(0, absStart - (absStart % FIVE_PER_HOUR) - combinedStart);
   // `end` + `state` make this file self-contained: the browser restarts its live simulation from
   // exactly where these candles stop, so the chart is contiguous with no seam.
   const newRecent = { res: RES_5M, b0: combinedStart + keepFrom, end: tickIndex, state: state, c: combined.slice(keepFrom) };
