@@ -921,18 +921,37 @@ function drawChart(){
   ctx.save();
   ctx.beginPath(); ctx.rect(LEFT_PAD, TOP_PAD, plotW, plotH); ctx.clip();
 
-  // price line (straight segments — smoothing would round off exactly the spikes we want to see)
+  // price line: every segment is green if it rises and red if it falls (flat stretches keep the
+  // colour before them). Straight segments — smoothing would round off exactly the spikes we want
+  // to see. Segments are batched into one green and one red path so it stays fast with thousands.
+  const segX = new Float32Array(points.length), segY = new Float32Array(points.length), segUp = new Uint8Array(points.length);
+  let lastDirUp = up;
+  for(let i = 0; i < points.length; i++){
+    segX[i] = xOfT(points[i].t); segY[i] = yOf(points[i].price);
+    if(i > 0){
+      const a = points[i-1].price, b = points[i].price;
+      lastDirUp = b > a ? true : b < a ? false : lastDirUp;
+      segUp[i] = lastDirUp ? 1 : 0;
+    }
+  }
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.lineWidth = 1.5;
+  [[0, CHART_DOWN], [1, CHART_UP]].forEach(([dirFlag, color]) => {
+    ctx.beginPath();
+    for(let i = 1; i < points.length; i++){
+      if(segUp[i] !== dirFlag) continue;
+      ctx.moveTo(segX[i-1], segY[i-1]); ctx.lineTo(segX[i], segY[i]);
+    }
+    ctx.strokeStyle = color; ctx.stroke();
+  });
+  // soft neutral fill under the line (the line itself carries the red/green meaning)
   ctx.beginPath();
   points.forEach((p, i) => { const x = xOfT(p.t), y = yOf(p.price); if(i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
-  ctx.strokeStyle = lineColor; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-  ctx.stroke();
-  // soft gradient under the line
   ctx.lineTo(xOfT(points[points.length-1].t), TOP_PAD + plotH);
   ctx.lineTo(xOfT(points[0].t), TOP_PAD + plotH);
   ctx.closePath();
   const grad = ctx.createLinearGradient(0, TOP_PAD, 0, TOP_PAD + plotH);
-  grad.addColorStop(0, up ? 'rgba(79,174,92,0.22)' : 'rgba(194,59,59,0.22)');
-  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  grad.addColorStop(0, 'rgba(244,236,216,0.13)');
+  grad.addColorStop(1, 'rgba(244,236,216,0)');
   ctx.fillStyle = grad; ctx.fill();
 
   // admin raise/drop/spike events — a marker line exactly where each one happened
@@ -1373,6 +1392,30 @@ function recomputePricesFrom(tick){
   }
   currentPrice = priceHistory[priceHistory.length - 1].price;
 }
+function lowerBoundK(arr, k){
+  let lo = 0, hi = arr.length;
+  while(lo < hi){ const mid = (lo + hi) >> 1; if(arr[mid].k < k) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+// Candles only have a few samples per bucket, so without help an admin jump would be drawn as a
+// slanted ramp across the whole candle. Pin two exact points (the tick before and the tick of each
+// adjustment) so every jump is a clean vertical step at ANY zoom level. Idempotent; where fine
+// 250ms ticks already exist the points are already there and nothing is added.
+function ensureStepPoints(){
+  if(priceHistory.length < 2) return;
+  for(let a = 0; a < marketAdjustments.length; a++){
+    const T = marketAdjustments[a].tickIndex;
+    for(let d = -1; d <= 0; d++){
+      const k = T + d;
+      if(k <= priceHistory[0].k || k >= priceHistory[priceHistory.length - 1].k) continue;
+      const i = lowerBoundK(priceHistory, k);
+      if(priceHistory[i].k === k) continue;
+      const lo = priceHistory[i - 1], hi = priceHistory[i];
+      const n = lo.n + (hi.n - lo.n) * ((k - lo.k) / (hi.k - lo.k));
+      priceHistory.splice(i, 0, marketPointFor(k, n, true));
+    }
+  }
+}
 function mergeMarketAdjustments(list){
   if(!Array.isArray(list)) return;
   let earliest = Infinity;
@@ -1380,6 +1423,7 @@ function mergeMarketAdjustments(list){
   if(earliest !== Infinity) onMarketLedgerChanged(earliest);
 }
 function onMarketLedgerChanged(fromTick){
+  ensureStepPoints();
   recomputePricesFrom(fromTick);
   refreshMarketUI();
   if(typeof renderAdminMarketLog === 'function') renderAdminMarketLog();
@@ -1421,6 +1465,7 @@ function initMarketFrom(snap, coarsePoints){
   const target = marketTickIndexForTime(marketNow());
   while(marketTickIndex < target) marketAdvanceTo(target, 4000000); // ~0.1s per 4M ticks
   if(!priceHistory.length) priceHistory.push(marketPointFor(marketTickIndex, marketState.price, false));
+  ensureStepPoints();
   currentPrice = priceHistory[priceHistory.length - 1].price;
 }
 // Steps the simulation forward to `target` (no-op if already there). Ticks older than the
@@ -1474,6 +1519,7 @@ function compactOldTicks(){
   for(let j = from; j < i1; j++) builder.push(priceHistory[j].k, priceHistory[j].n);
   builder.flush();
   priceHistory.splice(from, i1 - from, ...folded);
+  ensureStepPoints();
 }
 // the device clock was corrected by more than a second or so — re-derive the current tick
 function marketRealign(){
@@ -3109,7 +3155,7 @@ function setupAdminMarketControls(){
     // jump lands at the same point in every viewer's history. The adjustment is NOT baked into the
     // simulation state — it only changes the trend level (see market-model.js) — so recording it
     // here and recomputing is all it takes: no replay, no double-apply, same result for everyone.
-    const tickIndex = marketTickIndexForTime(marketNow()) + 1;
+    const tickIndex = marketTickIndexForTime(marketNow());
     const ref = db.ref('marketAdjustments').push();
     const entry = { tickIndex, delta, at: Date.now() };
     if(fadeSec > 0) entry.fadeSec = fadeSec;
