@@ -4,11 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Notice — The Mr West Files</title>
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex, noai, noimageai">
+<meta name="googlebot" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+<meta name="GPTBot" content="noindex, nofollow">
+<meta name="ClaudeBot" content="noindex, nofollow">
+<meta name="CCBot" content="noindex, nofollow">
 <link rel="stylesheet" href="styles.css">
 <style>
   /* ===== Media archive (notice.html) — all gallery styling lives here so styles.css stays untouched ===== */
   #region-notice .region-inner{ padding: 2.2rem 1.4rem 2rem; }
-  .g-wrap, .g-wrap *, #gViewer, #gViewer *{ -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
   .g-bar{ display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center; justify-content:space-between; margin: 0.4rem 0 1.1rem; }
   .g-pills{ display:flex; flex-wrap:wrap; gap:0.4rem; }
   .g-pills .tool-btn{ padding:0.45rem 0.9rem; }
@@ -79,7 +83,6 @@
   .gv-stage{ position:relative; background:#050302; border:1px solid var(--line); border-radius: var(--radius-panel); overflow:hidden; display:flex; align-items:center; justify-content:center; min-height:0; }
   .gv-stage canvas, .gv-stage img, .gv-stage video{ width:100%; height:100%; object-fit:contain; display:block; pointer-events:none; }
   .gv-shield{ position:absolute; inset:0; z-index:5; }
-  .gv-wm{ position:absolute; inset:0; z-index:6; pointer-events:none; background-repeat:repeat; }
   .gv-load{ position:absolute; inset:0; z-index:8; display:flex; flex-direction:column; gap:0.7rem; align-items:center; justify-content:center; color: var(--muted); font-size:var(--fs-base); letter-spacing:0.15em; text-transform:uppercase; background:#050302; }
   .gv-load .up-bar{ width:220px; }
   .gv-nav{ position:absolute; top:50%; transform:translateY(-50%); z-index:9; width:42px; height:42px; border-radius:50%; border:1px solid var(--glass-border); background: rgba(13,10,7,0.7); color: var(--ink); font-size:1.3rem; cursor:pointer; backdrop-filter: blur(6px); transition: all 0.2s ease; }
@@ -107,7 +110,6 @@
     .gv-side{ max-height:38vh; }
   }
   @media (prefers-reduced-motion: reduce){ .g-card, .g-card.float{ animation:none; transition:none; } }
-  @media print{ body *{ display:none !important; } body::before{ content:"Printing is disabled for this page."; color:#000; } }
 </style>
 </head>
 <body>
@@ -129,7 +131,7 @@
     <div class="region-inner g-wrap">
       <div class="eyebrow">Notice</div>
       <div class="page-title">The Mr West Files — Media Archive</div>
-      <div class="page-sub" id="gSub">Declassified footage. View only.</div>
+      <div class="page-sub" id="gSub">Declassified footage.</div>
 
       <div id="gUpload">
         <div class="g-drop" id="gDrop">
@@ -170,7 +172,6 @@
   <div class="gv-panel">
     <div class="gv-stage" id="gvStage">
       <div class="gv-media" id="gvMedia" style="position:absolute;inset:0;"></div>
-      <div class="gv-wm" id="gvWm"></div>
       <div class="gv-shield" id="gvShield"></div>
       <div class="gv-load" id="gvLoad"><span id="gvLoadTxt">Decrypting…</span><div class="up-bar"><i id="gvLoadBar"></i></div></div>
       <button class="gv-nav" id="gvPrev" aria-label="Previous">‹</button>
@@ -217,9 +218,7 @@
 /* ================= MEDIA ARCHIVE =================
    Storage: Firebase Realtime Database (already in this project, free Spark plan, no card, no new account).
    Files are split into base64 chunks under gallery/view/<id>/<n>; nothing is ever served from a public URL.
-   Images also keep their untouched original under gallery/full/<id>/<n>, which Firebase rules only let
-   signed-in (non-anonymous) accounts read — that is the real download gate. Guests only ever receive a
-   downscaled, watermarked preview. GIFs/videos are stored once, so their download gate is UI-level only. */
+   Everyone can view and download; only the admin can upload, rename or delete. Originals are stored as-is. */
 (function(){
 'use strict';
 const ADMIN = (typeof ADMIN_EMAIL !== 'undefined') ? ADMIN_EMAIL : 'kirattdhaliwal@gmail.com';
@@ -391,10 +390,6 @@ async function loadBlob(kind, id, count, mime, onProg){
 
 /* ---------- viewer ---------- */
 const viewer = $('gViewer'), media = $('gvMedia'), vid = { el: null };
-function wmURL(txt){
-  const svg = "<svg xmlns='http://www.w3.org/2000/svg' width='300' height='170'><text x='150' y='90' text-anchor='middle' transform='rotate(-24 150 85)' fill='white' fill-opacity='0.09' font-family='monospace' font-size='15' letter-spacing='3'>" + esc(txt) + "</text></svg>";
-  return 'url("data:image/svg+xml,' + encodeURIComponent(svg) + '")';
-}
 function setLoad(on, txt, p){ $('gvLoad').style.display = on ? 'flex' : 'none'; if(txt) $('gvLoadTxt').textContent = txt; if(p != null) $('gvLoadBar').style.width = Math.round(p * 100) + '%'; }
 function clearMedia(){ if(vid.el){ try{ vid.el.pause(); }catch(e){} vid.el = null; } media.innerHTML = ''; $('gvCtrl').classList.remove('show'); }
 
@@ -404,7 +399,6 @@ async function openViewer(id){
   viewer.classList.add('open'); document.body.style.overflow = 'hidden';
   history.replaceState(null, '', '#' + id);
   clearMedia(); $('gvMsg').textContent = ''; $('gvMsg').classList.remove('err');
-  $('gvWm').style.backgroundImage = wmURL('THE MR WEST FILES · ' + (user ? user.uid.slice(0, 6).toUpperCase() : 'GUEST'));
   paintSide(); countView(id); setLoad(true, 'Retrieving…', 0);
   try{
     const blob = await loadBlob('view', id, m.chunks, m.viewMime || m.mime, p => { if(token === openToken) setLoad(true, 'Retrieving…', p); });
@@ -448,7 +442,7 @@ function paintSide(){
     ['<span>' + ICON_DL + 'Downloads</span>', m.downloads || 0]
   ];
   $('gvInfo').innerHTML = rows.map(r => '<div class="gv-row"><span>' + r[0] + '</span><b>' + r[1] + '</b></div>').join('');
-  const dl = $('gvDownload'); dl.textContent = member ? 'Download' : 'Sign in to download';
+  const dl = $('gvDownload'); dl.textContent = 'Download';
   $('gvRename').style.display = $('gvDelete').style.display = admin ? 'block' : 'none';
 }
 
@@ -477,7 +471,6 @@ function msg(t, err){ const el = $('gvMsg'); el.textContent = t; el.classList.to
 
 $('gvDownload').onclick = async () => {
   const m = items.get(openId); if(!m) return;
-  if(!member){ msg('Downloads are for signed-in accounts. Redirecting to Settings…'); setTimeout(() => { location.href = 'settings.html'; }, 900); return; }
   const btn = $('gvDownload'); btn.disabled = true; msg('Preparing download…');
   try{
     let blob, name;
@@ -492,7 +485,7 @@ $('gvDownload').onclick = async () => {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name.replace(/[\\/:*?"<>|]+/g, '_');
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 15000);
     msg('Download started.');
-  }catch(e){ msg('Download failed — make sure you are signed in and the Firebase rules were added.', true); }
+  }catch(e){ msg('Download failed — check your connection and that the Firebase rules were updated.', true); }
   btn.disabled = false;
 };
 $('gvRename').onclick = async () => {
@@ -509,14 +502,8 @@ $('gvDelete').onclick = async () => {
   }catch(e){ msg('Delete failed.', true); }
 };
 
-/* ---------- copy / save deterrents (honest limit: screenshots & screen recording can't be stopped) ---------- */
-const stop = e => e.preventDefault();
-['contextmenu', 'dragstart', 'copy', 'cut', 'selectstart'].forEach(ev => {
-  document.addEventListener(ev, e => { if(e.target.closest && e.target.closest('.g-wrap, #gViewer') && !e.target.closest('input, textarea')) stop(e); });
-});
+/* ---------- keyboard ---------- */
 document.addEventListener('keydown', e => {
-  if((e.ctrlKey || e.metaKey) && ['s', 'p', 'u'].includes(e.key.toLowerCase())) stop(e);
-  if(e.key === 'PrintScreen'){ try{ navigator.clipboard.writeText('Screenshots of the archive are not permitted.'); }catch(err){} }
   if(!openId) return;
   if(e.key === 'Escape') closeViewer();
   else if(e.key === 'ArrowLeft') step(-1);
@@ -548,12 +535,6 @@ function thumbOf(src){                       // src: ImageBitmap | HTMLVideoElem
   const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * s)); c.height = Math.max(1, Math.round(h * s));
   c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
   let d = c.toDataURL('image/webp', 0.55); if(!d.startsWith('data:image/webp')) d = c.toDataURL('image/jpeg', 0.6); return d;
-}
-function watermark(c){
-  const g = c.getContext('2d'), s = Math.max(14, Math.round(c.width / 38));
-  g.save(); g.font = '700 ' + s + 'px monospace'; g.textAlign = 'right'; g.textBaseline = 'bottom';
-  g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillText('THE MR WEST FILES', c.width - s * 0.6 + 2, c.height - s * 0.5 + 2);
-  g.fillStyle = 'rgba(255,255,255,0.55)'; g.fillText('THE MR WEST FILES', c.width - s * 0.6, c.height - s * 0.5); g.restore();
 }
 function videoFrame(file){
   return new Promise((res, rej) => {
@@ -595,9 +576,7 @@ async function uploadOne(file, row){
       const bmp = await createImageBitmap(file);
       meta.w = bmp.width; meta.h = bmp.height; meta.thumb = thumbOf(bmp);
       if(kind === 'image'){
-        const c = drawFit(bmp, 1600); watermark(c);
-        let pb = await canvasBlob(c, 'image/webp', 0.84); if(!pb || pb.type !== 'image/webp') pb = await canvasBlob(c, 'image/jpeg', 0.85);
-        viewBlob = pb; meta.viewMime = pb.type; meta.origMime = file.type; fullBlob = file;
+        meta.viewMime = file.type;
       }
     }
     const total = viewBlob.size + (fullBlob ? fullBlob.size : 0); let sent = 0;
