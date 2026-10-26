@@ -83,6 +83,8 @@
   .gv-stage{ position:relative; background:#050302; border:1px solid var(--line); border-radius: var(--radius-panel); overflow:hidden; display:flex; align-items:center; justify-content:center; min-height:0; }
   .gv-stage canvas, .gv-stage img, .gv-stage video{ width:100%; height:100%; object-fit:contain; display:block; pointer-events:none; }
   .gv-shield{ position:absolute; inset:0; z-index:5; }
+  .gv-gate{ position:absolute; inset:0; z-index:7; display:none; flex-direction:column; align-items:center; justify-content:center; gap:0.8rem; background:#050302; }
+  .gv-gate img{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; opacity:0.35; filter:blur(3px); pointer-events:none; }
   .gv-load{ position:absolute; inset:0; z-index:8; display:flex; flex-direction:column; gap:0.7rem; align-items:center; justify-content:center; color: var(--muted); font-size:var(--fs-base); letter-spacing:0.15em; text-transform:uppercase; background:#050302; }
   .gv-load .up-bar{ width:220px; }
   .gv-nav{ position:absolute; top:50%; transform:translateY(-50%); z-index:9; width:42px; height:42px; border-radius:50%; border:1px solid var(--glass-border); background: rgba(13,10,7,0.7); color: var(--ink); font-size:1.3rem; cursor:pointer; backdrop-filter: blur(6px); transition: all 0.2s ease; }
@@ -136,11 +138,12 @@
       <div id="gUpload">
         <div class="g-drop" id="gDrop">
           Drop images, GIFs or videos here, or click to choose files
-          <small>Stored privately in your Firebase database. Images ≤ 25 MB · GIFs ≤ 20 MB · Videos ≤ 40 MB.</small>
+          <small>Stored privately in your Firebase database. Images ≤ 25 MB · GIFs ≤ 10 MB · Videos ≤ 25 MB.</small>
         </div>
         <input type="file" id="gFile" accept="image/*,video/*" multiple hidden>
         <div id="gUpList"></div>
         <div class="g-store" id="gStore"></div>
+        <div class="g-store" id="gBudget"></div>
       </div>
 
       <div class="g-bar">
@@ -160,6 +163,7 @@
         </div>
       </div>
 
+      <div id="gBudgetNote" class="g-note error" style="display:none;">The archive's monthly data budget has been used up, so previews and downloads are paused until next month. Thumbnails still work.</div>
       <div id="gNote" class="g-note">Loading the archive…</div>
       <div id="gGrid"></div>
     </div>
@@ -173,6 +177,7 @@
     <div class="gv-stage" id="gvStage">
       <div class="gv-media" id="gvMedia" style="position:absolute;inset:0;"></div>
       <div class="gv-shield" id="gvShield"></div>
+      <div class="gv-gate" id="gvGate"><img id="gvGatePoster" alt=""><button class="tool-btn primary" id="gvGateBtn" style="position:relative;padding:0.9rem 1.6rem;"></button><div class="gv-msg" id="gvGateNote" style="position:relative;"></div></div>
       <div class="gv-load" id="gvLoad"><span id="gvLoadTxt">Decrypting…</span><div class="up-bar"><i id="gvLoadBar"></i></div></div>
       <button class="gv-nav" id="gvPrev" aria-label="Previous">‹</button>
       <button class="gv-nav" id="gvNext" aria-label="Next">›</button>
@@ -218,19 +223,33 @@
 /* ================= MEDIA ARCHIVE =================
    Storage: Firebase Realtime Database (already in this project, free Spark plan, no card, no new account).
    Files are split into base64 chunks under gallery/view/<id>/<n>; nothing is ever served from a public URL.
-   Everyone can view and download; only the admin can upload, rename or delete. Originals are stored as-is. */
+   Everyone can view and download; only the admin can upload, rename or delete.
+
+   Data-saving design (the free plan allows ~10 GB/month of database downloads):
+   - images keep a small ~1600px preview (gallery/view) for viewing and the untouched original (gallery/full),
+     which is only fetched when someone presses Download
+   - GIFs/videos only start loading after a click, and show their size first
+   - thumbnails live in their own node (gallery/thumbs), load lazily as cards scroll into view, and are cached
+     in the browser; view/download counters live in gallery/stats so a count change is a few bytes, not a whole item
+   - everything fetched is cached in the browser (IndexedDB), so re-opening a file costs 0 bytes
+   - a shared monthly byte counter (gallery/usage) is enforced by the Firebase rules: past the budget, media
+     loading pauses for everyone until next month, protecting the rest of the site (leaderboard, market...) */
 (function(){
 'use strict';
 const ADMIN = (typeof ADMIN_EMAIL !== 'undefined') ? ADMIN_EMAIL : 'kirattdhaliwal@gmail.com';
 const MAX_ITEMS = 150;                       // newest N items are loaded
 const CHUNK_BYTES = 300000;                  // divisible by 3 → clean base64 boundaries (400k chars)
-const LIMITS = { image: 25e6, gif: 20e6, video: 40e6 };
+const LIMITS = { image: 25e6, gif: 10e6, video: 25e6 };
+const PREVIEW_PX = 1600, SINGLE_COPY_MAX = 500e3;   // images ≤500 KB and ≤1600px are stored once
+const BUDGET = 7e9;                          // gallery's share of the 10 GB/month free allowance (keep in sync with the rules)
+const DISK_CACHE = 120e6;                    // browser-side cache cap
 const HOVER_MS = 380;                        // hover time before the float effect + view count
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 let gdb = null, user = null, member = false, admin = false, started = false;
 const items = new Map();                     // id → meta
+const stats = new Map();                     // id → { views, downloads }
 const cardEls = new Map();                   // id → card element
 let filter = 'all', sort = 'new', openId = null, openToken = 0, order = [];
 const seen = new Set(); try{ JSON.parse(sessionStorage.getItem('gal_seen') || '[]').forEach(x => seen.add(x)); }catch(e){}
@@ -238,16 +257,69 @@ const seen = new Set(); try{ JSON.parse(sessionStorage.getItem('gal_seen') || '[
 const grid = $('gGrid'), note = $('gNote');
 
 /* ---------- helpers ---------- */
-const fmtBytes = n => n > 1e6 ? (n/1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(n/1e3)) + ' KB';
+const fmtBytes = n => n >= 1e9 ? (n/1e9).toFixed(2) + ' GB' : n >= 1e6 ? (n/1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(n/1e3)) + ' KB';
 const fmtTime = s => { s = Math.max(0, Math.floor(s || 0)); return Math.floor(s/60) + ':' + String(s % 60).padStart(2, '0'); };
 const fmtDate = t => t ? new Date(t).toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' }) : '—';
 const ICON_EYE = '<svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 const ICON_DL  = '<svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 21h16"/></svg>';
+const vc = m => ((stats.get(m.id) || {}).views || 0) + (m.views || 0);          // (m.views = counts from older uploads)
+const dc = m => ((stats.get(m.id) || {}).downloads || 0) + (m.downloads || 0);
 function b64ToBytes(b64){ const bin = atob(b64); const u = new Uint8Array(bin.length); for(let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
 function blobChunkToB64(blob){ return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = () => rej(r.error); r.readAsDataURL(blob); }); }
 function setNote(msg, isErr){ note.style.display = msg ? 'block' : 'none'; note.textContent = msg || ''; note.classList.toggle('error', !!isErr); }
 function kindOf(file){ if(file.type === 'image/gif') return 'gif'; if(file.type.startsWith('video/')) return 'video'; if(file.type.startsWith('image/')) return 'image'; return null; }
 function extOf(mime, fallback){ return ({'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif','image/avif':'avif','video/mp4':'mp4','video/webm':'webm','video/quicktime':'mov'})[mime] || fallback || 'bin'; }
+
+/* ---------- browser-side cache (IndexedDB; silently falls back to memory-only if unavailable) ---------- */
+let idbP = null;
+function idbOpen(){
+  return idbP || (idbP = new Promise(res => {
+    try{
+      const r = indexedDB.open('mwf_gallery', 1);
+      r.onupgradeneeded = () => { r.result.createObjectStore('thumb'); r.result.createObjectStore('media'); };
+      r.onsuccess = () => res(r.result); r.onerror = () => res(null); r.onblocked = () => res(null);
+    }catch(e){ res(null); }
+  }));
+}
+function idbReq(store, mode, fn){
+  return idbOpen().then(d => !d ? null : new Promise(res => {
+    try{ const t = d.transaction(store, mode); const r = fn(t.objectStore(store)); t.oncomplete = () => res(r && 'result' in r ? r.result : null); t.onerror = t.onabort = () => res(null); }
+    catch(e){ res(null); }
+  }));
+}
+const idbGet = (s, k) => idbReq(s, 'readonly', st => st.get(k));
+const idbPut = (s, k, v) => idbReq(s, 'readwrite', st => st.put(v, k));
+const idbDel = (s, k) => idbReq(s, 'readwrite', st => st.delete(k));
+async function trimMedia(){
+  const keys = await idbReq('media', 'readonly', st => st.getAllKeys()), vals = await idbReq('media', 'readonly', st => st.getAll());
+  if(!keys || !vals) return;
+  const rows = keys.map((k, i) => ({ k, size: (vals[i] && vals[i].size) || 0, ts: (vals[i] && vals[i].ts) || 0 })).sort((a, b) => a.ts - b.ts);
+  let total = rows.reduce((n, r) => n + r.size, 0);
+  for(const r of rows){ if(total <= DISK_CACHE) break; await idbDel('media', r.k); total -= r.size; }
+}
+
+/* ---------- monthly data budget (counted in bytes this browser actually pulled from Firebase) ---------- */
+let usage = { until: 0, bytes: 0 }, pending = 0;
+const monthEnd = () => { const d = new Date(); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1); };   // budget period = calendar month (UTC)
+const budgetOk = () => !usage.until || Date.now() > usage.until || usage.bytes < BUDGET;
+function addBytes(n){ if(n > 0) pending += n; }
+function flushBytes(){
+  if(!gdb || !user || pending <= 0) return;
+  const n = Math.min(pending, 60e6); pending -= n;
+  gdb.ref('gallery/usage').transaction(cur => {
+    if(!cur || Date.now() > cur.until) return { bytes: n, until: monthEnd() };      // new month → counter starts over
+    return { bytes: cur.bytes + n, until: cur.until };
+  }).catch(() => {});
+  if(pending > 0) setTimeout(flushBytes, 1500);
+}
+setInterval(flushBytes, 20000);
+document.addEventListener('visibilitychange', () => { if(document.hidden) flushBytes(); });
+window.addEventListener('pagehide', flushBytes);
+function paintBudget(){
+  const used = (usage.until && Date.now() <= usage.until) ? usage.bytes : 0;
+  const bn = $('gBudgetNote'); bn.style.display = budgetOk() ? 'none' : 'block';
+  if(admin) $('gBudget').textContent = 'Data used this month ≈ ' + fmtBytes(used) + ' of the gallery\'s ' + fmtBytes(BUDGET) + ' budget (free plan: 10 GB/month for the whole site).';
+}
 
 /* ---------- auth + feed ---------- */
 try{
@@ -256,6 +328,7 @@ try{
     user = u; member = !!u && !u.isAnonymous; admin = member && u.email === ADMIN;
     $('gUpload').style.display = admin ? 'block' : 'none';
     if(openId) paintSide();
+    paintBudget();
     if(u && !started){ started = true; startFeed(); }
   });
 }catch(e){ setNote('Could not reach Firebase — the archive is unavailable right now.', true); }
@@ -263,13 +336,19 @@ try{
 function startFeed(){
   const q = gdb.ref('gallery/items').orderByKey().limitToLast(MAX_ITEMS);
   const onErr = () => setNote('The archive is locked. (Firebase rules for "gallery" have not been added yet.)', true);
-  q.on('child_added', s => { items.set(s.key, Object.assign({ id: s.key }, s.val())); scheduleRender(); }, onErr);
+  const size = s => { try{ addBytes(JSON.stringify(s.val()).length); }catch(e){} };
+  q.on('child_added', s => { size(s); items.set(s.key, Object.assign({ id: s.key }, s.val())); scheduleRender(); }, onErr);
   q.on('child_changed', s => {
     const old = items.get(s.key), m = Object.assign({ id: s.key }, s.val()); items.set(s.key, m);
-    if(sort !== 'new') scheduleRender(); else if(!old || old.title !== m.title) scheduleRender();
+    if(!old || old.title !== m.title) scheduleRender();
     paintStats(s.key);
   });
-  q.on('child_removed', s => { items.delete(s.key); scheduleRender(); if(openId === s.key) closeViewer(); });
+  q.on('child_removed', s => { items.delete(s.key); stats.delete(s.key); scheduleRender(); if(openId === s.key) closeViewer(); });
+  // counters: tiny nodes, so a +1 is ~50 bytes pushed to each open page (not a whole item)
+  const st = gdb.ref('gallery/stats');
+  const onStat = s => { stats.set(s.key, s.val() || {}); paintStats(s.key); };
+  st.on('child_added', onStat, () => {}); st.on('child_changed', onStat, () => {});
+  gdb.ref('gallery/usage').on('value', s => { usage = s.val() || { until: 0, bytes: 0 }; paintBudget(); }, () => {});
   setTimeout(() => { if(!items.size && note.textContent.startsWith('Loading')) setNote('Nothing has been declassified yet.'); }, 3500);
 }
 
@@ -280,11 +359,11 @@ function scheduleRender(){ if(renderQueued) return; renderQueued = true; request
 function renderGrid(){
   let list = [...items.values()].filter(m => filter === 'all' || m.type === filter);
   if(sort === 'new') list.sort((a, b) => (a.id < b.id ? 1 : -1));
-  else if(sort === 'views') list.sort((a, b) => (b.views || 0) - (a.views || 0) || (a.id < b.id ? 1 : -1));
-  else list.sort((a, b) => (b.downloads || 0) - (a.downloads || 0) || (a.id < b.id ? 1 : -1));
+  else if(sort === 'views') list.sort((a, b) => vc(b) - vc(a) || (a.id < b.id ? 1 : -1));
+  else list.sort((a, b) => dc(b) - dc(a) || (a.id < b.id ? 1 : -1));
   order = list.map(m => m.id);
   const keep = new Set(order);
-  cardEls.forEach((el, id) => { if(!keep.has(id)){ el.remove(); cardEls.delete(id); } });
+  cardEls.forEach((el, id) => { if(!keep.has(id)){ if(thumbObs) thumbObs.unobserve(el); el.remove(); cardEls.delete(id); } });
   list.forEach(m => {
     let el = cardEls.get(m.id);
     if(!el){ el = makeCard(m); cardEls.set(m.id, el); }
@@ -299,15 +378,37 @@ function renderGrid(){
   if(h && items.has(h) && !openId && !renderGrid._deep){ renderGrid._deep = true; openViewer(h); }
 }
 
+/* thumbnails load only when their card scrolls near the screen, and are remembered between visits */
+const thumbObs = 'IntersectionObserver' in window
+  ? new IntersectionObserver(es => es.forEach(e => { if(e.isIntersecting){ thumbObs.unobserve(e.target); loadThumb(e.target); } }), { rootMargin: '400px' })
+  : null;
+const thumbMem = new Map();
+async function getThumb(m){
+  if(m.thumb) return m.thumb;                                  // older uploads kept the thumbnail inside the item
+  if(thumbMem.has(m.id)) return thumbMem.get(m.id);
+  let t = await idbGet('thumb', m.id);
+  if(!t){
+    try{ t = (await gdb.ref('gallery/thumbs/' + m.id).once('value')).val(); }catch(e){}
+    if(t){ addBytes(t.length); idbPut('thumb', m.id, t); }
+  }
+  if(t) thumbMem.set(m.id, t);
+  return t;
+}
+async function loadThumb(el){
+  const m = items.get(el.dataset.id); if(!m) return;
+  const t = await getThumb(m);
+  if(t) el.querySelector('.g-thumb').style.backgroundImage = 'url("' + t + '")';
+}
+
 function makeCard(m){
   const el = document.createElement('div');
   el.className = 'g-card'; el.dataset.id = m.id; el.tabIndex = 0;
   const label = m.type === 'video' ? 'Video ' + fmtTime(m.duration) : m.type === 'gif' ? 'GIF' : 'Image';
   el.innerHTML = '<div class="g-thumb"></div><div class="g-shield"></div><span class="g-badge">' + label + '</span>' +
     '<div class="g-info"><div class="g-title"></div><div class="g-stats"><span>' + ICON_EYE + '<b class="s-v">0</b></span><span>' + ICON_DL + '<b class="s-d">0</b></span></div></div>';
-  el.querySelector('.g-thumb').style.backgroundImage = 'url("' + m.thumb + '")';
   el.querySelector('.g-title').textContent = m.title || 'Untitled';
-  el.querySelector('.s-v').textContent = m.views || 0; el.querySelector('.s-d').textContent = m.downloads || 0;
+  el.querySelector('.s-v').textContent = vc(m); el.querySelector('.s-d').textContent = dc(m);
+  if(thumbObs) thumbObs.observe(el); else loadThumb(el);
   let t = null;
   el.addEventListener('mouseenter', () => { clearTimeout(t); t = setTimeout(() => { el.classList.add('float'); countView(m.id); }, HOVER_MS); });
   el.addEventListener('mouseleave', () => { clearTimeout(t); el.classList.remove('float'); el.style.removeProperty('--rx'); el.style.removeProperty('--ry'); });
@@ -324,7 +425,7 @@ function makeCard(m){
 function paintStats(id){
   const m = items.get(id); if(!m) return;
   const el = cardEls.get(id);
-  if(el){ el.querySelector('.s-v').textContent = m.views || 0; el.querySelector('.s-d').textContent = m.downloads || 0; }
+  if(el){ el.querySelector('.s-v').textContent = vc(m); el.querySelector('.s-d').textContent = dc(m); }
   if(openId === id) paintSide();
 }
 
@@ -362,46 +463,51 @@ $('gSort').addEventListener('change', e => { sort = e.target.value; renderGrid()
 function countView(id){
   if(!gdb || seen.has(id)) return; seen.add(id);
   try{ sessionStorage.setItem('gal_seen', JSON.stringify([...seen])); }catch(e){}
-  gdb.ref('gallery/items/' + id + '/views').transaction(v => (v || 0) + 1).catch(() => {});
+  gdb.ref('gallery/stats/' + id + '/views').transaction(v => (v || 0) + 1).catch(() => {});
 }
-function countDownload(id){ return gdb.ref('gallery/items/' + id + '/downloads').transaction(v => (v || 0) + 1).catch(() => {}); }
+function countDownload(id){ return gdb.ref('gallery/stats/' + id + '/downloads').transaction(v => (v || 0) + 1).catch(() => {}); }
 
-/* ---------- chunk loading ---------- */
-const blobCache = new Map();                 // key → { blob, url } (small LRU so prev/next doesn't refetch)
+/* ---------- chunk loading (memory LRU → IndexedDB → Firebase) ---------- */
+const blobCache = new Map();                 // key → { blob, url }
 function cachePut(key, blob){
-  const url = URL.createObjectURL(blob); blobCache.set(key, { blob, url });
+  if(blobCache.has(key)) return blobCache.get(key);
+  const c = { blob, url: URL.createObjectURL(blob) }; blobCache.set(key, c);
   while(blobCache.size > 4){ const k = blobCache.keys().next().value; if(k === key) break; URL.revokeObjectURL(blobCache.get(k).url); blobCache.delete(k); }
+  return c;
 }
+async function isCached(key){ if(blobCache.has(key)) return true; const r = await idbGet('media', key); return !!(r && r.blob); }
 async function loadBlob(kind, id, count, mime, onProg){
   const key = kind + '/' + id;
   if(blobCache.has(key)){ const c = blobCache.get(key); blobCache.delete(key); blobCache.set(key, c); return c.blob; }
-  const parts = new Array(count); let next = 0, done = 0;
+  const rec = await idbGet('media', key);
+  if(rec && rec.blob){ cachePut(key, rec.blob); idbPut('media', key, { blob: rec.blob, size: rec.size, ts: Date.now() }); return rec.blob; }
+  if(!budgetOk()) throw new Error('budget');
+  const parts = new Array(count); let next = 0, done = 0, got = 0;
   const worker = async () => {
     while(next < count){
       const i = next++;
       const v = (await gdb.ref('gallery/' + kind + '/' + id + '/' + i).once('value')).val();
       if(typeof v !== 'string') throw new Error('missing chunk ' + i);
-      parts[i] = b64ToBytes(v); done++; if(onProg) onProg(done / count);
+      got += v.length; parts[i] = b64ToBytes(v); done++; if(onProg) onProg(done / count);
     }
   };
-  await Promise.all([worker(), worker(), worker(), worker()]);
-  const blob = new Blob(parts, { type: mime }); cachePut(key, blob); return blob;
+  try{ await Promise.all([worker(), worker(), worker(), worker()]); } finally { addBytes(got); }
+  const blob = new Blob(parts, { type: mime }); cachePut(key, blob);
+  idbPut('media', key, { blob, size: blob.size, ts: Date.now() }).then(trimMedia);
+  return blob;
 }
+const errText = e => (e && (e.message === 'budget' || /permission/i.test(e.message || ''))) ? 'Monthly data budget reached — media loading resumes next month.' : 'Could not load this file.';
 
 /* ---------- viewer ---------- */
 const viewer = $('gViewer'), media = $('gvMedia'), vid = { el: null };
 function setLoad(on, txt, p){ $('gvLoad').style.display = on ? 'flex' : 'none'; if(txt) $('gvLoadTxt').textContent = txt; if(p != null) $('gvLoadBar').style.width = Math.round(p * 100) + '%'; }
-function clearMedia(){ if(vid.el){ try{ vid.el.pause(); }catch(e){} vid.el = null; } media.innerHTML = ''; $('gvCtrl').classList.remove('show'); }
+function setGate(on){ $('gvGate').style.display = on ? 'flex' : 'none'; }
+function clearMedia(){ if(vid.el){ try{ vid.el.pause(); }catch(e){} vid.el = null; } media.innerHTML = ''; $('gvCtrl').classList.remove('show'); setGate(false); }
 
-async function openViewer(id){
-  const m = items.get(id); if(!m || !gdb) return;
-  const token = ++openToken; openId = id;
-  viewer.classList.add('open'); document.body.style.overflow = 'hidden';
-  history.replaceState(null, '', '#' + id);
-  clearMedia(); $('gvMsg').textContent = ''; $('gvMsg').classList.remove('err');
-  paintSide(); countView(id); setLoad(true, 'Retrieving…', 0);
+async function showMedia(m, token){
+  setGate(false); setLoad(true, 'Retrieving…', 0);
   try{
-    const blob = await loadBlob('view', id, m.chunks, m.viewMime || m.mime, p => { if(token === openToken) setLoad(true, 'Retrieving…', p); });
+    const blob = await loadBlob('view', m.id, m.chunks, m.viewMime || m.mime, p => { if(token === openToken) setLoad(true, 'Retrieving…', p); });
     if(token !== openToken) return;
     if(m.type === 'image'){
       const bmp = await createImageBitmap(blob);
@@ -409,16 +515,36 @@ async function openViewer(id){
       const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
       c.getContext('2d').drawImage(bmp, 0, 0); media.appendChild(c);
     } else if(m.type === 'gif'){
-      const im = document.createElement('img'); im.draggable = false; im.src = blobCache.get('view/' + id).url; media.appendChild(im);
+      const im = document.createElement('img'); im.draggable = false; im.src = blobCache.get('view/' + m.id).url; media.appendChild(im);
     } else {
       const v = document.createElement('video');
       v.playsInline = true; v.preload = 'auto'; v.loop = false; v.disablePictureInPicture = true; v.disableRemotePlayback = true;
-      v.setAttribute('controlslist', 'nodownload noremoteplayback'); v.src = blobCache.get('view/' + id).url;
+      v.setAttribute('controlslist', 'nodownload noremoteplayback'); v.src = blobCache.get('view/' + m.id).url;
       media.appendChild(v); vid.el = v; bindVideo(v); $('gvCtrl').classList.add('show');
       v.play().catch(() => {});
     }
     setLoad(false);
-  }catch(e){ if(token === openToken){ setLoad(true, 'Could not load this file.', 0); } }
+  }catch(e){ if(token === openToken){ setLoad(true, errText(e), 0); } }
+}
+
+async function openViewer(id){
+  const m = items.get(id); if(!m || !gdb) return;
+  const token = ++openToken; openId = id;
+  viewer.classList.add('open'); document.body.style.overflow = 'hidden';
+  history.replaceState(null, '', '#' + id);
+  clearMedia(); $('gvMsg').textContent = ''; $('gvMsg').classList.remove('err');
+  paintSide(); countView(id);
+  // images are small previews → load straight away. GIFs/videos can be big → wait for a click unless already on this device.
+  if(m.type === 'image' || await isCached('view/' + id)){ if(token === openToken) showMedia(m, token); return; }
+  if(token !== openToken) return;
+  setLoad(false);
+  const t = await getThumb(m); if(token !== openToken) return;
+  $('gvGatePoster').src = t || '';
+  $('gvGateBtn').textContent = (m.type === 'video' ? '▶  Load video' : '▶  Load GIF') + ' · ' + fmtBytes(m.viewSize || m.size || 0);
+  $('gvGateNote').textContent = budgetOk() ? 'Loads on demand to save data.' : 'Monthly data budget reached — loading resumes next month.';
+  $('gvGateBtn').disabled = !budgetOk();
+  $('gvGateBtn').onclick = () => showMedia(m, token);
+  setGate(true);
 }
 
 function closeViewer(){
@@ -438,15 +564,15 @@ function paintSide(){
     ['Size', (m.w && m.h ? m.w + ' × ' + m.h : '—') + (m.type === 'video' ? ' · ' + fmtTime(m.duration) : '')],
     ['File', fmtBytes(m.size || 0)],
     ['Added', fmtDate(m.createdAt)],
-    ['<span>' + ICON_EYE + 'Views</span>', m.views || 0],
-    ['<span>' + ICON_DL + 'Downloads</span>', m.downloads || 0]
+    ['<span>' + ICON_EYE + 'Views</span>', vc(m)],
+    ['<span>' + ICON_DL + 'Downloads</span>', dc(m)]
   ];
   $('gvInfo').innerHTML = rows.map(r => '<div class="gv-row"><span>' + r[0] + '</span><b>' + r[1] + '</b></div>').join('');
-  const dl = $('gvDownload'); dl.textContent = 'Download';
+  $('gvDownload').textContent = 'Download · ' + fmtBytes(m.size || 0);
   $('gvRename').style.display = $('gvDelete').style.display = admin ? 'block' : 'none';
 }
 
-/* custom video controls (no native menu = no "save video as") */
+/* custom video controls (no native menu) */
 function bindVideo(v){
   const play = $('gvPlay'), seek = $('gvSeek'), time = $('gvTime'), mute = $('gvMute');
   const upd = () => { play.textContent = v.paused ? '▶' : '❚❚'; };
@@ -474,18 +600,18 @@ $('gvDownload').onclick = async () => {
   const btn = $('gvDownload'); btn.disabled = true; msg('Preparing download…');
   try{
     let blob, name;
-    if(m.type === 'image' && m.fullChunks){
+    if(m.type === 'image' && m.fullChunks){          // original is only fetched here, on demand
       blob = await loadBlob('full', m.id, m.fullChunks, m.origMime || m.mime, p => msg('Preparing download… ' + Math.round(p * 100) + '%'));
       name = (m.title || 'image') + '.' + extOf(m.origMime || m.mime);
     } else {
-      blob = await loadBlob('view', m.id, m.chunks, m.viewMime || m.mime);
-      name = (m.title || 'file') + '.' + extOf(m.mime);
+      blob = await loadBlob('view', m.id, m.chunks, m.viewMime || m.mime, p => msg('Preparing download… ' + Math.round(p * 100) + '%'));
+      name = (m.title || 'file') + '.' + extOf(m.viewMime || m.mime);
     }
     await countDownload(m.id);
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name.replace(/[\\/:*?"<>|]+/g, '_');
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 15000);
     msg('Download started.');
-  }catch(e){ msg('Download failed — check your connection and that the Firebase rules were updated.', true); }
+  }catch(e){ msg(errText(e), true); }
   btn.disabled = false;
 };
 $('gvRename').onclick = async () => {
@@ -496,8 +622,8 @@ $('gvRename').onclick = async () => {
 $('gvDelete').onclick = async () => {
   const m = items.get(openId); if(!m || !confirm('Permanently delete "' + (m.title || 'this file') + '"?')) return;
   try{
-    const id = m.id; blobCache.delete('view/' + id); blobCache.delete('full/' + id);
-    await Promise.all([gdb.ref('gallery/view/' + id).remove(), gdb.ref('gallery/full/' + id).remove()]);
+    const id = m.id; blobCache.delete('view/' + id); blobCache.delete('full/' + id); idbDel('media', 'view/' + id); idbDel('media', 'full/' + id); idbDel('thumb', id);
+    await Promise.all([gdb.ref('gallery/view/' + id).remove(), gdb.ref('gallery/full/' + id).remove(), gdb.ref('gallery/thumbs/' + id).remove(), gdb.ref('gallery/stats/' + id).remove()]);
     await gdb.ref('gallery/items/' + id).remove();
   }catch(e){ msg('Delete failed.', true); }
 };
@@ -515,7 +641,7 @@ window.addEventListener('hashchange', () => { const h = location.hash.slice(1); 
 /* ---------- admin upload ---------- */
 function updateStore(){
   let total = 0; items.forEach(m => { total += m.bytes || 0; });
-  $('gStore').textContent = 'Archive uses ≈ ' + fmtBytes(total) + ' of the ~1 GB free database allowance (downloads count against ~10 GB/month).';
+  $('gStore').textContent = 'Stored ≈ ' + fmtBytes(total) + ' of the ~1 GB free database allowance.';
 }
 const drop = $('gDrop'), fileIn = $('gFile');
 drop.onclick = () => fileIn.click();
@@ -531,10 +657,10 @@ function drawFit(bmp, max){
 }
 function canvasBlob(c, type, q){ return new Promise(res => c.toBlob(res, type, q)); }
 function thumbOf(src){                       // src: ImageBitmap | HTMLVideoElement (already drawable)
-  const w = src.width || src.videoWidth, h = src.height || src.videoHeight, s = Math.min(1, 360 / Math.max(w, h));
+  const w = src.width || src.videoWidth, h = src.height || src.videoHeight, s = Math.min(1, 320 / Math.max(w, h));
   const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * s)); c.height = Math.max(1, Math.round(h * s));
   c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
-  let d = c.toDataURL('image/webp', 0.55); if(!d.startsWith('data:image/webp')) d = c.toDataURL('image/jpeg', 0.6); return d;
+  let d = c.toDataURL('image/webp', 0.5); if(!d.startsWith('data:image/webp')) d = c.toDataURL('image/jpeg', 0.55); return d;
 }
 function videoFrame(file){
   return new Promise((res, rej) => {
@@ -568,28 +694,33 @@ async function uploadOne(file, row){
   try{
     setSt('Processing…');
     let meta = { type: kind, title: file.name.replace(/\.[^.]+$/, '').slice(0, 80), mime: file.type, size: file.size, origName: file.name };
-    let viewBlob = file, fullBlob = null;
+    let viewBlob = file, fullBlob = null, thumb;
     if(kind === 'video'){
       const { v, url } = await videoFrame(file);
-      meta.w = v.videoWidth; meta.h = v.videoHeight; meta.duration = Math.round(v.duration || 0); meta.thumb = thumbOf(v); URL.revokeObjectURL(url);
+      meta.w = v.videoWidth; meta.h = v.videoHeight; meta.duration = Math.round(v.duration || 0); thumb = thumbOf(v); URL.revokeObjectURL(url);
     } else {
       const bmp = await createImageBitmap(file);
-      meta.w = bmp.width; meta.h = bmp.height; meta.thumb = thumbOf(bmp);
-      if(kind === 'image'){
-        meta.viewMime = file.type;
+      meta.w = bmp.width; meta.h = bmp.height; thumb = thumbOf(bmp);
+      if(kind === 'image' && !(file.size <= SINGLE_COPY_MAX && Math.max(bmp.width, bmp.height) <= PREVIEW_PX)){
+        // viewers get a small preview; the untouched original is kept separately and only fetched on Download
+        const c = drawFit(bmp, PREVIEW_PX);
+        let pb = await canvasBlob(c, 'image/webp', 0.82); if(!pb || pb.type !== 'image/webp') pb = await canvasBlob(c, 'image/jpeg', 0.84);
+        if(pb && pb.size < file.size * 0.85){ viewBlob = pb; fullBlob = file; meta.viewMime = pb.type; meta.origMime = file.type; }
       }
     }
+    meta.viewSize = viewBlob.size;
     const total = viewBlob.size + (fullBlob ? fullBlob.size : 0); let sent = 0;
     const prog = n => { sent += n * 0.75; bar.style.width = Math.min(99, Math.round(sent / total * 100)) + '%'; };
     setSt('Uploading…');
+    await gdb.ref('gallery/thumbs/' + id).set(thumb);
     const v = await writeChunks('gallery/view/' + id, viewBlob, prog);
-    meta.chunks = v.count; meta.bytes = v.bytes;
+    meta.chunks = v.count; meta.bytes = v.bytes + thumb.length;
     if(fullBlob){ const f = await writeChunks('gallery/full/' + id, fullBlob, prog); meta.fullChunks = f.count; meta.bytes += f.bytes; }
     meta.createdAt = firebase.database.ServerValue.TIMESTAMP; meta.uploader = user.uid;
     await gdb.ref('gallery/items/' + id).set(meta);        // meta last, so the card only appears once everything is stored
     bar.style.width = '100%'; setSt('Done', 'ok');
   }catch(e){
-    try{ await Promise.all([gdb.ref('gallery/view/' + id).remove(), gdb.ref('gallery/full/' + id).remove()]); }catch(_){}
+    try{ await Promise.all([gdb.ref('gallery/view/' + id).remove(), gdb.ref('gallery/full/' + id).remove(), gdb.ref('gallery/thumbs/' + id).remove()]); }catch(_){}
     setSt((e && e.message && /permission/i.test(e.message)) ? 'Denied — add the Firebase rules' : (e && e.message) || 'Failed', 'err');
   }
 }
