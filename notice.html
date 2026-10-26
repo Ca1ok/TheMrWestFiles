@@ -5,6 +5,110 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Notice — The Mr West Files</title>
 <link rel="stylesheet" href="styles.css">
+<style>
+  /* ===== Media archive (notice.html) — all gallery styling lives here so styles.css stays untouched ===== */
+  #region-notice .region-inner{ padding: 2.2rem 1.4rem 2rem; }
+  .g-wrap, .g-wrap *, #gViewer, #gViewer *{ -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  .g-bar{ display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center; justify-content:space-between; margin: 0.4rem 0 1.1rem; }
+  .g-pills{ display:flex; flex-wrap:wrap; gap:0.4rem; }
+  .g-pills .tool-btn{ padding:0.45rem 0.9rem; }
+  .g-sort{ background: var(--paper-2); color: var(--muted); border:1px solid var(--line); border-radius: var(--radius-panel); font-family:inherit; font-size:var(--fs-sm); padding:0.45rem 0.7rem; text-transform:uppercase; }
+  .g-count{ color: var(--muted); font-size:var(--fs-sm); letter-spacing:0.1em; text-transform:uppercase; }
+  .g-note{ text-align:center; color: var(--muted); font-size:var(--fs-base); line-height:1.6; padding:2.5rem 1rem; border:1px dashed var(--line); border-radius: var(--radius-panel); }
+  .g-note.error{ color: var(--danger); }
+
+  /* grid: JS sets every card's exact width/height (justified rows) so any aspect ratio fills the row */
+  #gGrid{ display:flex; flex-wrap:wrap; gap:10px; align-content:flex-start; perspective: 1200px; }
+  .g-card{
+    position:relative; flex:none; border-radius: 12px; cursor:pointer; background: var(--paper-2);
+    border:1px solid var(--glass-border); outline:none;
+    transform: translate3d(0,0,0) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg));
+    transition: transform 0.45s cubic-bezier(.2,.8,.2,1), box-shadow 0.45s ease, border-color 0.3s ease;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.45);
+    animation: gIn 0.5s ease both;
+  }
+  @keyframes gIn{ from{ opacity:0; transform: translateY(14px) scale(.97); } to{ opacity:1; } }
+  .g-thumb{ position:absolute; inset:0; border-radius:inherit; background-size:cover; background-position:center; background-color:#0d0a07; overflow:hidden; }
+  .g-shield{ position:absolute; inset:0; border-radius:inherit; z-index:2; }
+  .g-card.float{
+    z-index:30; border-color: var(--rust-2);
+    transform: translate3d(0,-12px,0) scale(1.06) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg));
+    box-shadow: 0 28px 40px rgba(0,0,0,0.65), 0 0 0 1px rgba(217,122,63,0.35), 0 0 30px rgba(217,122,63,0.18);
+    animation: gBob 3.2s ease-in-out infinite 0.45s;
+  }
+  @keyframes gBob{ 0%,100%{ translate: 0 0; } 50%{ translate: 0 -5px; } }
+  .g-badge{
+    position:absolute; top:8px; left:8px; z-index:3; font-size:var(--fs-2xs); letter-spacing:0.12em; font-weight:700; text-transform:uppercase;
+    background: rgba(13,10,7,0.72); border:1px solid var(--glass-border); color: var(--ink); padding:0.2rem 0.45rem; border-radius: var(--radius-pill);
+    backdrop-filter: blur(6px); pointer-events:none;
+  }
+  .g-info{
+    position:absolute; left:0; right:0; bottom:0; z-index:3; padding:1.6rem 0.7rem 0.6rem; border-radius: 0 0 12px 12px; pointer-events:none;
+    background: linear-gradient(to top, rgba(13,10,7,0.92), rgba(13,10,7,0)); opacity:0; transform: translateY(6px); transition: opacity 0.3s ease, transform 0.3s ease;
+  }
+  .g-card.float .g-info, .g-card:focus-visible .g-info{ opacity:1; transform:none; }
+  .g-title{ font-size:var(--fs-base); color: var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:700; }
+  .g-stats{ display:flex; gap:0.8rem; font-size:var(--fs-xs); color: var(--muted); margin-top:0.2rem; }
+  .g-stats svg, .gv-row svg{ width:12px; height:12px; vertical-align:-2px; margin-right:3px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+
+  /* upload panel (admin only) */
+  #gUpload{ display:none; margin-bottom:1.2rem; }
+  .g-drop{ border:2px dashed var(--line); border-radius: var(--radius-panel); padding:1.1rem; text-align:center; color: var(--muted); font-size:var(--fs-base); line-height:1.6; cursor:pointer; transition: all 0.2s ease; background: rgba(0,0,0,0.18); }
+  .g-drop:hover, .g-drop.over{ border-color: var(--rust-2); color: var(--ink); background: rgba(217,122,63,0.07); }
+  .g-drop small{ display:block; font-size:var(--fs-xs); margin-top:0.3rem; opacity:0.85; }
+  #gUpList{ margin-top:0.7rem; display:flex; flex-direction:column; gap:0.45rem; }
+  .up-row{ border:1px solid var(--line); border-radius: 10px; padding:0.5rem 0.7rem; font-size:var(--fs-sm); background: var(--paper-2); }
+  .up-row .up-top{ display:flex; justify-content:space-between; gap:0.6rem; }
+  .up-row .up-name{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .up-row .up-st{ color: var(--muted); flex:none; }
+  .up-row.err .up-st{ color: var(--danger); } .up-row.ok .up-st{ color: var(--gain); }
+  .up-bar{ height:4px; background: rgba(244,236,216,0.1); border-radius:4px; margin-top:0.4rem; overflow:hidden; }
+  .up-bar i{ display:block; height:100%; width:0; background: linear-gradient(90deg, var(--rust), var(--rust-2)); transition: width 0.2s ease; }
+  .g-store{ margin-top:0.5rem; font-size:var(--fs-xs); color: var(--muted); text-align:right; }
+
+  /* viewer / options menu */
+  #gViewer{ position:fixed; inset:0; z-index:100; display:none; }
+  #gViewer.open{ display:block; }
+  .gv-backdrop{ position:absolute; inset:0; background: rgba(5,3,2,0.86); backdrop-filter: blur(10px); animation: gvFade 0.25s ease both; }
+  @keyframes gvFade{ from{opacity:0} to{opacity:1} }
+  .gv-panel{
+    position:absolute; inset:2.5vh 2.5vw; display:grid; grid-template-columns: 1fr 310px; gap:0.9rem;
+    animation: gvPop 0.35s cubic-bezier(.2,.8,.2,1) both;
+  }
+  @keyframes gvPop{ from{ opacity:0; transform: scale(.94) translateY(16px); } to{ opacity:1; } }
+  .gv-stage{ position:relative; background:#050302; border:1px solid var(--line); border-radius: var(--radius-panel); overflow:hidden; display:flex; align-items:center; justify-content:center; min-height:0; }
+  .gv-stage canvas, .gv-stage img, .gv-stage video{ width:100%; height:100%; object-fit:contain; display:block; pointer-events:none; }
+  .gv-shield{ position:absolute; inset:0; z-index:5; }
+  .gv-wm{ position:absolute; inset:0; z-index:6; pointer-events:none; background-repeat:repeat; }
+  .gv-load{ position:absolute; inset:0; z-index:8; display:flex; flex-direction:column; gap:0.7rem; align-items:center; justify-content:center; color: var(--muted); font-size:var(--fs-base); letter-spacing:0.15em; text-transform:uppercase; background:#050302; }
+  .gv-load .up-bar{ width:220px; }
+  .gv-nav{ position:absolute; top:50%; transform:translateY(-50%); z-index:9; width:42px; height:42px; border-radius:50%; border:1px solid var(--glass-border); background: rgba(13,10,7,0.7); color: var(--ink); font-size:1.3rem; cursor:pointer; backdrop-filter: blur(6px); transition: all 0.2s ease; }
+  .gv-nav:hover{ border-color: var(--rust-2); color: var(--rust-2); }
+  #gvPrev{ left:10px; } #gvNext{ right:10px; }
+  .gv-ctrl{ position:absolute; left:0; right:0; bottom:0; z-index:9; display:none; align-items:center; gap:0.6rem; padding:0.6rem 0.8rem; background: linear-gradient(to top, rgba(5,3,2,0.9), rgba(5,3,2,0)); }
+  .gv-ctrl.show{ display:flex; }
+  .gv-ctrl button{ background:none; border:none; color: var(--ink); font-family:inherit; font-size:var(--fs-md); cursor:pointer; width:2rem; }
+  .gv-ctrl .gv-seek{ flex:1; accent-color: var(--rust-2); cursor:pointer; }
+  .gv-ctrl .gv-time{ font-size:var(--fs-xs); color: var(--muted); min-width:5.5rem; text-align:right; }
+  .gv-side{ background: var(--paper); border:1px solid var(--line); border-radius: var(--radius-panel); padding:1.2rem 1.1rem; overflow:auto; display:flex; flex-direction:column; gap:0.55rem; }
+  .gv-title{ font-family: Georgia, serif; font-size:var(--fs-xl); color: var(--rust-2); line-height:1.2; word-break:break-word; }
+  .gv-row{ display:flex; justify-content:space-between; gap:0.6rem; font-size:var(--fs-sm); color: var(--muted); border-bottom:1px dashed rgba(107,90,65,0.4); padding:0.35rem 0; }
+  .gv-row b{ color: var(--ink); font-weight:400; text-align:right; }
+  .gv-actions{ display:flex; flex-direction:column; gap:0.45rem; margin-top:0.4rem; }
+  .gv-actions .tool-btn{ padding:0.7rem 0.5rem; text-align:center; text-decoration:none; display:block; font-family:inherit; }
+  .gv-actions .tool-btn.primary{ background: var(--rust); color: var(--ink); border-color: var(--rust-2); }
+  .gv-actions .tool-btn.danger:hover{ color: var(--danger); border-color: var(--danger); }
+  .gv-actions .tool-btn[disabled]{ opacity:0.55; cursor:default; }
+  .gv-msg{ font-size:var(--fs-xs); color: var(--muted); line-height:1.5; min-height:1.2em; }
+  .gv-msg.err{ color: var(--danger); }
+  .gv-close{ margin-top:auto; }
+  @media (max-width: 860px){
+    .gv-panel{ grid-template-columns: 1fr; grid-template-rows: minmax(0,1fr) auto; inset:1.5vh 1.5vw; }
+    .gv-side{ max-height:38vh; }
+  }
+  @media (prefers-reduced-motion: reduce){ .g-card, .g-card.float{ animation:none; transition:none; } }
+  @media print{ body *{ display:none !important; } body::before{ content:"Printing is disabled for this page."; color:#000; } }
+</style>
 </head>
 <body>
 
@@ -21,14 +125,76 @@
 </div>
 
 <div id="pages">
-  <div class="region" id="region-notice" data-role="satellite">
-    <div class="region-inner" style="text-align:center;">
-      <div class="pin"></div>
+  <div class="region wide" id="region-notice" data-role="satellite">
+    <div class="region-inner g-wrap">
       <div class="eyebrow">Notice</div>
-      <div class="notice-title">The Mr West files have been redacted.</div>
-      <p class="notice-body">For more information, don't contact customer support.</p>
-      <a class="nav-btn" href="index.html">Return to the board</a>
+      <div class="page-title">The Mr West Files — Media Archive</div>
+      <div class="page-sub" id="gSub">Declassified footage. View only.</div>
+
+      <div id="gUpload">
+        <div class="g-drop" id="gDrop">
+          Drop images, GIFs or videos here, or click to choose files
+          <small>Stored privately in your Firebase database. Images ≤ 25 MB · GIFs ≤ 20 MB · Videos ≤ 40 MB.</small>
+        </div>
+        <input type="file" id="gFile" accept="image/*,video/*" multiple hidden>
+        <div id="gUpList"></div>
+        <div class="g-store" id="gStore"></div>
+      </div>
+
+      <div class="g-bar">
+        <div class="g-pills" id="gPills">
+          <button class="tool-btn active" data-f="all">All</button>
+          <button class="tool-btn" data-f="image">Images</button>
+          <button class="tool-btn" data-f="gif">GIFs</button>
+          <button class="tool-btn" data-f="video">Videos</button>
+        </div>
+        <div style="display:flex;gap:0.7rem;align-items:center;">
+          <span class="g-count" id="gCount"></span>
+          <select class="g-sort" id="gSort" aria-label="Sort">
+            <option value="new">Newest</option>
+            <option value="views">Most viewed</option>
+            <option value="dl">Most downloaded</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="gNote" class="g-note">Loading the archive…</div>
+      <div id="gGrid"></div>
     </div>
+  </div>
+</div>
+
+<!-- Viewer / options menu -->
+<div id="gViewer" aria-modal="true" role="dialog">
+  <div class="gv-backdrop" id="gvBackdrop"></div>
+  <div class="gv-panel">
+    <div class="gv-stage" id="gvStage">
+      <div class="gv-media" id="gvMedia" style="position:absolute;inset:0;"></div>
+      <div class="gv-wm" id="gvWm"></div>
+      <div class="gv-shield" id="gvShield"></div>
+      <div class="gv-load" id="gvLoad"><span id="gvLoadTxt">Decrypting…</span><div class="up-bar"><i id="gvLoadBar"></i></div></div>
+      <button class="gv-nav" id="gvPrev" aria-label="Previous">‹</button>
+      <button class="gv-nav" id="gvNext" aria-label="Next">›</button>
+      <div class="gv-ctrl" id="gvCtrl">
+        <button id="gvPlay" aria-label="Play/Pause">▶</button>
+        <input type="range" class="gv-seek" id="gvSeek" min="0" max="1000" value="0">
+        <span class="gv-time" id="gvTime">0:00 / 0:00</span>
+        <button id="gvMute" aria-label="Mute">🔊</button>
+      </div>
+    </div>
+    <aside class="gv-side">
+      <div class="gv-title" id="gvTitle"></div>
+      <div id="gvInfo"></div>
+      <div class="gv-actions">
+        <button class="tool-btn primary" id="gvDownload">Download</button>
+        <button class="tool-btn" id="gvFull">Fullscreen</button>
+        <button class="tool-btn" id="gvLink">Copy link</button>
+        <button class="tool-btn" id="gvRename" style="display:none;">Rename</button>
+        <button class="tool-btn danger" id="gvDelete" style="display:none;">Delete</button>
+      </div>
+      <div class="gv-msg" id="gvMsg"></div>
+      <button class="tool-btn gv-close" id="gvClose">Close (Esc)</button>
+    </aside>
   </div>
 </div>
 
@@ -47,5 +213,416 @@
 
 <script src="market-model.js"></script>
 <script src="app.js"></script>
+<script>
+/* ================= MEDIA ARCHIVE =================
+   Storage: Firebase Realtime Database (already in this project, free Spark plan, no card, no new account).
+   Files are split into base64 chunks under gallery/view/<id>/<n>; nothing is ever served from a public URL.
+   Images also keep their untouched original under gallery/full/<id>/<n>, which Firebase rules only let
+   signed-in (non-anonymous) accounts read — that is the real download gate. Guests only ever receive a
+   downscaled, watermarked preview. GIFs/videos are stored once, so their download gate is UI-level only. */
+(function(){
+'use strict';
+const ADMIN = (typeof ADMIN_EMAIL !== 'undefined') ? ADMIN_EMAIL : 'kirattdhaliwal@gmail.com';
+const MAX_ITEMS = 150;                       // newest N items are loaded
+const CHUNK_BYTES = 300000;                  // divisible by 3 → clean base64 boundaries (400k chars)
+const LIMITS = { image: 25e6, gif: 20e6, video: 40e6 };
+const HOVER_MS = 380;                        // hover time before the float effect + view count
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+let gdb = null, user = null, member = false, admin = false, started = false;
+const items = new Map();                     // id → meta
+const cardEls = new Map();                   // id → card element
+let filter = 'all', sort = 'new', openId = null, openToken = 0, order = [];
+const seen = new Set(); try{ JSON.parse(sessionStorage.getItem('gal_seen') || '[]').forEach(x => seen.add(x)); }catch(e){}
+
+const grid = $('gGrid'), note = $('gNote');
+
+/* ---------- helpers ---------- */
+const fmtBytes = n => n > 1e6 ? (n/1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(n/1e3)) + ' KB';
+const fmtTime = s => { s = Math.max(0, Math.floor(s || 0)); return Math.floor(s/60) + ':' + String(s % 60).padStart(2, '0'); };
+const fmtDate = t => t ? new Date(t).toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' }) : '—';
+const ICON_EYE = '<svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const ICON_DL  = '<svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 21h16"/></svg>';
+function b64ToBytes(b64){ const bin = atob(b64); const u = new Uint8Array(bin.length); for(let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
+function blobChunkToB64(blob){ return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = () => rej(r.error); r.readAsDataURL(blob); }); }
+function setNote(msg, isErr){ note.style.display = msg ? 'block' : 'none'; note.textContent = msg || ''; note.classList.toggle('error', !!isErr); }
+function kindOf(file){ if(file.type === 'image/gif') return 'gif'; if(file.type.startsWith('video/')) return 'video'; if(file.type.startsWith('image/')) return 'image'; return null; }
+function extOf(mime, fallback){ return ({'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif','image/avif':'avif','video/mp4':'mp4','video/webm':'webm','video/quicktime':'mov'})[mime] || fallback || 'bin'; }
+
+/* ---------- auth + feed ---------- */
+try{
+  gdb = firebase.database();
+  firebase.auth().onAuthStateChanged(u => {
+    user = u; member = !!u && !u.isAnonymous; admin = member && u.email === ADMIN;
+    $('gUpload').style.display = admin ? 'block' : 'none';
+    if(openId) paintSide();
+    if(u && !started){ started = true; startFeed(); }
+  });
+}catch(e){ setNote('Could not reach Firebase — the archive is unavailable right now.', true); }
+
+function startFeed(){
+  const q = gdb.ref('gallery/items').orderByKey().limitToLast(MAX_ITEMS);
+  const onErr = () => setNote('The archive is locked. (Firebase rules for "gallery" have not been added yet.)', true);
+  q.on('child_added', s => { items.set(s.key, Object.assign({ id: s.key }, s.val())); scheduleRender(); }, onErr);
+  q.on('child_changed', s => {
+    const old = items.get(s.key), m = Object.assign({ id: s.key }, s.val()); items.set(s.key, m);
+    if(sort !== 'new') scheduleRender(); else if(!old || old.title !== m.title) scheduleRender();
+    paintStats(s.key);
+  });
+  q.on('child_removed', s => { items.delete(s.key); scheduleRender(); if(openId === s.key) closeViewer(); });
+  setTimeout(() => { if(!items.size && note.textContent.startsWith('Loading')) setNote('Nothing has been declassified yet.'); }, 3500);
+}
+
+/* ---------- grid ---------- */
+let renderQueued = false;
+function scheduleRender(){ if(renderQueued) return; renderQueued = true; requestAnimationFrame(() => { renderQueued = false; renderGrid(); }); }
+
+function renderGrid(){
+  let list = [...items.values()].filter(m => filter === 'all' || m.type === filter);
+  if(sort === 'new') list.sort((a, b) => (a.id < b.id ? 1 : -1));
+  else if(sort === 'views') list.sort((a, b) => (b.views || 0) - (a.views || 0) || (a.id < b.id ? 1 : -1));
+  else list.sort((a, b) => (b.downloads || 0) - (a.downloads || 0) || (a.id < b.id ? 1 : -1));
+  order = list.map(m => m.id);
+  const keep = new Set(order);
+  cardEls.forEach((el, id) => { if(!keep.has(id)){ el.remove(); cardEls.delete(id); } });
+  list.forEach(m => {
+    let el = cardEls.get(m.id);
+    if(!el){ el = makeCard(m); cardEls.set(m.id, el); }
+    else { el.querySelector('.g-title').textContent = m.title || 'Untitled'; }
+    grid.appendChild(el);
+  });
+  $('gCount').textContent = list.length + (list.length === 1 ? ' file' : ' files');
+  if(list.length) setNote(''); else if(items.size) setNote('No files match this filter.'); else if(started && !note.classList.contains('error')) setNote('Nothing has been declassified yet.');
+  layout();
+  if(admin) updateStore();
+  const h = location.hash.slice(1);
+  if(h && items.has(h) && !openId && !renderGrid._deep){ renderGrid._deep = true; openViewer(h); }
+}
+
+function makeCard(m){
+  const el = document.createElement('div');
+  el.className = 'g-card'; el.dataset.id = m.id; el.tabIndex = 0;
+  const label = m.type === 'video' ? 'Video ' + fmtTime(m.duration) : m.type === 'gif' ? 'GIF' : 'Image';
+  el.innerHTML = '<div class="g-thumb"></div><div class="g-shield"></div><span class="g-badge">' + label + '</span>' +
+    '<div class="g-info"><div class="g-title"></div><div class="g-stats"><span>' + ICON_EYE + '<b class="s-v">0</b></span><span>' + ICON_DL + '<b class="s-d">0</b></span></div></div>';
+  el.querySelector('.g-thumb').style.backgroundImage = 'url("' + m.thumb + '")';
+  el.querySelector('.g-title').textContent = m.title || 'Untitled';
+  el.querySelector('.s-v').textContent = m.views || 0; el.querySelector('.s-d').textContent = m.downloads || 0;
+  let t = null;
+  el.addEventListener('mouseenter', () => { clearTimeout(t); t = setTimeout(() => { el.classList.add('float'); countView(m.id); }, HOVER_MS); });
+  el.addEventListener('mouseleave', () => { clearTimeout(t); el.classList.remove('float'); el.style.removeProperty('--rx'); el.style.removeProperty('--ry'); });
+  el.addEventListener('mousemove', e => {
+    if(!el.classList.contains('float')) return;
+    const r = el.getBoundingClientRect(), px = (e.clientX - r.left) / r.width - 0.5, py = (e.clientY - r.top) / r.height - 0.5;
+    el.style.setProperty('--ry', (px * 10).toFixed(2) + 'deg'); el.style.setProperty('--rx', (-py * 10).toFixed(2) + 'deg');
+  });
+  el.addEventListener('click', () => openViewer(m.id));
+  el.addEventListener('keydown', e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openViewer(m.id); } });
+  return el;
+}
+
+function paintStats(id){
+  const m = items.get(id); if(!m) return;
+  const el = cardEls.get(id);
+  if(el){ el.querySelector('.s-v').textContent = m.views || 0; el.querySelector('.s-d').textContent = m.downloads || 0; }
+  if(openId === id) paintSide();
+}
+
+/* justified rows: every card gets an exact width/height so rows fill edge-to-edge whatever the aspect ratios */
+function layout(){
+  const W = grid.clientWidth; if(!W) return;
+  const gap = 10, target = W < 520 ? 150 : W < 900 ? 200 : 240, maxH = target * 1.9;
+  let row = [], sum = 0;
+  const place = (last) => {
+    const g = gap * (row.length - 1);
+    let h = (W - g) / sum;
+    if(last && h > target * 1.25) h = target;
+    h = Math.min(h, maxH);
+    row.forEach(c => { c.el.style.width = Math.floor(c.ar * h) + 'px'; c.el.style.height = Math.floor(h) + 'px'; });
+    row = []; sum = 0;
+  };
+  order.forEach(id => {
+    const m = items.get(id), el = cardEls.get(id); if(!m || !el) return;
+    const ar = Math.min(3.2, Math.max(0.4, (m.w || 4) / (m.h || 3)));
+    row.push({ el, ar }); sum += ar;
+    if(sum * target + gap * (row.length - 1) >= W) place(false);
+  });
+  if(row.length) place(true);
+}
+let rzT = null; window.addEventListener('resize', () => { clearTimeout(rzT); rzT = setTimeout(layout, 80); });
+if(window.ResizeObserver) new ResizeObserver(() => { clearTimeout(rzT); rzT = setTimeout(layout, 60); }).observe(grid);
+
+$('gPills').addEventListener('click', e => {
+  const b = e.target.closest('button'); if(!b) return;
+  filter = b.dataset.f; [...$('gPills').children].forEach(x => x.classList.toggle('active', x === b)); renderGrid();
+});
+$('gSort').addEventListener('change', e => { sort = e.target.value; renderGrid(); });
+
+/* ---------- counters ---------- */
+function countView(id){
+  if(!gdb || seen.has(id)) return; seen.add(id);
+  try{ sessionStorage.setItem('gal_seen', JSON.stringify([...seen])); }catch(e){}
+  gdb.ref('gallery/items/' + id + '/views').transaction(v => (v || 0) + 1).catch(() => {});
+}
+function countDownload(id){ return gdb.ref('gallery/items/' + id + '/downloads').transaction(v => (v || 0) + 1).catch(() => {}); }
+
+/* ---------- chunk loading ---------- */
+const blobCache = new Map();                 // key → { blob, url } (small LRU so prev/next doesn't refetch)
+function cachePut(key, blob){
+  const url = URL.createObjectURL(blob); blobCache.set(key, { blob, url });
+  while(blobCache.size > 4){ const k = blobCache.keys().next().value; if(k === key) break; URL.revokeObjectURL(blobCache.get(k).url); blobCache.delete(k); }
+}
+async function loadBlob(kind, id, count, mime, onProg){
+  const key = kind + '/' + id;
+  if(blobCache.has(key)){ const c = blobCache.get(key); blobCache.delete(key); blobCache.set(key, c); return c.blob; }
+  const parts = new Array(count); let next = 0, done = 0;
+  const worker = async () => {
+    while(next < count){
+      const i = next++;
+      const v = (await gdb.ref('gallery/' + kind + '/' + id + '/' + i).once('value')).val();
+      if(typeof v !== 'string') throw new Error('missing chunk ' + i);
+      parts[i] = b64ToBytes(v); done++; if(onProg) onProg(done / count);
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  const blob = new Blob(parts, { type: mime }); cachePut(key, blob); return blob;
+}
+
+/* ---------- viewer ---------- */
+const viewer = $('gViewer'), media = $('gvMedia'), vid = { el: null };
+function wmURL(txt){
+  const svg = "<svg xmlns='http://www.w3.org/2000/svg' width='300' height='170'><text x='150' y='90' text-anchor='middle' transform='rotate(-24 150 85)' fill='white' fill-opacity='0.09' font-family='monospace' font-size='15' letter-spacing='3'>" + esc(txt) + "</text></svg>";
+  return 'url("data:image/svg+xml,' + encodeURIComponent(svg) + '")';
+}
+function setLoad(on, txt, p){ $('gvLoad').style.display = on ? 'flex' : 'none'; if(txt) $('gvLoadTxt').textContent = txt; if(p != null) $('gvLoadBar').style.width = Math.round(p * 100) + '%'; }
+function clearMedia(){ if(vid.el){ try{ vid.el.pause(); }catch(e){} vid.el = null; } media.innerHTML = ''; $('gvCtrl').classList.remove('show'); }
+
+async function openViewer(id){
+  const m = items.get(id); if(!m || !gdb) return;
+  const token = ++openToken; openId = id;
+  viewer.classList.add('open'); document.body.style.overflow = 'hidden';
+  history.replaceState(null, '', '#' + id);
+  clearMedia(); $('gvMsg').textContent = ''; $('gvMsg').classList.remove('err');
+  $('gvWm').style.backgroundImage = wmURL('THE MR WEST FILES · ' + (user ? user.uid.slice(0, 6).toUpperCase() : 'GUEST'));
+  paintSide(); countView(id); setLoad(true, 'Retrieving…', 0);
+  try{
+    const blob = await loadBlob('view', id, m.chunks, m.viewMime || m.mime, p => { if(token === openToken) setLoad(true, 'Retrieving…', p); });
+    if(token !== openToken) return;
+    if(m.type === 'image'){
+      const bmp = await createImageBitmap(blob);
+      if(token !== openToken) return;
+      const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+      c.getContext('2d').drawImage(bmp, 0, 0); media.appendChild(c);
+    } else if(m.type === 'gif'){
+      const im = document.createElement('img'); im.draggable = false; im.src = blobCache.get('view/' + id).url; media.appendChild(im);
+    } else {
+      const v = document.createElement('video');
+      v.playsInline = true; v.preload = 'auto'; v.loop = false; v.disablePictureInPicture = true; v.disableRemotePlayback = true;
+      v.setAttribute('controlslist', 'nodownload noremoteplayback'); v.src = blobCache.get('view/' + id).url;
+      media.appendChild(v); vid.el = v; bindVideo(v); $('gvCtrl').classList.add('show');
+      v.play().catch(() => {});
+    }
+    setLoad(false);
+  }catch(e){ if(token === openToken){ setLoad(true, 'Could not load this file.', 0); } }
+}
+
+function closeViewer(){
+  openId = null; openToken++; viewer.classList.remove('open'); document.body.style.overflow = ''; clearMedia();
+  if(location.hash) history.replaceState(null, '', location.pathname + location.search);
+}
+function step(d){
+  if(!openId) return; const i = order.indexOf(openId); if(i < 0) return;
+  const n = order[(i + d + order.length) % order.length]; if(n && n !== openId) openViewer(n);
+}
+
+function paintSide(){
+  const m = items.get(openId); if(!m) return;
+  $('gvTitle').textContent = m.title || 'Untitled';
+  const rows = [
+    ['Type', m.type === 'gif' ? 'GIF' : m.type === 'video' ? 'Video' : 'Image'],
+    ['Size', (m.w && m.h ? m.w + ' × ' + m.h : '—') + (m.type === 'video' ? ' · ' + fmtTime(m.duration) : '')],
+    ['File', fmtBytes(m.size || 0)],
+    ['Added', fmtDate(m.createdAt)],
+    ['<span>' + ICON_EYE + 'Views</span>', m.views || 0],
+    ['<span>' + ICON_DL + 'Downloads</span>', m.downloads || 0]
+  ];
+  $('gvInfo').innerHTML = rows.map(r => '<div class="gv-row"><span>' + r[0] + '</span><b>' + r[1] + '</b></div>').join('');
+  const dl = $('gvDownload'); dl.textContent = member ? 'Download' : 'Sign in to download';
+  $('gvRename').style.display = $('gvDelete').style.display = admin ? 'block' : 'none';
+}
+
+/* custom video controls (no native menu = no "save video as") */
+function bindVideo(v){
+  const play = $('gvPlay'), seek = $('gvSeek'), time = $('gvTime'), mute = $('gvMute');
+  const upd = () => { play.textContent = v.paused ? '▶' : '❚❚'; };
+  v.addEventListener('play', upd); v.addEventListener('pause', upd);
+  v.addEventListener('timeupdate', () => { if(v.duration) seek.value = Math.round(v.currentTime / v.duration * 1000); time.textContent = fmtTime(v.currentTime) + ' / ' + fmtTime(v.duration); });
+  v.addEventListener('loadedmetadata', () => { time.textContent = '0:00 / ' + fmtTime(v.duration); });
+  play.onclick = () => v.paused ? v.play() : v.pause();
+  seek.oninput = () => { if(v.duration) v.currentTime = seek.value / 1000 * v.duration; };
+  mute.onclick = () => { v.muted = !v.muted; mute.textContent = v.muted ? '🔇' : '🔊'; };
+  upd();
+}
+$('gvShield').addEventListener('click', () => { if(vid.el){ vid.el.paused ? vid.el.play() : vid.el.pause(); } });
+
+$('gvClose').onclick = closeViewer; $('gvBackdrop').onclick = closeViewer;
+$('gvPrev').onclick = () => step(-1); $('gvNext').onclick = () => step(1);
+$('gvFull').onclick = () => { const s = $('gvStage'); if(document.fullscreenElement) document.exitFullscreen(); else if(s.requestFullscreen) s.requestFullscreen(); };
+$('gvLink').onclick = async () => {
+  const url = location.origin + location.pathname + '#' + openId;
+  try{ await navigator.clipboard.writeText(url); msg('Link copied.'); }catch(e){ msg(url); }
+};
+function msg(t, err){ const el = $('gvMsg'); el.textContent = t; el.classList.toggle('err', !!err); }
+
+$('gvDownload').onclick = async () => {
+  const m = items.get(openId); if(!m) return;
+  if(!member){ msg('Downloads are for signed-in accounts. Redirecting to Settings…'); setTimeout(() => { location.href = 'settings.html'; }, 900); return; }
+  const btn = $('gvDownload'); btn.disabled = true; msg('Preparing download…');
+  try{
+    let blob, name;
+    if(m.type === 'image' && m.fullChunks){
+      blob = await loadBlob('full', m.id, m.fullChunks, m.origMime || m.mime, p => msg('Preparing download… ' + Math.round(p * 100) + '%'));
+      name = (m.title || 'image') + '.' + extOf(m.origMime || m.mime);
+    } else {
+      blob = await loadBlob('view', m.id, m.chunks, m.viewMime || m.mime);
+      name = (m.title || 'file') + '.' + extOf(m.mime);
+    }
+    await countDownload(m.id);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name.replace(/[\\/:*?"<>|]+/g, '_');
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 15000);
+    msg('Download started.');
+  }catch(e){ msg('Download failed — make sure you are signed in and the Firebase rules were added.', true); }
+  btn.disabled = false;
+};
+$('gvRename').onclick = async () => {
+  const m = items.get(openId); if(!m) return;
+  const t = prompt('New title:', m.title || ''); if(t == null || !t.trim()) return;
+  try{ await gdb.ref('gallery/items/' + m.id + '/title').set(t.trim().slice(0, 80)); }catch(e){ msg('Rename failed.', true); }
+};
+$('gvDelete').onclick = async () => {
+  const m = items.get(openId); if(!m || !confirm('Permanently delete "' + (m.title || 'this file') + '"?')) return;
+  try{
+    const id = m.id; blobCache.delete('view/' + id); blobCache.delete('full/' + id);
+    await Promise.all([gdb.ref('gallery/view/' + id).remove(), gdb.ref('gallery/full/' + id).remove()]);
+    await gdb.ref('gallery/items/' + id).remove();
+  }catch(e){ msg('Delete failed.', true); }
+};
+
+/* ---------- copy / save deterrents (honest limit: screenshots & screen recording can't be stopped) ---------- */
+const stop = e => e.preventDefault();
+['contextmenu', 'dragstart', 'copy', 'cut', 'selectstart'].forEach(ev => {
+  document.addEventListener(ev, e => { if(e.target.closest && e.target.closest('.g-wrap, #gViewer') && !e.target.closest('input, textarea')) stop(e); });
+});
+document.addEventListener('keydown', e => {
+  if((e.ctrlKey || e.metaKey) && ['s', 'p', 'u'].includes(e.key.toLowerCase())) stop(e);
+  if(e.key === 'PrintScreen'){ try{ navigator.clipboard.writeText('Screenshots of the archive are not permitted.'); }catch(err){} }
+  if(!openId) return;
+  if(e.key === 'Escape') closeViewer();
+  else if(e.key === 'ArrowLeft') step(-1);
+  else if(e.key === 'ArrowRight') step(1);
+  else if(e.key === ' ' && vid.el){ e.preventDefault(); vid.el.paused ? vid.el.play() : vid.el.pause(); }
+});
+window.addEventListener('hashchange', () => { const h = location.hash.slice(1); if(h && items.has(h) && h !== openId) openViewer(h); });
+
+/* ---------- admin upload ---------- */
+function updateStore(){
+  let total = 0; items.forEach(m => { total += m.bytes || 0; });
+  $('gStore').textContent = 'Archive uses ≈ ' + fmtBytes(total) + ' of the ~1 GB free database allowance (downloads count against ~10 GB/month).';
+}
+const drop = $('gDrop'), fileIn = $('gFile');
+drop.onclick = () => fileIn.click();
+fileIn.onchange = () => { handleFiles(fileIn.files); fileIn.value = ''; };
+['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
+
+function drawFit(bmp, max){
+  const s = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(bmp.width * s)); c.height = Math.max(1, Math.round(bmp.height * s));
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height); return c;
+}
+function canvasBlob(c, type, q){ return new Promise(res => c.toBlob(res, type, q)); }
+function thumbOf(src){                       // src: ImageBitmap | HTMLVideoElement (already drawable)
+  const w = src.width || src.videoWidth, h = src.height || src.videoHeight, s = Math.min(1, 360 / Math.max(w, h));
+  const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * s)); c.height = Math.max(1, Math.round(h * s));
+  c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+  let d = c.toDataURL('image/webp', 0.55); if(!d.startsWith('data:image/webp')) d = c.toDataURL('image/jpeg', 0.6); return d;
+}
+function watermark(c){
+  const g = c.getContext('2d'), s = Math.max(14, Math.round(c.width / 38));
+  g.save(); g.font = '700 ' + s + 'px monospace'; g.textAlign = 'right'; g.textBaseline = 'bottom';
+  g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillText('THE MR WEST FILES', c.width - s * 0.6 + 2, c.height - s * 0.5 + 2);
+  g.fillStyle = 'rgba(255,255,255,0.55)'; g.fillText('THE MR WEST FILES', c.width - s * 0.6, c.height - s * 0.5); g.restore();
+}
+function videoFrame(file){
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file), v = document.createElement('video');
+    v.muted = true; v.preload = 'metadata'; v.playsInline = true;
+    v.onloadedmetadata = () => { v.currentTime = Math.min(1, (v.duration || 1) * 0.25); };
+    v.onseeked = () => { res({ v, url }); };
+    v.onerror = () => { URL.revokeObjectURL(url); rej(new Error('This video format cannot be read by your browser (try MP4 or WebM).')); };
+    v.src = url;
+  });
+}
+async function writeChunks(path, blob, onBytes){
+  const n = Math.ceil(blob.size / CHUNK_BYTES); let bytes = 0;
+  for(let i = 0; i < n; i += 3){
+    const batch = [];
+    for(let j = i; j < Math.min(n, i + 3); j++){
+      batch.push(blobChunkToB64(blob.slice(j * CHUNK_BYTES, (j + 1) * CHUNK_BYTES)).then(async b64 => { await gdb.ref(path + '/' + j).set(b64); bytes += b64.length; onBytes(b64.length); }));
+    }
+    await Promise.all(batch);
+  }
+  return { count: n, bytes };
+}
+
+async function uploadOne(file, row){
+  const kind = kindOf(file);
+  const setSt = (t, cls) => { row.querySelector('.up-st').textContent = t; if(cls) row.className = 'up-row ' + cls; };
+  const bar = row.querySelector('.up-bar i');
+  if(!kind) return setSt('Unsupported type', 'err');
+  if(file.size > LIMITS[kind]) return setSt('Too large (max ' + fmtBytes(LIMITS[kind]) + ')', 'err');
+  const id = gdb.ref('gallery/items').push().key;
+  try{
+    setSt('Processing…');
+    let meta = { type: kind, title: file.name.replace(/\.[^.]+$/, '').slice(0, 80), mime: file.type, size: file.size, origName: file.name };
+    let viewBlob = file, fullBlob = null;
+    if(kind === 'video'){
+      const { v, url } = await videoFrame(file);
+      meta.w = v.videoWidth; meta.h = v.videoHeight; meta.duration = Math.round(v.duration || 0); meta.thumb = thumbOf(v); URL.revokeObjectURL(url);
+    } else {
+      const bmp = await createImageBitmap(file);
+      meta.w = bmp.width; meta.h = bmp.height; meta.thumb = thumbOf(bmp);
+      if(kind === 'image'){
+        const c = drawFit(bmp, 1600); watermark(c);
+        let pb = await canvasBlob(c, 'image/webp', 0.84); if(!pb || pb.type !== 'image/webp') pb = await canvasBlob(c, 'image/jpeg', 0.85);
+        viewBlob = pb; meta.viewMime = pb.type; meta.origMime = file.type; fullBlob = file;
+      }
+    }
+    const total = viewBlob.size + (fullBlob ? fullBlob.size : 0); let sent = 0;
+    const prog = n => { sent += n * 0.75; bar.style.width = Math.min(99, Math.round(sent / total * 100)) + '%'; };
+    setSt('Uploading…');
+    const v = await writeChunks('gallery/view/' + id, viewBlob, prog);
+    meta.chunks = v.count; meta.bytes = v.bytes;
+    if(fullBlob){ const f = await writeChunks('gallery/full/' + id, fullBlob, prog); meta.fullChunks = f.count; meta.bytes += f.bytes; }
+    meta.createdAt = firebase.database.ServerValue.TIMESTAMP; meta.uploader = user.uid;
+    await gdb.ref('gallery/items/' + id).set(meta);        // meta last, so the card only appears once everything is stored
+    bar.style.width = '100%'; setSt('Done', 'ok');
+  }catch(e){
+    try{ await Promise.all([gdb.ref('gallery/view/' + id).remove(), gdb.ref('gallery/full/' + id).remove()]); }catch(_){}
+    setSt((e && e.message && /permission/i.test(e.message)) ? 'Denied — add the Firebase rules' : (e && e.message) || 'Failed', 'err');
+  }
+}
+async function handleFiles(list){
+  if(!admin) return;
+  for(const f of [...list]){
+    const row = document.createElement('div'); row.className = 'up-row';
+    row.innerHTML = '<div class="up-top"><span class="up-name">' + esc(f.name) + '</span><span class="up-st">Queued</span></div><div class="up-bar"><i></i></div>';
+    $('gUpList').prepend(row); await uploadOne(f, row);
+  }
+}
+})();
+</script>
 </body>
 </html>
