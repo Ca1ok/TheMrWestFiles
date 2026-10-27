@@ -176,3 +176,25 @@ const RECIPES = [
   { formula:'FeSO4', name:'Iron(II) Sulfate', need:{Fe:1}, needCompounds:{CuSO4:1}, tool:'basic', byproducts:[{type:'element', symbol:'Cu', qty:1}], desc:'Iron is more reactive than copper, so it displaces copper straight out of solution — the classic "copper-plated nail" demonstration. Watch for the reddish copper coating.' },
   { formula:'ZnSO4', name:'Zinc Sulfate', need:{Zn:1}, needCompounds:{CuSO4:1}, tool:'basic', byproducts:[{type:'element', symbol:'Cu', qty:1}], desc:'Zinc is more reactive than copper and displaces it out of solution the same way iron does.' },
 ];
+
+/* ---------------- Economy balance (single currency: $) ----------------
+   Everything that touches money is tuned from these numbers + ELEMENT_PRICES, so changing one
+   value rebalances the whole game consistently (WestLab, Minigames, Synthesizer, Periodic Table). */
+const BUY_RATE = 1.0;                 // you buy elements from the Lab at 100% of list price
+const SELL_RATE = 0.70;               // the Lab buys back at 70% of base value (the spread is the money sink)
+const SELL_DEMAND_S = 250;            // $ of base value of ONE item the Lab absorbs before its price starts sagging
+const SELL_FLOOR = 0.35;              // price never sags below 35% of the 70% (so flooding one item is never worthwhile)
+const SELL_DEMAND_HALF_LIFE_H = 6;    // demand recovers: half of what you sold is forgotten every 6 hours
+const MARKET_FEE = 0.05;              // player-to-player marketplace fee (seller receives 95%)
+const CRAFT_BASE_BONUS = 1.15;        // a compound is worth its ingredients x1.15 ...
+const CRAFT_TIER_BONUS = 0.06;        // ... plus 6% per tool tier needed (advanced tools = more value added)
+const GAME_DAILY_SOFTCAP = 75;        // $ earned from minigames per UTC day before payouts drop to 25%
+const GAME_DROP_CHANCE = 0.18;        // chance a minigame win also drops a few cheap elements
+const COLLECTION_ELEMENT_BONUS = 0.01;   // +1% minigame/contract payouts per discovered element
+const COLLECTION_COMPOUND_BONUS = 0.005; // +0.5% per discovered compound
+const COLLECTION_MILESTONES = [       // one-time cash rewards for filling the collection
+  { id:'e10', type:'e', n:10, cash:50 },   { id:'e25', type:'e', n:25, cash:250 },
+  { id:'e40', type:'e', n:40, cash:1000 }, { id:'e55', type:'e', n:55, cash:5000 },
+  { id:'c10', type:'c', n:10, cash:100 },  { id:'c25', type:'c', n:25, cash:400 },
+  { id:'c50', type:'c', n:50, cash:1500 }
+];
