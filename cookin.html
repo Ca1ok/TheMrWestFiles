@@ -24,15 +24,15 @@
   <div class="region wide" id="region-minigames" data-role="satellite">
     <div class="region-inner">
       <div class="page-title">Minigames</div>
-      <div class="page-sub">Small chemistry &amp; physics games — every payout is real $WEST cash, shared with the rest of the site</div>
+      <div class="page-sub">Small chemistry &amp; physics games — every payout is real $WEST cash (and sometimes elements), shared with WestLab and the Periodic Table</div>
 
       <!-- ============ FLAGSHIP GAME: Element Clicker ============ -->
       <div id="ecPanel" class="ec-panel">
         <div class="ec-header">
           <div class="ec-title-row">
             <div>
-              <div class="ec-title">⚛️ Element Clicker</div>
-              <div class="ec-subtitle">Click atoms into existence, build a lab that runs itself, and Transmute for permanent power. Progress saves to your account automatically.</div>
+              <div class="ec-title">⚛️ Element Synthesizer</div>
+              <div class="ec-subtitle">Pick an element and synthesize it: buy buildings with your $WEST cash and the output lands in your inventory — craft with it, sell it to the Lab, or Transmute for permanent power. Progress saves to your account automatically.</div>
             </div>
             <div class="ec-chip-row">
               <span class="ec-chip">🔮 Prestige&nbsp;<b id="ecPrestigeLevel">0</b></span>
@@ -51,9 +51,10 @@
           <div class="ec-click-side">
             <button id="ecClickBtn" class="ec-click-btn">⚛️</button>
 
+            <label class="ec-target">Synthesizing <select id="ecTarget"></select></label>
             <div class="ec-readout">
               <div class="ec-readout-value" id="ecAtoms">0</div>
-              <div class="ec-readout-label">atoms</div>
+              <div class="ec-readout-label" id="ecReadoutLabel">in your inventory</div>
             </div>
 
             <div class="ec-mini-stats">
