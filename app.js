@@ -450,102 +450,141 @@ if(lasToggle){
 // GitHub Action, NOT Firebase — see the note further down for why. Player accounts, the
 // leaderboard, and the marketplace still use Firebase, since that data is genuinely per-player
 // and comparatively tiny.
+/* ================= ECONOMY CORE =================
+   ONE currency ($ cash) for the whole site. Every earn/spend goes through earn()/spend(), so a single
+   balance is shared by the stock exchange, WestLab, the Minigames, the Element Synthesizer and the
+   Periodic Table.
+
+   Data handling (built to use as little Firebase bandwidth as possible):
+   - state is saved to localStorage instantly and to Firebase ONLY as changed fields (diffed against what
+     Firebase already holds), batched on a timer — idle production flushes at most every ~30s
+   - ONE live listener (child_changed) replaces the old 7 value listeners, which each re-downloaded
+     their whole field on every page load
+   - marketplace sales are paid through an append-only inbox (never by editing someone else's cash) */
 const STORAGE_KEY = 'mrwestcoin_portfolio';
+const SAVE_VERSION = 2;
+const SYNC_FIELDS = ['cash','lots','trades','elements','compounds','tools','crafting','elementClicker','disc','game','demand','claimed','contracts','nameLocked'];
+const START_CASH = 1000;
+const MAX_TRADES = 40;
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const round2 = n => Math.round(n * 100) / 100;
+const todayStr = () => new Date().toISOString().slice(0, 10);
+const toArr = v => Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []);
 
 function defaultClickerState(){
-  const buildings = {};
-  CLICKER_BUILDINGS.forEach(b => { buildings[b.id] = 0; });
+  const buildings = {}; CLICKER_BUILDINGS.forEach(b => { buildings[b.id] = 0; });
+  return { total:0, run:0, acc:0, target:'H', totalClicks:0, buildings, upgrades:[], achievements:[], prestige:{ level:0, shards:0 } };
+}
+function defaultPortfolio(){
   return {
-    atoms: 0, totalAtoms: 0, runAtoms: 0, totalClicks: 0,
-    buildings, upgrades: [], achievements: [],
-    prestige: { level: 0, shards: 0 }
+    v: SAVE_VERSION, cash: START_CASH, lots: [], trades: [], elements: {}, compounds: {}, tools: ['basic'],
+    crafting: { elements:{}, compounds:{} }, elementClicker: defaultClickerState(),
+    disc: { e:[], c:[] }, game: { day:'', plays:{}, earned:0 }, demand: {}, claimed: [], contracts: { day:'', done:[] }, nameLocked: false
   };
 }
-
-function loadPortfolio(){
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if(!raw) return { cash:1000, lots:[], nextLotId:1, trades:[], elements:{}, compounds:{}, tools:['basic'], crafting:{elements:{},compounds:{}}, elementClicker: defaultClickerState() };
-  const p = JSON.parse(raw);
-  // migrate old aggregate-holdings saves into a single lot so nothing is lost
-  if(p.lots === undefined){
-    p.lots = p.held > 0 ? [{ id:1, qty:p.held, buyPrice: 12.5, time: new Date().toLocaleString() }] : [];
-    p.nextLotId = 2;
-    delete p.held;
+// Brings ANY saved shape (current, v1, or a partial Firebase record where empty arrays/objects vanished) up to date.
+function migratePortfolio(raw){
+  const p = Object.assign(defaultPortfolio(), raw || {});
+  if(typeof p.cash !== 'number' || !isFinite(p.cash)) p.cash = START_CASH;
+  if(raw && raw.lots === undefined && raw.held > 0){ p.lots = [{ id:1, qty:raw.held, buyPrice:12.5, time:new Date().toLocaleString() }]; }
+  p.lots = toArr(p.lots); p.trades = toArr(p.trades).slice(-MAX_TRADES); p.claimed = toArr(p.claimed);
+  p.tools = toArr(p.tools); if(!p.tools.includes('basic')) p.tools.unshift('basic');
+  p.elements = p.elements && typeof p.elements === 'object' ? p.elements : {};
+  p.compounds = p.compounds && typeof p.compounds === 'object' ? p.compounds : {};
+  p.crafting = Object.assign({ elements:{}, compounds:{} }, p.crafting || {});
+  if(!p.crafting.elements) p.crafting.elements = {}; if(!p.crafting.compounds) p.crafting.compounds = {};
+  p.demand = p.demand && typeof p.demand === 'object' ? p.demand : {};
+  p.game = Object.assign({ day:'', plays:{}, earned:0 }, p.game || {}); if(!p.game.plays) p.game.plays = {};
+  p.contracts = Object.assign({ day:'', done:[] }, p.contracts || {}); p.contracts.done = toArr(p.contracts.done);
+  // ---- Element Clicker: v1 (atoms) -> v2 (dollar-valued synthesizer). Atoms were a second currency; that's gone. ----
+  const dc = defaultClickerState(), ec = Object.assign({}, p.elementClicker || {});
+  const legacy = ec.atoms !== undefined || ec.totalAtoms !== undefined || ec.runAtoms !== undefined;
+  const mig = Object.assign({}, dc, ec);
+  mig.buildings = Object.assign({}, dc.buildings, ec.buildings || {});
+  mig.upgrades = toArr(ec.upgrades); mig.achievements = toArr(ec.achievements);
+  mig.prestige = Object.assign({ level:0, shards:0 }, ec.prestige || {});
+  if(legacy){
+    // refund what the player's old buildings would cost today (capped), reset buildings/upgrades to the new balance,
+    // convert unspent atoms into a small cash credit. Shards/prestige/achievements are kept.
+    let refund = 0;
+    CLICKER_BUILDINGS.forEach(b => { for(let k = 0; k < (mig.buildings[b.id] || 0); k++) refund += Math.ceil(b.baseCost * Math.pow(CLICKER_COST_SCALE, k)); });
+    refund = Math.min(3000, refund) + Math.min(250, (ec.atoms || 0) / 2000);
+    p.cash = round2(p.cash + refund);
+    mig.total = Math.min(250000, (ec.totalAtoms || 0) / 4000); mig.run = 0; mig.acc = 0;
+    CLICKER_BUILDINGS.forEach(b => { mig.buildings[b.id] = 0; }); mig.upgrades = [];
+    ['atoms','totalAtoms','runAtoms','lastTick'].forEach(k => delete mig[k]);
   }
-  // older saves predate the element economy entirely — without this, any buy/craft/sell
-  // action throws immediately because portfolio.elements (etc.) is undefined
-  if(!p.elements) p.elements = {};
-  if(!p.compounds) p.compounds = {};
-  if(!p.tools) p.tools = ['basic'];
-  if(!p.crafting) p.crafting = { elements:{}, compounds:{} };
-  // older saves predate Element Clicker — same idea, fill in a fresh default state so the game
-  // (and the admin panel, which reads these fields unconditionally) never sees `undefined`
-  if(!p.elementClicker) p.elementClicker = defaultClickerState();
-  else {
-    const defaults = defaultClickerState();
-    p.elementClicker.buildings = { ...defaults.buildings, ...(p.elementClicker.buildings||{}) };
-    if(!p.elementClicker.upgrades) p.elementClicker.upgrades = [];
-    if(!p.elementClicker.achievements) p.elementClicker.achievements = [];
-    if(!p.elementClicker.prestige) p.elementClicker.prestige = { level:0, shards:0 };
-    if(typeof p.elementClicker.atoms !== 'number') p.elementClicker.atoms = 0;
-    if(typeof p.elementClicker.totalAtoms !== 'number') p.elementClicker.totalAtoms = 0;
-    if(typeof p.elementClicker.runAtoms !== 'number') p.elementClicker.runAtoms = 0;
-    if(typeof p.elementClicker.totalClicks !== 'number') p.elementClicker.totalClicks = 0;
-    // lastTick was for the (now removed) offline-progress feature — no longer written, but old
-    // saves may still have it; harmless to leave sitting there unused rather than strip it out
-  }
-  delete p.reactors; delete p.reactorPending; // superseded by the single-bench `crafting` field
+  if(typeof mig.target !== 'string' || !ELEMENT_PRICES[mig.target]) mig.target = 'H';
+  ['total','run','acc','totalClicks'].forEach(k => { if(typeof mig[k] !== 'number' || !isFinite(mig[k])) mig[k] = 0; });
+  p.elementClicker = mig;
+  // ---- discoveries: anything already owned counts as discovered ----
+  p.disc = { e: toArr(p.disc && p.disc.e), c: toArr(p.disc && p.disc.c) };
+  Object.keys(p.elements).forEach(s => { if(p.elements[s] > 0 && ELEMENT_PRICES[s] !== undefined && !p.disc.e.includes(s)) p.disc.e.push(s); });
+  Object.keys(p.compounds).forEach(f => { if(p.compounds[f] > 0 && !p.disc.c.includes(f)) p.disc.c.push(f); });
+  p.v = SAVE_VERSION;
+  delete p.reactors; delete p.reactorPending; delete p.held; delete p.nextLotId; delete p.migratedNote;
   return p;
 }
-// How long each live field listener (below) ignores incoming Firebase values right after this
-// tab makes its own save — long enough to cover a normal round-trip plus a burst of quick clicks,
-// short enough that syncing a genuine change from another tab/device is barely delayed.
-const LOCAL_ECHO_IGNORE_MS = 2500;
-let lastLocalWriteAt = 0;
-
-function savePortfolio(p){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
-  if(db && investorId){
-    lastLocalWriteAt = Date.now(); // see LOCAL_ECHO_IGNORE_MS — set BEFORE the write goes out, so the listener guard covers the full round-trip
-    // this is what stops the stock (and elements/compounds/tools/in-progress bench contents) you
-    // have from disappearing — everything is backed up, not just the computed leaderboard
-    // number, so it survives a cleared cache, a new device, or closing the tab mid-reaction
-    db.ref('players/' + investorId).set({
-      cash: p.cash, lots: p.lots, trades: p.trades.slice(-200),
-      elements: p.elements || {}, compounds: p.compounds || {}, tools: p.tools || ['basic'],
-      crafting: p.crafting || { elements:{}, compounds:{} },
-      elementClicker: p.elementClicker || defaultClickerState(),
-      nameLocked: !!p.nameLocked, updatedAt: Date.now()
-    }).catch(() => {
-      // A failed write (dropped connection, brief outage) used to just vanish here — nothing
-      // else would ever retry it unless the player happened to take another action later. Retry
-      // once, shortly after, with whatever the CURRENT portfolio is by then (not this stale
-      // snapshot) — self-healing rather than silently losing whatever prompted this save.
-      schedulePortfolioRetry();
-    });
-  }
-}
-let portfolioRetryTimer = null;
-function schedulePortfolioRetry(){
-  if(portfolioRetryTimer) return;
-  portfolioRetryTimer = setTimeout(() => {
-    portfolioRetryTimer = null;
-    if(db && investorId) savePortfolio(portfolio);
-  }, 5000);
+function loadPortfolio(){
+  try{ const raw = localStorage.getItem(STORAGE_KEY); if(raw) return migratePortfolio(JSON.parse(raw)); }catch(e){}
+  return defaultPortfolio();
 }
 let portfolio = loadPortfolio();
-let playerCashListenerRef = null;
-let playerFieldListenerRefs = [];
 
-// Cash display in the top nav — present on every page since the nav itself is shared. Defined
-// here (not up where the nav HTML is built) specifically because `portfolio` doesn't exist yet
-// at that point in the file; calling this before now would throw.
+// ---------- sync engine ----------
+// Firebase never stores empty arrays/objects and returns object keys sorted, so two copies of the same data can look
+// different as plain JSON. canon() prunes empties (at every depth) and sorts keys, so equal data ALWAYS compares equal —
+// otherwise every page load would see phantom differences and rewrite the record.
+function pruneEmpty(v){
+  if(v === undefined || v === null) return undefined;
+  if(Array.isArray(v)){ const a = v.map(pruneEmpty).map(x => x === undefined ? null : x); return a.length ? a : undefined; }
+  if(typeof v === 'object'){
+    const o = {}; Object.keys(v).sort().forEach(k => { const c = pruneEmpty(v[k]); if(c !== undefined) o[k] = c; });
+    return Object.keys(o).length ? o : undefined;
+  }
+  return v;
+}
+const canon = v => { const c = pruneEmpty(v); return c === undefined ? 'null' : JSON.stringify(c); };
+const sent = {};                 // canonical JSON of what Firebase is known to hold, per field
+function markSynced(remote){ SYNC_FIELDS.forEach(f => { sent[f] = canon(remote ? remote[f] : undefined); }); }
+markSynced(null);
+let playerDataLoaded = !db, flushTimer = null, flushAt = 0, localTouched = false;
+
+function persistLocal(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio)); }catch(e){} }
+function scheduleFlush(delay){
+  if(!db || !investorId) return;
+  const at = Date.now() + delay;
+  if(flushTimer && flushAt <= at) return;       // an earlier flush is already queued
+  if(flushTimer) clearTimeout(flushTimer);
+  flushAt = at; flushTimer = setTimeout(flushNow, delay);
+}
+function flushNow(){
+  if(flushTimer){ clearTimeout(flushTimer); flushTimer = null; }
+  if(!db || !investorId || !playerDataLoaded) return;
+  const out = {}, snap = {};
+  SYNC_FIELDS.forEach(f => {
+    const c = canon(portfolio[f]);
+    if(c !== sent[f]){ out[f] = (c === 'null') ? null : portfolio[f]; snap[f] = c; }
+  });
+  if(!Object.keys(out).length) return;
+  out.updatedAt = Date.now(); out.v = SAVE_VERSION;
+  Object.assign(sent, snap);                    // optimistic; rolled back below if the write fails so it retries
+  db.ref('players/' + investorId).update(out).catch(() => { Object.keys(snap).forEach(f => { sent[f] = '__retry__'; }); scheduleFlush(6000); });
+}
+// lazy=true → background changes (idle production); everything else is a player action and goes out within ~1.5s
+function saveEconomy(lazy){
+  persistLocal();
+  if(!playerDataLoaded){ localTouched = true; return; }
+  scheduleFlush(lazy ? 30000 : 1500);
+}
+function savePortfolio(){ saveEconomy(); }       // kept for older call sites
+function pushTrade(t){ portfolio.trades.push(t); if(portfolio.trades.length > MAX_TRADES) portfolio.trades.splice(0, portfolio.trades.length - MAX_TRADES); }
+function serializeForDb(p){ const o = {}; SYNC_FIELDS.forEach(f => { o[f] = canon(p[f]) === 'null' ? null : p[f]; }); o.v = SAVE_VERSION; o.updatedAt = Date.now(); return o; }
+
+// ---------- the wallet: the ONLY way cash changes ----------
 function formatCashCompact(n){
-  // Full precision for ordinary amounts, but abbreviated above $1M — otherwise a large balance
-  // (an admin-fixed billions-dollar account is exactly the case that broke this) renders as a
-  // long string that overflows its fixed-width badge and visibly overlaps the nav buttons next
-  // to it. Abbreviating keeps the badge width bounded regardless of how large the number gets.
   const abs = Math.abs(n);
+  if(abs >= 1e15) return (n / 1e15).toFixed(2) + 'Qa';
   if(abs >= 1e12) return (n / 1e12).toFixed(2) + 'T';
   if(abs >= 1e9) return (n / 1e9).toFixed(2) + 'B';
   if(abs >= 1e6) return (n / 1e6).toFixed(2) + 'M';
@@ -555,140 +594,208 @@ function updateNavCashDisplay(){
   const el = document.getElementById('navCashDisplay');
   if(el) el.textContent = '$' + formatCashCompact(portfolio.cash);
 }
-updateNavCashDisplay(); // paint the locally-cached value immediately, before any Firebase round-trip
+function earn(amount){ amount = round2(amount); if(!(amount > 0)) return 0; portfolio.cash = round2(portfolio.cash + amount); updateNavCashDisplay(); return amount; }
+function spend(amount){ amount = round2(amount); if(!(amount >= 0) || portfolio.cash + 1e-9 < amount) return false; portfolio.cash = round2(portfolio.cash - amount); updateNavCashDisplay(); return true; }
+function canAfford(amount){ return portfolio.cash + 1e-9 >= amount; }
+updateNavCashDisplay();
 
-// Loads (or initializes) player data for whichever account ID is currently active. Called once
-// at startup, and again any time the active account switches (sign in, sign out, or upgrading
-// from anonymous to a real account) — so the same logic handles all three cases identically.
-let playerDataLoaded = !db; // no Firebase configured at all -> nothing to wait for, treat as already loaded
-let pendingEconomySave = false;
+function showToast(html){
+  const el = document.createElement('div'); el.className = 'ec-toast'; el.innerHTML = html;
+  document.body.appendChild(el);
+  setTimeout(() => el.classList.add('show'), 10);
+  setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 400); }, 4000);
+}
 
+// Re-renders whatever UI exists on the current page (every renderer checks for its own elements).
+function refreshEconomyUI(){
+  if(typeof renderPortfolio === 'function') try{ renderPortfolio(); }catch(e){}
+  updateNavCashDisplay();
+  ['renderHistory','renderLots','renderOwnedElements','renderOwnedCompounds','renderTools','renderSellPanel','renderContracts','renderCollection','renderCraftingBench','renderElementClicker','applyPtColors','renderPtCollectionBar','refreshLeaderboardGateUI'].forEach(fn => {
+    if(typeof window[fn] === 'function') try{ window[fn](); }catch(e){}
+  });
+  if(typeof drawChart === 'function') try{ drawChart(); }catch(e){}
+}
+
+// ---------- loading / live updates ----------
+let remoteRef = null, inboxRef = null;
+function applyRemoteField(f, val){
+  if(!SYNC_FIELDS.includes(f)) return;
+  const c = canon(val);
+  if(c === sent[f]) return;                     // our own echo, or no real change
+  if(canon(portfolio[f]) !== sent[f]) return;   // we have newer unsent local changes — they win and will overwrite
+  const tmp = migratePortfolio(Object.assign({}, portfolio, { [f]: val }));
+  portfolio[f] = tmp[f]; sent[f] = c;
+  persistLocal(); refreshEconomyUI();
+}
+function claimInbox(snap){
+  const v = snap.val(); if(!v || !(v.amount > 0)) { snap.ref.remove().catch(() => {}); return; }
+  // transaction-delete so two open tabs can never both claim the same payment
+  snap.ref.transaction(cur => cur ? null : undefined).then(res => {
+    if(!res || !res.committed) return;
+    const got = earn(v.amount);
+    saveEconomy();
+    refreshEconomyUI();
+    showToast('<b>Marketplace sale</b><br>' + (v.what || 'An item') + ' sold — +$' + got.toFixed(2));
+  }).catch(() => {});
+}
 function loadPlayerData(uid){
   if(!db || !uid) return;
+  playerDataLoaded = false;
   db.ref('players/' + uid).once('value').then(snap => {
     const remote = snap.val();
-    // If the person already clicked something (bought/crafted/moved an element into the bench,
-    // clicked the atom button, etc.) WHILE this fetch was still in flight, pendingEconomySave is
-    // now true — that action already changed the in-memory `portfolio` object, and blindly
-    // replacing it with this (now-stale-by-comparison) snapshot would silently throw that action
-    // away the moment the fetch happens to resolve. This was exactly why clicking right after a
-    // page load could visibly "undo itself" a moment later. When that's happened, keep the
-    // current (locally-modified) portfolio as-is instead — it's newer — and let the pending save
-    // push it up to Firebase below, overwriting this snapshot rather than the other way around.
-    if(remote && !pendingEconomySave){
-      portfolio = {
-        cash: remote.cash, lots: remote.lots || [], trades: remote.trades || [],
-        elements: remote.elements || {}, compounds: remote.compounds || {}, tools: remote.tools || ['basic'],
-        crafting: remote.crafting || { elements:{}, compounds:{} },
-        elementClicker: remote.elementClicker || defaultClickerState(),
-        nameLocked: !!remote.nameLocked
-      };
-      // fill in any building/upgrade keys added to the game since this save was written
-      const defaults = defaultClickerState();
-      portfolio.elementClicker.buildings = { ...defaults.buildings, ...(portfolio.elementClicker.buildings||{}) };
-      if(!portfolio.elementClicker.prestige) portfolio.elementClicker.prestige = { level:0, shards:0 };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio));
-    } else if(!remote){
-      savePortfolio(portfolio); // nothing backed up yet under this ID — protect what we have now
+    if(remote && !localTouched){
+      portfolio = migratePortfolio(remote);
+      markSynced(remote);                       // anything migration changed will now differ from `sent` and get written once
+      persistLocal();
+    } else if(remote){                          // the player acted before the fetch returned — keep their newer local state
+      markSynced(remote);
+    } else {
+      markSynced(null);                         // brand-new account: write everything once
     }
-    // Only from here on is it safe to save — see the comment on playerDataLoaded below for why.
-    playerDataLoaded = true;
-    if(pendingEconomySave){ pendingEconomySave = false; saveEconomy(); }
-    renderPortfolio(); renderHistory(); renderLots(); drawChart();
-    updateNavCashDisplay();
-    if(typeof renderOwnedElements === 'function'){ renderOwnedElements(); renderOwnedCompounds(); renderTools(); }
-    if(typeof renderCraftingBench === 'function') renderCraftingBench();
-    if(typeof refreshLeaderboardGateUI === 'function') refreshLeaderboardGateUI();
-  }).catch(() => { playerDataLoaded = true; }); // even on failure, stop blocking saves forever
+    playerDataLoaded = true; localTouched = false;
+    flushNow();
+    refreshEconomyUI();
+  }).catch(() => { playerDataLoaded = true; });
 
-  // Marketplace sales (and admin edits) credit/adjust cash directly in Firebase, which could
-  // otherwise get silently overwritten the next time this player's own client does a full save —
-  // this listener merges any such external change into the live local state so it isn't lost.
-  if(playerCashListenerRef) playerCashListenerRef.off();
-  playerCashListenerRef = db.ref('players/' + uid + '/cash');
-  playerCashListenerRef.on('value', (snap) => {
-    // Ignore this if it's just the echo of a write WE made a moment ago — see the long comment
-    // below on the 'tools'/'elements'/'compounds'/'crafting' listeners for why this guard exists.
-    if(Date.now() - lastLocalWriteAt < LOCAL_ECHO_IGNORE_MS) return;
-    const remoteCash = snap.val();
-    if(typeof remoteCash === 'number' && remoteCash !== portfolio.cash){
-      portfolio.cash = remoteCash;
-      renderPortfolio();
-      updateNavCashDisplay();
-    }
-  });
-
-  // Same problem, same fix, extended to every other field a save can clobber. Buying a tool,
-  // buying/crafting an element or compound, or changing what's sitting in the crafting bench in
-  // ONE open tab was previously invisible to any OTHER open tab — that tab's in-memory portfolio
-  // stayed stale until its next full page reload. If that stale tab then did anything that
-  // triggered its own save (which always writes the WHOLE player record), it would silently
-  // overwrite the other tab's change with old data — this is almost certainly why a purchased
-  // tool could "disappear": it was never actually lost, just overwritten by a second open tab
-  // a few actions later. Live-syncing each field means every open tab picks up every other tab's
-  // changes as they happen, so a stale tab's next save re-writes the CURRENT values, not old ones.
-  //
-  // BUT: every save writes the whole player record in one shot, and each of these listeners fires
-  // for ANY change at its path — including the echo of a write this SAME tab just made. If you
-  // click a second element into the crafting bench before the first click's write has round-
-  // tripped back down, that first click's echo can arrive AFTER the second click and unconditio-
-  // nally overwrite portfolio[field] with its (now stale) value — visually "undoing" the second
-  // click. LOCAL_ECHO_IGNORE_MS below is how long each listener ignores incoming values right
-  // after this tab's own save, so our own echoes never fight our own more-recent local state.
-  // Genuine changes from another tab/device still come through as soon as that window passes.
-  playerFieldListenerRefs.forEach(r => r.off());
-  playerFieldListenerRefs = ['tools', 'elements', 'compounds', 'crafting', 'elementClicker', 'lots'].map(field => {
-    const ref = db.ref('players/' + uid + '/' + field);
-    ref.on('value', (snap) => {
-      if(Date.now() - lastLocalWriteAt < LOCAL_ECHO_IGNORE_MS) return;
-      const remote = snap.val();
-      if(remote === null || remote === undefined) return;
-      if(field === 'elementClicker'){
-        // Element Clicker gets a gentler merge than the other fields, not a flat overwrite — its
-        // atoms/totalAtoms/runAtoms change every ~100ms from the idle tick loop (not just on
-        // discrete user actions like buying a tool does), so a live update landing right after
-        // LOCAL_ECHO_IGNORE_MS expires — even one that's just this SAME tab's own slightly-
-        // delayed echo — would otherwise roll the counter visibly backward every few seconds
-        // before ticking resumed forward from the lower number. Taking the higher of local vs
-        // remote for those three fields makes that impossible (an echo of our own older save can
-        // never beat what we've since ticked past) while still picking up a genuine bigger gain
-        // from another tab/device the moment it's actually ahead. Buildings/upgrades/
-        // achievements/prestige only change on discrete purchase/transmute actions — same
-        // infrequent-write pattern as tools/elements — so those sync the same direct way.
-        const ec = portfolio.elementClicker;
-        if(!ec) { portfolio.elementClicker = remote; }
-        else{
-          ec.atoms = Math.max(ec.atoms || 0, remote.atoms || 0);
-          ec.totalAtoms = Math.max(ec.totalAtoms || 0, remote.totalAtoms || 0);
-          ec.runAtoms = Math.max(ec.runAtoms || 0, remote.runAtoms || 0);
-          ec.totalClicks = Math.max(ec.totalClicks || 0, remote.totalClicks || 0);
-          if(remote.buildings) ec.buildings = remote.buildings;
-          if(remote.upgrades) ec.upgrades = remote.upgrades;
-          if(remote.achievements) ec.achievements = remote.achievements;
-          if(remote.prestige) ec.prestige = remote.prestige;
-        }
-        if(typeof renderElementClicker === 'function') renderElementClicker();
-        return;
-      }
-      portfolio[field] = remote;
-      if(field === 'tools'){
-        if(typeof renderTools === 'function') renderTools();
-      } else if(field === 'elements'){
-        if(typeof renderOwnedElements === 'function') renderOwnedElements();
-      } else if(field === 'compounds'){
-        if(typeof renderOwnedCompounds === 'function') renderOwnedCompounds();
-      } else if(field === 'lots'){
-        // stock holdings — an admin correction or another open tab's buy/sell shows up here too,
-        // same reasoning as the comment above about tools "disappearing": without this, a stale
-        // tab's next save would silently overwrite a genuine change made somewhere else
-        if(typeof renderPortfolio === 'function') renderPortfolio();
-      }
-      if(typeof renderCraftingBench === 'function') renderCraftingBench();
-    });
-    return ref;
-  });
+  if(remoteRef) remoteRef.off('child_changed');
+  remoteRef = db.ref('players/' + uid);
+  remoteRef.on('child_changed', s => applyRemoteField(s.key, s.val()));   // child_changed sends only the field that changed, never the whole record
+  if(inboxRef) inboxRef.off('child_added');
+  inboxRef = db.ref('players/' + uid + '/inbox');
+  inboxRef.on('child_added', claimInbox);
 }
 if(db && investorId) loadPlayerData(investorId);
+
+// same-device multi-tab sync, for free (no Firebase traffic)
+window.addEventListener('storage', e => {
+  if(e.key !== STORAGE_KEY || !e.newValue) return;
+  try{ portfolio = migratePortfolio(JSON.parse(e.newValue)); refreshEconomyUI(); }catch(err){}
+});
+function flushPendingSaves(){ persistLocal(); flushNow(); }
+document.addEventListener('visibilitychange', () => { if(document.hidden) flushPendingSaves(); });
+window.addEventListener('beforeunload', flushPendingSaves);
+window.addEventListener('pagehide', flushPendingSaves);   // fires more reliably than beforeunload on iOS Safari
+
+/* ================= ITEMS, PRICING, COLLECTION, CONTRACTS =================
+   Elements and compounds are ITEMS. Their value derives from ELEMENT_PRICES (and recipes), so every system
+   agrees on what something is worth: the Lab Buyer, contracts, the Synthesizer's output and minigame drops. */
+const ELEMENT_LIST = Object.keys(ELEMENT_PRICES);
+const RECIPE_BY_FORMULA = {}; RECIPES.forEach(r => { RECIPE_BY_FORMULA[r.formula] = r; });
+const TOOL_TIER = {}; TOOLS.forEach((t, i) => { TOOL_TIER[t.id] = i; });
+const _cv = {};
+function elementValue(sym){ return ELEMENT_PRICES[sym] || 0; }
+function compoundValue(f){
+  if(_cv[f] !== undefined) return _cv[f];
+  const r = RECIPE_BY_FORMULA[f]; if(!r) return (_cv[f] = 0);
+  _cv[f] = 0;                                    // guards against a recipe loop
+  let base = 0, by = 0;
+  Object.entries(r.need || {}).forEach(([s, q]) => { base += elementValue(s) * q; });
+  Object.entries(r.needCompounds || {}).forEach(([c, q]) => { base += compoundValue(c) * q; });
+  (r.byproducts || []).forEach(bp => { by += bp.type === 'element' ? elementValue(bp.symbol) * bp.qty : compoundValue(bp.formula) * bp.qty; });
+  const tier = TOOL_TIER[r.tool] || 0;
+  return (_cv[f] = Math.max(base * 1.05, base * (CRAFT_BASE_BONUS + CRAFT_TIER_BONUS * tier) - by));
+}
+const itemValue = (type, key) => type === 'compound' ? compoundValue(key) : elementValue(key);
+function itemName(type, key){
+  if(type === 'compound'){ const r = RECIPE_BY_FORMULA[key]; return r ? r.name : key; }
+  const e = ELEMENTS.find(x => x[1] === key); return e ? e[2] : key;
+}
+const stashOf = type => type === 'compound' ? portfolio.compounds : portfolio.elements;
+const qtyOf = (type, key) => stashOf(type)[key] || 0;
+function creditItem(type, key, qty){
+  qty = Math.floor(qty); if(!(qty > 0)) return 0;
+  const s = stashOf(type); s[key] = (s[key] || 0) + qty;
+  discover(type, key);
+  return qty;
+}
+function removeItem(type, key, qty){
+  qty = Math.floor(qty); const s = stashOf(type);
+  if(!(qty > 0) || (s[key] || 0) < qty) return false;
+  s[key] -= qty; if(s[key] <= 0) delete s[key];
+  return true;
+}
+function inventoryValue(){          // what the whole inventory would fetch from the Lab (before demand sag) — used for net worth
+  let v = 0;
+  Object.keys(portfolio.elements).forEach(k => { v += elementValue(k) * portfolio.elements[k]; });
+  Object.keys(portfolio.compounds).forEach(k => { v += compoundValue(k) * portfolio.compounds[k]; });
+  return v * SELL_RATE;
+}
+
+// ----- the Lab Buyer: sells at list price, buys back at SELL_RATE with a demand curve (flooding one item sags its price) -----
+const SELL_X_FLOOR = SELL_DEMAND_S * (1 / SELL_FLOOR - 1);
+const demandF = x => x < SELL_X_FLOOR ? SELL_DEMAND_S * Math.log(1 + x / SELL_DEMAND_S) : SELL_DEMAND_S * Math.log(1 + SELL_X_FLOOR / SELL_DEMAND_S) + SELL_FLOOR * (x - SELL_X_FLOOR);
+function demandNow(k){ const d = portfolio.demand[k]; return d ? d[0] * Math.pow(0.5, (Date.now() - d[1]) / (SELL_DEMAND_HALF_LIFE_H * 3600000)) : 0; }
+function sellQuote(type, key, qty){
+  const v = itemValue(type, key) * Math.max(0, Math.floor(qty));
+  const k = (type === 'compound' ? 'c:' : 'e:') + key;
+  if(!(v > 0)) return { total: 0, avg: 0, v: 0, x0: 0, k };
+  const x0 = demandNow(k), rev = SELL_RATE * (demandF(x0 + v) - demandF(x0));
+  return { total: round2(rev), avg: rev / v, v, x0, k };
+}
+function sellToLab(type, key, qty){
+  qty = Math.floor(qty);
+  if(qty < 1 || qtyOf(type, key) < qty) return 0;
+  const q = sellQuote(type, key, qty); if(!(q.total > 0)) return 0;
+  removeItem(type, key, qty);
+  const got = earn(q.total);
+  portfolio.demand[q.k] = [Math.round((q.x0 + q.v) * 100) / 100, Date.now()];
+  Object.keys(portfolio.demand).forEach(k => { if(demandNow(k) < 1) delete portfolio.demand[k]; });
+  saveEconomy();
+  return got;
+}
+function buyFromLab(sym, qty){
+  qty = Math.floor(qty); if(qty < 1 || !ELEMENT_PRICES[sym]) return false;
+  if(!spend(ELEMENT_PRICES[sym] * BUY_RATE * qty)) return false;
+  creditItem('element', sym, qty); saveEconomy(); return true;
+}
+
+// ----- collection: discoveries give a permanent payout bonus + one-time milestone rewards -----
+const discCount = t => portfolio.disc[t].length;
+function collectionBonus(){ return 1 + COLLECTION_ELEMENT_BONUS * discCount('e') + COLLECTION_COMPOUND_BONUS * discCount('c'); }
+function discover(type, key){
+  const arr = portfolio.disc[type === 'compound' ? 'c' : 'e'];
+  if(arr.includes(key)) return false;
+  arr.push(key);
+  showToast('<b>🔬 New discovery!</b><br>' + itemName(type, key) + ' — collection bonus now ×' + collectionBonus().toFixed(2));
+  COLLECTION_MILESTONES.forEach(m => {
+    if(!portfolio.claimed.includes(m.id) && discCount(m.type) >= m.n){
+      portfolio.claimed.push(m.id); earn(m.cash);
+      setTimeout(() => showToast('<b>🏅 Collection milestone!</b><br>' + m.n + ' ' + (m.type === 'e' ? 'elements' : 'compounds') + ' discovered — +$' + m.cash), 900);
+    }
+  });
+  saveEconomy();
+  return true;
+}
+
+// ----- daily contracts: the same 3 requests for everyone each UTC day (easy / medium / hard) -----
+function hashStr(s){ let h = 2166136261; for(let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+function mulberry(a){ return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const CONTRACT_BANDS = [[0, 1], [2, 4], [5, 7]];
+function dailyContracts(day){
+  const rnd = mulberry(hashStr('contracts:' + day));
+  return CONTRACT_BANDS.map(([lo, hi], i) => {
+    const pool = RECIPES.filter(r => { const t = TOOL_TIER[r.tool] || 0; return t >= lo && t <= hi && compoundValue(r.formula) > 0; });
+    const r = pool[Math.floor(rnd() * pool.length)];
+    const qty = 1 + Math.floor(rnd() * (i === 2 ? 2 : 3));
+    const reward = round2(Math.max([4, 15, 60][i], compoundValue(r.formula) * qty * (1.6 + 0.12 * (TOOL_TIER[r.tool] || 0))));   // floor per difficulty so cheap-but-hard compounds still pay
+    return { i, formula: r.formula, name: r.name, qty, reward, tool: r.tool };
+  });
+}
+function ensureContractDay(){ const d = todayStr(); if(portfolio.contracts.day !== d) portfolio.contracts = { day: d, done: [] }; return portfolio.contracts; }
+function deliverContract(i){
+  const c = dailyContracts(todayStr())[i], st = ensureContractDay();
+  if(!c || st.done.includes(i) || qtyOf('compound', c.formula) < c.qty) return 0;
+  removeItem('compound', c.formula, c.qty);
+  const got = earn(c.reward * collectionBonus());
+  st.done.push(i); saveEconomy(); return got;
+}
+
+// ----- minigame rewards: skill payouts that diminish PER DAY (persisted, so reloading doesn't reset them) -----
+function ensureGameDay(){ const d = todayStr(); if(portfolio.game.day !== d) portfolio.game = { day: d, plays: {}, earned: 0 }; return portfolio.game; }
+function pickDrop(){                              // cheap elements only, so drops stay a bonus rather than a payday
+  const cheap = ELEMENT_LIST.filter(s => ELEMENT_PRICES[s] <= 5);
+  return cheap[Math.floor(Math.random() * cheap.length)];
+}
 
 let currentPrice = 12.50;
 let priceHistory = [{ price: 12.50, t: Date.now() }];
@@ -1674,10 +1781,10 @@ if(buyBtnEl) buyBtnEl.addEventListener('click', () => {
   if(!qty || qty<=0){ msgEl.textContent = 'Enter a valid quantity.'; return; }
   const cost = qty*currentPrice;
   if(cost > portfolio.cash){ msgEl.textContent = "You can't afford that, champ."; return; }
-  portfolio.cash -= cost;
+  if(!spend(cost)){ msgEl.textContent = "You can't afford that, champ."; return; }
   const lotId = nextAvailableLotId();
   portfolio.lots.push({ id: lotId, qty, buyPrice: currentPrice, time: new Date().toLocaleString() });
-  portfolio.trades.push({ type:'buy', qty, price: currentPrice, tax: 0, lotId, time: new Date().toLocaleString() });
+  pushTrade({ type:'buy', qty, price: currentPrice, tax: 0, lotId, time: new Date().toLocaleString() });
   savePortfolio(portfolio);
   renderPortfolio(); renderHistory(); renderLots(); drawChart();
   msgEl.textContent = `Bought #${lotId}: ${qty} $WEST for $${cost.toFixed(2)}.`;
@@ -1708,9 +1815,9 @@ function sellLot(lotId, btnEl){
   const tax = (grossProfit > 0 && profitPct >= PROFIT_TAX_THRESHOLD) ? grossProfit * PROFIT_TAX_RATE : 0;
   const netProceeds = proceeds - tax;
   const pl = grossProfit - tax; // net profit/loss after tax, what you actually walked away with
-  portfolio.cash += netProceeds;
+  earn(netProceeds);
   portfolio.lots.splice(idx, 1);
-  portfolio.trades.push({ type:'sell', qty: lot.qty, price: currentPrice, tax, lotId, time: new Date().toLocaleString() });
+  pushTrade({ type:'sell', qty: lot.qty, price: currentPrice, tax, lotId, time: new Date().toLocaleString() });
   savePortfolio(portfolio);
   renderPortfolio(); renderHistory(); renderLots(); drawChart();
   if(anchorRect) spawnProfitPopup(anchorRect, pl);
@@ -1742,6 +1849,59 @@ function blockOf(num, cat, group){
 
 let ptMode = 'category';
 let ptSearchTerm = '';
+
+
+/* The element panel doubles as a shop/encyclopedia: what it's worth, what you own, whether you've discovered it,
+   which recipes use it — and Buy/Sell buttons that use the same wallet and Lab prices as WestLab. */
+let selectedPtCell = null;
+function renderElementInfo(cell){
+  const info = document.getElementById('elemInfo'); if(!info || !cell) return;
+  selectedPtCell = cell;
+  const cat = cell.dataset.cat, state = cell.dataset.state, block = cell.dataset.block, sym = cell.dataset.sym;
+  const priced = ELEMENT_PRICES[sym] !== undefined, owned = qtyOf('element', sym);
+  const users = RECIPES.filter(r => r.need && r.need[sym]);
+  let econ = '';
+  if(priced){
+    const sell1 = sellQuote('element', sym, 1).total;
+    econ = `<div class="pt-econ">
+      <div class="info-grid">
+        <span>Market price</span><b>${fmt$(ELEMENT_PRICES[sym])}</b>
+        <span>You own</span><b>${owned.toLocaleString()}</b>
+        <span>Discovery</span><b>${portfolio.disc.e.includes(sym) ? '✓ Discovered' : 'Not yet — buy or make one'}</b>
+        <span>Used in</span><b>${users.length} recipe${users.length === 1 ? '' : 's'}${users.length ? ' (' + users.slice(0, 3).map(r => r.name.split(' (')[0]).join(', ') + (users.length > 3 ? '…' : '') + ')' : ''}</b>
+      </div>
+      <div class="pt-econ-btns">
+        <button class="trade-btn buy" data-act="buy1" ${canAfford(ELEMENT_PRICES[sym]) ? '' : 'disabled'}>Buy 1 · ${fmt$(ELEMENT_PRICES[sym])}</button>
+        <button class="trade-btn buy" data-act="buy10" ${canAfford(ELEMENT_PRICES[sym] * 10) ? '' : 'disabled'}>Buy 10</button>
+        <button class="trade-btn sell" data-act="sell1" ${owned > 0 ? '' : 'disabled'}>Sell 1 · ${fmt$(sell1 || ELEMENT_PRICES[sym] * SELL_RATE)}</button>
+      </div></div>`;
+  } else {
+    econ = '<div class="pt-econ"><div class="meta">Too exotic to trade — this element has no market price.</div></div>';
+  }
+  info.innerHTML = `
+    <span class="big-sym" style="color:${CATEGORY_COLORS[cat]}">${sym}</span>
+    <div>
+      <div class="elem-title">${cell.dataset.name} <span style="color:var(--muted); font-size:0.75rem;">— #${cell.dataset.num}</span></div>
+      <div class="info-grid">
+        <span>Relative atomic mass</span><b>${cell.dataset.mass}</b>
+        <span>Category</span><b>${CATEGORY_LABELS[cat]}</b>
+        <span>Period</span><b>${cell.dataset.period}</b>
+        <span>Group</span><b>${cell.dataset.group === '0' || cell.dataset.group === '—' ? '—' : cell.dataset.group}</b>
+        <span>Block</span><b>${BLOCK_LABELS[block]}</b>
+        <span>State at 25°C</span><b>${STATE_LABELS[state]}</b>
+      </div>
+      ${econ}
+    </div>`;
+  info.querySelectorAll('[data-act]').forEach(btn => btn.addEventListener('click', () => {
+    const act = btn.dataset.act;
+    if(act === 'buy1') buyFromLab(sym, 1); else if(act === 'buy10') buyFromLab(sym, 10); else if(act === 'sell1') sellToLab('element', sym, 1);
+    refreshEconomyUI();
+  }));
+}
+function renderPtCollectionBar(){
+  const el = document.getElementById('ptCollection'); if(el) el.innerHTML = collectionSummaryHtml();
+  if(selectedPtCell && document.body.contains(selectedPtCell)) renderElementInfo(selectedPtCell);
+}
 
 function buildPeriodicTable(){
   const grid = document.getElementById('ptable');
@@ -1781,20 +1941,7 @@ function buildPeriodicTable(){
     cell.addEventListener('click', () => {
       grid.querySelectorAll('.elem.selected').forEach(x => x.classList.remove('selected'));
       cell.classList.add('selected');
-      const cat = cell.dataset.cat, state = cell.dataset.state, block = cell.dataset.block;
-      info.innerHTML = `
-        <span class="big-sym" style="color:${CATEGORY_COLORS[cat]}">${cell.dataset.sym}</span>
-        <div>
-          <div class="elem-title">${cell.dataset.name} <span style="color:var(--muted); font-size:0.75rem;">— #${cell.dataset.num}</span></div>
-          <div class="info-grid">
-            <span>Relative atomic mass</span><b>${cell.dataset.mass}</b>
-            <span>Category</span><b>${CATEGORY_LABELS[cat]}</b>
-            <span>Period</span><b>${cell.dataset.period}</b>
-            <span>Group</span><b>${cell.dataset.group === '0' || cell.dataset.group === '—' ? '—' : cell.dataset.group}</b>
-            <span>Block</span><b>${BLOCK_LABELS[block]}</b>
-            <span>State at 25°C</span><b>${STATE_LABELS[state]}</b>
-          </div>
-        </div>`;
+      renderElementInfo(cell);
     });
   });
 
@@ -2109,13 +2256,13 @@ function reactCraftingBench(){
   // ingredients were already deducted from inventory the moment they were added to the bench —
   // just clear the working pool and credit the outputs
   pool.elements = {}; pool.compounds = {};
-  portfolio.compounds[recipe.formula] = (portfolio.compounds[recipe.formula] || 0) + 1;
+  creditItem('compound', recipe.formula, 1);
   (recipe.byproducts || []).forEach(bp => {
-    if(bp.type === 'element') portfolio.elements[bp.symbol] = (portfolio.elements[bp.symbol] || 0) + bp.qty;
-    else portfolio.compounds[bp.formula] = (portfolio.compounds[bp.formula] || 0) + bp.qty;
+    if(bp.type === 'element') creditItem('element', bp.symbol, bp.qty);
+    else creditItem('compound', bp.formula, bp.qty);
   });
   saveEconomy();
-  renderOwnedElements(); renderOwnedCompounds(); renderCraftingBench();
+  refreshEconomyUI();
 }
 
 function renderCraftingBench(){
@@ -2279,290 +2426,236 @@ if(recipesToggleBtn && recipesPanelEl){
 // commodities terminal. Scoped to ~20 elements rather than all 118 to keep this maintainable.
 
 // player's element/compound/tool state — synced to Firebase alongside cash/lots
-function ensureEconomyState(p){
-  if(!p.elements) p.elements = {};
-  if(!p.compounds) p.compounds = {};
-  if(!p.tools) p.tools = ['basic'];
-  return p;
-}
-ensureEconomyState(portfolio);
-
-// Never fires more than once per this window, no matter how many times something calls
-// saveEconomy() in a burst — collapses repeated calls into a single write instead of dropping
-// them (whatever triggered the LAST call still gets saved, just possibly a moment later). This
-// exists specifically to put a hard ceiling on Firebase write frequency/bandwidth regardless of
-// what's calling it — including from any future bug that ends up calling saveEconomy() far more
-// often than a normal buy/sell/craft action would.
-const ECONOMY_SAVE_MIN_INTERVAL_MS = 3000;
-let lastEconomySaveAt = 0;
-let economySaveTimer = null;
-
-function saveEconomy(){
-  // Written immediately and unconditionally, every time — cheap and synchronous, so a hard
-  // refresh or crash can never lose more than this. Only the FIREBASE half of a save is
-  // throttled/deferred below; there was previously no reason for localStorage to wait on that
-  // same delay, and doing so meant a page close during the throttle window could lose an action
-  // that had otherwise fully succeeded from the person's point of view.
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio));
-  if(!playerDataLoaded){
-    // Don't let an action taken in the brief window before the initial Firebase fetch resolves
-    // save stale local data back over the real record. This is what let old (e.g. billions-
-    // dollar-bug) cached data on a player's own device silently overwrite an admin's manual
-    // correction the next time they visited — their browser would render + could act on the
-    // stale localStorage copy before the real fetch replaced it, and any save in that window
-    // pushed the wrong number straight back to Firebase. The save just waits and replays once
-    // the real data has actually loaded, instead of racing ahead of it.
-    pendingEconomySave = true;
-    return;
-  }
-  const sinceLast = Date.now() - lastEconomySaveAt;
-  if(sinceLast >= ECONOMY_SAVE_MIN_INTERVAL_MS){
-    lastEconomySaveAt = Date.now();
-    savePortfolio(portfolio); // re-writes localStorage too (harmless/idempotent) + does the actual Firebase sync
-    updateNavCashDisplay();
-  } else if(!economySaveTimer){
-    economySaveTimer = setTimeout(() => {
-      economySaveTimer = null;
-      lastEconomySaveAt = Date.now();
-      savePortfolio(portfolio); // always reads the CURRENT (live) portfolio at write time, so this still saves whatever's true by then, not stale data from when the timer was scheduled
-      updateNavCashDisplay();
-    }, ECONOMY_SAVE_MIN_INTERVAL_MS - sinceLast);
-  }
-}
-
-// populate the element dropdowns
+/* ================= WESTLAB UI: buy, sell to the Lab, tools, contracts, collection, marketplace ================= */
 const marketElemSelect = document.getElementById('marketElemSelect');
 const marketQtyInput = document.getElementById('marketQty');
 const marketPriceHintEl = document.getElementById('marketPriceHint');
 const listElemSelect = document.getElementById('listElemSelect');
+const fmt$ = n => '$' + (n >= 1000 ? Math.round(n).toLocaleString() : n.toFixed(2));
 
 function populateElementSelects(){
   if(!marketElemSelect) return;
-  const optionsHtml = Object.keys(ELEMENT_PRICES).map(sym => `<option value="${sym}">${sym} — $${ELEMENT_PRICES[sym].toLocaleString()}</option>`).join('');
-  marketElemSelect.innerHTML = optionsHtml;
+  marketElemSelect.innerHTML = ELEMENT_LIST.map(s => `<option value="${s}">${s} — ${itemName('element', s)} · ${fmt$(ELEMENT_PRICES[s])}</option>`).join('');
   updateMarketPriceHint();
 }
-
-// The marketplace "what am I listing" select depends on which type is chosen, and — since you
-// can only list what you actually own — on your current elements/compounds inventory.
 const listTypeSelect = document.getElementById('listTypeSelect');
 function populateListSelect(){
-  if(!listTypeSelect) return;
-  if(listTypeSelect.value === 'compound'){
-    const owned = Object.keys(portfolio.compounds || {}).filter(f => portfolio.compounds[f] > 0);
-    listElemSelect.innerHTML = owned.length
-      ? owned.map(f => { const r = RECIPES.find(rc => rc.formula === f); return `<option value="${f}">${r ? r.name : f} (${f}) — ×${portfolio.compounds[f]} owned</option>`; }).join('')
-      : '<option value="">No compounds owned</option>';
-  } else {
-    const owned = Object.keys(ELEMENT_PRICES).filter(sym => (portfolio.elements || {})[sym] > 0);
-    listElemSelect.innerHTML = owned.length
-      ? owned.map(sym => `<option value="${sym}">${sym} — ×${portfolio.elements[sym]} owned</option>`).join('')
-      : '<option value="">No elements owned</option>';
-  }
+  if(!listTypeSelect || !listElemSelect) return;
+  const type = listTypeSelect.value === 'compound' ? 'compound' : 'element', keep = listElemSelect.value;
+  const owned = Object.keys(stashOf(type)).filter(k => stashOf(type)[k] > 0);
+  listElemSelect.innerHTML = owned.length
+    ? owned.map(k => `<option value="${k}">${type === 'compound' ? itemName(type, k) + ' (' + k + ')' : k} — ×${stashOf(type)[k]} owned</option>`).join('')
+    : `<option value="">No ${type}s owned</option>`;
+  if(owned.includes(keep)) listElemSelect.value = keep;
 }
 if(listTypeSelect) listTypeSelect.addEventListener('change', populateListSelect);
 function updateMarketPriceHint(){
   if(!marketElemSelect) return;
-  const sym = marketElemSelect.value;
-  const qty = parseFloat(marketQtyInput.value) || 0;
-  marketPriceHintEl.textContent = sym ? `Total: $${(ELEMENT_PRICES[sym]*qty).toFixed(2)}` : '';
+  const sym = marketElemSelect.value, qty = Math.max(0, Math.floor(parseFloat(marketQtyInput.value) || 0));
+  marketPriceHintEl.textContent = sym ? `Total: ${fmt$(ELEMENT_PRICES[sym] * BUY_RATE * qty)}` : '';
 }
 if(marketElemSelect){
   marketElemSelect.addEventListener('change', updateMarketPriceHint);
   marketQtyInput.addEventListener('input', updateMarketPriceHint);
-
   document.getElementById('marketBuyBtn').addEventListener('click', () => {
-    const sym = marketElemSelect.value;
-    const qty = parseFloat(marketQtyInput.value);
-    if(!qty || qty <= 0) return;
-    const cost = ELEMENT_PRICES[sym] * qty;
-    if(cost > portfolio.cash){ marketPriceHintEl.textContent = "Can't afford that."; return; }
-    portfolio.cash -= cost;
-    portfolio.elements[sym] = (portfolio.elements[sym] || 0) + qty;
-    saveEconomy();
-    renderPortfolio(); renderOwnedElements();
+    const sym = marketElemSelect.value, qty = Math.floor(parseFloat(marketQtyInput.value));
+    if(!qty || qty < 1) return;
+    if(!buyFromLab(sym, qty)){ marketPriceHintEl.textContent = "Can't afford that."; return; }
+    refreshEconomyUI(); updateMarketPriceHint();
   });
 }
 
+/* --- inventory chips (click = add to the crafting bench) --- */
 function renderOwnedElements(){
   const wrap = document.getElementById('ownedElementsList');
   if(!wrap) return;
   const syms = Object.keys(portfolio.elements).filter(s => portfolio.elements[s] > 0);
-  if(syms.length === 0){ wrap.innerHTML = '<div class="empty-history">You don\'t own any elements yet.</div>'; }
+  if(!syms.length){ wrap.innerHTML = '<div class="empty-history">You don\'t own any elements yet.</div>'; }
   else{
-    // click to add to the crafting bench — selling only happens via the Marketplace section now
-    wrap.innerHTML = syms.map(sym => `
-      <div class="owned-chip clickable" data-sym="${sym}" title="Click to add to the crafting bench">${sym} <span class="oc-qty">×${portfolio.elements[sym]}</span></div>`).join('');
-    wrap.querySelectorAll('.owned-chip[data-sym]').forEach(chip => {
-      chip.addEventListener('click', () => addElementToBench(chip.dataset.sym));
-    });
+    wrap.innerHTML = syms.map(sym => `<div class="owned-chip clickable" data-sym="${sym}" title="${itemName('element', sym)} · worth ${fmt$(elementValue(sym))} each — click to add to the crafting bench">${sym} <span class="oc-qty">×${portfolio.elements[sym]}</span></div>`).join('');
+    wrap.querySelectorAll('.owned-chip[data-sym]').forEach(chip => chip.addEventListener('click', () => addElementToBench(chip.dataset.sym)));
   }
-  if(typeof renderCraftingBench === 'function') renderCraftingBench();
+  if(typeof populateListSelect === 'function') populateListSelect();
 }
-
-let selectedToolId = 'basic';
-const TOOL_ACTION_LABELS = {
-  basic: 'Combine', burner: 'Burn', electrolysis: 'Electrolyze', pressure: 'Pressurize',
-  catalysis: 'Catalyze', distillation: 'Distill', polymer: 'Polymerize', cryo: 'Condense'
-};
-
-function renderTools(){
-  const wrap = document.getElementById('toolsList');
-  if(!wrap) return;
-  wrap.innerHTML = TOOLS.map(t => {
-    const owned = portfolio.tools.includes(t.id);
-    const selected = owned && t.id === selectedToolId;
-    return `
-      <div class="tool-card ${owned ? 'owned' : ''} ${selected ? 'selected' : ''}" data-tool="${t.id}" ${owned ? 'tabindex="0"' : ''}>
-        <div class="tc-name">${t.name}</div>
-        <div class="tc-desc">${t.desc}</div>
-        ${owned
-          ? `<span class="tc-owned-tag">${selected ? '● Selected for crafting' : '✓ Owned — click to select'}</span>`
-          : `<button class="tc-btn" data-tool="${t.id}" data-cost="${t.cost}">Buy — $${t.cost}</button>`}
-      </div>`;
-  }).join('');
-  wrap.querySelectorAll('.tool-card.owned').forEach(card => {
-    card.addEventListener('click', () => {
-      selectedToolId = card.dataset.tool;
-      renderTools();
-      if(typeof renderCraftingBench === 'function') renderCraftingBench();
-    });
-  });
-  wrap.querySelectorAll('.tc-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation(); // don't let the click also bubble up as a card-select
-      const toolId = btn.dataset.tool, cost = parseFloat(btn.dataset.cost);
-      if(portfolio.tools.includes(toolId)) return;
-      if(cost > portfolio.cash){ return; }
-      portfolio.cash -= cost;
-      portfolio.tools.push(toolId);
-      selectedToolId = toolId; // auto-select the tool you just bought
-      saveEconomy();
-      renderPortfolio(); renderTools();
-      if(typeof renderCraftingBench === 'function') renderCraftingBench();
-    });
-  });
-}
-
 function renderOwnedCompounds(){
   const wrap = document.getElementById('ownedCompoundsList');
   if(!wrap) return;
   const formulas = Object.keys(portfolio.compounds).filter(f => portfolio.compounds[f] > 0);
-  if(formulas.length === 0){ wrap.innerHTML = '<div class="empty-history">You haven\'t made anything yet.</div>'; }
+  if(!formulas.length){ wrap.innerHTML = '<div class="empty-history">You haven\'t made anything yet.</div>'; }
   else{
-    wrap.innerHTML = formulas.map(f => {
-      const r = RECIPES.find(rc => rc.formula === f);
-      return `<div class="owned-chip clickable" data-formula="${f}" title="Click to add to the crafting bench">${r ? r.name : f} <span class="oc-qty">×${portfolio.compounds[f]}</span></div>`;
-    }).join('');
-    wrap.querySelectorAll('.owned-chip[data-formula]').forEach(chip => {
-      chip.addEventListener('click', () => addCompoundToBench(chip.dataset.formula));
-    });
+    wrap.innerHTML = formulas.map(f => `<div class="owned-chip clickable" data-formula="${f}" title="Worth ${fmt$(compoundValue(f))} each — click to add to the crafting bench">${itemName('compound', f)} <span class="oc-qty">×${portfolio.compounds[f]}</span></div>`).join('');
+    wrap.querySelectorAll('.owned-chip[data-formula]').forEach(chip => chip.addEventListener('click', () => addCompoundToBench(chip.dataset.formula)));
   }
   if(typeof populateListSelect === 'function') populateListSelect();
-  if(typeof renderCraftingBench === 'function') renderCraftingBench();
 }
 
-/* --- Marketplace: shared Firebase listings, buyable by any player, elements or compounds --- */
-function creditInventory(type, key, qty){
-  if(type === 'compound'){ portfolio.compounds[key] = (portfolio.compounds[key] || 0) + qty; }
-  else { portfolio.elements[key] = (portfolio.elements[key] || 0) + qty; }
+/* --- tools --- */
+let selectedToolId = 'basic';
+const TOOL_ACTION_LABELS = { basic:'Combine', burner:'Burn', electrolysis:'Electrolyze', pressure:'Pressurize', catalysis:'Catalyze', distillation:'Distill', polymer:'Polymerize', cryo:'Condense' };
+function renderTools(){
+  const wrap = document.getElementById('toolsList');
+  if(!wrap) return;
+  wrap.innerHTML = TOOLS.map(t => {
+    const owned = portfolio.tools.includes(t.id), selected = owned && t.id === selectedToolId;
+    const n = RECIPES.filter(r => r.tool === t.id).length;
+    return `<div class="tool-card ${owned ? 'owned' : ''} ${selected ? 'selected' : ''}" data-tool="${t.id}" ${owned ? 'tabindex="0"' : ''}>
+        <div class="tc-name">${t.name}</div><div class="tc-desc">${t.desc}</div>
+        <div class="tc-desc" style="opacity:.8;">Unlocks ${n} recipe${n === 1 ? '' : 's'} · compounds from it are worth +${Math.round((CRAFT_BASE_BONUS - 1 + CRAFT_TIER_BONUS * (TOOL_TIER[t.id] || 0)) * 100)}% over their ingredients</div>
+        ${owned ? `<span class="tc-owned-tag">${selected ? '● Selected for crafting' : '✓ Owned — click to select'}</span>`
+                : `<button class="tc-btn" data-tool="${t.id}" data-cost="${t.cost}" ${canAfford(t.cost) ? '' : 'disabled'}>Buy — ${fmt$(t.cost)}</button>`}
+      </div>`;
+  }).join('');
+  wrap.querySelectorAll('.tool-card.owned').forEach(card => card.addEventListener('click', () => { selectedToolId = card.dataset.tool; renderTools(); if(typeof renderCraftingBench === 'function') renderCraftingBench(); }));
+  wrap.querySelectorAll('.tc-btn').forEach(btn => btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const id = btn.dataset.tool, cost = parseFloat(btn.dataset.cost);
+    if(portfolio.tools.includes(id) || !spend(cost)) return;
+    portfolio.tools.push(id); selectedToolId = id; saveEconomy(); refreshEconomyUI();
+  }));
 }
 
-const createListingBtnEl = document.getElementById('createListingBtn');
-if(createListingBtnEl) createListingBtnEl.addEventListener('click', () => {
-  const type = listTypeSelect.value;
-  const key = listElemSelect.value;
-  const qty = parseFloat(document.getElementById('listQty').value);
-  const price = parseFloat(document.getElementById('listPrice').value);
-  if(!key || !qty || qty <= 0 || !price || price <= 0) return;
-  const stash = type === 'compound' ? portfolio.compounds : portfolio.elements;
-  if((stash[key] || 0) < qty) return; // can't list more than you own
-  stash[key] -= qty;
-  saveEconomy();
-  renderOwnedElements(); renderOwnedCompounds(); populateListSelect();
-  if(db){
-    const listingId = 'listing_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
-    db.ref('marketplace/' + listingId).set({
-      sellerId: investorId, sellerName: investorName || 'Anonymous', type, symbol: key, qty, pricePerUnit: price, createdAt: Date.now()
-    }).catch(() => {});
-  }
-});
-
-if(db){
-  db.ref('marketplace').on('value', (snap) => {
-    const val = snap.val() || {};
-    const wrap = document.getElementById('marketplaceList');
-    if(!wrap) return; // marketplace UI only exists on the Element Economy page
-    const ids = Object.keys(val);
-    if(ids.length === 0){ wrap.innerHTML = '<div class="empty-history">No listings yet.</div>'; return; }
-    wrap.innerHTML = ids.map(id => {
-      const l = val[id];
-      const isCompound = l.type === 'compound';
-      const label = isCompound ? `${(RECIPES.find(r => r.formula === l.symbol) || {}).name || l.symbol} (${l.symbol})` : l.symbol;
-      const mine = l.sellerId === investorId;
-      return `<div class="listing-row">${label} ×${l.qty} — $${l.pricePerUnit}/unit by ${l.sellerName}
-        ${mine
-          ? `<span class="oc-qty">Your listing</span> <button class="lr-cancel" data-id="${id}">Cancel</button>`
-          : `<button class="lr-buy" data-id="${id}">Buy</button>`}</div>`;
-    }).join('');
-    wrap.querySelectorAll('.lr-buy').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const id = btn.dataset.id;
-        const listing = val[id];
-        if(!listing || listing.sellerId === investorId) return; // can't buy your own listing
-        const totalCost = listing.qty * listing.pricePerUnit;
-        if(totalCost > portfolio.cash) return;
-        portfolio.cash -= totalCost;
-        creditInventory(listing.type, listing.symbol, listing.qty);
-        saveEconomy();
-        renderPortfolio(); renderOwnedElements(); renderOwnedCompounds();
-        db.ref('marketplace/' + id).remove().catch(() => {});
-        // credit the seller even if they're offline right now, via an atomic increment —
-        // this is the part that actually pays them, not just removing their listing
-        db.ref('players/' + listing.sellerId + '/cash').transaction(cash => (cash || 0) + totalCost).catch(() => {});
-      });
-    });
-    wrap.querySelectorAll('.lr-cancel').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const id = btn.dataset.id;
-        const listing = val[id];
-        if(!listing || listing.sellerId !== investorId) return; // only the seller can pull their own listing
-        creditInventory(listing.type, listing.symbol, listing.qty); // return the stock to inventory
-        saveEconomy();
-        renderOwnedElements(); renderOwnedCompounds(); populateListSelect();
-        db.ref('marketplace/' + id).remove().catch(() => {});
-      });
-    });
+/* --- Sell to the Lab --- */
+const sellTypeSelect = document.getElementById('sellTypeSelect'), sellItemSelect = document.getElementById('sellItemSelect');
+const sellQtyInput = document.getElementById('sellQty'), sellQuoteEl = document.getElementById('sellQuote'), sellBtn = document.getElementById('sellBtn');
+function renderSellPanel(){
+  if(!sellTypeSelect) return;
+  const type = sellTypeSelect.value === 'compound' ? 'compound' : 'element', keep = sellItemSelect.value;
+  const owned = Object.keys(stashOf(type)).filter(k => stashOf(type)[k] > 0 && itemValue(type, k) > 0);
+  sellItemSelect.innerHTML = owned.length ? owned.map(k => `<option value="${k}">${type === 'compound' ? itemName(type, k) : k + ' — ' + itemName(type, k)} · ×${stashOf(type)[k]}</option>`).join('') : '<option value="">Nothing to sell</option>';
+  if(owned.includes(keep)) sellItemSelect.value = keep;
+  updateSellQuote();
+}
+function updateSellQuote(){
+  if(!sellTypeSelect) return;
+  const type = sellTypeSelect.value === 'compound' ? 'compound' : 'element', key = sellItemSelect.value;
+  const qty = Math.min(qtyOf(type, key), Math.max(0, Math.floor(parseFloat(sellQtyInput.value) || 0)));
+  if(!key || qty < 1){ sellQuoteEl.textContent = ''; sellBtn.disabled = true; return; }
+  const q = sellQuote(type, key, qty);
+  sellQuoteEl.textContent = `Lab pays ${fmt$(q.total)} (${Math.round(q.avg * 100)}% of base value${q.avg < SELL_RATE * 0.97 ? ' — demand is saturated, try again later or sell something else' : ''})`;
+  sellBtn.disabled = false;
+}
+if(sellTypeSelect){
+  sellTypeSelect.addEventListener('change', renderSellPanel);
+  sellItemSelect.addEventListener('change', updateSellQuote);
+  sellQtyInput.addEventListener('input', updateSellQuote);
+  document.getElementById('sellMaxBtn').addEventListener('click', () => { sellQtyInput.value = qtyOf(sellTypeSelect.value === 'compound' ? 'compound' : 'element', sellItemSelect.value) || 1; updateSellQuote(); });
+  sellBtn.addEventListener('click', () => {
+    const type = sellTypeSelect.value === 'compound' ? 'compound' : 'element', key = sellItemSelect.value;
+    const got = sellToLab(type, key, Math.floor(parseFloat(sellQtyInput.value) || 0));
+    if(got > 0){ showToast('<b>Sold to the Lab</b><br>+' + fmt$(got)); refreshEconomyUI(); }
   });
 }
 
-populateElementSelects();
-populateListSelect();
-renderOwnedElements();
-renderTools();
-renderOwnedCompounds();
-if(typeof renderCraftingBench === 'function') renderCraftingBench(); // was missing entirely before —
-                                                                       // this is why the tool selector
-                                                                       // showed nothing on a fresh page
-                                                                       // load until some other action
-                                                                       // happened to trigger a render
+/* --- Daily contracts --- */
+function renderContracts(){
+  const wrap = document.getElementById('contractsList');
+  if(!wrap) return;
+  const st = ensureContractDay(), cs = dailyContracts(st.day), bonus = collectionBonus();
+  const labels = ['Easy', 'Medium', 'Hard'];
+  wrap.innerHTML = cs.map(c => {
+    const done = st.done.includes(c.i), have = qtyOf('compound', c.formula), ready = have >= c.qty, tool = TOOLS.find(t => t.id === c.tool);
+    const haveTool = portfolio.tools.includes(c.tool);
+    return `<div class="contract-row ${done ? 'done' : ''}">
+      <div><span class="contract-tag">${labels[c.i]}</span> Deliver <b>${c.qty}× ${c.name}</b> <span class="oc-qty">(${c.formula})</span>
+        <div class="contract-sub">Needs ${tool ? tool.name : c.tool}${haveTool ? '' : ' (not owned yet)'} · you have ${have}</div></div>
+      <div class="contract-pay">${done ? '✓ Delivered' : `<b>${fmt$(c.reward * bonus)}</b><button class="trade-btn buy" data-i="${c.i}" ${ready ? '' : 'disabled'}>Deliver</button>`}</div>
+    </div>`;
+  }).join('') + `<div class="contract-sub" style="margin-top:.4rem;">New contracts every UTC midnight · rewards include your ×${bonus.toFixed(2)} collection bonus</div>`;
+  wrap.querySelectorAll('button[data-i]').forEach(b => b.addEventListener('click', () => {
+    const got = deliverContract(parseInt(b.dataset.i, 10));
+    if(got > 0){ showToast('<b>Contract complete</b><br>+' + fmt$(got)); refreshEconomyUI(); }
+  }));
+}
+
+/* --- Collection progress (shared look with the Periodic Table page) --- */
+function collectionSummaryHtml(){
+  const e = discCount('e'), c = discCount('c'), next = COLLECTION_MILESTONES.filter(m => !portfolio.claimed.includes(m.id)).sort((a, b) => (a.n - discCount(a.type)) - (b.n - discCount(b.type)))[0];
+  return `<div class="coll-row"><b>${e}/${ELEMENT_LIST.length}</b> elements · <b>${c}/${RECIPES.length}</b> compounds discovered — payout bonus <b>×${collectionBonus().toFixed(2)}</b></div>
+    <div class="coll-bar"><i style="width:${Math.round((e + c) / (ELEMENT_LIST.length + RECIPES.length) * 100)}%"></i></div>
+    ${next ? `<div class="contract-sub">Next reward: discover ${next.n} ${next.type === 'e' ? 'elements' : 'compounds'} → +${fmt$(next.cash)} (${Math.max(0, next.n - discCount(next.type))} to go)</div>` : '<div class="contract-sub">Every milestone claimed — full collection!</div>'}`;
+}
+function renderCollection(){ const el = document.getElementById('collectionBox'); if(el) el.innerHTML = collectionSummaryHtml(); }
+
+/* --- player-to-player marketplace (5% fee; sellers are paid through their inbox) --- */
+const createListingBtnEl = document.getElementById('createListingBtn');
+if(createListingBtnEl) createListingBtnEl.addEventListener('click', () => {
+  const type = listTypeSelect.value === 'compound' ? 'compound' : 'element', key = listElemSelect.value;
+  const qty = Math.floor(parseFloat(document.getElementById('listQty').value)), price = round2(parseFloat(document.getElementById('listPrice').value));
+  if(!db || !key || !(qty >= 1) || !(price > 0) || qtyOf(type, key) < qty) return;
+  removeItem(type, key, qty); saveEconomy(); refreshEconomyUI();
+  const id = 'listing_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  db.ref('marketplace/' + id).set({ sellerId: investorId, sellerName: investorName || 'Anonymous', type, symbol: key, qty, pricePerUnit: price, createdAt: Date.now() })
+    .catch(() => { creditItem(type, key, qty); saveEconomy(); refreshEconomyUI(); });   // listing failed → give the stock back
+});
+if(db && document.getElementById('marketplaceList')){
+  db.ref('marketplace').orderByKey().limitToLast(60).on('value', snap => {
+    const val = snap.val() || {}, wrap = document.getElementById('marketplaceList'), ids = Object.keys(val).reverse();
+    if(!ids.length){ wrap.innerHTML = '<div class="empty-history">No listings yet.</div>'; return; }
+    wrap.innerHTML = ids.map(id => {
+      const l = val[id], label = l.type === 'compound' ? `${itemName('compound', l.symbol)} (${l.symbol})` : `${l.symbol} — ${itemName('element', l.symbol)}`;
+      const mine = l.sellerId === investorId, base = itemValue(l.type, l.symbol), pct = base > 0 ? Math.round(l.pricePerUnit / base * 100) : null;
+      return `<div class="listing-row">${esc(label)} ×${l.qty} — ${fmt$(l.pricePerUnit)}/unit${pct !== null ? ` <span class="oc-qty">(${pct}% of base)</span>` : ''} by ${esc(l.sellerName)}
+        ${mine ? `<span class="oc-qty">Your listing</span> <button class="lr-cancel" data-id="${id}">Cancel</button>` : `<button class="lr-buy" data-id="${id}">Buy · ${fmt$(l.qty * l.pricePerUnit)}</button>`}</div>`;
+    }).join('');
+    wrap.querySelectorAll('.lr-buy').forEach(btn => btn.addEventListener('click', () => {
+      const id = btn.dataset.id, l = val[id];
+      if(!l || l.sellerId === investorId) return;
+      const total = round2(l.qty * l.pricePerUnit);
+      if(!spend(total)) return;                                   // pay first…
+      db.ref('marketplace/' + id).transaction(cur => cur ? null : undefined).then(res => {   // …then atomically claim the listing (someone else may have been faster)
+        if(!res.committed){ earn(total); saveEconomy(); refreshEconomyUI(); return; }
+        creditItem(l.type, l.symbol, l.qty); saveEconomy(); refreshEconomyUI();
+        db.ref('players/' + l.sellerId + '/inbox').push({ amount: round2(total * (1 - MARKET_FEE)), what: `${l.qty}× ${itemName(l.type, l.symbol)}`, at: Date.now() }).catch(() => {});
+      }).catch(() => { earn(total); saveEconomy(); refreshEconomyUI(); });
+    }));
+    wrap.querySelectorAll('.lr-cancel').forEach(btn => btn.addEventListener('click', () => {
+      const id = btn.dataset.id, l = val[id];
+      if(!l || l.sellerId !== investorId) return;
+      db.ref('marketplace/' + id).transaction(cur => cur ? null : undefined).then(res => { if(res.committed){ creditItem(l.type, l.symbol, l.qty); saveEconomy(); refreshEconomyUI(); } });
+    }));
+  });
+}
+
+// Keep inventory-driven UI fresh when production (the Synthesizer) changes it in the background — only re-render when it actually changed.
+let invSig = '';
+function refreshInventoryUI(){
+  const sig = JSON.stringify([portfolio.elements, portfolio.compounds]);
+  if(sig === invSig) return; invSig = sig;
+  renderOwnedElements(); renderOwnedCompounds(); renderSellPanel();
+  if(typeof applyPtColors === 'function') applyPtColors();
+  if(typeof renderPtCollectionBar === 'function') renderPtCollectionBar();
+}
+
+populateElementSelects(); populateListSelect(); renderOwnedElements(); renderTools(); renderOwnedCompounds(); renderSellPanel(); renderContracts(); renderCollection();
+if(typeof renderCraftingBench === 'function') renderCraftingBench();
 
 function swatchFor(cell){
+  if(ptMode === 'collection'){
+    const sym = cell.dataset.sym;
+    if(ELEMENT_PRICES[sym] === undefined) return PT_COLLECTION_COLORS.na;
+    if(qtyOf('element', sym) > 0) return CATEGORY_COLORS[cell.dataset.cat];
+    return portfolio.disc.e.includes(sym) ? PT_COLLECTION_COLORS.disc : PT_COLLECTION_COLORS.none;
+  }
   return ptMode === 'state' ? STATE_COLORS[cell.dataset.state] :
          ptMode === 'block' ? BLOCK_COLORS[cell.dataset.block] :
          CATEGORY_COLORS[cell.dataset.cat];
 }
+const PT_COLLECTION_COLORS = { disc:'#7d6b4d', none:'#3a3126', na:'#241f18' };
 function applyPtColors(){
+  const coll = ptMode === 'collection';
   document.querySelectorAll('#ptable .elem:not(.spacer)').forEach(cell => {
-    cell.style.background = swatchFor(cell);
-    cell.style.color = '#1a1510';
+    const bg = swatchFor(cell);
+    cell.style.background = bg;
+    cell.style.color = (coll && (bg === PT_COLLECTION_COLORS.none || bg === PT_COLLECTION_COLORS.na || bg === PT_COLLECTION_COLORS.disc)) ? '#b9aa8b' : '#1a1510';
+    cell.classList.toggle('owned', coll && qtyOf('element', cell.dataset.sym) > 0);
   });
 }
 
 function renderLegend(){
   const legend = document.getElementById('legend');
   if(!legend) return;
-  const map = ptMode === 'state' ? { colors: STATE_COLORS, labels: STATE_LABELS }
+  const map = ptMode === 'collection' ? { colors: { owned:'#e0b36a', disc:PT_COLLECTION_COLORS.disc, none:PT_COLLECTION_COLORS.none, na:PT_COLLECTION_COLORS.na }, labels: { owned:'Owned (category color)', disc:'Discovered, none in stock', none:'Not discovered yet', na:'Not tradeable' } }
+            : ptMode === 'state' ? { colors: STATE_COLORS, labels: STATE_LABELS }
             : ptMode === 'block' ? { colors: BLOCK_COLORS, labels: BLOCK_LABELS }
             : { colors: CATEGORY_COLORS, labels: CATEGORY_LABELS };
   legend.innerHTML = Object.keys(map.labels).map(key => `
@@ -2597,6 +2690,7 @@ document.querySelectorAll('.pt-mode-btn').forEach(btn => {
     ptMode = btn.dataset.mode;
     renderLegend();
     applyPtColors();
+    renderPtCollectionBar();
   });
 });
 
@@ -2681,7 +2775,7 @@ function refreshLeaderboardGateUI(){
 let investorName = localStorage.getItem('mrwestcoin_investor_name') || '';
 
 function portfolioValue(){
-  return portfolio.cash + totalHeld() * currentPrice;
+  return portfolio.cash + totalHeld() * currentPrice + inventoryValue();
 }
 function elementsOwnedCount(){
   return Object.values(portfolio.elements || {}).reduce((a,b) => a+b, 0);
@@ -2801,13 +2895,7 @@ function switchActiveAccount(uid){
 async function migrateAnonymousDataTo(newUid){
   if(!db) return;
   // carry the current (anonymous) progress over to the newly-signed-in account, then switch to it
-  await db.ref('players/' + newUid).set({
-    cash: portfolio.cash, lots: portfolio.lots, trades: portfolio.trades.slice(-200),
-    elements: portfolio.elements || {}, compounds: portfolio.compounds || {}, tools: portfolio.tools || ['basic'],
-    crafting: portfolio.crafting || { elements:{}, compounds:{} },
-    elementClicker: portfolio.elementClicker || defaultClickerState(),
-    nameLocked: !!portfolio.nameLocked, updatedAt: Date.now()
-  }).catch(() => {});
+  await db.ref('players/' + newUid).set(serializeForDb(portfolio)).catch(() => {});
   switchActiveAccount(newUid);
 }
 
@@ -2889,17 +2977,10 @@ async function migrateLocalIdDataTo(oldId, newId){
       const newSnap = await db.ref('players/' + newId).once('value');
       if(!newSnap.val()){ // never clobber progress that already exists under the real UID
         await db.ref('players/' + newId).set(oldData);
-        portfolio = {
-          cash: oldData.cash, lots: oldData.lots || [], trades: oldData.trades || [],
-          elements: oldData.elements || {}, compounds: oldData.compounds || {}, tools: oldData.tools || ['basic'],
-          crafting: oldData.crafting || { elements:{}, compounds:{} },
-          elementClicker: oldData.elementClicker || defaultClickerState(),
-          nameLocked: !!oldData.nameLocked
-        };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio));
-        renderPortfolio(); renderHistory(); renderLots(); drawChart();
-        if(typeof renderOwnedElements === 'function'){ renderOwnedElements(); renderOwnedCompounds(); renderTools(); }
-        if(typeof renderCraftingBench === 'function') renderCraftingBench();
+        portfolio = migratePortfolio(oldData);
+        markSynced(oldData);
+        persistLocal();
+        refreshEconomyUI();
       }
       await db.ref('players/' + oldId).remove().catch(() => {}); // clean up the now-orphaned old record
     }
@@ -2998,8 +3079,7 @@ function renderAdminPanel(){
               <label class="ap-field"><span>Cash ($WEST)</span><input type="number" step="0.01" class="ap-manage-cash" data-id="${id}" value="${(p.cash||0).toFixed(2)}"></label>
 
               <div class="ap-manage-heading">Element Clicker — core stats</div>
-              <label class="ap-field"><span>⚛️ Atoms (current)</span><input type="number" class="ap-ec-atoms" data-id="${id}" value="${Math.round(ec.atoms||0)}"></label>
-              <label class="ap-field"><span>⚛️ Total atoms (lifetime)</span><input type="number" class="ap-ec-totalatoms" data-id="${id}" value="${Math.round(ec.totalAtoms||0)}"></label>
+              <label class="ap-field"><span>⚛️ Lifetime value synthesized ($)</span><input type="number" class="ap-ec-totalatoms" data-id="${id}" value="${Math.round(ec.total||0)}"></label>
               <label class="ap-field"><span>👆 Total clicks</span><input type="number" class="ap-ec-clicks" data-id="${id}" value="${Math.round(ec.totalClicks||0)}"></label>
               <label class="ap-field"><span>🔮 Prestige level</span><input type="number" min="0" class="ap-ec-plevel" data-id="${id}" value="${ec.prestige.level||0}"></label>
               <label class="ap-field"><span>🔷 Isotope shards</span><input type="number" min="0" class="ap-ec-shards" data-id="${id}" value="${ec.prestige.shards||0}"></label>
@@ -3069,9 +3149,10 @@ function renderAdminPanel(){
           cash: num(g('.ap-manage-cash'), 0),
           elements, compounds, tools,
           elementClicker: {
-            atoms: num(g('.ap-ec-atoms'), 0),
-            totalAtoms: num(g('.ap-ec-totalatoms'), 0),
-            runAtoms: (val[id].elementClicker && val[id].elementClicker.runAtoms) || 0,
+            total: num(g('.ap-ec-totalatoms'), 0),
+            run: (val[id].elementClicker && val[id].elementClicker.run) || 0,
+            acc: 0,
+            target: (val[id].elementClicker && val[id].elementClicker.target) || 'H',
             totalClicks: Math.max(0, Math.round(num(g('.ap-ec-clicks'), 0))),
             buildings,
             upgrades: clickerUpgrades,
@@ -3192,452 +3273,204 @@ function setupAdminMarketControls(){
   renderAdminMarketLog();
 }
 
-/* ================= ELEMENT CLICKER (cookin.html — the flagship minigame) =================
-   A Cookie-Clicker-style idle game. State lives at portfolio.elementClicker, same object that's
-   already saved/loaded/migrated alongside cash/elements/etc (see loadPortfolio/savePortfolio and
-   loadPlayerData above). Ticks run in the background on EVERY page (like the shared cash
-   display) so atoms accumulate site-wide, but the actual panel only exists on cookin.html —
-   everything here checks for that before touching the DOM. Firebase writes are batched (see
-   scheduleClickerSave) instead of firing on every click/tick, since a raw click stream would
-   otherwise hammer the database. */
-
-function formatAtoms(n){
-  if(n == null || isNaN(n)) return '0';
-  const abs = Math.abs(n);
-  const tiers = [[1e18,'Qi'], [1e15,'Qa'], [1e12,'T'], [1e9,'B'], [1e6,'M'], [1e3,'K']];
-  for(const [v, suf] of tiers){ if(abs >= v) return (n / v).toFixed(2) + suf; }
-  return n.toFixed(abs < 10 ? 2 : 1);
-}
+/* ================= ELEMENT SYNTHESIZER (the idle/click game, wired into the one economy) =================
+   There is no second currency. Buildings and upgrades are bought with $, and they synthesize material worth
+   $X per second. That value is delivered as REAL INVENTORY ITEMS of the element you pick (so 1 $/sec of
+   Hydrogen is ~2 H/sec; 1 $/sec of Gold is one atom every few hours) — which you can craft with, sell to the
+   Lab (with its demand curve), list on the marketplace, or use in contracts. Isotope Shards (Transmute) are a
+   permanent multiplier, not something you spend. */
+const fmtNum = n => (n == null || isNaN(n)) ? '0' : (Math.abs(n) >= 1e6 ? formatCashCompact(n).replace('.00', '') : (Math.abs(n) >= 100 ? Math.round(n).toLocaleString() : n.toFixed(2)));
+const ecState = () => portfolio.elementClicker;
 
 function ecGlobalMultiplier(){
-  const ec = portfolio.elementClicker;
+  const ec = ecState();
   let mult = 1 + (ec.prestige.shards || 0) * CLICKER_SHARD_BONUS;
   CLICKER_ACHIEVEMENTS.forEach(a => { if(ec.achievements.includes(a.id)) mult += a.globalBonus; });
+  mult += 0.5 * (collectionBonus() - 1);          // a complete collection makes the whole lab a bit more efficient
   return mult;
 }
-// Sum of all owned "breadth" upgrades (unlocked by total buildings owned across every type,
-// rather than any one building) — additive with each other, applied on top of (multiplied with)
-// everything else in ecTotalCps(). Deliberately separate from ecGlobalMultiplier(): these boost
-// BUILDING production specifically, not click power, per how they're described to the player.
-function ecGlobalUpgradeBonus(){
-  const ec = portfolio.elementClicker;
-  let bonus = 0;
-  CLICKER_GLOBAL_UPGRADES.forEach(u => { if(ec.upgrades.includes(u.id)) bonus += u.bonus; });
-  return 1 + bonus;
+function ecGlobalUpgradeBonus(){ const ec = ecState(); let b = 0; CLICKER_GLOBAL_UPGRADES.forEach(u => { if(ec.upgrades.includes(u.id)) b += u.bonus; }); return 1 + b; }
+function ecClickPower(){                         // $ of output per click
+  const owned = ecState().upgrades; let mult = 1, cpsPercent = 0;
+  CLICKER_CLICK_UPGRADES.forEach(u => { if(!owned.includes(u.id)) return; if(u.mult) mult *= u.mult; if(u.cpsPercent) cpsPercent += u.cpsPercent; });
+  return (CLICKER_CLICK_BASE * mult * ecGlobalMultiplier()) + (cpsPercent * ecTotalCps());
 }
-function ecClickPower(){
-  const owned = portfolio.elementClicker.upgrades;
-  let mult = 1;
-  let cpsPercent = 0;
-  CLICKER_CLICK_UPGRADES.forEach(u => {
-    if(!owned.includes(u.id)) return;
-    if(u.mult) mult *= u.mult;
-    if(u.cpsPercent) cpsPercent += u.cpsPercent;
-  });
-  // The flat multiplier stack applies first (and gets the global multiplier too, same as
-  // before); the cps-synergy upgrades then ADD a slice of current production on top, so a click
-  // never becomes worthless once buildings dwarf the flat number, but is also never worth more
-  // than a small, fixed fraction of a second of idle output — see the comment on
-  // CLICKER_CLICK_UPGRADES in the data file for why that split exists.
-  return (mult * ecGlobalMultiplier()) + (cpsPercent * ecTotalCps());
-}
-function ecBuildingCost(id){
-  const b = CLICKER_BUILDINGS.find(x => x.id === id);
-  const owned = portfolio.elementClicker.buildings[id] || 0;
-  return Math.ceil(b.baseCost * Math.pow(CLICKER_COST_SCALE, owned));
-}
+function ecBuildingCost(id){ const b = CLICKER_BUILDINGS.find(x => x.id === id); return Math.ceil(b.baseCost * Math.pow(CLICKER_COST_SCALE, ecState().buildings[id] || 0)); }
 function ecBuildingUnitCps(id){
-  const b = CLICKER_BUILDINGS.find(x => x.id === id);
-  let mult = 1;
-  CLICKER_BUILDING_UPGRADES.forEach(u => { if(u.building === id && portfolio.elementClicker.upgrades.includes(u.id)) mult *= u.mult; });
-  return b.baseCps * mult;
+  const b = CLICKER_BUILDINGS.find(x => x.id === id); let mult = 1;
+  CLICKER_BUILDING_UPGRADES.forEach(u => { if(u.building === id && ecState().upgrades.includes(u.id)) mult *= u.mult; });
+  return b.baseVps * mult;
 }
-function ecTotalBuildingsOwned(){
-  const ec = portfolio.elementClicker;
-  return CLICKER_BUILDINGS.reduce((sum, b) => sum + (ec.buildings[b.id] || 0), 0);
-}
-function ecTotalCps(){
-  let total = 0;
-  CLICKER_BUILDINGS.forEach(b => { total += (portfolio.elementClicker.buildings[b.id] || 0) * ecBuildingUnitCps(b.id); });
-  return total * ecGlobalUpgradeBonus() * ecGlobalMultiplier();
-}
-function ecFindUpgrade(id){
-  return CLICKER_CLICK_UPGRADES.find(u => u.id === id)
-    || CLICKER_BUILDING_UPGRADES.find(u => u.id === id)
-    || CLICKER_GLOBAL_UPGRADES.find(u => u.id === id);
-}
-function ecTransmutePreview(){
-  return Math.floor(Math.sqrt((portfolio.elementClicker.runAtoms || 0) / 1000000));
-}
+function ecTotalBuildingsOwned(){ const ec = ecState(); return CLICKER_BUILDINGS.reduce((s, b) => s + (ec.buildings[b.id] || 0), 0); }
+function ecTotalCps(){ let t = 0; CLICKER_BUILDINGS.forEach(b => { t += (ecState().buildings[b.id] || 0) * ecBuildingUnitCps(b.id); }); return t * ecGlobalUpgradeBonus() * ecGlobalMultiplier(); }
+function ecFindUpgrade(id){ return CLICKER_CLICK_UPGRADES.find(u => u.id === id) || CLICKER_BUILDING_UPGRADES.find(u => u.id === id) || CLICKER_GLOBAL_UPGRADES.find(u => u.id === id); }
+function ecTransmutePreview(){ const run = ecState().run || 0; return run < CLICKER_PRESTIGE_MIN ? 0 : Math.floor(Math.sqrt(run / CLICKER_PRESTIGE_UNIT)); }
 
-let ecSaveTimer = null;
-function scheduleClickerSave(){
-  // Same signal loadPlayerData checks before overwriting `portfolio` wholesale — a click/buy
-  // that happens before the initial account fetch resolves is a real local change, and without
-  // this flag that fetch would silently discard it the moment it finally comes back (see the
-  // long comment in loadPlayerData for the full story — this is what made clicking right after a
-  // page load appear to "undo itself" a moment later, for buildings/upgrades same as for
-  // buy/craft actions on market.html).
-  if(!playerDataLoaded) pendingEconomySave = true;
-  if(ecSaveTimer) return;
-  ecSaveTimer = setTimeout(() => {
-    ecSaveTimer = null;
-    if(!portfolio.elementClicker) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio));
-    if(db && investorId && playerDataLoaded){
-      lastLocalWriteAt = Date.now(); // same self-echo guard the tools/elements/compounds/crafting/cash listeners use — without this, the live elementClicker listener (see loadPlayerData) can't tell this write's own echo apart from a genuine external change, and would occasionally roll the atom counter visibly backward when its echo arrived
-      db.ref('players/' + investorId + '/elementClicker').set(portfolio.elementClicker)
-        .catch(() => { if(!clickerRetryTimer) clickerRetryTimer = setTimeout(() => { clickerRetryTimer = null; scheduleClickerSave(); }, 5000); }); // a dropped write shouldn't just vanish — retry shortly with whatever's current by then, same as the main portfolio save does
-    }
-  }, 4000); // batches rapid clicking/idle ticks into one write roughly every 4s, not one per click
-}
-let clickerRetryTimer = null;
-
-function ecShowAchievementToast(a){
-  const el = document.createElement('div');
-  el.className = 'ec-toast';
-  el.innerHTML = `<b>${a.icon} Achievement unlocked!</b><br>${a.name}${a.cash ? ` — +$${a.cash.toFixed(2)}` : ''}`;
-  document.body.appendChild(el);
-  setTimeout(() => el.classList.add('show'), 10);
-  setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 400); }, 4000);
+// value → inventory items of the chosen element (fractions accumulate in `acc` until a whole atom is produced)
+function ecProduce(value){
+  const ec = ecState(); if(!(value > 0)) return;
+  ec.total += value; ec.run += value;
+  ec.acc += value / elementValue(ec.target);
+  const n = Math.floor(ec.acc);
+  if(n > 0){ ec.acc -= n; creditItem('element', ec.target, n); }
 }
 function ecCheckAchievements(){
-  const ec = portfolio.elementClicker;
-  if(!ec) return;
-  const snap = { totalClicks: ec.totalClicks, totalAtoms: ec.totalAtoms, buildings: ec.buildings, cps: ecTotalCps(), prestige: ec.prestige };
-  let unlockedNew = false;
+  const ec = ecState(); let unlocked = false;
+  const snap = { totalClicks: ec.totalClicks, total: ec.total, buildings: ec.buildings, cps: ecTotalCps(), prestige: ec.prestige };
   CLICKER_ACHIEVEMENTS.forEach(a => {
     if(!ec.achievements.includes(a.id) && a.check(snap)){
-      ec.achievements.push(a.id);
-      portfolio.cash += a.cash || 0;
-      unlockedNew = true;
-      ecShowAchievementToast(a);
+      ec.achievements.push(a.id); earn(a.cash || 0); unlocked = true;
+      showToast(`<b>${a.icon} Achievement unlocked!</b><br>${a.name}${a.cash ? ` — +$${a.cash.toFixed(2)}` : ''}`);
     }
   });
-  if(unlockedNew){
-    saveEconomy();
-    scheduleClickerSave();
-    if(typeof renderPortfolio === 'function') renderPortfolio();
-  }
+  if(unlocked){ saveEconomy(); refreshEconomyUI(); }
 }
-
 function ecClick(){
-  const gain = ecClickPower();
-  const ec = portfolio.elementClicker;
-  ec.atoms += gain;
-  ec.totalAtoms += gain;
-  ec.runAtoms = (ec.runAtoms || 0) + gain;
-  ec.totalClicks += 1;
-  ecCheckAchievements();
-  scheduleClickerSave();
+  const ec = ecState(), gain = ecClickPower();
+  ec.totalClicks += 1; ecProduce(gain);
+  ecCheckAchievements(); saveEconomy(true);
   return gain;
 }
 function ecBuyBuilding(id){
-  const cost = ecBuildingCost(id);
-  const ec = portfolio.elementClicker;
-  if(ec.atoms < cost) return false;
-  ec.atoms -= cost;
-  ec.buildings[id] = (ec.buildings[id] || 0) + 1;
-  ecCheckAchievements();
-  scheduleClickerSave();
-  renderElementClicker();
-  return true;
+  if(!spend(ecBuildingCost(id))) return false;
+  ecState().buildings[id] = (ecState().buildings[id] || 0) + 1;
+  ecCheckAchievements(); saveEconomy(); refreshEconomyUI(); return true;
 }
 function ecBuyUpgrade(u){
-  const ec = portfolio.elementClicker;
-  if(ec.upgrades.includes(u.id) || ec.atoms < u.cost) return false;
-  ec.atoms -= u.cost;
-  ec.upgrades.push(u.id);
-  scheduleClickerSave();
-  renderElementClicker();
-  return true;
+  const ec = ecState(); if(ec.upgrades.includes(u.id) || !spend(u.cost)) return false;
+  ec.upgrades.push(u.id); saveEconomy(); refreshEconomyUI(); return true;
 }
 function ecTransmute(){
-  const gain = ecTransmutePreview();
-  if(gain < 1) return false;
-  if(!confirm(`Transmute now for +${gain} Isotope Shard${gain === 1 ? '' : 's'}? This resets your Atoms, Buildings, and Upgrades for a permanent +${(gain * CLICKER_SHARD_BONUS * 100).toFixed(0)}% production boost. Achievements and shards are kept forever.`)) return false;
-  const ec = portfolio.elementClicker;
-  ec.atoms = 0;
-  ec.runAtoms = 0;
-  CLICKER_BUILDINGS.forEach(b => { ec.buildings[b.id] = 0; });
-  ec.upgrades = [];
-  ec.prestige.level = (ec.prestige.level || 0) + 1;
-  ec.prestige.shards = (ec.prestige.shards || 0) + gain;
-  ecCheckAchievements();
-  scheduleClickerSave();
-  renderElementClicker();
-  return true;
+  const gain = ecTransmutePreview(); if(gain < 1) return false;
+  if(!confirm(`Transmute now for +${gain} Isotope Shard${gain === 1 ? '' : 's'}? This resets your Buildings and Upgrades (items and cash are kept) for a permanent +${(gain * CLICKER_SHARD_BONUS * 100).toFixed(0)}% production boost. Continue?`)) return false;
+  const ec = ecState();
+  ec.run = 0; ec.acc = 0; CLICKER_BUILDINGS.forEach(b => { ec.buildings[b.id] = 0; }); ec.upgrades = [];
+  ec.prestige.level = (ec.prestige.level || 0) + 1; ec.prestige.shards = (ec.prestige.shards || 0) + gain;
+  ecCheckAchievements(); saveEconomy(); refreshEconomyUI(); return true;
 }
 
-let ecActiveFloaters = 0;
-const EC_MAX_FLOATERS = 12; // hard cap — protects against unbounded DOM growth from very rapid/macro clicking
+let ecActiveFloaters = 0; const EC_MAX_FLOATERS = 12;
 function ecSpawnFloatingGain(x, y, gain){
   const btn = document.getElementById('ecClickBtn');
   if(!btn || ecActiveFloaters >= EC_MAX_FLOATERS) return;
-  const rect = btn.getBoundingClientRect();
-  const el = document.createElement('div');
-  el.className = 'ec-float';
-  el.textContent = '+' + formatAtoms(gain);
+  const rect = btn.getBoundingClientRect(), el = document.createElement('div');
+  el.className = 'ec-floater'; el.textContent = '+$' + (gain < 0.1 ? gain.toFixed(3) : gain.toFixed(2));
   el.style.left = ((x != null ? x : rect.left + rect.width / 2) - rect.left) + 'px';
   el.style.top = ((y != null ? y : rect.top + rect.height / 2) - rect.top) + 'px';
-  btn.appendChild(el);
-  ecActiveFloaters++;
+  btn.appendChild(el); ecActiveFloaters++;
   setTimeout(() => { el.remove(); ecActiveFloaters--; }, 900);
 }
 
 let ecActiveTab = 'buildings';
-// Cheap per-frame update — just text content, no DOM node creation, safe to call at 60fps.
 function renderElementClickerStats(){
-  const panel = document.getElementById('ecPanel');
-  if(!panel) return;
-  const ec = portfolio.elementClicker;
-  const cps = ecTotalCps();
-
-  document.getElementById('ecAtoms').textContent = formatAtoms(ec.atoms);
-  document.getElementById('ecCps').textContent = formatAtoms(cps) + '/sec';
-  document.getElementById('ecClickPow').textContent = '+' + formatAtoms(ecClickPower());
+  const panel = document.getElementById('ecPanel'); if(!panel) return;
+  const ec = ecState(), cps = ecTotalCps(), price = elementValue(ec.target);
+  document.getElementById('ecAtoms').textContent = '×' + (portfolio.elements[ec.target] || 0).toLocaleString();
+  const lbl = document.getElementById('ecReadoutLabel'); if(lbl) lbl.textContent = ec.target + ' in your inventory';
+  document.getElementById('ecCps').textContent = '$' + fmtNum(cps) + '/sec · ' + (cps / price >= 100 ? Math.round(cps / price).toLocaleString() : (cps / price).toFixed(2)) + ' ' + ec.target + '/s';
+  document.getElementById('ecClickPow').textContent = '+$' + (ecClickPower() < 0.1 ? ecClickPower().toFixed(3) : ecClickPower().toFixed(2));
   document.getElementById('ecMult').textContent = '×' + ecGlobalMultiplier().toFixed(2) + ' global';
   document.getElementById('ecShards').textContent = ec.prestige.shards || 0;
   document.getElementById('ecPrestigeLevel').textContent = ec.prestige.level || 0;
-
-  const transmuteGain = ecTransmutePreview();
-  const transmuteBtn = document.getElementById('ecTransmuteBtn');
-  if(transmuteBtn){
-    transmuteBtn.disabled = transmuteGain < 1;
-    transmuteBtn.textContent = transmuteGain >= 1
-      ? `🔮 Transmute (+${transmuteGain} shard${transmuteGain === 1 ? '' : 's'})`
-      : `🔮 Transmute (need ${formatAtoms(CLICKER_PRESTIGE_MIN_ATOMS)} run atoms)`;
+  const g = ecTransmutePreview(), btn = document.getElementById('ecTransmuteBtn');
+  if(btn){
+    btn.disabled = g < 1;
+    btn.textContent = g >= 1 ? `🔮 Transmute (+${g} shard${g === 1 ? '' : 's'})` : `🔮 Transmute (need $${fmtNum(CLICKER_PRESTIGE_MIN)} synthesized this run — $${fmtNum(ec.run)})`;
   }
 }
-
-// Expensive — rebuilds the whole Buildings/Upgrades/Achievements card grid. Only called on
-// actual state changes (tab switch, buy, transmute) and on a slow interval from the tick loop
-// (see ecTickLoop) — NOT every frame. Doing a full innerHTML rebuild of a dozen-plus cards 60
-// times a second was the actual cause of clicks/tabs going unresponsive after a few seconds: the
-// main thread falls further behind every frame until it can no longer keep up with input at all,
-// even though the underlying atom math (which never touches the DOM) keeps running fine.
 function renderElementClickerTabBody(){
-  const body = document.getElementById('ecTabBody');
-  if(!body) return;
-  const ec = portfolio.elementClicker;
+  const body = document.getElementById('ecTabBody'); if(!body) return;
+  const ec = ecState();
+  const row = (action, id, icon, name, sub, cost, afford, title) => `<div class="ec-row ${afford ? '' : 'ec-row-locked'}" data-action="${action}" data-id="${id}" title="${title}">
+    <div class="ec-row-top"><span class="ec-row-icon">${icon}</span><span class="ec-row-main">${name}<span class="ec-row-sub">${sub}</span></span></div>
+    <div class="ec-row-footer"><span class="ec-row-footer-label">Cost</span><span class="ec-row-cost">$${fmtNum(cost)}</span></div></div>`;
   if(ecActiveTab === 'buildings'){
-    body.innerHTML = CLICKER_BUILDINGS.map(b => {
-      const owned = ec.buildings[b.id] || 0;
-      const cost = ecBuildingCost(b.id);
-      const afford = ec.atoms >= cost;
-      return `<div class="ec-row ${afford ? '' : 'ec-row-locked'}" data-action="buyBuilding" data-id="${b.id}" title="${b.desc}">
-        <div class="ec-row-top">
-          <span class="ec-row-icon">${b.icon}</span>
-          <span class="ec-row-main">${b.name}<span class="ec-row-sub">${ecBuildingUnitCps(b.id).toFixed(2)}/sec each · owned ${owned}</span></span>
-        </div>
-        <div class="ec-row-footer">
-          <span class="ec-row-footer-label">Cost</span>
-          <span class="ec-row-cost">⚛️ ${formatAtoms(cost)}</span>
-        </div>
-      </div>`;
-    }).join('');
+    body.innerHTML = CLICKER_BUILDINGS.map(b => { const c = ecBuildingCost(b.id); return row('buyBuilding', b.id, b.icon, b.name, `$${fmtNum(ecBuildingUnitCps(b.id))}/sec each · owned ${ec.buildings[b.id] || 0}`, c, canAfford(c), b.desc); }).join('');
   } else if(ecActiveTab === 'upgrades'){
-    const totalOwned = ecTotalBuildingsOwned();
-    const currentCps = ecTotalCps();
-    const available = [
-        ...CLICKER_CLICK_UPGRADES.filter(u => u.unlockCps === undefined || currentCps >= u.unlockCps),
-        ...CLICKER_BUILDING_UPGRADES.filter(u => (ec.buildings[u.building] || 0) >= u.unlockOwned),
-        ...CLICKER_GLOBAL_UPGRADES.filter(u => totalOwned >= u.unlockTotalOwned),
-      ]
-      .filter(u => !ec.upgrades.includes(u.id));
-    body.innerHTML = available.length ? available.map(u => {
-      const afford = ec.atoms >= u.cost;
-      return `<div class="ec-row ${afford ? '' : 'ec-row-locked'}" data-action="buyUpgrade" data-id="${u.id}" title="${u.desc}">
-        <div class="ec-row-top">
-          <span class="ec-row-icon">${u.icon}</span>
-          <span class="ec-row-main">${u.name}<span class="ec-row-sub">${u.desc}</span></span>
-        </div>
-        <div class="ec-row-footer">
-          <span class="ec-row-footer-label">Cost</span>
-          <span class="ec-row-cost">⚛️ ${formatAtoms(u.cost)}</span>
-        </div>
-      </div>`;
-    }).join('') : '<div class="empty-history">No upgrades available yet — keep building!</div>';
+    const totalOwned = ecTotalBuildingsOwned(), cps = ecTotalCps();
+    const available = [...CLICKER_CLICK_UPGRADES.filter(u => u.unlockCps === undefined || cps >= u.unlockCps), ...CLICKER_BUILDING_UPGRADES.filter(u => (ec.buildings[u.building] || 0) >= u.unlockOwned), ...CLICKER_GLOBAL_UPGRADES.filter(u => totalOwned >= u.unlockTotalOwned)].filter(u => !ec.upgrades.includes(u.id));
+    body.innerHTML = available.length ? available.map(u => row('buyUpgrade', u.id, u.icon, u.name, u.desc, u.cost, canAfford(u.cost), u.desc)).join('') : '<div class="empty-history">No upgrades available yet — keep building!</div>';
   } else if(ecActiveTab === 'achievements'){
-    body.innerHTML = CLICKER_ACHIEVEMENTS.map(a => {
-      const unlocked = ec.achievements.includes(a.id);
-      return `<div class="ec-row ${unlocked ? 'ec-row-done' : 'ec-row-locked'}">
-        <div class="ec-row-top">
-          <span class="ec-row-icon">${a.icon}</span>
-          <span class="ec-row-main">${a.name}<span class="ec-row-sub">${a.desc}</span></span>
-        </div>
-        <div class="ec-row-footer">
-          <span class="ec-row-footer-label">${a.cash ? '+$' + a.cash.toFixed(2) : ''}${a.globalBonus ? ` · +${(a.globalBonus * 100).toFixed(0)}% global` : ''}</span>
-          <span class="ec-row-cost">${unlocked ? '✓ Done' : '🔒 Locked'}</span>
-        </div>
-      </div>`;
-    }).join('');
+    body.innerHTML = CLICKER_ACHIEVEMENTS.map(a => { const done = ec.achievements.includes(a.id); return `<div class="ec-row ${done ? 'ec-row-done' : 'ec-row-locked'}">
+      <div class="ec-row-top"><span class="ec-row-icon">${a.icon}</span><span class="ec-row-main">${a.name}<span class="ec-row-sub">${a.desc}</span></span></div>
+      <div class="ec-row-footer"><span class="ec-row-footer-label">${a.cash ? '+$' + a.cash.toFixed(2) : ''}${a.globalBonus ? ` · +${(a.globalBonus * 100).toFixed(0)}% global` : ''}</span><span class="ec-row-cost">${done ? '✓ Done' : '🔒 Locked'}</span></div></div>`; }).join('');
   }
 }
-
-// Full render — stats + tab body together. Used by direct user actions (click, buy, tab switch,
-// transmute) where an immediate, complete visual update is expected and only happens once, not
-// 60 times a second. The tick loop uses the two pieces separately instead (see ecTickLoop).
-function renderElementClicker(){
-  renderElementClickerStats();
-  renderElementClickerTabBody();
-}
+function renderElementClicker(){ renderElementClickerStats(); renderElementClickerTabBody(); }
 
 function setupElementClicker(){
-  const panel = document.getElementById('ecPanel');
-  if(!panel) return; // only exists on cookin.html
-  const clickBtn = document.getElementById('ecClickBtn');
-  clickBtn.addEventListener('click', (e) => {
-    const gain = ecClick();
-    renderElementClicker();
-    ecSpawnFloatingGain(e.clientX, e.clientY, gain);
-  });
-  document.getElementById('ecTabBody').addEventListener('click', (e) => {
-    const row = e.target.closest('[data-action]');
-    if(!row) return;
+  const panel = document.getElementById('ecPanel'); if(!panel) return;
+  document.getElementById('ecClickBtn').addEventListener('click', e => { const gain = ecClick(); renderElementClickerStats(); ecSpawnFloatingGain(e.clientX, e.clientY, gain); });
+  document.getElementById('ecTabBody').addEventListener('click', e => {
+    const row = e.target.closest('[data-action]'); if(!row) return;
     if(row.dataset.action === 'buyBuilding') ecBuyBuilding(row.dataset.id);
     else if(row.dataset.action === 'buyUpgrade'){ const u = ecFindUpgrade(row.dataset.id); if(u) ecBuyUpgrade(u); }
   });
-  document.querySelectorAll('.ec-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.ec-tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      ecActiveTab = tab.dataset.tab;
-      renderElementClicker();
-    });
-  });
+  document.querySelectorAll('.ec-tab').forEach(tab => tab.addEventListener('click', () => {
+    document.querySelectorAll('.ec-tab').forEach(t => t.classList.remove('active')); tab.classList.add('active');
+    ecActiveTab = tab.dataset.tab; renderElementClicker();
+  }));
   document.getElementById('ecTransmuteBtn').addEventListener('click', ecTransmute);
-
+  const sel = document.getElementById('ecTarget');
+  if(sel){
+    sel.innerHTML = ELEMENT_LIST.map(s => `<option value="${s}">${s} — ${itemName('element', s)} ($${ELEMENT_PRICES[s]})</option>`).join('');
+    sel.value = ecState().target;
+    sel.addEventListener('change', () => {
+      const ec = ecState(), oldP = elementValue(ec.target);
+      ec.acc = ec.acc * oldP / elementValue(sel.value);     // keep the partial progress worth the same dollars
+      ec.target = sel.value; saveEconomy(); renderElementClicker();
+    });
+  }
   renderElementClicker();
 }
-try{ setupElementClicker(); } catch(e){ console.error('[element-clicker] setup failed:', e); }
+try{ setupElementClicker(); }catch(e){ console.error('[synthesizer] setup failed:', e); }
 
-// Runs on EVERY page, same as the shared cash display — atoms accumulate site-wide, not just
-// while cookin.html happens to be open. Rendering (and the achievement-toast side effects) only
-// actually does anything once #ecPanel exists in the DOM.
-//
-// Deliberately setInterval, NOT requestAnimationFrame. rAF runs at the DISPLAY'S refresh rate —
-// on a 120Hz/144Hz+ monitor (increasingly common) that's several times more often than this was
-// originally tuned and tested against, meaning every per-tick cost silently scales with the
-// person's hardware. This runs at a fixed, hardware-independent rate instead.
-const EC_TICK_INTERVAL_MS = 100; // 10x/sec — snappier-looking atom counter than the original 250ms
-let ecLastFrame = Date.now();
-let ecLocalSaveLast = Date.now();
-let ecTabBodyLastRender = 0;
-let ecAchievementCheckLast = 0;
-let ecPanelCache = undefined; // cached across ticks — see ecTickLoop, avoids a DOM lookup on every single tick
+// Runs on EVERY page, so production continues site-wide, not only while cookin.html is open. setInterval (not rAF) so the
+// per-tick cost doesn't scale with display refresh rate; elapsed time is credited in full (capped) so throttled tabs lose nothing.
+const EC_TICK_INTERVAL_MS = 100;
+let ecLastFrame = Date.now(), ecLocalSaveLast = Date.now(), ecTabBodyLastRender = 0, ecAchievementCheckLast = 0, ecInvLast = 0, ecPanelCache;
 function ecTickLoop(){
   try{
-    const now = Date.now();
-    const dt = (now - ecLastFrame) / 1000;
-    ecLastFrame = now;
-    // Browsers throttle setInterval in tabs that haven't had recent user interaction — even a
-    // foreground tab, on some browsers/power settings, not just backgrounded ones — so a "gap"
-    // between ticks bigger than EC_TICK_INTERVAL_MS is a NORMAL, expected occurrence here, not a
-    // sign anything is wrong. The old code capped dt at 5 seconds and threw away everything past
-    // that, meaning a throttled gap didn't just delay the count, it permanently LOST that time —
-    // atoms silently stopped accumulating and stayed stopped until something (e.g. a click, which
-    // resets the browser's "recently interacted with" clock and lifts the throttling) forced
-    // things to catch up. Awarding the FULL elapsed real time here — generously capped, not
-    // discarded — means the counter self-corrects the moment a tick finally does fire, with
-    // nothing lost while it was throttled.
-    if(portfolio.elementClicker && dt > 0){
-      const cappedDt = Math.min(dt, 300); // still bounded, just generous — guards against a genuine multi-minute system-sleep gap counting as active production, not against normal throttling
-      const gained = ecTotalCps() * cappedDt;
-      if(gained > 0){
-        portfolio.elementClicker.atoms += gained;
-        portfolio.elementClicker.totalAtoms += gained;
-        portfolio.elementClicker.runAtoms = (portfolio.elementClicker.runAtoms || 0) + gained;
-      }
-    }
-    if(now - ecLocalSaveLast > 2000){ ecLocalSaveLast = now; localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio)); }
-    if(ecPanelCache === undefined) ecPanelCache = document.getElementById('ecPanel'); // looked up once, ever — #ecPanel is static markup that never appears/disappears after page load
+    const now = Date.now(), dt = Math.min((now - ecLastFrame) / 1000, 300); ecLastFrame = now;
+    const cps = ecTotalCps();
+    if(cps > 0 && dt > 0) ecProduce(cps * dt);
+    if(now - ecLocalSaveLast > 5000){ ecLocalSaveLast = now; saveEconomy(true); }    // background: local copy now, Firebase at most every ~30s
+    if(ecPanelCache === undefined) ecPanelCache = document.getElementById('ecPanel');
     if(ecPanelCache){
-      renderElementClickerStats(); // cheap — text only, safe every tick
-      // the buildings/upgrades/achievements grid is a full innerHTML rebuild — much more
-      // expensive, and doing it too often was what made clicks/tabs stop responding after a few
-      // seconds (the main thread falls behind faster than it can catch up). Refreshing it twice
-      // a second is still plenty responsive for "can I afford this yet" highlighting.
+      renderElementClickerStats();
       if(now - ecTabBodyLastRender > 500){ ecTabBodyLastRender = now; renderElementClickerTabBody(); }
     }
-    // Achievements don't need much precision — checking once a second cuts this to a fraction of
-    // the work with no visible difference, and (more importantly) means even a bug that makes an
-    // achievement re-qualify repeatedly can save at most once a second, not many times, before
-    // ECONOMY_SAVE_MIN_INTERVAL_MS caps it further still.
+    if(now - ecInvLast > 1500){ ecInvLast = now; refreshInventoryUI(); }
     if(now - ecAchievementCheckLast > 1000){ ecAchievementCheckLast = now; ecCheckAchievements(); }
-  } catch(e){
-    console.error('[element-clicker] tick failed:', e); // log and keep ticking rather than let one bad tick silently stop the whole loop
-  }
+  }catch(e){ console.error('[synthesizer] tick failed:', e); }
 }
 setInterval(ecTickLoop, EC_TICK_INTERVAL_MS);
-// Belt-and-suspenders for the same throttling behavior: the instant the tab becomes visible
-// again (switching back to it, or the OS/browser waking it up), immediately run a tick rather
-// than waiting for the next scheduled interval fire — some browsers take one extra throttled
-// cycle to fully "unclamp" a timer even after the tab regains focus, so this skips that wait and
-// snaps the display to the correct value right away instead of visibly lagging for a moment.
 document.addEventListener('visibilitychange', () => { if(!document.hidden) ecTickLoop(); });
 window.addEventListener('focus', ecTickLoop);
 
-// Flushes anything still sitting in either debounce window (the clicker's own ~4s batch, and the
-// general economy's ~3s write-frequency floor) straight to Firebase, bypassing both delays.
-// Called whenever there's a real chance the tab is about to stop running JS at all — closing it
-// is the obvious case, but `beforeunload` alone isn't reliable enough to depend on: it doesn't
-// fire when a mobile browser simply suspends a backgrounded tab (which happens far more often
-// than an actual close), so `visibilitychange`→hidden is the one that actually catches most
-// real-world "this session might just end here" moments. Both are wired below; either firing
-// flushes the same one function, so nothing here depends on which one the browser honors.
-function flushPendingSaves(){
-  if(economySaveTimer){ clearTimeout(economySaveTimer); economySaveTimer = null; }
-  if(pendingEconomySave || playerDataLoaded){ // playerDataLoaded check mirrors saveEconomy()'s own guard — never push a save before the real data has loaded
-    if(playerDataLoaded){ lastEconomySaveAt = Date.now(); savePortfolio(portfolio); }
-  }
-  if(ecSaveTimer){ clearTimeout(ecSaveTimer); ecSaveTimer = null; }
-  if(portfolio.elementClicker && db && investorId && playerDataLoaded){
-    lastLocalWriteAt = Date.now();
-    db.ref('players/' + investorId + '/elementClicker').set(portfolio.elementClicker).catch(() => {}); // no retry scheduling here on purpose — the tab may already be gone by the time a retry would fire
-  }
-}
-document.addEventListener('visibilitychange', () => { if(document.hidden) flushPendingSaves(); });
-window.addEventListener('beforeunload', flushPendingSaves);
-window.addEventListener('pagehide', flushPendingSaves); // fires more reliably than beforeunload on iOS Safari specifically
-
-/* ================= MINIGAMES (cookin.html — shown everywhere as "Minigames") =================
-   Ten small chemistry/physics games sharing the exact same portfolio.cash as the rest of the
-   site — a win here spends the same way as a win on the Coin Exchange. Payouts are deliberately
-   small and diminish the more you replay the SAME game in one browser session (resets when the
-   tab closes), so this can't become a free way to print unlimited money — it's meant to be a
-   fun, light top-up, not a second economy. */
-const GAME_SESSION_KEY = 'mrwestcoin_game_session_plays';
-function getSessionPlays(gameId){
-  const raw = sessionStorage.getItem(GAME_SESSION_KEY);
-  const data = raw ? JSON.parse(raw) : {};
-  return data[gameId] || 0;
-}
-function bumpSessionPlays(gameId){
-  const raw = sessionStorage.getItem(GAME_SESSION_KEY);
-  const data = raw ? JSON.parse(raw) : {};
-  data[gameId] = (data[gameId] || 0) + 1;
-  sessionStorage.setItem(GAME_SESSION_KEY, JSON.stringify(data));
-  return data[gameId];
-}
+/* ================= MINIGAMES (cookin.html) =================
+   Skill games that pay into the SAME wallet as everything else. Payouts diminish per game per UTC day (persisted,
+   so a reload can't reset them), soften after a daily total, scale with your Periodic Table collection, and
+   sometimes drop a few cheap elements that feed straight into WestLab crafting. */
 function lockGameContent(){
-  // Disabling this after ANY round resolves (win or lose) is what actually closes the exploit —
-  // every single-answer game funnels through awardGameCash/showGameLoss, so locking here covers
-  // all 20 games at once instead of needing a fix in each one individually. Without this, a
-  // "Submit" button stayed clickable forever with the same unchanged answer still in the input,
-  // so spam-clicking it just kept re-awarding the diminishing-returns floor amount indefinitely
-  // — a $2 base game floors at 15% = $0.30, which is exactly the "$0.30 every click" bug.
   const content = document.getElementById('gameContent');
-  if(content) content.style.pointerEvents = 'none';
+  if(content) content.style.pointerEvents = 'none';      // every game funnels through awardGameCash/showGameLoss, so this one lock stops submit-spamming
 }
 function awardGameCash(gameId, baseAmount, resultEl, label){
-  const plays = bumpSessionPlays(gameId);
-  const factor = Math.max(0.15, 1 - (plays - 1) * 0.12); // 100%, 88%, 76%... floors at 15%
-  const amount = Math.round(baseAmount * factor * 100) / 100;
-  portfolio.cash += amount;
-  saveEconomy();
-  if(typeof renderPortfolio === 'function') renderPortfolio();
-  if(resultEl) resultEl.innerHTML = `<div class="game-result win">${label || 'Correct!'} +$${amount.toFixed(2)}</div>`;
+  const g = ensureGameDay();
+  const plays = (g.plays[gameId] || 0) + 1; g.plays[gameId] = plays;
+  const diminish = Math.max(0.15, 1 - (plays - 1) * 0.12);                // 100%, 88%, 76% … floors at 15%
+  const soft = g.earned >= GAME_DAILY_SOFTCAP ? 0.25 : 1;                 // past the daily cap, wins are worth a quarter
+  const bonus = collectionBonus();
+  const amount = earn(baseAmount * diminish * soft * bonus);
+  g.earned = round2(g.earned + amount);
+  let dropNote = '';
+  if(Math.random() < GAME_DROP_CHANCE * (soft < 1 ? 0.5 : 1)){
+    const sym = pickDrop(), n = 1 + Math.floor(Math.random() * 3);
+    creditItem('element', sym, n); dropNote = ` · found ${n}× ${sym}`;
+  }
+  saveEconomy(); refreshEconomyUI();
+  if(resultEl) resultEl.innerHTML = `<div class="game-result win">${label || 'Correct!'} +$${amount.toFixed(2)}${bonus > 1.005 ? ` (collection ×${bonus.toFixed(2)})` : ''}${dropNote}</div>`;
   lockGameContent();
 }
 function showGameLoss(resultEl, label){
