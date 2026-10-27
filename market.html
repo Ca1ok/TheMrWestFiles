@@ -37,7 +37,13 @@
   <div class="region wide" id="region-market" data-role="satellite">
     <div class="region-inner">
       <div class="page-title">WestLab</div>
-      <div class="page-sub">Buy elements with your $WEST cash, craft compounds, trade with other players</div>
+      <div class="page-sub">One wallet for everything: buy elements, craft compounds, fill contracts, sell to the Lab or trade with other players</div>
+
+      <div class="section-label">Collection</div>
+      <div id="collectionBox" class="panel-card" style="padding:0.8rem 1rem;"></div>
+
+      <div class="section-label">Daily Contracts</div>
+      <div id="contractsList" class="owned-list"></div>
 
       <div class="section-label">Buy Elements</div>
       <div class="market-controls">
@@ -45,6 +51,17 @@
         <input type="number" id="marketQty" min="1" step="1" value="1">
         <button class="trade-btn buy" id="marketBuyBtn">Buy</button>
         <span class="market-price-hint" id="marketPriceHint"></span>
+      </div>
+
+      <div class="section-label">Sell to the Lab</div>
+      <div class="page-sub" style="margin-bottom:0.6rem;">The Lab buys back at a fixed share of base value, and its price sags if you flood it with one item — it recovers over a few hours. Crafted compounds are worth more than their ingredients.</div>
+      <div class="market-controls">
+        <select id="sellTypeSelect"><option value="element">Element</option><option value="compound">Compound</option></select>
+        <select id="sellItemSelect"></select>
+        <input type="number" id="sellQty" min="1" step="1" value="1">
+        <button class="tool-btn" id="sellMaxBtn" type="button">All</button>
+        <button class="trade-btn sell" id="sellBtn" disabled>Sell</button>
+        <span class="market-price-hint" id="sellQuote"></span>
       </div>
 
       <div class="section-label">Your Elements</div>
@@ -78,7 +95,7 @@
       </div>
 
       <div class="section-label">Marketplace</div>
-      <div class="page-sub" style="margin-bottom:0.6rem;">Buy or sell elements and compounds directly with other players</div>
+      <div class="page-sub" style="margin-bottom:0.6rem;">Buy or sell elements and compounds directly with other players — a 5% fee applies, and sellers are paid even while offline</div>
       <div class="market-controls">
         <select id="listTypeSelect">
           <option value="element">Element</option>
