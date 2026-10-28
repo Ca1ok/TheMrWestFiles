@@ -74,10 +74,12 @@
       <div class="trade-panel">
         <input type="number" id="qty" placeholder="Qty" min="0" step="1" value="1">
         <button class="trade-btn buy" id="buyBtn">Buy</button>
+        <button class="trade-btn buy" id="buyAllBtn" title="Spend all your cash on $WEST at the current price">Buy All</button>
       </div>
       <div class="msg" id="msg"></div>
 
       <div class="section-label" style="margin-top:1.2rem;">Open Positions</div>
+      <div style="display:flex; justify-content:flex-end; margin-bottom:0.5rem;"><button class="trade-btn sell" id="sellAllBtn" title="Sell every open position at the current price" disabled>Sell All</button></div>
       <div class="lots-list" id="lotsList"><div class="empty-history">No open positions.</div></div>
 
       <div class="section-label">Transaction History</div>
