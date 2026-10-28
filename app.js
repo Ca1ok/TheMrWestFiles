@@ -610,7 +610,7 @@ function showToast(html){
 function refreshEconomyUI(){
   if(typeof renderPortfolio === 'function') try{ renderPortfolio(); }catch(e){}
   updateNavCashDisplay();
-  ['renderHistory','renderLots','renderOwnedElements','renderOwnedCompounds','renderTools','renderSellPanel','renderContracts','renderCollection','renderCraftingBench','renderElementClicker','applyPtColors','renderPtCollectionBar','refreshLeaderboardGateUI'].forEach(fn => {
+  ['renderHistory','renderLots','renderOwnedElements','renderOwnedCompounds','renderTools','renderSellPanel','renderContracts','renderCollection','renderCraftingBench','renderElementClicker','applyPtColors','renderPtCollectionBar','refreshLeaderboardGateUI','renderVolUI'].forEach(fn => {
     if(typeof window[fn] === 'function') try{ window[fn](); }catch(e){}
   });
   if(typeof drawChart === 'function') try{ drawChart(); }catch(e){}
@@ -870,7 +870,7 @@ function renderLots(){
 const brushCanvas = document.getElementById('brushChart');
 const brushCtx = brushCanvas ? brushCanvas.getContext('2d') : null;
 let viewStart = null, viewEnd = null; // absolute timestamps; null = follow the live edge using rangePreset
-let rangePreset = '1D';
+let rangePreset = '1H';   // the action is visible at this zoom; 1D / 1W / All are one tap away
 const RANGE_PRESETS = { 'LIVE': 2 * 60 * 1000, '1H': 3600000, '6H': 6 * 3600000, '1D': 86400000, '1W': 7 * 86400000, 'ALL': Infinity };
 const MIN_WINDOW_MS = 8000; // can't shrink the selection below ~8 seconds of data
 const CHART_UP = '#4fae5c', CHART_DOWN = '#c23b3b';
@@ -1680,6 +1680,20 @@ async function fetchMarketCheckpoint(){
   } catch(e){ /* offline, or the file isn't reachable yet — keep ticking from what we have */ }
 }
 
+/* ---------- volatility (per-player preference; the fast game layer lives in market-model.js) ---------- */
+let volSig = '', lastShownPrice = null;   // declared before startMarket() runs, because that path calls renderVolUI() / updatePriceDisplays()
+const VOL_KEY = 'mrwestcoin_vol';
+const VOL_LABELS = { classic:'Classic', calm:'Calm', normal:'Normal', wild:'Wild', insane:'Insane' };
+const VOL_INFO = {
+  classic:'The original slow market — big moves take hours.',
+  calm:'Gentle chop: the price drifts about 1% a minute.',
+  normal:'Lively: about 2–3% a minute, with a pump or dump every few minutes.',
+  wild:'Fast: 5% swings a minute and big pumps and dumps. Fortunes both ways.',
+  insane:'Chaos: ~10% a minute with violent spikes. Not for the faint-hearted.'
+};
+function getVolLevel(){ let v = null; try{ v = localStorage.getItem(VOL_KEY); }catch(e){} return MARKET_VOL_LEVELS[v] !== undefined ? v : 'normal'; }
+marketSetVolatility(MARKET_VOL_LEVELS[getVolLevel()]);   // must happen before the first price is computed
+
 // first paint: the baked boot snapshot (always valid, deterministic) or a newer cached checkpoint
 (function startMarket(){
   const boot = MARKET_BOOT;
@@ -1698,7 +1712,37 @@ async function fetchMarketCheckpoint(){
   setInterval(() => { fetchMarketCheckpoint(); calibrateMarketClock(1); }, MARKET_CHECKPOINT_REFRESH_MS);
 })();
 
+// Switching volatility changes the price you trade at, so it's only allowed while you hold no open positions —
+// otherwise you could buy on one setting and sell on another purely to harvest the difference.
+function renderVolUI(){
+  const wrap = document.getElementById('volBtns'); if(!wrap) return;
+  const lvl = getVolLevel(), locked = portfolio.lots.length > 0, sig = lvl + '|' + locked;
+  if(sig === volSig) return; volSig = sig;
+  wrap.querySelectorAll('.vol-btn').forEach(b => { b.classList.toggle('active', b.dataset.vol === lvl); b.classList.toggle('locked', locked && b.dataset.vol !== lvl); });
+  const hint = document.getElementById('volHint');
+  if(hint) hint.textContent = locked ? 'Close your open positions to change volatility. ' + VOL_INFO[lvl] : VOL_INFO[lvl];
+}
+function setVolLevel(level){
+  if(MARKET_VOL_LEVELS[level] === undefined || level === getVolLevel()) return false;
+  if(portfolio.lots.length > 0) return false;
+  try{ localStorage.setItem(VOL_KEY, level); }catch(e){}
+  marketSetVolatility(MARKET_VOL_LEVELS[level]);
+  recomputePricesFrom(0);                                // every stored point is re-priced under the new setting
+  volSig = ''; refreshMarketUI(); renderVolUI();
+  return true;
+}
+(function wireVol(){
+  const wrap = document.getElementById('volBtns'); if(!wrap) return;
+  wrap.addEventListener('click', e => {
+    const b = e.target.closest('.vol-btn'); if(!b) return;
+    if(!setVolLevel(b.dataset.vol) && portfolio.lots.length > 0 && b.dataset.vol !== getVolLevel()){
+      const m = document.getElementById('msg'); if(m) m.textContent = 'Close your open positions before changing volatility.';
+    }
+  });
+})();
+
 function refreshMarketUI(){
+  renderVolUI();
   if(typeof clampScroll === 'function') clampScroll();
   updatePriceDisplays();
   if(!document.hidden) drawChart();
@@ -1740,6 +1784,11 @@ function marketReferencePrice(){
 
 function updatePriceDisplays(){
   const ref = marketReferencePrice();
+  if(priceEl && lastShownPrice !== null && currentPrice !== lastShownPrice){   // flash green/red on every tick so movement is felt
+    priceEl.classList.remove('flash-up', 'flash-down'); void priceEl.offsetWidth;
+    priceEl.classList.add(currentPrice > lastShownPrice ? 'flash-up' : 'flash-down');
+  }
+  lastShownPrice = currentPrice;
   const changePct = ref ? ((currentPrice - ref) / ref) * 100 : 0;
   const priceText = '$' + currentPrice.toFixed(2);
   if(priceEl) priceEl.textContent = priceText;
@@ -1754,7 +1803,7 @@ function updatePriceDisplays(){
   const hint = document.getElementById('marketUpdatedHint');
   if(hint){
     hint.textContent = syncOK
-      ? 'Ticking live, computed locally from a shared seed and clock — the same price for everyone'
+      ? 'Ticking live, computed locally from a shared seed and clock — the same price for everyone on the same volatility setting'
       : 'Ticking from the built-in seed — checking GitHub for the latest checkpoint...';
   }
 }
