@@ -835,10 +835,11 @@ function renderHistory(){
   if(!historyListEl) return;
   if(portfolio.trades.length === 0){ historyListEl.innerHTML = '<div class="empty-history">No trades yet.</div>'; return; }
   historyListEl.innerHTML = portfolio.trades.slice().reverse().map(t => `
-    <div class="history-row ${t.type}"><span class="type">${t.type.toUpperCase()} #${t.lotId}</span><span>${t.qty.toFixed(4)} $WEST @ $${t.price.toFixed(2)}</span><span>${t.time}</span></div>`).join('');
+    <div class="history-row ${t.type}"><span class="type">${t.type.toUpperCase()}${t.lotId === 'all' ? ' ALL' : ' #' + t.lotId}</span><span>${t.qty.toFixed(4)} $WEST @ $${t.price.toFixed(2)}</span><span>${t.time}</span></div>`).join('');
 }
 const lotsListEl = document.getElementById('lotsList');
 function renderLots(){
+  updateSellAllBtn();
   if(!lotsListEl) return;
   if(portfolio.lots.length === 0){ lotsListEl.innerHTML = '<div class="empty-history">No open positions.</div>'; return; }
   lotsListEl.innerHTML = portfolio.lots.slice().reverse().map(l => {
@@ -1838,6 +1839,49 @@ if(buyBtnEl) buyBtnEl.addEventListener('click', () => {
   renderPortfolio(); renderHistory(); renderLots(); drawChart();
   msgEl.textContent = `Bought #${lotId}: ${qty} $WEST for $${cost.toFixed(2)}.`;
 });
+
+// One click: put ALL available cash into $WEST at the current price. Whole cents of quantity, rounded DOWN so the cost
+// can never exceed your cash.
+const buyAllBtnEl = document.getElementById('buyAllBtn');
+if(buyAllBtnEl) buyAllBtnEl.addEventListener('click', () => {
+  const qty = Math.floor((portfolio.cash / currentPrice) * 100) / 100;
+  if(!(qty > 0)){ msgEl.textContent = "You don't have enough cash to buy any."; return; }
+  const cost = qty * currentPrice;
+  if(!spend(cost)){ msgEl.textContent = "You can't afford that, champ."; return; }
+  const lotId = nextAvailableLotId();
+  portfolio.lots.push({ id: lotId, qty, buyPrice: currentPrice, time: new Date().toLocaleString() });
+  pushTrade({ type:'buy', qty, price: currentPrice, tax: 0, lotId, time: new Date().toLocaleString() });
+  savePortfolio(portfolio);
+  renderPortfolio(); renderHistory(); renderLots(); drawChart();
+  msgEl.textContent = `Bought #${lotId}: ${qty} $WEST for $${cost.toFixed(2)} — all in!`;
+});
+
+// Sell every open position at the current price. Each lot is taxed on its own profit exactly as if sold one by one.
+function updateSellAllBtn(){
+  const b = document.getElementById('sellAllBtn'); if(!b) return;
+  b.disabled = portfolio.lots.length === 0;
+  b.textContent = portfolio.lots.length > 1 ? `Sell All (${portfolio.lots.length})` : 'Sell All';
+}
+function sellAllLots(btnEl){
+  if(!portfolio.lots.length) return;
+  let gross = 0, taxTotal = 0, net = 0, pl = 0, qtyTotal = 0, n = portfolio.lots.length;
+  portfolio.lots.forEach(lot => {
+    const proceeds = lot.qty * currentPrice, basis = lot.qty * lot.buyPrice, profit = proceeds - basis;
+    const tax = (profit > 0 && basis > 0 && profit / basis >= PROFIT_TAX_THRESHOLD) ? profit * PROFIT_TAX_RATE : 0;
+    gross += proceeds; taxTotal += tax; net += proceeds - tax; pl += profit - tax; qtyTotal += lot.qty;
+  });
+  if(n > 1 && !confirm(`Sell all ${n} positions (${round2(qtyTotal)} $WEST) for about $${net.toFixed(2)}${taxTotal > 0 ? ' after $' + taxTotal.toFixed(2) + ' tax' : ''}?`)) return;
+  const anchorRect = btnEl ? btnEl.getBoundingClientRect() : null;
+  earn(net);
+  pushTrade({ type:'sell', qty: round2(qtyTotal), price: currentPrice, tax: round2(taxTotal), lotId: n > 1 ? 'all' : portfolio.lots[0].id, time: new Date().toLocaleString() });
+  portfolio.lots = [];
+  savePortfolio(portfolio);
+  renderPortfolio(); renderHistory(); renderLots(); drawChart();
+  if(anchorRect) spawnProfitPopup(anchorRect, pl);
+  msgEl.textContent = `Sold everything (${n} position${n === 1 ? '' : 's'}) for $${net.toFixed(2)}${taxTotal > 0 ? ` (after $${taxTotal.toFixed(2)} capital gains tax)` : ''} — ${pl >= 0 ? 'profit' : 'loss'} of $${Math.abs(pl).toFixed(2)}.`;
+}
+const sellAllBtnEl = document.getElementById('sellAllBtn');
+if(sellAllBtnEl) sellAllBtnEl.addEventListener('click', () => sellAllLots(sellAllBtnEl));
 
 // cookie-clicker style floating +$X.XX / -$X.XX that rises and fades above wherever it was triggered
 function spawnProfitPopup(anchorRect, amount){
