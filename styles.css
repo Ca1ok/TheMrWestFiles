@@ -1147,3 +1147,17 @@
   }
 
   #contractsList{ display:flex; flex-direction:column; gap:0; }
+
+
+  /* ===== Stock volatility selector + tick flash ===== */
+  .vol-row{ display:flex; flex-wrap:wrap; align-items:center; gap:0.5rem 0.8rem; margin:0.7rem 0 0.2rem; }
+  .vol-btn{ background: var(--paper-2); color: var(--muted); border:1px solid var(--line); border-radius: var(--radius-pill); font-family:inherit; font-size:var(--fs-xs); letter-spacing:0.08em; text-transform:uppercase; padding:0.4rem 0.8rem; cursor:pointer; transition: all 0.2s ease; }
+  .vol-btn:hover{ color: var(--ink); border-color: var(--rust-2); }
+  .vol-btn.active{ background: var(--rust); color: var(--ink); border-color: var(--rust-2); }
+  .vol-btn.locked{ opacity:0.4; cursor:not-allowed; }
+  .vol-hint{ font-size:var(--fs-xs); color: var(--muted); flex:1 1 220px; min-width:0; }
+  .price.flash-up{ animation: priceFlashUp 0.45s ease-out; }
+  .price.flash-down{ animation: priceFlashDown 0.45s ease-out; }
+  @keyframes priceFlashUp{ 0%{ color: var(--gain); text-shadow:0 0 14px rgba(111,207,122,0.7); } 100%{ text-shadow:0 0 0 transparent; } }
+  @keyframes priceFlashDown{ 0%{ color: var(--danger); text-shadow:0 0 14px rgba(217,83,79,0.7); } 100%{ text-shadow:0 0 0 transparent; } }
+  @media (max-width: 620px){ .vol-row .range-btns{ width:100%; justify-content:center; flex-wrap:wrap; } .vol-hint{ text-align:center; flex-basis:100%; } }
