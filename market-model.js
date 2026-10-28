@@ -74,10 +74,56 @@ function marketLevelAtTick(tickIndex, adjustments){
   return level;
 }
 
+// ---- FAST "GAME" LAYER -------------------------------------------------------------------------
+// The shared process above moves over HOURS, which is realistic but slow to play. This layer adds the
+// short-term action: swings every few seconds, bigger waves over minutes, and occasional pumps and dumps.
+// It is a pure function of (tick, volatility level) — no state, no history, nothing stored — so everyone on
+// the same setting still sees exactly the same price at the same moment, admin spikes and the stored history
+// stay valid, and it costs a handful of arithmetic operations per tick.
+//   level 0   = classic (layer off, the original price exactly)
+// The level is a per-player preference set by the browser (the GitHub Action leaves it at 0).
+const MARKET_VOL_LEVELS = { classic: 0, calm: 0.6, normal: 1.5, wild: 3, insane: 6 };
+let MARKET_GAME_VOL = 0;
+function marketSetVolatility(v){ MARKET_GAME_VOL = Math.max(0, +v || 0); }
+function marketGetVolatility(){ return MARKET_GAME_VOL; }
+// integer hash -> [0,1). Uses only Math.imul and shifts, so every engine agrees bit-for-bit.
+function marketHash(a, b){
+  let h = Math.imul(a ^ 0x9E3779B9, 0x85EBCA6B) ^ Math.imul((b | 0) + 0x7F4A7C15, 0xC2B2AE35);
+  h ^= h >>> 15; h = Math.imul(h, 0x2C1B3C6D); h ^= h >>> 12; h = Math.imul(h, 0x297A2D39); h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
+function marketValueNoise(tick, period, salt){            // smooth random curve in [-1,1], new lattice point every `period` ticks
+  const x = tick / period, i0 = Math.floor(x), f = x - i0, sm = f * f * (3 - 2 * f);
+  const a = marketHash(salt, i0) * 2 - 1, b = marketHash(salt, i0 + 1) * 2 - 1;
+  return a + (b - a) * sm;
+}
+// [period in ticks (1 tick = 250ms), amplitude as a fraction of price] — 2.5s, 8s, 25s, 85s, 5min, 20min waves
+const MARKET_FAST_LAYERS = [[10, 0.006], [32, 0.010], [100, 0.014], [340, 0.020], [1200, 0.026], [4800, 0.030]];
+const MARKET_EVENT_WINDOW = 480;                          // at most one pump/dump per 2-minute window (10% of windows have one)
+function marketFastLog(tick){
+  let s = 0;
+  for(let j = 0; j < MARKET_FAST_LAYERS.length; j++) s += MARKET_FAST_LAYERS[j][1] * marketValueNoise(tick, MARKET_FAST_LAYERS[j][0], MARKET_SEED + j * 7919);
+  const w0 = Math.floor(tick / MARKET_EVENT_WINDOW);
+  for(let w = w0 - 2; w <= w0; w++){                      // an event's tail can outlive its window, so look back two
+    if(marketHash(MARKET_SEED + 1, w) >= 0.10) continue;
+    const dt = tick - (w * MARKET_EVENT_WINDOW + Math.floor(marketHash(MARKET_SEED + 4, w) * 240));
+    if(dt < 0) continue;
+    const mag = (0.03 + 0.07 * marketHash(MARKET_SEED + 3, w)) * (marketHash(MARKET_SEED + 2, w) < 0.5 ? -1 : 1);
+    if(dt < 40){ const f = dt / 40; s += mag * f * f * (3 - 2 * f); }          // ~10s ramp
+    else s += mag * Math.exp(-(dt - 40) / 200);                                 // then fades over ~a minute
+  }
+  return s;
+}
+function marketGameFactor(tick){
+  if(!(MARKET_GAME_VOL > 0)) return 1;
+  const x = Math.max(-0.8, Math.min(0.8, marketFastLog(tick) * MARKET_GAME_VOL));
+  return Math.exp(x);
+}
+
 // What every player actually sees and trades at. Rounded to 4 decimals so two engines that
 // differ in the last floating-point bit of Math.exp still agree on the exact same number.
 function marketDisplayPrice(norm, tickIndex, adjustments){
-  const p = norm * marketLevelAtTick(tickIndex, adjustments);
+  const p = norm * marketLevelAtTick(tickIndex, adjustments) * marketGameFactor(tickIndex);
   return Math.round(Math.max(MARKET_MIN_PRICE, p) * 10000) / 10000;
 }
 
@@ -176,6 +222,7 @@ if(typeof module !== 'undefined' && module.exports){
     MARKET_MODEL_VERSION, MARKET_SEED, MARKET_GENESIS_T, MARKET_TICK_MS, MARKET_CALLS_PER_TICK,
     MARKET_GENESIS_STATE, MARKET_BASE_VALUE, MARKET_TICKS_PER_DAY, MARKET_DAILY_DRIFT, MARKET_MIN_PRICE,
     marketTickIndexForTime, marketTimeForTickIndex, marketLevelAtTick, marketDisplayPrice,
+    MARKET_VOL_LEVELS, marketSetVolatility, marketGetVolatility, marketGameFactor, marketFastLog,
     marketRngFromCallCount, marketAdvanceOneTick, marketSimulate,
     marketCandleBuilder, marketCandleTicks
   };
