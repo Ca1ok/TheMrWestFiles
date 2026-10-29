@@ -1,3 +1,17 @@
+(function(){
+/* Everything in this file lives inside this function on purpose: nothing here (the wallet, the portfolio, earn(), spend(), the
+   Firebase handle…) is reachable from the browser console as a global, so you can't just type `portfolio.cash = 1e9`. The game data
+   tables below are frozen for the same reason (no `ELEMENT_PRICES.Au = 1e9` before selling). This is a speed bump — the real
+   protection is the server side (database.rules.json). */
+(function deepFreezeGameData(){
+  const seen = new Set();
+  const freeze = o => { if(!o || typeof o !== 'object' || seen.has(o)) return; seen.add(o); Object.freeze(o); Object.values(o).forEach(freeze); };
+  [typeof ELEMENT_PRICES !== 'undefined' && ELEMENT_PRICES, typeof MELTING_POINTS !== 'undefined' && MELTING_POINTS, typeof BOILING_POINTS !== 'undefined' && BOILING_POINTS,
+   typeof TOOLS !== 'undefined' && TOOLS, typeof RECIPES !== 'undefined' && RECIPES, typeof COLLECTION_MILESTONES !== 'undefined' && COLLECTION_MILESTONES,
+   typeof CLICKER_BUILDINGS !== 'undefined' && CLICKER_BUILDINGS, typeof CLICKER_CLICK_UPGRADES !== 'undefined' && CLICKER_CLICK_UPGRADES,
+   typeof CLICKER_BUILDING_UPGRADES !== 'undefined' && CLICKER_BUILDING_UPGRADES, typeof CLICKER_GLOBAL_UPGRADES !== 'undefined' && CLICKER_GLOBAL_UPGRADES,
+   typeof CLICKER_ACHIEVEMENTS !== 'undefined' && CLICKER_ACHIEVEMENTS].forEach(freeze);
+})();
 /* ================= WANTED POSTER (poster page only) ================= */
 if(document.getElementById('missingBanner')){
   document.getElementById('missingBanner').textContent = `Missing ${WANTED_DATA.missingDays} day(s)`;
@@ -463,29 +477,36 @@ if(lasToggle){
    - marketplace sales are paid through an append-only inbox (never by editing someone else's cash) */
 const STORAGE_KEY = 'mrwestcoin_portfolio';
 const SAVE_VERSION = 2;
-const SYNC_FIELDS = ['cash','lots','trades','elements','compounds','tools','crafting','elementClicker','disc','game','demand','claimed','contracts','nameLocked'];
+const SYNC_FIELDS = ['cash','lots','trades','elements','compounds','tools','crafting','elementClicker','disc','game','demand','claimed','contracts','nameLocked','tax'];
 const START_CASH = 1000;
 const MAX_TRADES = 40;
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const round2 = n => Math.round(n * 100) / 100;
-const todayStr = () => new Date().toISOString().slice(0, 10);
+// Day boundaries use the SERVER-calibrated clock (see marketNow), so changing the device clock can't reset daily limits or dodge the daily tax.
+const todayStr = () => { let off = 0; try{ off = marketClockOffset; }catch(e){} return new Date(Date.now() + off).toISOString().slice(0, 10); };
 const toArr = v => Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []);
 
 function defaultClickerState(){
   const buildings = {}; CLICKER_BUILDINGS.forEach(b => { buildings[b.id] = 0; });
   return { total:0, run:0, acc:0, target:'H', totalClicks:0, buildings, upgrades:[], achievements:[], prestige:{ level:0, shards:0 } };
 }
+function defaultTaxState(){ return { last:'', total:0, lastAmount:0, lastRate:0, lastDay:'' }; }
 function defaultPortfolio(){
   return {
     v: SAVE_VERSION, cash: START_CASH, lots: [], trades: [], elements: {}, compounds: {}, tools: ['basic'],
     crafting: { elements:{}, compounds:{} }, elementClicker: defaultClickerState(),
-    disc: { e:[], c:[] }, game: { day:'', plays:{}, earned:0 }, demand: {}, claimed: [], contracts: { day:'', done:[] }, nameLocked: false
+    disc: { e:[], c:[] }, game: { day:'', plays:{}, earned:0 }, demand: {}, claimed: [], contracts: { day:'', done:[] }, nameLocked: false,
+    tax: defaultTaxState()
   };
 }
 // Brings ANY saved shape (current, v1, or a partial Firebase record where empty arrays/objects vanished) up to date.
 function migratePortfolio(raw){
   const p = Object.assign(defaultPortfolio(), raw || {});
   if(typeof p.cash !== 'number' || !isFinite(p.cash)) p.cash = START_CASH;
+  if(p.cash < 0) p.cash = 0;
+  p.tax = Object.assign(defaultTaxState(), (p.tax && typeof p.tax === 'object') ? p.tax : {});
+  ['total','lastAmount','lastRate'].forEach(k => { if(typeof p.tax[k] !== 'number' || !isFinite(p.tax[k])) p.tax[k] = 0; });
+  if(typeof p.tax.last !== 'string') p.tax.last = ''; if(typeof p.tax.lastDay !== 'string') p.tax.lastDay = '';
   if(raw && raw.lots === undefined && raw.held > 0){ p.lots = [{ id:1, qty:raw.held, buyPrice:12.5, time:new Date().toLocaleString() }]; }
   p.lots = toArr(p.lots); p.trades = toArr(p.trades).slice(-MAX_TRADES); p.claimed = toArr(p.claimed);
   p.tools = toArr(p.tools); if(!p.tools.includes('basic')) p.tools.unshift('basic');
@@ -525,8 +546,28 @@ function migratePortfolio(raw){
   delete p.reactors; delete p.reactorPending; delete p.held; delete p.nextLotId; delete p.migratedNote;
   return p;
 }
+// Local-save integrity: the save is stored with a signature, and anything whose signature doesn't match (edited in DevTools,
+// pasted in, or changed from another tab) is thrown away instead of trusted. This is a speed bump, not real security — the
+// real protection is the Firebase rules + the fact that the cloud copy always wins on load (see database.rules.json).
+const SIG_KEY = STORAGE_KEY + '_sig';
+function sigOf(str){
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57; const t = 'mwf|' + SAVE_VERSION + '|' + str;
+  for(let i = 0; i < t.length; i++){ const ch = t.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+function verifiedLocalRaw(raw, sig){
+  if(!raw) return null;
+  if(sig === sigOf(raw)) return raw;
+  if(!sig && !db) return raw;            // an old unsigned save, only trusted when there's no cloud to check it against
+  return null;
+}
 function loadPortfolio(){
-  try{ const raw = localStorage.getItem(STORAGE_KEY); if(raw) return migratePortfolio(JSON.parse(raw)); }catch(e){}
+  try{
+    const raw = verifiedLocalRaw(localStorage.getItem(STORAGE_KEY), localStorage.getItem(SIG_KEY));
+    if(raw) return migratePortfolio(JSON.parse(raw));
+  }catch(e){}
   return defaultPortfolio();
 }
 let portfolio = loadPortfolio();
@@ -550,7 +591,7 @@ function markSynced(remote){ SYNC_FIELDS.forEach(f => { sent[f] = canon(remote ?
 markSynced(null);
 let playerDataLoaded = !db, flushTimer = null, flushAt = 0, localTouched = false;
 
-function persistLocal(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio)); }catch(e){} }
+function persistLocal(){ try{ const raw = JSON.stringify(portfolio); localStorage.setItem(STORAGE_KEY, raw); localStorage.setItem(SIG_KEY, sigOf(raw)); }catch(e){} }
 function scheduleFlush(delay){
   if(!db || !investorId) return;
   const at = Date.now() + delay;
@@ -592,11 +633,63 @@ function formatCashCompact(n){
 }
 function updateNavCashDisplay(){
   const el = document.getElementById('navCashDisplay');
-  if(el) el.textContent = '$' + formatCashCompact(portfolio.cash);
+  if(el){
+    el.textContent = '$' + formatCashCompact(portfolio.cash);
+    const r = taxRateFor(portfolio.cash);
+    el.title = r > 0 ? `Daily tax at this balance: ${(r * 100).toFixed(2)}% (about $${formatCashCompact(round2(portfolio.cash * r))} at midnight UTC)` : `No daily tax while you hold $${TAX_THRESHOLD.toLocaleString()} or less`;
+  }
 }
 function earn(amount){ amount = round2(amount); if(!(amount > 0)) return 0; portfolio.cash = round2(portfolio.cash + amount); updateNavCashDisplay(); return amount; }
 function spend(amount){ amount = round2(amount); if(!(amount >= 0) || portfolio.cash + 1e-9 < amount) return false; portfolio.cash = round2(portfolio.cash - amount); updateNavCashDisplay(); return true; }
 function canAfford(amount){ return portfolio.cash + 1e-9 >= amount; }
+/* ================= DAILY WEALTH TAX =================
+   Once a UTC day, a percentage of your CASH is taken — but only if you hold more than TAX_THRESHOLD. At or below it there is
+   no tax at all. Above it the rate climbs exponentially with how far over you are, starting from zero (no cliff at the
+   threshold): rate = TAX_BASE x (e^(TAX_GROWTH x excess) - 1), where excess = (cash - threshold) / threshold, capped at TAX_MAX_RATE.
+   Tune the numbers in data/economy-data.js. Days missed while away are charged too (up to TAX_MAX_CATCHUP_DAYS). */
+function taxRateFor(cash){
+  if(!(cash > TAX_THRESHOLD)) return 0;
+  const excess = (cash - TAX_THRESHOLD) / TAX_THRESHOLD;
+  return Math.min(TAX_MAX_RATE, TAX_BASE * (Math.exp(TAX_GROWTH * excess) - 1));
+}
+function dayIndexOf(str){ const t = Date.parse(str + 'T00:00:00Z'); return isNaN(t) ? NaN : Math.floor(t / 86400000); }
+function applyDailyTax(){
+  if(!playerDataLoaded) return;               // never tax a half-loaded account
+  const t = portfolio.tax, today = todayStr();
+  if(!t.last){ t.last = today; saveEconomy(); return; }       // first day on the new system is free
+  let days = dayIndexOf(today) - dayIndexOf(t.last);
+  if(!(days > 0)) return;
+  days = Math.min(days, TAX_MAX_CATCHUP_DAYS);
+  let paid = 0, rate = 0;
+  for(let i = 0; i < days; i++){
+    const r = taxRateFor(portfolio.cash);
+    if(!(r > 0)) break;                       // dropped under the threshold — remaining days are free
+    const amt = round2(portfolio.cash * r);
+    portfolio.cash = round2(portfolio.cash - amt); paid += amt; rate = r;
+  }
+  t.last = today;
+  if(paid > 0){ t.total = round2(t.total + paid); t.lastAmount = round2(paid); t.lastRate = rate; t.lastDay = today; }
+  saveEconomy(); updateNavCashDisplay(); refreshEconomyUI();
+  if(paid > 0) showToast(`<b>Daily tax collected</b><br>−$${paid.toFixed(2)} (${(rate * 100).toFixed(2)}% of your cash${days > 1 ? ', ' + days + ' days' : ''})`);
+}
+function renderTaxInfo(){
+  const el = document.getElementById('taxInfo'); if(!el) return;
+  const cash = portfolio.cash, r = taxRateFor(cash), t = portfolio.tax;
+  const msLeft = 86400000 - ((Date.now() + (function(){ try{ return marketClockOffset; }catch(e){ return 0; } })()) % 86400000);
+  const h = Math.floor(msLeft / 3600000), m = Math.floor(msLeft / 60000) % 60;
+  let html;
+  if(r > 0){
+    html = `<b>Daily tax:</b> <span class="tax-hot">${(r * 100).toFixed(2)}%</span> of your cash (about −$${round2(cash * r).toFixed(2)}) is collected in ${h}h ${m}m. The more you hoard over $${TAX_THRESHOLD.toLocaleString()}, the harder it bites — spend it, invest it or lose it.`;
+  } else {
+    html = `<b>Daily tax:</b> none. You're at or under $${TAX_THRESHOLD.toLocaleString()}; above that a daily tax kicks in and grows exponentially.`;
+  }
+  if(t && t.lastAmount > 0) html += `<br><span class="tax-last">Last collected ${esc(t.lastDay)}: −$${t.lastAmount.toFixed(2)} (${(t.lastRate * 100).toFixed(2)}%) · total paid $${t.total.toFixed(2)}</span>`;
+  if(el.innerHTML !== html) el.innerHTML = html;
+}
+setInterval(() => { applyDailyTax(); renderTaxInfo(); }, 30000);
+if(!db) setTimeout(applyDailyTax, 1500);
+document.addEventListener('visibilitychange', () => { if(!document.hidden){ applyDailyTax(); renderTaxInfo(); } });
+
 updateNavCashDisplay();
 
 function showToast(html){
@@ -610,9 +703,11 @@ function showToast(html){
 function refreshEconomyUI(){
   if(typeof renderPortfolio === 'function') try{ renderPortfolio(); }catch(e){}
   updateNavCashDisplay();
-  ['renderHistory','renderLots','renderOwnedElements','renderOwnedCompounds','renderTools','renderSellPanel','renderContracts','renderCollection','renderCraftingBench','renderElementClicker','applyPtColors','renderPtCollectionBar','refreshLeaderboardGateUI','renderVolUI'].forEach(fn => {
-    if(typeof window[fn] === 'function') try{ window[fn](); }catch(e){}
-  });
+  [typeof renderHistory === 'function' && renderHistory, typeof renderLots === 'function' && renderLots, typeof renderOwnedElements === 'function' && renderOwnedElements,
+   typeof renderOwnedCompounds === 'function' && renderOwnedCompounds, typeof renderTools === 'function' && renderTools, typeof renderSellPanel === 'function' && renderSellPanel,
+   typeof renderContracts === 'function' && renderContracts, typeof renderCollection === 'function' && renderCollection, typeof renderCraftingBench === 'function' && renderCraftingBench,
+   typeof renderElementClicker === 'function' && renderElementClicker, typeof applyPtColors === 'function' && applyPtColors, typeof renderPtCollectionBar === 'function' && renderPtCollectionBar,
+   typeof refreshLeaderboardGateUI === 'function' && refreshLeaderboardGateUI, renderTaxInfo].forEach(fn => { if(fn) try{ fn(); }catch(e){} });
   if(typeof drawChart === 'function') try{ drawChart(); }catch(e){}
 }
 
@@ -643,16 +738,15 @@ function loadPlayerData(uid){
   playerDataLoaded = false;
   db.ref('players/' + uid).once('value').then(snap => {
     const remote = snap.val();
-    if(remote && !localTouched){
+    if(remote){                                 // the cloud copy ALWAYS wins on load — local edits can never overwrite it
       portfolio = migratePortfolio(remote);
       markSynced(remote);                       // anything migration changed will now differ from `sent` and get written once
       persistLocal();
-    } else if(remote){                          // the player acted before the fetch returned — keep their newer local state
-      markSynced(remote);
     } else {
       markSynced(null);                         // brand-new account: write everything once
     }
     playerDataLoaded = true; localTouched = false;
+    applyDailyTax();
     flushNow();
     refreshEconomyUI();
   }).catch(() => { playerDataLoaded = true; });
@@ -669,7 +763,11 @@ if(db && investorId) loadPlayerData(investorId);
 // same-device multi-tab sync, for free (no Firebase traffic)
 window.addEventListener('storage', e => {
   if(e.key !== STORAGE_KEY || !e.newValue) return;
-  try{ portfolio = migratePortfolio(JSON.parse(e.newValue)); refreshEconomyUI(); }catch(err){}
+  try{
+    const raw = verifiedLocalRaw(e.newValue, localStorage.getItem(SIG_KEY));
+    if(!raw){ persistLocal(); return; }       // unsigned / edited by hand: ignore it and restore our own copy
+    portfolio = migratePortfolio(JSON.parse(raw)); refreshEconomyUI();
+  }catch(err){}
 });
 function flushPendingSaves(){ persistLocal(); flushNow(); }
 document.addEventListener('visibilitychange', () => { if(document.hidden) flushPendingSaves(); });
@@ -1394,13 +1492,8 @@ const NON_CHART_KEEP = 1500;     // other pages only need the last few minutes
 // ledger as it stood when this file was last updated, so a first-ever visit paints the right
 // price immediately. Everything newer arrives through the checkpoint file / Firebase listener.
 const MARKET_BOOT = {
-  tickIndex: -1, state: MARKET_GENESIS_STATE, dayAgo: null,
-  adjustments: [
-    { tickIndex: 8662345, delta: 10, at: 1789435986368 }, { tickIndex: 8731227, delta: 10, at: 1789453206976 },
-    { tickIndex: 8731327, delta: -10, at: 1789453231974 }, { tickIndex: 8731398, delta: -10, at: 1789453249528 },
-    { tickIndex: 8731665, delta: 100, at: 1789453316275 }, { tickIndex: 9312969, delta: -100, at: 1789598642252 },
-    { tickIndex: 9370373, delta: 100, at: 1789612993423 }, { tickIndex: 10022811, delta: 100, at: 1789776102877 }
-  ]
+  tickIndex: 23834399, state: {"fairValue": 0.9619825839144329, "momentum": -0.0024150875709596192, "vol": 0.0012794373876274907, "spike": 3.8674736447906337e-07, "price": 0.9596596828782512}, dayAgo: {"tickIndex": 23488800, "n": 0.8843},
+  adjustments: [{"tickIndex": 8662345, "delta": 10, "at": 1789435986368}, {"tickIndex": 8731227, "delta": 10, "at": 1789453206976}, {"tickIndex": 8731327, "delta": -10, "at": 1789453231974}, {"tickIndex": 8731398, "delta": -10, "at": 1789453249528}, {"tickIndex": 8731665, "delta": 100, "at": 1789453316275}, {"tickIndex": 9312969, "delta": -100, "at": 1789598642252}, {"tickIndex": 9370373, "delta": 100, "at": 1789612993423}, {"tickIndex": 10022811, "delta": 100, "at": 1789776102877}, {"tickIndex": 15953122, "delta": -100, "at": 1791258678460, "fadeSec": 300}, {"tickIndex": 16229325, "delta": -100, "at": 1791327712110}, {"tickIndex": 21767298, "delta": 100, "at": 1792712223916}, {"tickIndex": 22922700, "delta": 100, "at": 1793001076417, "fadeSec": 300}, {"tickIndex": 22922923, "delta": -200, "at": 1793001122768}, {"tickIndex": 23131880, "delta": 100, "at": 1793053114664}, {"tickIndex": 23133178, "delta": -150, "at": 1793053289765}]
 };
 
 let marketState = null;          // live noise state, ticked forward locally
@@ -1413,18 +1506,13 @@ let marketDayAgo = null;         // {tickIndex, n} from the checkpoint: price ~2
 let marketLastAdjKey = null;     // newest ledger key already baked into market-data.json
 let marketAdjListenerStarted = false;
 
-// validated cache of the last checkpoint seen, so the next page load starts from it instantly
-let market = (() => {
-  try{
-    const m = JSON.parse(localStorage.getItem('mrwestcoin_market_cache') || 'null');
-    if(m && m.model === MARKET_MODEL_VERSION && m.state && typeof m.tickIndex === 'number') return m;
-  } catch(e){}
-  return { updatedAt: 0 };
-})();
+// The local cache of the last checkpoint is gone on purpose: anything stored in localStorage can be edited from DevTools,
+// which would let a player feed themselves a fake price history. The boot snapshot above ships with the site instead.
+let market = { updatedAt: 0 };
 
 /* --- shared clock: every browser's own clock is a little off, so ticks are counted against the
    SERVER's clock, learned for free from the HTTP Date header of requests we already make --- */
-let marketClockOffset = Number(localStorage.getItem('mrwestcoin_clock_offset')) || 0; // server minus local, ms
+let marketClockOffset = 0; // server minus local, ms — learned from the server's Date header on every page load (never read back from storage)
 function marketNow(){ return Date.now() + marketClockOffset; } // the shared market clock
 let marketClockSamples = []; // {s: offset estimate, at: performance.now() when taken}
 function marketPerfNow(){ return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); }
@@ -1664,7 +1752,6 @@ async function loadMarketHistory(){
 
 function cacheCheckpointLocally(cp){
   market = { model: cp.model, updatedAt: cp.t, tickIndex: cp.tickIndex, state: cp.state, adjustments: cp.adjustments || [], lastAdjKey: cp.lastAdjKey || null, dayAgo: cp.dayAgo || null };
-  try{ localStorage.setItem('mrwestcoin_market_cache', JSON.stringify(market)); } catch(e){}
 }
 async function fetchMarketCheckpoint(){
   try{
@@ -1681,9 +1768,8 @@ async function fetchMarketCheckpoint(){
   } catch(e){ /* offline, or the file isn't reachable yet — keep ticking from what we have */ }
 }
 
-/* ---------- volatility (per-player preference; the fast game layer lives in market-model.js) ---------- */
-let volSig = '', lastShownPrice = null;   // declared before startMarket() runs, because that path calls renderVolUI() / updatePriceDisplays()
-const VOL_KEY = 'mrwestcoin_vol';
+/* ---------- volatility: set ONLY by the admin, one setting for every player ---------- */
+let lastShownPrice = null;   // declared before startMarket() runs, because that path calls updatePriceDisplays()
 const VOL_LABELS = { classic:'Classic', calm:'Calm', normal:'Normal', wild:'Wild', insane:'Insane' };
 const VOL_INFO = {
   classic:'The original slow market — big moves take hours.',
@@ -1692,20 +1778,91 @@ const VOL_INFO = {
   wild:'Fast: 5% swings a minute and big pumps and dumps. Fortunes both ways.',
   insane:'Chaos: ~10% a minute with violent spikes. Not for the faint-hearted.'
 };
-function getVolLevel(){ let v = null; try{ v = localStorage.getItem(VOL_KEY); }catch(e){} return MARKET_VOL_LEVELS[v] !== undefined ? v : 'normal'; }
-marketSetVolatility(MARKET_VOL_LEVELS[getVolLevel()]);   // must happen before the first price is computed
+// The admin's changes live in an append-only Firebase list ({tickIndex, level}); everyone replays the same list, so everyone
+// sees the same price at the same moment and old history never re-prices. Trading waits for the first read so nobody ever
+// trades against a price computed from the wrong setting.
+let marketVolLedger = [], marketVolSig = '[]', marketVolSynced = !db;
+function applyVolLedger(list){
+  const sig = JSON.stringify(list);
+  marketVolSynced = true;
+  if(sig === marketVolSig) return;
+  marketVolSig = sig; marketVolLedger = list;
+  marketSetVolSchedule(list);
+  recomputePricesFrom(0);
+  refreshMarketUI();
+  if(typeof renderAdminVolUI === 'function') renderAdminVolUI();
+}
+function startVolatilitySync(){
+  if(!db) return;
+  setTimeout(() => { marketVolSynced = true; }, 5000);       // can't reach the database: fall back to the default setting rather than lock trading forever
+  db.ref('marketVolatility').on('value', snap => {
+    const v = snap.val() || {};
+    const list = Object.keys(v).map(id => {
+      const e = v[id];
+      return (e && typeof e.tickIndex === 'number' && isFinite(e.tickIndex) && MARKET_VOL_LEVELS[e.level] !== undefined) ? { id, tickIndex: Math.floor(e.tickIndex), level: e.level, at: +e.at || 0 } : null;
+    }).filter(Boolean).sort((a, b) => a.tickIndex - b.tickIndex || a.at - b.at);
+    applyVolLedger(list);
+  }, () => { marketVolSynced = true; });
+}
+function currentVolLevel(){ return marketVolLevelAt(marketTickIndexForTime(marketNow())); }
+function tradingReady(){
+  if(marketVolSynced) return true;
+  const m = document.getElementById('msg'); if(m) m.textContent = 'Syncing the market — try again in a moment.';
+  return false;
+}
 
-// first paint: the baked boot snapshot (always valid, deterministic) or a newer cached checkpoint
+/* ---------- news + mood: the game layer's pumps and dumps get headlines ---------- */
+const NEWS_BULL = [
+  'Rumour of a lab breakthrough sends traders piling into $WEST',
+  'Mr West spotted “investing heavily” in $WEST — buyers stampede',
+  'Analyst upgrades $WEST to “unstable but fun”',
+  'Periodic Table crowd crowns $WEST the new favourite element',
+  'Whale accumulation detected — $WEST charges higher'
+];
+const NEWS_BEAR = [
+  'Surprise pop quiz rumour triggers a $WEST sell-off',
+  'Whales dump $WEST — panic spreads through the Lab',
+  'Fume cupboard incident rattles investors; $WEST slides',
+  'Analyst downgrades $WEST: “needs more electrons”',
+  'Margin calls ripple through the Lab as $WEST tumbles'
+];
+let newsSig = '';
+function renderNews(){
+  const banner = document.getElementById('newsBanner'); if(!banner || marketTickIndex < 0) return;
+  const textEl = document.getElementById('newsText'), moodEl = document.getElementById('marketMood');
+  const ev = marketEventAt(marketTickIndex), live = ev && marketVolAt(marketTickIndex) > 0;
+  let text, cls;
+  if(live){
+    const list = ev.dir > 0 ? NEWS_BULL : NEWS_BEAR;
+    text = (ev.dir > 0 ? '📈 BREAKING: ' : '📉 BREAKING: ') + list[Math.floor(ev.pick * list.length) % list.length];
+    cls = ev.dir > 0 ? 'bull' : 'bear';
+  } else {
+    text = marketVolAt(marketTickIndex) > 0 ? '🗞️ Quiet for now — but the Lab never stays quiet for long.' : '🗞️ Markets are calm. Trade responsibly.';
+    cls = '';
+  }
+  let mood = '';
+  if(priceHistory.length > 2){
+    const latest = priceHistory[priceHistory.length - 1], i = lowerBoundT(priceHistory, latest.t - 300000), ref = priceHistory[Math.min(i, priceHistory.length - 1)].price;
+    const ch = ref ? (latest.price - ref) / ref * 100 : 0;
+    mood = ch >= 3 ? '🔥 Bull run' : ch >= 0.8 ? '📈 Warming up' : ch <= -3 ? '🧊 Bear market' : ch <= -0.8 ? '📉 Cooling off' : '😐 Choppy';
+    mood += ` · ${ch >= 0 ? '+' : ''}${ch.toFixed(1)}% in 5 min`;
+  }
+  const sig = text + '|' + cls + '|' + mood;
+  if(sig === newsSig) return; newsSig = sig;
+  banner.className = 'news-banner' + (cls ? ' ' + cls : '');
+  if(textEl) textEl.textContent = text;
+  if(moodEl) moodEl.textContent = mood;
+}
+
+// first paint: the boot snapshot that ships with the site (always valid, deterministic)
 (function startMarket(){
   const boot = MARKET_BOOT;
-  const cached = (market && market.model === MARKET_MODEL_VERSION && market.tickIndex > boot.tickIndex) ? market : null;
-  const snap = cached || boot;
-  marketDayAgo = (cached && cached.dayAgo) || boot.dayAgo || null;
-  marketLastAdjKey = (cached && cached.lastAdjKey) || null;
+  marketDayAgo = boot.dayAgo || null;
+  marketLastAdjKey = null;
   mergeMarketAdjustments(boot.adjustments);
-  if(cached) mergeMarketAdjustments(cached.adjustments);
-  initMarketFrom({ tickIndex: snap.tickIndex, state: snap.state }, null);
+  initMarketFrom({ tickIndex: boot.tickIndex, state: boot.state }, null);
   updatePriceDisplays();
+  startVolatilitySync();
   fetchMarketCheckpoint().then(() => { startMarketAdjustmentSync(); });
   setTimeout(startMarketAdjustmentSync, 3000); // don't wait forever if the file can't be fetched
   calibrateMarketClock(3);
@@ -1713,37 +1870,8 @@ marketSetVolatility(MARKET_VOL_LEVELS[getVolLevel()]);   // must happen before t
   setInterval(() => { fetchMarketCheckpoint(); calibrateMarketClock(1); }, MARKET_CHECKPOINT_REFRESH_MS);
 })();
 
-// Switching volatility changes the price you trade at, so it's only allowed while you hold no open positions —
-// otherwise you could buy on one setting and sell on another purely to harvest the difference.
-function renderVolUI(){
-  const wrap = document.getElementById('volBtns'); if(!wrap) return;
-  const lvl = getVolLevel(), locked = portfolio.lots.length > 0, sig = lvl + '|' + locked;
-  if(sig === volSig) return; volSig = sig;
-  wrap.querySelectorAll('.vol-btn').forEach(b => { b.classList.toggle('active', b.dataset.vol === lvl); b.classList.toggle('locked', locked && b.dataset.vol !== lvl); });
-  const hint = document.getElementById('volHint');
-  if(hint) hint.textContent = locked ? 'Close your open positions to change volatility. ' + VOL_INFO[lvl] : VOL_INFO[lvl];
-}
-function setVolLevel(level){
-  if(MARKET_VOL_LEVELS[level] === undefined || level === getVolLevel()) return false;
-  if(portfolio.lots.length > 0) return false;
-  try{ localStorage.setItem(VOL_KEY, level); }catch(e){}
-  marketSetVolatility(MARKET_VOL_LEVELS[level]);
-  recomputePricesFrom(0);                                // every stored point is re-priced under the new setting
-  volSig = ''; refreshMarketUI(); renderVolUI();
-  return true;
-}
-(function wireVol(){
-  const wrap = document.getElementById('volBtns'); if(!wrap) return;
-  wrap.addEventListener('click', e => {
-    const b = e.target.closest('.vol-btn'); if(!b) return;
-    if(!setVolLevel(b.dataset.vol) && portfolio.lots.length > 0 && b.dataset.vol !== getVolLevel()){
-      const m = document.getElementById('msg'); if(m) m.textContent = 'Close your open positions before changing volatility.';
-    }
-  });
-})();
-
 function refreshMarketUI(){
-  renderVolUI();
+  renderNews();
   if(typeof clampScroll === 'function') clampScroll();
   updatePriceDisplays();
   if(!document.hidden) drawChart();
@@ -1804,7 +1932,7 @@ function updatePriceDisplays(){
   const hint = document.getElementById('marketUpdatedHint');
   if(hint){
     hint.textContent = syncOK
-      ? 'Ticking live, computed locally from a shared seed and clock — the same price for everyone on the same volatility setting'
+      ? 'Ticking live — one shared price for every player, steered by the admin'
       : 'Ticking from the built-in seed — checking GitHub for the latest checkpoint...';
   }
 }
@@ -1827,6 +1955,7 @@ function nextAvailableLotId(){
 
 const buyBtnEl = document.getElementById('buyBtn');
 if(buyBtnEl) buyBtnEl.addEventListener('click', () => {
+  if(!tradingReady()) return;
   const qty = parseFloat(qtyInput.value);
   if(!qty || qty<=0){ msgEl.textContent = 'Enter a valid quantity.'; return; }
   const cost = qty*currentPrice;
@@ -1844,6 +1973,7 @@ if(buyBtnEl) buyBtnEl.addEventListener('click', () => {
 // can never exceed your cash.
 const buyAllBtnEl = document.getElementById('buyAllBtn');
 if(buyAllBtnEl) buyAllBtnEl.addEventListener('click', () => {
+  if(!tradingReady()) return;
   const qty = Math.floor((portfolio.cash / currentPrice) * 100) / 100;
   if(!(qty > 0)){ msgEl.textContent = "You don't have enough cash to buy any."; return; }
   const cost = qty * currentPrice;
@@ -1863,7 +1993,7 @@ function updateSellAllBtn(){
   b.textContent = portfolio.lots.length > 1 ? `Sell All (${portfolio.lots.length})` : 'Sell All';
 }
 function sellAllLots(btnEl){
-  if(!portfolio.lots.length) return;
+  if(!portfolio.lots.length || !tradingReady()) return;
   let gross = 0, taxTotal = 0, net = 0, pl = 0, qtyTotal = 0, n = portfolio.lots.length;
   portfolio.lots.forEach(lot => {
     const proceeds = lot.qty * currentPrice, basis = lot.qty * lot.buyPrice, profit = proceeds - basis;
@@ -1897,6 +2027,7 @@ function spawnProfitPopup(anchorRect, amount){
 }
 
 function sellLot(lotId, btnEl){
+  if(!tradingReady()) return;
   const idx = portfolio.lots.findIndex(l => l.id === lotId);
   if(idx === -1) return;
   const lot = portfolio.lots[idx];
@@ -2670,11 +2801,19 @@ function collectionSummaryHtml(){
 function renderCollection(){ const el = document.getElementById('collectionBox'); if(el) el.innerHTML = collectionSummaryHtml(); }
 
 /* --- player-to-player marketplace (5% fee; sellers are paid through their inbox) --- */
+// A listing's price must stay near the item's real value — otherwise two accounts could 'trade' a $1 item for $1,000,000 and use the
+// marketplace as a money pipe (which would also be a way around the daily tax).
+const LISTING_MIN_MULT = 0.25, LISTING_MAX_MULT = 4;
+function listingPriceOk(type, key, pricePerUnit){
+  const base = itemValue(type, key);
+  return base > 0 && pricePerUnit >= base * LISTING_MIN_MULT - 1e-9 && pricePerUnit <= base * LISTING_MAX_MULT + 1e-9;
+}
 const createListingBtnEl = document.getElementById('createListingBtn');
 if(createListingBtnEl) createListingBtnEl.addEventListener('click', () => {
   const type = listTypeSelect.value === 'compound' ? 'compound' : 'element', key = listElemSelect.value;
   const qty = Math.floor(parseFloat(document.getElementById('listQty').value)), price = round2(parseFloat(document.getElementById('listPrice').value));
   if(!db || !key || !(qty >= 1) || !(price > 0) || qtyOf(type, key) < qty) return;
+  if(!listingPriceOk(type, key, price)){ const b = itemValue(type, key); showToast(`<b>Price out of range</b><br>List between $${(b * LISTING_MIN_MULT).toFixed(2)} and $${(b * LISTING_MAX_MULT).toFixed(2)} per unit.`); return; }
   removeItem(type, key, qty); saveEconomy(); refreshEconomyUI();
   const id = 'listing_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
   db.ref('marketplace/' + id).set({ sellerId: investorId, sellerName: investorName || 'Anonymous', type, symbol: key, qty, pricePerUnit: price, createdAt: Date.now() })
@@ -2693,6 +2832,7 @@ if(db && document.getElementById('marketplaceList')){
     wrap.querySelectorAll('.lr-buy').forEach(btn => btn.addEventListener('click', () => {
       const id = btn.dataset.id, l = val[id];
       if(!l || l.sellerId === investorId) return;
+      if(!(l.qty >= 1) || !listingPriceOk(l.type, l.symbol, l.pricePerUnit)){ showToast('<b>Listing rejected</b><br>That price is outside the allowed range.'); return; }
       const total = round2(l.qty * l.pricePerUnit);
       if(!spend(total)) return;                                   // pay first…
       db.ref('marketplace/' + id).transaction(cur => cur ? null : undefined).then(res => {   // …then atomically claim the listing (someone else may have been faster)
@@ -2880,6 +3020,7 @@ function compoundsMadeCount(){
 function pushLeaderboardEntry(){
   // only real signed-in accounts get added — anonymous play doesn't publish to the leaderboard
   if(!db || !investorName || !isSignedIn()) return;
+  if(investorName.length > 20 || !/^[\p{L}\p{N} _.\-]+$/u.test(investorName)) return;
   db.ref('leaderboard/' + investorId).set({
     name: investorName,
     value: portfolioValue(),
@@ -2919,7 +3060,7 @@ function renderLeaderboard(entries){
   leaderboardListEl.innerHTML = sorted.map((e,i) => `
     <div class="lb-row">
       <span class="lb-rank ${medalClass(i)}">#${i+1}</span>
-      <span class="lb-name ${e.id===investorId ? 'you' : ''}">${e.name}${e.id===investorId ? ' (you)' : ''}
+      <span class="lb-name ${e.id===investorId ? 'you' : ''}">${esc(e.name)}${e.id===investorId ? ' (you)' : ''}
         <span style="display:block; font-size:0.62rem; color:var(--muted);">${e.elementsOwned} elements owned · ${e.compoundsMade} compounds made</span>
       </span>
       <span class="lb-value">$${e.value.toFixed(2)}</span>
@@ -2941,6 +3082,7 @@ if(nameInput){
     if(portfolio.nameLocked){ nameMsg.textContent = 'Your name has been locked by an admin.'; return; }
     const raw = nameInput.value.trim();
     if(raw.length < 2){ nameMsg.textContent = 'Name needs at least 2 characters.'; return; }
+    if(raw.length > 20 || !/^[\p{L}\p{N} _.\-]+$/u.test(raw)){ nameMsg.textContent = 'Names can be 2–20 characters: letters, numbers, spaces, _ . -'; return; }
     if(!isNameAllowed(raw)){ nameMsg.textContent = "That name isn't allowed — try something else."; return; }
     investorName = raw;
     localStorage.setItem('mrwestcoin_investor_name', investorName);
@@ -2988,7 +3130,7 @@ function switchActiveAccount(uid){
 async function migrateAnonymousDataTo(newUid){
   if(!db) return;
   // carry the current (anonymous) progress over to the newly-signed-in account, then switch to it
-  await db.ref('players/' + newUid).set(serializeForDb(portfolio)).catch(() => {});
+  await db.ref('players/' + newUid).update(serializeForDb(portfolio)).catch(() => {});
   switchActiveAccount(newUid);
 }
 
@@ -3069,7 +3211,8 @@ async function migrateLocalIdDataTo(oldId, newId){
     if(oldData){
       const newSnap = await db.ref('players/' + newId).once('value');
       if(!newSnap.val()){ // never clobber progress that already exists under the real UID
-        await db.ref('players/' + newId).set(oldData);
+        const { inbox: _ignoredInbox, ...carry } = oldData;               // players can't write their own inbox (see database.rules.json)
+        await db.ref('players/' + newId).update(carry);
         portfolio = migratePortfolio(oldData);
         markSynced(oldData);
         persistLocal();
@@ -3156,7 +3299,7 @@ function renderAdminPanel(){
       return `
       <div class="admin-player-row-wrap" data-id="${id}">
         <div class="admin-player-row">
-          <span style="width:110px; overflow:hidden; text-overflow:ellipsis;" title="${id}">${name || id}</span>
+          <span style="width:110px; overflow:hidden; text-overflow:ellipsis;" title="${esc(id)}">${esc(name || id)}</span>
           <input type="number" class="ap-cash" data-id="${id}" value="${(p.cash||0).toFixed(2)}">
           <label><input type="checkbox" class="ap-lock" data-id="${id}" ${p.nameLocked ? 'checked' : ''}> Lock name</label>
           <button class="ap-save" data-id="${id}">Save</button>
@@ -3168,7 +3311,7 @@ function renderAdminPanel(){
           <div class="ap-manage-grid">
             <div class="ap-manage-col">
               <div class="ap-manage-heading">Identity</div>
-              <label class="ap-field"><span>Display name</span><input type="text" class="ap-name" data-id="${id}" value="${(name||'').replace(/"/g,'&quot;')}" placeholder="(no leaderboard entry yet)"></label>
+              <label class="ap-field"><span>Display name</span><input type="text" class="ap-name" data-id="${id}" value="${esc(name || '')}" placeholder="(no leaderboard entry yet)"></label>
               <label class="ap-field"><span>Cash ($WEST)</span><input type="number" step="0.01" class="ap-manage-cash" data-id="${id}" value="${(p.cash||0).toFixed(2)}"></label>
 
               <div class="ap-manage-heading">Element Clicker — core stats</div>
@@ -3363,7 +3506,38 @@ function setupAdminMarketControls(){
   document.getElementById('adminMarketRaiseBtn').addEventListener('click', () => applyAdjustment(1));
   document.getElementById('adminMarketDropBtn').addEventListener('click', () => applyAdjustment(-1));
 
+  // volatility: the one place it can be changed. Applies to every player at the same instant; players never see it.
+  const volSel = document.getElementById('adminVolSelect'), volBtn = document.getElementById('adminVolSetBtn'), volMsg = document.getElementById('adminVolMsg');
+  if(volSel && volBtn){
+    volSel.innerHTML = Object.keys(MARKET_VOL_LEVELS).map(k => `<option value="${k}">${esc(VOL_LABELS[k] || k)}</option>`).join('');
+    volSel.value = currentVolLevel();
+    volSel.addEventListener('change', () => { const h = document.getElementById('adminVolHint'); if(h) h.textContent = VOL_INFO[volSel.value] || ''; });
+    volBtn.addEventListener('click', () => {
+      const level = volSel.value;
+      if(MARKET_VOL_LEVELS[level] === undefined) return;
+      if(level === currentVolLevel()){ volMsg.style.color = 'var(--danger)'; volMsg.textContent = 'That is already the current setting.'; return; }
+      const tickIndex = marketTickIndexForTime(marketNow());
+      db.ref('marketVolatility').push({ tickIndex, level, at: Date.now() })
+        .then(() => { volMsg.style.color = 'var(--gain)'; volMsg.textContent = `Volatility set to ${VOL_LABELS[level]} for everyone, starting now.`; })
+        .catch(e => { volMsg.style.color = 'var(--danger)'; volMsg.textContent = 'Not applied — saving failed: ' + e.message; });
+    });
+    renderAdminVolUI();
+  }
+
   renderAdminMarketLog();
+}
+function renderAdminVolUI(){
+  const cur = document.getElementById('adminVolCurrent'); if(!cur) return;
+  const lvl = currentVolLevel();
+  cur.textContent = VOL_LABELS[lvl] || lvl;
+  const sel = document.getElementById('adminVolSelect'); if(sel && document.activeElement !== sel) sel.value = lvl;
+  const hint = document.getElementById('adminVolHint'); if(hint) hint.textContent = VOL_INFO[sel ? sel.value : lvl] || '';
+  const log = document.getElementById('adminVolLog');
+  if(log){
+    const rows = marketVolLedger.slice().sort((a, b) => b.tickIndex - a.tickIndex).slice(0, 8).map(e =>
+      `<div class="admin-market-log-row"><span>→ ${esc(VOL_LABELS[e.level] || e.level)}</span><span>${new Date(e.at || marketTimeForTickIndex(e.tickIndex)).toLocaleString()}</span></div>`).join('');
+    log.innerHTML = rows || '<div class="empty-history">No changes yet — running on the default (Normal).</div>';
+  }
 }
 
 /* ================= ELEMENT SYNTHESIZER (the idle/click game, wired into the one economy) =================
@@ -4200,3 +4374,5 @@ document.querySelectorAll('.game-cat-tab').forEach(tab => {
   });
 });
 renderGamesGrid();
+
+})();
