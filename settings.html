@@ -73,6 +73,20 @@
           <div id="adminMarketLog" class="admin-market-log"></div>
         </div>
 
+        <div class="admin-market-controls">
+          <div class="admin-market-row">
+            <span>Market volatility (everyone)</span><b id="adminVolCurrent">--</b>
+          </div>
+          <div class="admin-market-row">
+            <select id="adminVolSelect" class="admin-market-select" aria-label="Market volatility"></select>
+            <button class="tool-btn" id="adminVolSetBtn">Apply to all players</button>
+          </div>
+          <p class="cc-desc" style="margin:0.3rem 0 0;" id="adminVolHint"></p>
+          <p class="cc-desc" style="margin:0.3rem 0 0;">This is the only place volatility can be changed. Players can't see or change it, and the change takes effect for everyone at the same moment without re-pricing past history.</p>
+          <div class="compound-status" id="adminVolMsg"></div>
+          <div id="adminVolLog" class="admin-market-log"></div>
+        </div>
+
         <div id="adminPlayerList"></div>
       </div>
 
