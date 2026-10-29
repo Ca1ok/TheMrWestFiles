@@ -1174,3 +1174,25 @@
 .tax-box{margin:0.2rem 0 0.9rem;padding:0.6rem 0.8rem;border:1px dashed var(--line, #3a3a3a);border-radius:6px;font-size:0.78rem;line-height:1.45}
 .tax-box .tax-hot{color:var(--danger, #e5484d);font-weight:700}
 .tax-box .tax-last{color:var(--muted, #999);font-size:0.72rem}
+
+/* ===== WestLife ===== */
+.life-card{margin-bottom:1rem}
+.life-head{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;flex-wrap:wrap;margin-bottom:0.7rem}
+.life-name{font-size:1.15rem}.life-age{color:var(--muted)}
+.life-money{font-weight:700;font-size:1.05rem}.life-money small{font-weight:400;color:var(--muted);font-size:0.72rem}
+.life-stats{display:grid;gap:0.35rem}
+.life-stat{display:grid;grid-template-columns:5.5rem 1fr 2rem;align-items:center;gap:0.6rem;font-size:0.78rem}
+.life-bar{height:9px;border-radius:5px;background:rgba(255,255,255,0.08);overflow:hidden}
+.life-bar i{display:block;height:100%;border-radius:5px;transition:width .3s}
+.life-bar i.hp{background:var(--gain)}.life-bar i.hap{background:#d9a441}.life-bar i.iq{background:#5b9bd5}
+.life-sub{margin-top:0.55rem;font-size:0.78rem;color:var(--muted)}
+.life-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:0.6rem}
+.life-opt{display:flex;flex-direction:column;gap:0.3rem;padding:0.65rem;border:1px solid var(--line);border-radius:6px;font-size:0.8rem}
+.life-opt.cur{border-color:var(--gain);background:rgba(79,174,92,0.08)}
+.life-opt small,.life-btn small{display:block;color:var(--muted);font-size:0.68rem}
+.life-opt button{margin-top:auto}
+.life-btn{text-align:left;padding:0.6rem}
+.life-row{display:flex;gap:0.6rem;flex-wrap:wrap}
+.life-ap{font-size:0.7rem;color:var(--muted);margin-left:0.6rem;letter-spacing:0}
+.life-log div{padding:0.3rem 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:0.78rem}
+.life-decision{border-color:#d9a441}.life-dead{border-color:var(--danger)}
