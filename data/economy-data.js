@@ -190,6 +190,12 @@ const CRAFT_BASE_BONUS = 1.15;        // a compound is worth its ingredients x1.
 const CRAFT_TIER_BONUS = 0.06;        // ... plus 6% per tool tier needed (advanced tools = more value added)
 const GAME_DAILY_SOFTCAP = 75;        // $ earned from minigames per UTC day before payouts drop to 25%
 const GAME_DROP_CHANCE = 0.18;        // chance a minigame win also drops a few cheap elements
+// ---- daily wealth tax (cash only) ----
+const TAX_THRESHOLD = 100000;        // at or below this much cash: NO daily tax at all
+const TAX_BASE = 0.01;               // scale of the rate above the threshold
+const TAX_GROWTH = 0.35;             // how fast the rate climbs: rate = TAX_BASE x (e^(TAX_GROWTH x excess) - 1), excess = (cash - threshold) / threshold
+const TAX_MAX_RATE = 0.50;           // never takes more than half of your cash in one day
+const TAX_MAX_CATCHUP_DAYS = 14;     // days missed while away that still get charged when you come back
 const COLLECTION_ELEMENT_BONUS = 0.01;   // +1% minigame/contract payouts per discovered element
 const COLLECTION_COMPOUND_BONUS = 0.005; // +0.5% per discovered compound
 const COLLECTION_MILESTONES = [       // one-time cash rewards for filling the collection
