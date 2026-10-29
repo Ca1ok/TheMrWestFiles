@@ -81,11 +81,27 @@ function marketLevelAtTick(tickIndex, adjustments){
 // the same setting still sees exactly the same price at the same moment, admin spikes and the stored history
 // stay valid, and it costs a handful of arithmetic operations per tick.
 //   level 0   = classic (layer off, the original price exactly)
-// The level is a per-player preference set by the browser (the GitHub Action leaves it at 0).
+// The volatility level is now set GLOBALLY by the admin (never per player), so every player sees the exact same
+// price. Changes are recorded as an append-only schedule of {tickIndex, level}; the level in effect at a tick is the
+// last entry at or before it, so history never re-prices retroactively when the admin changes the setting.
 const MARKET_VOL_LEVELS = { classic: 0, calm: 0.6, normal: 1.5, wild: 3, insane: 6 };
-let MARKET_GAME_VOL = 0;
-function marketSetVolatility(v){ MARKET_GAME_VOL = Math.max(0, +v || 0); }
-function marketGetVolatility(){ return MARKET_GAME_VOL; }
+const MARKET_DEFAULT_VOL_LEVEL = 'normal';
+let MARKET_VOL_SCHEDULE = [];            // sorted: [{ tickIndex, level }]
+function marketSetVolSchedule(list){
+  MARKET_VOL_SCHEDULE = (list || [])
+    .filter(e => e && typeof e.tickIndex === 'number' && isFinite(e.tickIndex) && MARKET_VOL_LEVELS[e.level] !== undefined)
+    .map(e => ({ tickIndex: Math.floor(e.tickIndex), level: e.level, at: typeof e.at === 'number' ? e.at : 0 }))
+    .sort((a, b) => a.tickIndex - b.tickIndex || a.at - b.at);
+}
+function marketVolLevelAt(tick){
+  let level = MARKET_DEFAULT_VOL_LEVEL;
+  for(let i = 0; i < MARKET_VOL_SCHEDULE.length; i++){
+    if(MARKET_VOL_SCHEDULE[i].tickIndex > tick) break;
+    level = MARKET_VOL_SCHEDULE[i].level;
+  }
+  return level;
+}
+function marketVolAt(tick){ return MARKET_VOL_LEVELS[marketVolLevelAt(tick)]; }
 // integer hash -> [0,1). Uses only Math.imul and shifts, so every engine agrees bit-for-bit.
 function marketHash(a, b){
   let h = Math.imul(a ^ 0x9E3779B9, 0x85EBCA6B) ^ Math.imul((b | 0) + 0x7F4A7C15, 0xC2B2AE35);
@@ -114,9 +130,25 @@ function marketFastLog(tick){
   }
   return s;
 }
+// The pump/dump (if any) in effect at a tick, for news headlines: { dir:+1|-1, mag, startTick, age } or null.
+// Same hash windows as marketFastLog, so every player sees the same headline at the same moment.
+function marketEventAt(tick){
+  const w0 = Math.floor(tick / MARKET_EVENT_WINDOW);
+  for(let w = w0; w >= w0 - 2; w--){
+    if(marketHash(MARKET_SEED + 1, w) >= 0.10) continue;
+    const startTick = w * MARKET_EVENT_WINDOW + Math.floor(marketHash(MARKET_SEED + 4, w) * 240);
+    const dt = tick - startTick;
+    if(dt < 0 || dt > 900) continue;
+    const dir = marketHash(MARKET_SEED + 2, w) < 0.5 ? -1 : 1;
+    const mag = 0.03 + 0.07 * marketHash(MARKET_SEED + 3, w);
+    return { dir, mag, startTick, age: dt, id: w, pick: marketHash(MARKET_SEED + 5, w) };
+  }
+  return null;
+}
 function marketGameFactor(tick){
-  if(!(MARKET_GAME_VOL > 0)) return 1;
-  const x = Math.max(-0.8, Math.min(0.8, marketFastLog(tick) * MARKET_GAME_VOL));
+  const vol = marketVolAt(tick);
+  if(!(vol > 0)) return 1;
+  const x = Math.max(-0.8, Math.min(0.8, marketFastLog(tick) * vol));
   return Math.exp(x);
 }
 
@@ -222,7 +254,7 @@ if(typeof module !== 'undefined' && module.exports){
     MARKET_MODEL_VERSION, MARKET_SEED, MARKET_GENESIS_T, MARKET_TICK_MS, MARKET_CALLS_PER_TICK,
     MARKET_GENESIS_STATE, MARKET_BASE_VALUE, MARKET_TICKS_PER_DAY, MARKET_DAILY_DRIFT, MARKET_MIN_PRICE,
     marketTickIndexForTime, marketTimeForTickIndex, marketLevelAtTick, marketDisplayPrice,
-    MARKET_VOL_LEVELS, marketSetVolatility, marketGetVolatility, marketGameFactor, marketFastLog,
+    MARKET_VOL_LEVELS, MARKET_DEFAULT_VOL_LEVEL, marketSetVolSchedule, marketVolLevelAt, marketVolAt, marketEventAt, marketGameFactor, marketFastLog,
     marketRngFromCallCount, marketAdvanceOneTick, marketSimulate,
     marketCandleBuilder, marketCandleTicks
   };
