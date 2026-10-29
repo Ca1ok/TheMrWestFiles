@@ -1161,3 +1161,16 @@
   @keyframes priceFlashUp{ 0%{ color: var(--gain); text-shadow:0 0 14px rgba(111,207,122,0.7); } 100%{ text-shadow:0 0 0 transparent; } }
   @keyframes priceFlashDown{ 0%{ color: var(--danger); text-shadow:0 0 14px rgba(217,83,79,0.7); } 100%{ text-shadow:0 0 0 transparent; } }
   @media (max-width: 620px){ .vol-row .range-btns{ width:100%; justify-content:center; flex-wrap:wrap; } .vol-hint{ text-align:center; flex-basis:100%; } }
+
+
+/* ===== market news banner, mood and daily tax box ===== */
+.news-banner{display:flex;align-items:center;gap:0.7rem;margin:0 0 0.5rem;padding:0.55rem 0.8rem;border:1px solid var(--line, #3a3a3a);border-left-width:4px;border-radius:6px;background:rgba(255,255,255,0.03);font-size:0.82rem;transition:background .3s,border-color .3s}
+.news-banner .news-tag{flex:none;font-size:0.6rem;letter-spacing:0.12em;font-weight:700;padding:0.15rem 0.4rem;border-radius:3px;background:rgba(255,255,255,0.1)}
+.news-banner.bull{border-color:var(--gain, #3ecf6e);background:rgba(62,207,110,0.09)}
+.news-banner.bear{border-color:var(--danger, #e5484d);background:rgba(229,72,77,0.09)}
+.news-banner.bull .news-tag{background:var(--gain, #3ecf6e);color:#04130a}
+.news-banner.bear .news-tag{background:var(--danger, #e5484d);color:#fff}
+.mood-row{margin:0 0 0.6rem;font-size:0.78rem;color:var(--muted, #999);min-height:1.1em}
+.tax-box{margin:0.2rem 0 0.9rem;padding:0.6rem 0.8rem;border:1px dashed var(--line, #3a3a3a);border-radius:6px;font-size:0.78rem;line-height:1.45}
+.tax-box .tax-hot{color:var(--danger, #e5484d);font-weight:700}
+.tax-box .tax-last{color:var(--muted, #999);font-size:0.72rem}
