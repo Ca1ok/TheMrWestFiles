@@ -10,7 +10,9 @@
    typeof TOOLS !== 'undefined' && TOOLS, typeof RECIPES !== 'undefined' && RECIPES, typeof COLLECTION_MILESTONES !== 'undefined' && COLLECTION_MILESTONES,
    typeof CLICKER_BUILDINGS !== 'undefined' && CLICKER_BUILDINGS, typeof CLICKER_CLICK_UPGRADES !== 'undefined' && CLICKER_CLICK_UPGRADES,
    typeof CLICKER_BUILDING_UPGRADES !== 'undefined' && CLICKER_BUILDING_UPGRADES, typeof CLICKER_GLOBAL_UPGRADES !== 'undefined' && CLICKER_GLOBAL_UPGRADES,
-   typeof CLICKER_ACHIEVEMENTS !== 'undefined' && CLICKER_ACHIEVEMENTS].forEach(freeze);
+   typeof CLICKER_ACHIEVEMENTS !== 'undefined' && CLICKER_ACHIEVEMENTS,
+   typeof LIFE_EDU !== 'undefined' && LIFE_EDU, typeof LIFE_CAREERS !== 'undefined' && LIFE_CAREERS, typeof LIFE_HOMES !== 'undefined' && LIFE_HOMES,
+   typeof LIFE_BIZ !== 'undefined' && LIFE_BIZ, typeof LIFE_ACTIONS !== 'undefined' && LIFE_ACTIONS, typeof LIFE_EVENTS !== 'undefined' && LIFE_EVENTS].forEach(freeze);
 })();
 /* ================= WANTED POSTER (poster page only) ================= */
 if(document.getElementById('missingBanner')){
@@ -68,6 +70,7 @@ const NAV_LINKS = [
   { href:'coin.html', label:'$WEST Exchange' },
   { href:'periodic.html', label:'Periodic Table' },
   { href:'market.html', label:'WestLab' },
+  { href:'life.html', label:'Life' },
   { href:'cookin.html', label:'Minigames' },
   { href:'leaderboard.html', label:'Leaderboard' },
   { href:'databook.html', label:'Databook' },
@@ -477,7 +480,7 @@ if(lasToggle){
    - marketplace sales are paid through an append-only inbox (never by editing someone else's cash) */
 const STORAGE_KEY = 'mrwestcoin_portfolio';
 const SAVE_VERSION = 2;
-const SYNC_FIELDS = ['cash','lots','trades','elements','compounds','tools','crafting','elementClicker','disc','game','demand','claimed','contracts','nameLocked','tax'];
+const SYNC_FIELDS = ['cash','lots','trades','elements','compounds','tools','crafting','elementClicker','disc','game','demand','claimed','contracts','nameLocked','tax','life'];
 const START_CASH = 1000;
 const MAX_TRADES = 40;
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -490,13 +493,30 @@ function defaultClickerState(){
   const buildings = {}; CLICKER_BUILDINGS.forEach(b => { buildings[b.id] = 0; });
   return { total:0, run:0, acc:0, target:'H', totalClicks:0, buildings, upgrades:[], achievements:[], prestige:{ level:0, shards:0 } };
 }
+function defaultLifeState(){
+  return { started:false, name:'', age:18, month:0, health:80, happy:70, smarts:40, edu:0, enrolled:null, job:null, home:'parents', homeValue:0,
+           biz:[], ap:2, nextAt:0, pending:null, dead:null, lives:0, bestAge:0, bestNet:0, months:0, log:[], report:'' };
+}
+function migrateLife(raw){
+  const d = defaultLifeState(), l = Object.assign(d, (raw && typeof raw === 'object') ? raw : {});
+  ['age','month','health','happy','smarts','edu','homeValue','ap','nextAt','lives','bestAge','bestNet','months'].forEach(k => { if(typeof l[k] !== 'number' || !isFinite(l[k])) l[k] = d[k]; });
+  ['health','happy','smarts'].forEach(k => { l[k] = Math.max(0, Math.min(100, l[k])); });
+  l.edu = Math.max(0, Math.min(3, Math.floor(l.edu))); l.month = Math.max(0, Math.min(11, Math.floor(l.month)));
+  l.biz = toArr(l.biz).filter(x => typeof x === 'string'); l.log = toArr(l.log).filter(x => typeof x === 'string').slice(0, 40);
+  if(typeof l.name !== 'string') l.name = ''; l.name = l.name.slice(0, 30);
+  if(typeof l.home !== 'string') l.home = 'parents';
+  if(typeof l.report !== 'string') l.report = '';
+  l.started = !!l.started; l.job = (l.job && typeof l.job === 'object') ? l.job : null; l.enrolled = (l.enrolled && typeof l.enrolled === 'object') ? l.enrolled : null;
+  l.pending = (l.pending && typeof l.pending === 'object') ? l.pending : null; l.dead = (l.dead && typeof l.dead === 'object') ? l.dead : null;
+  return l;
+}
 function defaultTaxState(){ return { last:'', total:0, lastAmount:0, lastRate:0, lastDay:'' }; }
 function defaultPortfolio(){
   return {
     v: SAVE_VERSION, cash: START_CASH, lots: [], trades: [], elements: {}, compounds: {}, tools: ['basic'],
     crafting: { elements:{}, compounds:{} }, elementClicker: defaultClickerState(),
     disc: { e:[], c:[] }, game: { day:'', plays:{}, earned:0 }, demand: {}, claimed: [], contracts: { day:'', done:[] }, nameLocked: false,
-    tax: defaultTaxState()
+    tax: defaultTaxState(), life: defaultLifeState()
   };
 }
 // Brings ANY saved shape (current, v1, or a partial Firebase record where empty arrays/objects vanished) up to date.
@@ -504,6 +524,7 @@ function migratePortfolio(raw){
   const p = Object.assign(defaultPortfolio(), raw || {});
   if(typeof p.cash !== 'number' || !isFinite(p.cash)) p.cash = START_CASH;
   if(p.cash < 0) p.cash = 0;
+  p.life = migrateLife(p.life);
   p.tax = Object.assign(defaultTaxState(), (p.tax && typeof p.tax === 'object') ? p.tax : {});
   ['total','lastAmount','lastRate'].forEach(k => { if(typeof p.tax[k] !== 'number' || !isFinite(p.tax[k])) p.tax[k] = 0; });
   if(typeof p.tax.last !== 'string') p.tax.last = ''; if(typeof p.tax.lastDay !== 'string') p.tax.lastDay = '';
@@ -707,7 +728,7 @@ function refreshEconomyUI(){
    typeof renderOwnedCompounds === 'function' && renderOwnedCompounds, typeof renderTools === 'function' && renderTools, typeof renderSellPanel === 'function' && renderSellPanel,
    typeof renderContracts === 'function' && renderContracts, typeof renderCollection === 'function' && renderCollection, typeof renderCraftingBench === 'function' && renderCraftingBench,
    typeof renderElementClicker === 'function' && renderElementClicker, typeof applyPtColors === 'function' && applyPtColors, typeof renderPtCollectionBar === 'function' && renderPtCollectionBar,
-   typeof refreshLeaderboardGateUI === 'function' && refreshLeaderboardGateUI, renderTaxInfo].forEach(fn => { if(fn) try{ fn(); }catch(e){} });
+   typeof refreshLeaderboardGateUI === 'function' && refreshLeaderboardGateUI, renderTaxInfo, renderLife].forEach(fn => { if(fn) try{ fn(); }catch(e){} });
   if(typeof drawChart === 'function') try{ drawChart(); }catch(e){}
 }
 
@@ -4374,5 +4395,244 @@ document.querySelectorAll('.game-cat-tab').forEach(tab => {
   });
 });
 renderGamesGrid();
+
+/* ================= WESTLIFE (life.html) — a month-by-month life simulator on the SAME wallet =================
+   Wages, rent, food, tuition, businesses and events all go through earn()/spend(), so the exchange, WestLab, minigames,
+   the daily wealth tax and this page all share one balance. Tables live in data/life-data.js. The state lives in
+   portfolio.life, so it saves and syncs like everything else. */
+const lifeRoot = document.getElementById('lifeRoot');
+const LIFE_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const lifeClamp = n => Math.max(0, Math.min(100, n));
+const lm = n => (n < 0 ? '−$' : '$') + Math.abs(Math.round(n)).toLocaleString();
+const lifeState = () => portfolio.life;
+function lifeNow(){ let off = 0; try{ off = marketClockOffset; }catch(e){} return Date.now() + off; }
+function lifeLog(msg){ const l = lifeState(); l.log.unshift(`${l.age}y ${LIFE_MONTHS[l.month]} — ${msg}`); if(l.log.length > 40) l.log.length = 40; }
+function lifeCareer(){ const l = lifeState(); return l.job ? LIFE_CAREERS.find(c => c.id === l.job.career) : null; }
+function lifePay(){ const l = lifeState(), c = lifeCareer(); return c ? c.levels[Math.max(0, Math.min(3, l.job.level))][1] : 0; }
+function lifeHome(){ return LIFE_HOMES.find(h => h.id === lifeState().home) || LIFE_HOMES[0]; }
+function lifeNetWorth(){
+  const l = lifeState();
+  return portfolio.cash + (l.homeValue || 0) + l.biz.reduce((s, id) => { const b = LIFE_BIZ.find(x => x.id === id); return s + (b ? b.cost * 0.7 : 0); }, 0);
+}
+function lifeApply(fx){
+  const l = lifeState(); if(!fx) return;
+  if(fx.cash > 0) earn(fx.cash); else if(fx.cash < 0){ const c = Math.min(portfolio.cash, -fx.cash); if(c > 0) spend(c); }
+  l.health = lifeClamp(l.health + (fx.health || 0)); l.happy = lifeClamp(l.happy + (fx.happy || 0)); l.smarts = lifeClamp(l.smarts + (fx.smarts || 0));
+  if(fx.msg) lifeLog(fx.msg);
+}
+function lifeCommit(){ lifeSig = ''; saveEconomy(); refreshEconomyUI(); renderLife(); }
+
+function lifeStart(name){
+  const old = lifeState();
+  const clean = String(name || '').replace(/[<>&"'`]/g, '').trim().slice(0, 24) || (LIFE_NAMES[Math.floor(Math.random() * LIFE_NAMES.length)] + ' ' + LIFE_SURNAMES[Math.floor(Math.random() * LIFE_SURNAMES.length)]);
+  portfolio.life = Object.assign(defaultLifeState(), { lives: old.lives, bestAge: old.bestAge, bestNet: old.bestNet },
+    { started: true, name: clean, health: lifeRnd(70, 90), happy: lifeRnd(55, 80), smarts: lifeRnd(30, 55), ap: LIFE_ACTIONS_PER_MONTH });
+  lifeLog(`${clean} turns 18 and steps out into the world.`);
+  lifeCommit();
+}
+function lifeAct(id){
+  const l = lifeState(), a = LIFE_ACTIONS.find(x => x.id === id);
+  if(!a || l.dead || l.pending || l.ap < 1) return;
+  if(a.needsJob && !l.job) return;
+  if(a.cost > 0 && !spend(a.cost)) { lifeLog(`You can't afford that (${lm(a.cost)}).`); return lifeCommit(); }
+  l.ap -= 1; lifeApply(Object.assign({}, a.fx));
+  if(a.career && l.job) l.job.months += a.career;
+  if(id === 'study' && l.enrolled) l.enrolled.left = Math.max(1, l.enrolled.left - 1);
+  lifeLog(`${a.icon} ${a.name}.`);
+  lifeCommit();
+}
+function lifeApplyJob(cid){
+  const l = lifeState(), c = LIFE_CAREERS.find(x => x.id === cid);
+  if(!c || l.dead || l.pending || l.ap < 1 || l.edu < c.edu || l.smarts < c.smarts) return;
+  l.ap -= 1;
+  const chance = Math.max(0.25, Math.min(0.95, 0.55 + (l.smarts - c.smarts) / 100 + (l.happy > 50 ? 0.1 : 0)));
+  if(Math.random() < chance){ l.job = { career: cid, level: 0, months: 0 }; lifeLog(`${c.icon} Hired as ${c.levels[0][0]} (${lm(c.levels[0][1])}/mo).`); }
+  else lifeLog(`${c.icon} Your ${c.name} application was rejected.`);
+  lifeCommit();
+}
+function lifeQuit(){ const l = lifeState(); if(!l.job) return; lifeLog(`You quit your job as ${lifeCareer().levels[l.job.level][0]}.`); l.job = null; lifeCommit(); }
+function lifeEnroll(level){
+  const l = lifeState(), e = LIFE_EDU[level];
+  if(!e || l.dead || l.pending || l.enrolled || level !== l.edu + 1 || l.smarts < e.smarts) return;
+  l.enrolled = { level, left: e.months, tuition: Math.round(e.cost / e.months) };
+  lifeLog(`🎓 Enrolled in ${e.name} (${lm(l.enrolled.tuition)}/mo for ${e.months} months).`); lifeCommit();
+}
+function lifeMove(id){
+  const l = lifeState(), h = LIFE_HOMES.find(x => x.id === id);
+  if(!h || l.dead || l.pending || h.id === l.home) return;
+  if(h.maxAge && l.age > h.maxAge) return;
+  if(h.price > 0 && !canAfford(h.price)) return;
+  if(l.homeValue > 0){ const got = earn(Math.round(l.homeValue * 0.95)); lifeLog(`Sold your home for ${lm(got)}.`); l.homeValue = 0; }
+  if(h.price > 0){ spend(h.price); l.homeValue = h.price; lifeLog(`${h.icon} You bought a ${h.name.replace(' (own it)', '')} for ${lm(h.price)}.`); }
+  else lifeLog(`${h.icon} You moved into ${h.name}.`);
+  l.home = id; lifeCommit();
+}
+function lifeBuyBiz(id){
+  const l = lifeState(), b = LIFE_BIZ.find(x => x.id === id);
+  if(!b || l.dead || l.pending || l.biz.includes(id) || !spend(b.cost)) return;
+  l.biz.push(id); lifeLog(`${b.icon} You started a ${b.name} (${lm(b.cost)}).`); lifeCommit();
+}
+function lifeSellBiz(id){
+  const l = lifeState(), b = LIFE_BIZ.find(x => x.id === id); if(!b || !l.biz.includes(id)) return;
+  l.biz = l.biz.filter(x => x !== id); const got = earn(Math.round(b.cost * 0.7)); lifeLog(`${b.icon} You sold your ${b.name} for ${lm(got)}.`); lifeCommit();
+}
+function lifeChoose(i){
+  const l = lifeState(); if(!l.pending) return;
+  const ev = LIFE_EVENTS.find(e => e.id === l.pending.id), ch = ev && ev.choices && ev.choices[i];
+  if(!ch) { l.pending = null; return lifeCommit(); }
+  if(ch.cost && !spend(ch.cost)){ lifeLog(`You couldn't afford to (${lm(ch.cost)}).`); l.pending = null; return lifeCommit(); }
+  l.pending = null; lifeApply(ch.fx(l)); lifeCommit();
+}
+function lifeDie(cause){
+  const l = lifeState();
+  if(l.homeValue > 0) earn(Math.round(l.homeValue * 0.9));
+  l.biz.forEach(id => { const b = LIFE_BIZ.find(x => x.id === id); if(b) earn(Math.round(b.cost * 0.7)); });
+  const funeral = Math.min(portfolio.cash, LIFE_FUNERAL_COST); if(funeral > 0) spend(funeral);
+  const estate = round2(Math.max(0, portfolio.cash - TAX_THRESHOLD) * LIFE_ESTATE_TAX); if(estate > 0) spend(estate);
+  const net = Math.round(lifeNetWorth());
+  l.lives += 1; l.bestAge = Math.max(l.bestAge, l.age); l.bestNet = Math.max(l.bestNet, net);
+  l.dead = { age: l.age, cause, funeral: Math.round(funeral), estate: Math.round(estate), net, months: l.months, job: l.job ? lifeCareer().levels[l.job.level][0] : '' };
+  l.job = null; l.enrolled = null; l.pending = null; l.biz = []; l.homeValue = 0;
+  lifeLog(`💀 ${l.name} died at ${l.age} (${cause}).`);
+}
+function lifeNextMonth(){
+  const l = lifeState();
+  if(!l.started || l.dead || l.pending || lifeNow() < l.nextAt) return;
+  let income = 0, spent = 0; const notes = [];
+  const pay = lifePay(); if(pay > 0){ earn(pay); income += pay; }
+  l.biz.slice().forEach(id => {
+    const b = LIFE_BIZ.find(x => x.id === id); if(!b) return;
+    let profit = Math.round(b.min + Math.random() * (b.max - b.min));
+    if(b.jackpotChance && Math.random() < b.jackpotChance){ profit = b.jackpot; lifeLog(`🚀 JACKPOT! Your ${b.name} is a hit: +${lm(profit)}.`); }
+    if(profit > 0){ earn(profit); income += profit; }
+    else if(profit < 0){ const c = Math.min(portfolio.cash, -profit); if(c > 0){ spend(c); spent += c; } if(c < -profit){ l.biz = l.biz.filter(x => x !== id); lifeLog(`${b.icon} Your ${b.name} went bankrupt.`); } }
+  });
+  const home = lifeHome(), housing = home.price > 0 ? home.upkeep : home.rent;
+  if(housing > 0){
+    if(spend(housing)) spent += housing;
+    else {
+      if(l.homeValue > 0){ earn(Math.round(l.homeValue * 0.8)); l.homeValue = 0; }
+      l.home = l.age <= 24 ? 'parents' : 'couch'; l.happy = lifeClamp(l.happy - 8); lifeLog('🚪 You couldn\'t pay for your home — you lost it.');
+    }
+  }
+  if(spend(LIFE_FOOD_COST)) spent += LIFE_FOOD_COST; else { l.health = lifeClamp(l.health - 6); l.happy = lifeClamp(l.happy - 4); lifeLog('🍞 You couldn\'t afford groceries this month.'); }
+  if(l.enrolled){
+    if(spend(l.enrolled.tuition)){
+      spent += l.enrolled.tuition; l.enrolled.left -= 1; l.happy = lifeClamp(l.happy - 1); l.smarts = lifeClamp(l.smarts + 0.6);
+      if(l.enrolled.left <= 0){ l.edu = l.enrolled.level; lifeLog(`🎓 You graduated: ${LIFE_EDU[l.edu].name}!`); l.smarts = lifeClamp(l.smarts + 5); l.happy = lifeClamp(l.happy + 8); l.enrolled = null; }
+    } else { lifeLog('🎓 You couldn\'t pay tuition and dropped out.'); l.enrolled = null; l.happy = lifeClamp(l.happy - 6); }
+  }
+  const h2 = lifeHome(); // (may have changed above)
+  l.happy = lifeClamp(l.happy + h2.mood + (60 - l.happy) * 0.04 + (portfolio.cash < 100 ? -2 : 0) + (portfolio.cash > 20000 ? 1 : 0));
+  l.health = lifeClamp(l.health + h2.health + (75 - l.health) * 0.04);
+  if(l.homeValue > 0) l.homeValue = Math.round(l.homeValue * (1 + (Math.random() * 0.012 - 0.004)));
+  if(l.job){
+    l.job.months += 1; const c = lifeCareer();
+    if(Math.random() < 0.012 + (l.happy < 20 ? 0.03 : 0) + (l.health < 20 ? 0.03 : 0)){ lifeLog(`📦 You were laid off from your ${c.levels[l.job.level][0]} job.`); l.job = null; l.happy = lifeClamp(l.happy - 8); }
+    else if(l.job.level < 3 && l.job.months >= LIFE_MONTHS_PER_PROMOTION && (l.health + l.happy + l.smarts) / 3 >= 45 && Math.random() < 0.6){
+      l.job.level += 1; l.job.months = 0; l.happy = lifeClamp(l.happy + 6);
+      lifeLog(`📈 Promoted to ${c.levels[l.job.level][0]} — now ${lm(c.levels[l.job.level][1])}/mo!`);
+    }
+  }
+  if(Math.random() < 0.55){
+    const pool = LIFE_EVENTS.filter(e => !e.when || e.when(l)); const total = pool.reduce((s, e) => s + e.w, 0); let r = Math.random() * total, ev = pool[0];
+    for(const e of pool){ r -= e.w; if(r <= 0){ ev = e; break; } }
+    if(ev.choices){ l.pending = { id: ev.id, text: ev.text }; } else lifeApply(ev.fx(l, pay));
+  }
+  l.month += 1; l.months += 1; l.ap = LIFE_ACTIONS_PER_MONTH;
+  if(l.month >= 12){
+    l.month = 0; l.age += 1;
+    if(l.age > 40) l.health = lifeClamp(l.health - 1); if(l.age > 60) l.health = lifeClamp(l.health - 2);
+    lifeLog(`🎂 Happy birthday — you're ${l.age}.`);
+  }
+  l.report = `Last month: income ${lm(income)} · bills ${lm(spent)}`;
+  const dieP = Math.max(0, l.age - 55) * 0.0006 + (l.health < 20 ? 0.02 : 0);
+  if(l.health <= 0) lifeDie('poor health'); else if(l.age >= LIFE_MAX_AGE) lifeDie('old age'); else if(Math.random() < dieP) lifeDie(l.age > 70 ? 'old age' : 'natural causes');
+  l.bestAge = Math.max(l.bestAge, l.age); l.bestNet = Math.max(l.bestNet, Math.round(lifeNetWorth()));
+  l.nextAt = lifeNow() + LIFE_MONTH_COOLDOWN_MS;
+  lifeCommit();
+}
+
+let lifeSig = '';
+function renderLife(){
+  if(!lifeRoot || typeof LIFE_CAREERS === 'undefined') return;
+  const l = lifeState(), sig = JSON.stringify(l) + '|' + Math.round(portfolio.cash);
+  if(sig === lifeSig) return; lifeSig = sig;
+  const bar = (label, v, cls) => `<div class="life-stat"><span>${label}</span><div class="life-bar"><i class="${cls}" style="width:${Math.round(v)}%"></i></div><b>${Math.round(v)}</b></div>`;
+  let html = '';
+  if(!l.started){
+    html = `<div class="panel-card life-card"><div class="section-label" style="margin-top:0">Create your character</div>
+      <p class="cc-desc">You're 18. Pick a name and make something of yourself — study, work, rent a flat, start a business, and try not to go bankrupt.${l.lives ? `<br>Past lives: <b>${l.lives}</b> · oldest <b>${l.bestAge}</b> · richest <b>${lm(l.bestNet)}</b>` : ''}</p>
+      <div class="market-controls"><input type="text" id="lifeNameInput" maxlength="24" placeholder="Your name (blank = random)"><button class="nav-btn" data-act="start" style="margin:0">Start my life</button></div></div>`;
+  } else if(l.dead){
+    const d = l.dead;
+    html = `<div class="panel-card life-card life-dead"><div class="section-label" style="margin-top:0">💀 ${esc(l.name)} has died</div>
+      <p class="cc-desc">Aged <b>${d.age}</b> after ${d.months} months of life — cause: ${esc(d.cause)}.${d.job ? ` Last job: ${esc(d.job)}.` : ''}<br>
+      Funeral ${lm(d.funeral)}${d.estate > 0 ? ` · estate tax ${lm(d.estate)} (${Math.round(LIFE_ESTATE_TAX * 100)}% of cash over $${TAX_THRESHOLD.toLocaleString()})` : ''} · net worth at death <b>${lm(d.net)}</b>.<br>
+      Lives lived: <b>${l.lives}</b> · oldest <b>${l.bestAge}</b> · richest <b>${lm(l.bestNet)}</b></p>
+      <button class="nav-btn" data-act="newlife" style="margin:0">Live again</button></div>
+      <div class="section-label">Life story</div><div class="life-log">${l.log.slice(0, 12).map(x => `<div>${esc(x)}</div>`).join('')}</div>`;
+  } else {
+    const c = lifeCareer(), home = lifeHome(), pay = lifePay(), housing = home.price > 0 ? home.upkeep : home.rent;
+    const cdm = Math.max(0, Math.ceil((l.nextAt - lifeNow()) / 1000));
+    html += `<div class="panel-card life-card">
+      <div class="life-head"><div><b class="life-name">${esc(l.name)}</b><span class="life-age"> · age ${l.age} · ${LIFE_MONTHS[l.month]}</span></div><div class="life-money">${lm(portfolio.cash)} <small>cash · net worth ${lm(lifeNetWorth())}</small></div></div>
+      <div class="life-stats">${bar('Health', l.health, 'hp')}${bar('Happiness', l.happy, 'hap')}${bar('Smarts', l.smarts, 'iq')}</div>
+      <div class="life-sub">${esc(c ? `${c.icon} ${c.levels[l.job.level][0]} · ${lm(pay)}/mo` : '🚫 Unemployed')} · ${home.icon} ${esc(home.name)}${housing ? ` (${lm(housing)}/mo)` : ''} · 🍞 ${lm(LIFE_FOOD_COST)}/mo food${l.enrolled ? ` · 🎓 ${esc(LIFE_EDU[l.enrolled.level].name)}: ${l.enrolled.left} mo left` : ''}</div>
+      ${l.report ? `<div class="life-sub">${esc(l.report)}</div>` : ''}
+      <button class="nav-btn" id="lifeNextBtn" data-act="next" style="margin:0.8rem 0 0" ${l.pending || cdm > 0 ? 'disabled' : ''}>${l.pending ? 'Decide first…' : cdm > 0 ? `Next month in ${cdm}s` : 'Next month ▶'}</button></div>`;
+    if(l.pending){
+      const ev = LIFE_EVENTS.find(e => e.id === l.pending.id);
+      html += `<div class="panel-card life-card life-decision"><div class="section-label" style="margin-top:0">⚡ A decision</div><p>${esc(l.pending.text)}</p>
+        <div class="life-row">${ev ? ev.choices.map((ch, i) => `<button class="tool-btn" data-act="choice" data-i="${i}" ${ch.cost && !canAfford(ch.cost) ? 'disabled' : ''}>${esc(ch.label)}</button>`).join('') : ''}</div></div>`;
+    }
+    html += `<div class="section-label">This month <span class="life-ap">${l.ap} action${l.ap === 1 ? '' : 's'} left</span></div><div class="life-grid">${LIFE_ACTIONS.map(a =>
+      `<button class="tool-btn life-btn" data-act="act" data-id="${a.id}" ${l.ap < 1 || l.pending || (a.needsJob && !l.job) || (a.cost && !canAfford(a.cost)) ? 'disabled' : ''}>${a.icon} ${esc(a.name)}<small>${a.cost ? lm(a.cost) : 'free'}</small></button>`).join('')}</div>`;
+    html += `<div class="section-label">Career</div><div class="life-grid">${LIFE_CAREERS.map(cr => {
+      const ok = l.edu >= cr.edu && l.smarts >= cr.smarts, cur = l.job && l.job.career === cr.id;
+      const need = ok ? '' : `needs ${cr.edu > l.edu ? LIFE_EDU[cr.edu].name : ''}${cr.edu > l.edu && cr.smarts > l.smarts ? ' + ' : ''}${cr.smarts > l.smarts ? 'smarts ' + cr.smarts : ''}`;
+      return `<div class="life-opt ${cur ? 'cur' : ''}"><b>${cr.icon} ${esc(cr.name)}</b><small>${lm(cr.levels[0][1])} → ${lm(cr.levels[3][1])}/mo</small><small>${esc(cr.levels.map(x => x[0]).join(' › '))}</small>
+        ${cur ? `<button class="tool-btn" data-act="quit">Quit</button>` : `<button class="tool-btn" data-act="apply" data-id="${cr.id}" ${!ok || l.ap < 1 || l.pending ? 'disabled' : ''}>${ok ? 'Apply (1 action)' : esc(need)}</button>`}</div>`; }).join('')}</div>`;
+    html += `<div class="section-label">Education <span class="life-ap">${esc(LIFE_EDU[l.edu].name)}</span></div><div class="life-grid">${LIFE_EDU.slice(1).map((e, i) => {
+      const lv = i + 1, done = l.edu >= lv, cur = l.enrolled && l.enrolled.level === lv, can = !done && !l.enrolled && lv === l.edu + 1 && l.smarts >= e.smarts;
+      return `<div class="life-opt ${cur ? 'cur' : ''}"><b>🎓 ${esc(e.name)}</b><small>${lm(e.cost)} total · ${e.months} months · smarts ${e.smarts}+</small>
+        <button class="tool-btn" data-act="enroll" data-lv="${lv}" ${can ? '' : 'disabled'}>${done ? 'Completed' : cur ? 'Enrolled' : lv !== l.edu + 1 ? 'Finish the previous level' : l.smarts < e.smarts ? 'Needs smarts ' + e.smarts : l.enrolled ? 'Already studying' : 'Enroll'}</button></div>`; }).join('')}</div>`;
+    html += `<div class="section-label">Housing</div><div class="life-grid">${LIFE_HOMES.map(h => {
+      const cur = h.id === l.home, locked = h.maxAge && l.age > h.maxAge, cost = h.price > 0 ? `${lm(h.price)} to buy · ${lm(h.upkeep)}/mo upkeep` : h.rent ? `${lm(h.rent)}/mo rent` : 'free';
+      return `<div class="life-opt ${cur ? 'cur' : ''}"><b>${h.icon} ${esc(h.name)}</b><small>${cost}</small><small>mood ${h.mood >= 0 ? '+' : ''}${h.mood}</small>
+        <button class="tool-btn" data-act="move" data-id="${h.id}" ${cur || locked || (h.price > 0 && !canAfford(h.price)) ? 'disabled' : ''}>${cur ? 'You live here' : locked ? `Under ${h.maxAge + 1} only` : h.price > 0 ? 'Buy' : 'Move in'}</button></div>`; }).join('')}</div>`;
+    html += `<div class="section-label">Businesses</div><div class="life-grid">${LIFE_BIZ.map(b => {
+      const own = l.biz.includes(b.id);
+      return `<div class="life-opt ${own ? 'cur' : ''}"><b>${b.icon} ${esc(b.name)}</b><small>${lm(b.cost)} to start · ${lm(b.min)} to ${lm(b.max)}/mo${b.jackpot ? ' · tiny jackpot chance' : ''}</small>
+        ${own ? `<button class="tool-btn" data-act="sellbiz" data-id="${b.id}">Sell (${lm(b.cost * 0.7)})</button>` : `<button class="tool-btn" data-act="buybiz" data-id="${b.id}" ${canAfford(b.cost) && !l.pending ? '' : 'disabled'}>Start</button>`}</div>`; }).join('')}</div>`;
+    html += `<div class="section-label">Life story</div><div class="life-log">${l.log.slice(0, 15).map(x => `<div>${esc(x)}</div>`).join('') || '<div class="empty-history">Nothing yet.</div>'}</div>`;
+  }
+  lifeRoot.innerHTML = html;
+}
+if(lifeRoot){
+  lifeRoot.addEventListener('click', e => {
+    const b = e.target.closest('[data-act]'); if(!b || b.disabled) return;
+    const d = b.dataset;
+    switch(d.act){
+      case 'start': lifeStart((document.getElementById('lifeNameInput') || {}).value); break;
+      case 'newlife': portfolio.life.started = false; portfolio.life.dead = null; lifeCommit(); break;
+      case 'next': lifeNextMonth(); break;
+      case 'act': lifeAct(d.id); break;
+      case 'apply': lifeApplyJob(d.id); break;
+      case 'quit': lifeQuit(); break;
+      case 'enroll': lifeEnroll(parseInt(d.lv, 10)); break;
+      case 'move': lifeMove(d.id); break;
+      case 'buybiz': lifeBuyBiz(d.id); break;
+      case 'sellbiz': lifeSellBiz(d.id); break;
+      case 'choice': lifeChoose(parseInt(d.i, 10)); break;
+    }
+  });
+  setInterval(() => {                       // only the countdown text changes — no full re-render while you read
+    const btn = document.getElementById('lifeNextBtn'), l = lifeState(); if(!btn || l.pending) return;
+    const cdm = Math.max(0, Math.ceil((l.nextAt - lifeNow()) / 1000));
+    btn.disabled = cdm > 0; btn.textContent = cdm > 0 ? `Next month in ${cdm}s` : 'Next month ▶';
+  }, 250);
+  renderLife();
+}
 
 })();
