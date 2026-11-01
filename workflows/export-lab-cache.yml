@@ -1,0 +1,31 @@
+name: Export WestLab discoveries
+
+on:
+  schedule:
+    - cron: '17 * * * *'     # hourly
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: westlab-export
+  cancel-in-progress: false
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Export and commit
+        run: |
+          git config user.name "westos-bot"
+          git config user.email "actions@github.com"
+          node .github/scripts/export-lab-cache.js
+          git add lab-cache/
+          if git diff --staged --quiet; then echo "Nothing changed."; exit 0; fi
+          git commit -m "Update WestLab discoveries"
+          git pull --rebase origin main && git push
