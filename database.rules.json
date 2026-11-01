@@ -1,0 +1,218 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "players": {
+      "$uid": {
+        ".read": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && auth.uid === $uid) || (auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)",
+        ".write": "auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true",
+        "cash": {
+          ".write": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && auth.uid === $uid) || (auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)",
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000000000000"
+        },
+        "inv": {
+          ".write": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && auth.uid === $uid) || (auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)"
+        },
+        "lots": {
+          ".write": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && auth.uid === $uid) || (auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)"
+        },
+        "props": {
+          ".write": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && auth.uid === $uid) || (auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)"
+        },
+        "bank": {
+          ".write": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && auth.uid === $uid) || (auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)"
+        },
+        "mail": {
+          ".write": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && auth.uid === $uid) || (auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)"
+        },
+        "lab": {
+          ".write": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && auth.uid === $uid) || (auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)"
+        },
+        "games": {
+          ".write": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && auth.uid === $uid) || (auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)"
+        },
+        "shop": {
+          ".write": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && auth.uid === $uid) || (auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)"
+        },
+        "prefs": {
+          ".write": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && auth.uid === $uid) || (auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)"
+        },
+        "meta": {
+          ".write": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && auth.uid === $uid) || (auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)",
+          "name": {
+            ".validate": "newData.val() === '' || (newData.isString() && newData.val().length >= 2 && newData.val().length <= 20 && !newData.val().matches(/.*[<>&\"'`].*/))"
+          }
+        },
+        "updatedAt": {
+          ".write": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && auth.uid === $uid) || (auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)",
+          ".validate": "newData.isNumber()"
+        }
+      }
+    },
+    "leaderboard": {
+      ".read": true,
+      "$uid": {
+        ".write": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && auth.uid === $uid) || (auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)",
+        "name": {
+          ".validate": "newData.isString() && newData.val().length >= 2 && newData.val().length <= 20 && !newData.val().matches(/.*[<>&\"'`].*/)"
+        },
+        "value": {
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000000000000"
+        },
+        "updatedAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "mailbox": {
+      "$uid": {
+        ".read": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && auth.uid === $uid) || (auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)",
+        "$id": {
+          ".write": "(auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true) || (((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && auth.uid === $uid) && data.exists() && !newData.exists())",
+          ".validate": "!newData.exists() || newData.hasChildren(['subj','body','t'])",
+          "from": {
+            ".validate": "newData.isString() && newData.val().length <= 30"
+          },
+          "subj": {
+            ".validate": "newData.isString() && newData.val().length <= 120"
+          },
+          "body": {
+            ".validate": "newData.isString() && newData.val().length <= 1000"
+          },
+          "t": {
+            ".validate": "newData.isNumber()"
+          }
+        }
+      }
+    },
+    "broadcast": {
+      ".read": true,
+      "$id": {
+        ".write": "auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true",
+        "from": {
+          ".validate": "newData.isString() && newData.val().length <= 30"
+        },
+        "subj": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "body": {
+          ".validate": "newData.isString() && newData.val().length <= 1000"
+        },
+        "t": {
+          ".validate": "newData.isNumber()"
+        }
+      }
+    },
+    "marketAdjustments": {
+      ".read": true,
+      "$id": {
+        ".write": "auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true",
+        ".validate": "newData.hasChildren(['tickIndex','delta','at'])",
+        "tickIndex": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "delta": {
+          ".validate": "newData.isNumber() && newData.val() >= -10000000 && newData.val() <= 10000000"
+        },
+        "at": {
+          ".validate": "newData.isNumber()"
+        },
+        "fadeSec": {
+          ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 2592000"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "marketVolatility": {
+      ".read": true,
+      "$id": {
+        ".write": "auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true",
+        ".validate": "newData.hasChildren(['tickIndex','level','at'])",
+        "tickIndex": {
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "level": {
+          ".validate": "newData.isString() && newData.val().matches(/^(classic|calm|normal|wild|insane)$/)"
+        },
+        "at": {
+          ".validate": "newData.isNumber()"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "labCache": {
+      ".read": true,
+      "$key": {
+        ".write": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && !data.exists() && newData.exists()",
+        "by": {
+          ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 20 && !newData.val().matches(/.*[<>&\"'`].*/)"
+        },
+        "t": {
+          ".validate": "newData.isNumber()"
+        },
+        "eq": {
+          ".validate": "newData.isString() && newData.val().length <= 240"
+        },
+        "n": {
+          ".validate": "newData.isString() && newData.val().length <= 240"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "gallery": {
+      "items": {
+        ".read": "auth != null",
+        "$id": {
+          ".write": "auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true"
+        }
+      },
+      "thumbs": {
+        ".read": "auth != null",
+        "$id": {
+          ".write": "auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true"
+        }
+      },
+      "view": {
+        ".read": "auth != null && (!root.child('gallery/usage/until').exists() || now > root.child('gallery/usage/until').val() || root.child('gallery/usage/bytes').val() < 7000000000)",
+        "$id": {
+          ".write": "auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true"
+        }
+      },
+      "full": {
+        ".read": "auth != null && (!root.child('gallery/usage/until').exists() || now > root.child('gallery/usage/until').val() || root.child('gallery/usage/bytes').val() < 7000000000)",
+        "$id": {
+          ".write": "auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true"
+        }
+      },
+      "stats": {
+        ".read": "auth != null",
+        "$id": {
+          ".write": "(auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true) || auth != null",
+          "views": {
+            ".validate": "newData.isNumber() && newData.val() === (data.exists() ? data.val() : 0) + 1"
+          },
+          "downloads": {
+            ".validate": "newData.isNumber() && newData.val() === (data.exists() ? data.val() : 0) + 1"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+      "usage": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".validate": "newData.hasChildren(['bytes','until']) && newData.child('bytes').isNumber() && newData.child('until').isNumber() && newData.child('bytes').val() >= 0 && (!data.exists() || now > data.child('until').val() || newData.child('bytes').val() <= data.child('bytes').val() + 60000000)"
+      }
+    }
+  }
+}

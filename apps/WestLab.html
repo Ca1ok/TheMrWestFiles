@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WestLab</title>
+<link rel="stylesheet" href="../os/tokens.css"><link rel="stylesheet" href="../os/app/kit.css">
+<style>
+.lab{ display:grid; gap:16px; } @media (min-width:860px){ .lab{ grid-template-columns:minmax(300px,380px) 1fr; align-items:start; } }
+.beaker{ position:relative; height:200px; border-radius:var(--r-xl); background:radial-gradient(90% 90% at 50% 100%,var(--card3),var(--card)); overflow:hidden; display:grid; place-items:center; }
+.beaker svg{ width:150px; height:180px; overflow:visible; } .beaker .liq{ transition:fill .9s ease; } .beaker .glass{ stroke:var(--label2); stroke-width:3; fill:rgba(255,255,255,.04); }
+.beaker .bub{ position:absolute; bottom:44px; width:9px; height:9px; border-radius:50%; background:rgba(255,255,255,.55); opacity:0; }
+.beaker.go .bub{ animation:rise 1.6s ease-in infinite; } .beaker.go .bub:nth-child(2){ left:46%; animation-delay:.2s; width:7px; height:7px; } .beaker.go .bub:nth-child(3){ left:52%; animation-delay:.5s; width:11px; height:11px; } .beaker.go .bub:nth-child(4){ left:57%; animation-delay:.8s; } .beaker.go .bub:nth-child(5){ left:43%; animation-delay:1.1s; width:6px; height:6px; }
+@keyframes rise{ 0%{ transform:translateY(0) scale(.6); opacity:0; } 15%{ opacity:.9; } 100%{ transform:translateY(-110px) scale(1.15); opacity:0; } }
+.beaker.go svg{ animation:shake .18s linear infinite; } @keyframes shake{ 25%{ transform:translateX(-1.5px) rotate(-.6deg); } 75%{ transform:translateX(1.5px) rotate(.6deg); } }
+.beaker .flash{ position:absolute; inset:0; background:radial-gradient(circle at 50% 70%,#fff,transparent 60%); opacity:0; pointer-events:none; } .beaker.pop .flash{ animation:fl .7s ease-out; } @keyframes fl{ 0%{ opacity:.9; } 100%{ opacity:0; } }
+.slots{ display:flex; flex-wrap:wrap; gap:8px; } .slot{ display:flex; align-items:center; gap:8px; height:46px; padding:0 8px 0 12px; border-radius:23px; background:var(--card2); font:700 17px var(--font); } .slot small{ font:500 12px var(--font); color:var(--label2); } .slot button{ width:26px; height:26px; border-radius:50%; background:var(--fill2); display:grid; place-items:center; color:var(--label2); }
+.slot.add{ background:var(--tint-dim); color:var(--tint); padding:0 16px; } .slot.add:active{ transform:scale(.95); }
+.eq{ font:700 clamp(19px,3.4vw,26px)/1.35 var(--font); letter-spacing:-.01em; margin:2px 0 10px; word-break:break-word; }
+.prods{ display:flex; flex-direction:column; gap:8px; margin:10px 0; } .prod{ display:flex; align-items:center; gap:12px; background:var(--card2); border-radius:14px; padding:10px 12px; } .prod .f{ font:800 20px var(--font); color:var(--tint); min-width:62px; } .prod b{ display:block; font:600 15px var(--font); } .prod small{ color:var(--label2); font:400 12.5px var(--font); }
+.need{ display:flex; gap:8px; flex-wrap:wrap; margin:8px 0; } .need .tag{ display:inline-flex; align-items:center; gap:5px; font-size:12px; padding:5px 9px; }
+.step{ display:flex; align-items:center; justify-content:center; gap:14px; margin:10px 0; } .step b{ font:800 28px var(--font); min-width:56px; text-align:center; font-variant-numeric:tabular-nums; } .step .btn{ width:46px; padding:0; }
+.ex{ display:flex; gap:8px; flex-wrap:wrap; } .win-anim{ width:84px; height:84px; margin:6px auto 12px; } .win-anim circle{ stroke-dasharray:240; stroke-dashoffset:240; animation:dr .7s .1s ease forwards; } .win-anim path{ stroke-dasharray:60; stroke-dashoffset:60; animation:dr .45s .6s ease forwards; } @keyframes dr{ to{ stroke-dashoffset:0; } }
+.mono{ font-family:var(--font); font-weight:700; }
+</style></head><body><div id="app"></div>
+<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
+<script>
+const { h, row, group, money, esc } = Kit, L = OS.lab, SH = OS.shop, CH = OS.chem, pf = f => CH.prettyFormula(f), COLORS = OS.data.CATEGORY_COLORS;
+const TOOL_FOR = { heat: 'burner', spark: 'electrolysis', pressure: 'pressure', catalyst: 'catalysis', distill: 'distillation', polymer: 'polymer', cryo: 'cryo' };
+const TOOLNAME = id => (OS.data.TOOLS.find(t => t.id === id) || {}).name || id;
+const hue = s => [...String(s)].reduce((a, c) => (a * 33 + c.charCodeAt(0)) % 360, 17);
+const colorOfKey = k => { const sp = CH.speciesOf(k); if(sp && sp.kind === 'element'){ return COLORS[CH.elements[sp.el].cat] || '#aaa'; } return 'hsl(' + hue(k) + ' 62% 58%)'; };
+let tab = 'reactor', reagents = [], target = '', batches = 1, last = null;
+const A = Kit.app({ title: 'WestLab', right: [{ el: Kit.cashChip() }], build: (body) => {
+  const tabs = Kit.seg([{ id: 'reactor', label: 'Reactor' }, { id: 'synth', label: 'Synthesize' }, { id: 'equip', label: 'Equipment' }, { id: 'found', label: 'Discoveries' }], tab, t => { tab = t; batches = 1; draw(); });
+  const main = h('div', { style: { marginTop: '14px' } }); body.append(tabs, main);
+  function draw(){ main.innerHTML = ''; ({ reactor: reactorTab, synth: synthTab, equip: equipTab, found: foundTab })[tab](main); }
+
+  /* ---------- shared: the beaker + the preview/run panel ---------- */
+  function beaker(keys, prodKey){
+    const col = prodKey ? colorOfKey(prodKey) : (keys.length ? colorOfKey(keys[0]) : 'rgba(255,255,255,.18)'), c2 = keys.length > 1 ? colorOfKey(keys[1]) : col;
+    const wrap = h('div', { class: 'beaker' }); wrap.innerHTML = '<svg viewBox="0 0 150 180"><defs><linearGradient id="lg" x1="0" x2="1"><stop offset="0" stop-color="' + col + '"/><stop offset="1" stop-color="' + c2 + '"/></linearGradient><clipPath id="cp"><path d="M38 28 L38 96 L12 150 Q6 168 26 168 L124 168 Q144 168 138 150 L112 96 L112 28 Z"/></clipPath></defs><g clip-path="url(#cp)"><rect class="liq" x="0" y="' + (keys.length ? 92 : 168) + '" width="150" height="90" fill="url(#lg)" opacity=".92"/></g><path class="glass" d="M38 28 L38 96 L12 150 Q6 168 26 168 L124 168 Q144 168 138 150 L112 96 L112 28"/><path class="glass" d="M32 28 H118" stroke-linecap="round"/></svg><i class="bub" style="left:49%"></i><i class="bub"></i><i class="bub"></i><i class="bub"></i><i class="bub"></i><div class="flash"></div>';
+    return wrap;
+  }
+  function conditionChips(pv){
+    const owned = new Set(L.conditions()), need = pv.needs || [], box = h('div', { class: 'need' });
+    need.forEach(n => { const ok = owned.has(n); box.appendChild(h('span', { class: 'tag ' + (ok ? 'good' : 'bad'), html: Kit.icon(ok ? 'check' : 'x', 12, 3) + CH.condLabel(n) + (ok ? '' : ' · buy ' + TOOLNAME(TOOL_FOR[n])) })); });
+    if(!need.length) box.appendChild(h('span', { class: 'tag good' }, 'Room temperature'));
+    return box;
+  }
+  function panel(pv, mode){
+    const box = h('div', { class: 'stack' });
+    if(!pv || !pv.equation){ box.appendChild(h('div', { class: 'card' }, h('div', { class: 'sub', style: { color: pv && pv.reason ? 'var(--label)' : 'var(--label2)' } }, (pv && pv.reason) || 'Add reagents to see what happens.'), mode === 'reactor' ? ideas() : null)); return box; }
+    const card = h('div', { class: 'card' }); box.appendChild(card);
+    card.append(h('div', { class: 'hstack', style: { justifyContent: 'space-between' } }, h('span', { class: 'tag tint' }, pv.type), h('span', { class: 'sub num fee' }, 'Lab fee ' + money(pv.feePer || 0, { dp: 2 }) + ' / batch')), h('div', { class: 'eq', html: pv.equation.replace(/(^|\+ |→ )(\d+) /g, '$1<span style="color:var(--tint)">$2</span> ') }), conditionChips(pv));
+    if(pv.note) card.appendChild(h('div', { class: 'sub' }, pv.note));
+    const pr = h('div', { class: 'prods' }); pv.products.forEach(p => { pr.appendChild(h('div', { class: 'prod' }, h('div', { class: 'f', html: pf(p.formula) }), h('div', { class: 'grow' }, h('b', null, p.name), h('small', null, p.kind === 'element' ? 'Element' : (p.known ? 'Known compound' : '✨ New discovery!'))), h('span', { class: 'sub num' }, '×' + p.coeff))); }); card.appendChild(pr);
+    if(!pv.ok){ card.appendChild(h('div', { class: 'foot', style: { color: 'var(--bad)', margin: '6px 0 0' } }, pv.reason)); if(pv.missing && pv.missing.length) card.appendChild(h('button', { class: 'btn tinted block', style: { marginTop: '10px' }, onclick: () => { tab = 'equip'; tabs.set('equip'); draw(); } }, 'Open Equipment')); return box; }
+    const max = pv.maxBatches; if(!max){ card.appendChild(h('div', { class: 'foot', style: { color: 'var(--bad)' } }, 'You’re missing reagents: ' + pv.reactants.filter(r => r.have < r.coeff * (CH.speciesOf(r.key).apu || 1)).map(r => pf(r.formula)).join(', ') + '.')); card.appendChild(h('button', { class: 'btn tinted block', style: { marginTop: '10px' }, onclick: () => OS.open('WestShop') }, 'Buy in WestShop')); return box; }
+    batches = Math.max(1, Math.min(batches, max));
+    const num = h('b', null, String(batches)), upd = () => { num.textContent = batches; sum.innerHTML = summ(pv, batches); const fe = card.querySelector('.fee'); if(fe) fe.textContent = 'Lab fee ' + money((pv.feePer || 0) * batches, { dp: 2 }); };
+    const sum = h('div', { class: 'sub', style: { textAlign: 'center' } }), st = h('div', { class: 'step' }, h('button', { class: 'btn gray', onclick: () => { batches = Math.max(1, batches - 1); upd(); } }, '−'), h('div', { style: { textAlign: 'center' } }, num, h('div', { class: 'sub' }, 'batches (max ' + Kit.num(max) + ')')), h('button', { class: 'btn gray', onclick: () => { batches = Math.min(max, batches + 1); upd(); } }, '+'), h('button', { class: 'btn tinted', style: { width: 'auto', padding: '0 14px' }, onclick: () => { batches = max; upd(); } }, 'Max'));
+    card.append(st, sum, h('button', { class: 'btn block', style: { marginTop: '12px' }, onclick: () => run(pv, mode) }, 'Run reaction')); upd(); return box;
+  }
+  const summ = (pv, n) => 'Uses ' + pv.perBatchIn.map(x => Kit.num(x.perBatch * n) + ' ' + pf(x.key)).join(', ') + '<br>Makes ' + pv.perBatchOut.map(x => Kit.num(x.n * n) + ' ' + pf(x.key)).join(', ');
+  function ideas(){
+    const ex = [['Na', 'Cl'], ['H', 'O'], ['HCl', 'NaOH'], ['Zn', 'HCl'], ['CaCO3', 'HCl'], ['C', 'O']]; const box = h('div', { class: 'ex', style: { marginTop: '12px' } }, h('div', { class: 'cap', style: { width: '100%', margin: '0 0 2px' } }, 'Ideas to try'));
+    ex.forEach(e => box.appendChild(h('span', { class: 'tag', html: e.map(pf).join(' + ') }))); box.appendChild(h('div', { class: 'foot', style: { width: '100%', margin: '4px 0 0' } }, 'Some reactions need equipment (heat, pressure…) — see the Equipment tab.')); return box;
+  }
+  let busy = false;
+  async function run(pv, mode){
+    if(busy) return; busy = true; const bk = main.querySelector('.beaker'); bk && bk.classList.add('go');
+    const res = L.run(mode === 'synth' ? null : reagents.slice(), mode === 'synth' ? target : null, batches); const [r] = await Promise.all([res, new Promise(ok => setTimeout(ok, 1500))]);
+    bk && (bk.classList.remove('go'), bk.classList.add('pop')); busy = false;
+    if(!r.ok){ Kit.toast(r.msg, 'bad'); return draw(); }
+    last = r; reagents = reagents.filter(k => SH.qty(CH.speciesOf(k).kind, k) > 0); result(r); draw();
+  }
+  function result(r){
+    Kit.sheet({ title: 'Reaction complete', build: (sb) => {
+      sb.appendChild(h('div', { html: '<svg class="win-anim" viewBox="0 0 84 84" fill="none" stroke="var(--good)" stroke-width="5" stroke-linecap="round"><circle cx="42" cy="42" r="37"/><path d="M26 43l11 11 21-23"/></svg>' }));
+      sb.appendChild(h('div', { class: 'eq', style: { textAlign: 'center' }, html: esc(r.equation) }));
+      sb.appendChild(group(r.made.map(m => row({ title: m.name, sub: pf(m.key), right: h('b', { class: 'up num' }, '+' + Kit.num(m.n)) }))));
+      if(r.newly.length) sb.appendChild(h('div', { class: 'card', style: { marginTop: '12px', background: 'var(--tint-dim)' } }, h('b', { style: { color: 'var(--tint)' } }, '✨ New discovery' + (r.newly.length > 1 ? 'ies' : '') + ': ' + r.newly.map(n => n.name).join(', ')), h('div', { class: 'sub' }, 'Bonus ' + money(r.bonus, { dp: 2 }) + (r.firstGlobal ? ' — and you’re the first player in the world to make it!' : ''))));
+      sb.appendChild(h('div', { class: 'foot', style: { textAlign: 'center' } }, 'Lab fee paid: ' + money(r.fee, { dp: 2 })));
+      sb.appendChild(h('div', { class: 'hstack', style: { marginTop: '14px' } }, h('button', { class: 'btn gray grow', onclick: () => OS.open('WestShop') }, 'Sell in WestShop'), h('button', { class: 'btn grow', onclick: e => e.target.closest('.ksheet').querySelector('.nbtn').click() }, 'Done')));
+    } });
+  }
+
+  /* ---------- Reactor ---------- */
+  function reactorTab(root){
+    const lab = h('div', { class: 'lab' }), left = h('div', { class: 'stack' }), right = h('div'); lab.append(left, right); root.appendChild(lab);
+    const slots = h('div', { class: 'slots' }), bk = h('div');
+    function paint(){
+      slots.innerHTML = ''; reagents.forEach(k => { const sp = CH.speciesOf(k); slots.appendChild(h('div', { class: 'slot' }, h('span', { style: { color: colorOfKey(k) }, html: pf(k) }), h('small', null, '×' + Kit.num(SH.qty(sp.kind, k))), h('button', { 'aria-label': 'Remove', html: Kit.icon('x', 13, 2.6), onclick: () => { reagents = reagents.filter(x => x !== k); batches = 1; paint(); } }))); });
+      if(reagents.length < 4) slots.appendChild(h('button', { class: 'slot add', onclick: pick }, '+ Add reagent'));
+      const pv = reagents.length ? L.preview(reagents) : null; bk.innerHTML = ''; bk.appendChild(beaker(reagents, pv && pv.ok && pv.products[0] ? pv.products[0].key : null));
+      right.innerHTML = ''; right.appendChild(panel(pv, 'reactor'));
+    }
+    left.append(bk, h('div', { class: 'card' }, h('div', { class: 'cap', style: { marginTop: 0 } }, 'Reagents'), slots, h('div', { class: 'foot' }, 'Pick up to four substances from your bag. Your equipment is applied automatically.'))); paint(); main._paint = paint;
+    function pick(){
+      Kit.sheet({ title: 'Choose a reagent', tall: true, build: (sb, api) => {
+        const inv = SH.inventory(), s = h('input', { class: 'field', placeholder: 'Search your bag' }), list = h('div', { style: { marginTop: '12px' } });
+        const draw2 = () => { list.innerHTML = ''; const q = s.value.toLowerCase(), rows = inv.filter(i => !reagents.includes(i.key) && (!q || (i.name + i.key).toLowerCase().includes(q)));
+          list.appendChild(rows.length ? group(rows.map(i => row({ left: h('div', { class: 'mono', style: { width: '64px', fontSize: '18px', color: colorOfKey(i.key) }, html: pf(i.key) }), title: i.name, sub: Kit.num(i.qty) + ' in your bag', onClick: () => { reagents.push(i.key); batches = 1; api.close(); paint(); } }))) : h('div', { class: 'empty', html: inv.length ? 'Nothing matches.' : 'Your bag is empty.<br>Buy elements in WestShop first.' }, inv.length ? null : h('button', { class: 'btn tinted', style: { marginTop: '14px' }, onclick: () => OS.open('WestShop') }, 'Open WestShop'))); };
+        s.addEventListener('input', draw2); sb.append(s, list); draw2();
+      } });
+    }
+  }
+
+  /* ---------- Synthesize ---------- */
+  function synthTab(root){
+    const inp = h('input', { class: 'field', value: target, placeholder: 'A formula, e.g. C6H12O6', autocapitalize: 'off', spellcheck: 'false', style: { fontSize: '20px', fontWeight: 700, letterSpacing: '.02em' } }), out = h('div', { style: { marginTop: '14px' } }), bkh = h('div', { style: { marginTop: '14px' } });
+    const ex = ['H2O', 'NH3', 'NaCl', 'CaCO3', 'CH3COOH', 'C6H12O6', 'C8H18', 'Fe2(SO4)3', 'KMnO4'];
+    root.append(h('p', { class: 'sub', style: { marginTop: 0 } }, 'Type any compound. If the atoms can form it (charges balance, bonds are possible), the lab builds it from elements in your bag.'), inp,
+      h('div', { class: 'ex', style: { marginTop: '10px' } }, ...ex.map(e => h('button', { class: 'chip', onclick: () => { inp.value = target = e; go(); } }, h('span', { html: pf(e) })))), bkh, out);
+    function go(){
+      target = inp.value.trim(); out.innerHTML = ''; bkh.innerHTML = ''; if(!target) return;
+      const v = L.validate(target); if(!v.ok) return out.appendChild(h('div', { class: 'card' }, h('b', { style: { color: 'var(--bad)' } }, 'Can’t be made'), h('div', { class: 'sub' }, v.reason)));
+      const d = L.describe(v.formula || target), pv = L.preview(null, v.formula || target); bkh.appendChild(beaker(Object.keys(v.comp || {}), v.formula));
+      out.appendChild(h('div', { class: 'card', style: { marginBottom: '12px' } }, h('div', { class: 'hstack' }, h('div', { class: 'mono', style: { fontSize: '26px', color: 'var(--tint)' }, html: pf(v.formula || target) }), h('div', null, h('b', null, d ? d.name : target), h('div', { class: 'sub' }, d ? (d.category + (d.mass ? ' · ' + d.mass.toFixed(2) + ' g/mol' : '')) : '')))));
+      out.appendChild(panel(Object.assign({}, pv, { type: pv.type || 'Direct synthesis from elements' }), 'synth'));
+    }
+    inp.addEventListener('input', Kit.debounce(go, 250)); go(); main._paint = go;
+  }
+
+  /* ---------- Equipment ---------- */
+  function equipTab(root){
+    root.appendChild(h('p', { class: 'sub', style: { marginTop: 0 } }, 'Equipment unlocks whole families of reactions. Once you own it, the reactor uses it automatically.'));
+    root.appendChild(group(L.tools().map(t => row({ glyph: 'lab', color: t.owned ? '#4e9a63' : '#7b7468', title: t.name, sub: t.desc, wrap: true, right: t.owned ? h('span', { class: 'tag good' }, 'Owned') : h('button', { class: 'btn sm', onclick: async e => { e.stopPropagation(); if(await Kit.confirm({ title: 'Buy ' + t.name + '?', msg: money(t.cost) + ' — one-time purchase.', ok: 'Buy' })){ const r = L.buyTool(t.id); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); draw(); } } }, money(t.cost)) }))));
+  }
+
+  /* ---------- Discoveries ---------- */
+  function foundTab(root){
+    const f = L.found(), total = CH.registryList().length;
+    root.append(h('div', { class: 'kpis' }, h('div', { class: 'kpi' }, h('small', null, 'Compounds discovered'), h('b', null, f.length + ' / ' + total)), h('div', { class: 'kpi' }, h('small', null, 'Reactions run'), h('b', null, Kit.num(L.runs()))), h('div', { class: 'kpi' }, h('small', null, 'Collection bonus'), h('b', null, '+' + Math.round(OS.games.info().bonus * 100 - 100) + '%'))),
+      h('div', { class: 'bar-prog', style: { margin: '14px 0' } }, h('i', { style: { width: Math.min(100, f.length / total * 100) + '%' } })), h('p', { class: 'foot' }, 'Each new compound pays a discovery bonus, and the collection bonus boosts every game payout.'));
+    if(f.length){ root.appendChild(h('h2', { class: 'sec' }, 'Your discoveries')); root.appendChild(group(f.slice().reverse().map(k => row({ left: h('div', { class: 'mono', style: { width: '74px', color: 'var(--tint)', fontSize: '15px' }, html: pf(k) }), title: CH.nameOf(k) })))); }
+    else root.appendChild(h('div', { class: 'empty', html: Kit.icon('flask', 56, 1.4) + 'No discoveries yet.<br>Run a reaction that makes a compound you haven’t made before.' }));
+    const g = h('div'); root.appendChild(g);
+    L.registry().then(reg => { const arr = Object.keys(reg || {}).map(k => Object.assign({ id: k }, reg[k])).filter(x => x.by).sort((a, b) => (b.t || 0) - (a.t || 0)).slice(0, 12); if(!arr.length) return; g.appendChild(h('h2', { class: 'sec' }, 'Worldwide firsts')); g.appendChild(group(arr.map(x => row({ title: x.eq ? x.eq.replace(/→.*/, '→ …') : x.id, sub: 'First made by ' + x.by, right: x.t ? Kit.ago(x.t) : '' })))); });
+  }
+  draw(); ['inv', 'lab'].forEach(e => Kit.live(e, Kit.debounce(() => { if(!busy && main._paint && (tab === 'reactor' || tab === 'synth')) main._paint(); }, 120)));
+} });
+</script></body></html>

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>News</title>
+<link rel="stylesheet" href="../os/tokens.css"><link rel="stylesheet" href="../os/poster.css"><link rel="stylesheet" href="../os/app/kit.css">
+<style>
+.banner{ border-radius:var(--r-xl); padding:26px 18px 22px; box-shadow:var(--shadow); cursor:pointer; transition:transform .3s var(--spring); } .banner:active{ transform:scale(.985); }
+.banner .cols{ display:grid; gap:0 26px; } @media (min-width:760px){ .banner .cols{ grid-template-columns:1fr 1fr; text-align:left; } .banner .cols ul{ justify-content:flex-start; } }
+.banner .wp-s{ font:italic 600 13px/1.4 var(--serif); }
+.art{ display:flex; gap:14px; padding:14px; align-items:stretch; text-align:left; width:100%; } .art+.art{ border-top:.5px solid var(--sep); }
+.art .im{ width:92px; min-height:92px; border-radius:14px; background:linear-gradient(150deg,var(--card3),var(--card2)) center/cover; flex:none; position:relative; overflow:hidden; } .art .im.none{ display:none; }
+.art .tx{ min-width:0; flex:1; } .art .tx b{ display:block; font:700 17px/1.25 var(--font); letter-spacing:-.01em; } .art .tx p{ margin:5px 0 7px; font:400 14.5px/1.4 var(--font); color:var(--label2); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.meta{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; font:500 12.5px var(--font); color:var(--label3); }
+.hero-art{ border-radius:var(--r-xl); overflow:hidden; position:relative; min-height:230px; background:linear-gradient(150deg,var(--tint2),var(--tint) 60%,#6b3a1d) center/cover; display:flex; align-items:flex-end; margin-top:16px; box-shadow:var(--shadow); cursor:pointer; transition:transform .3s var(--spring); } .hero-art:active{ transform:scale(.985); }
+.hero-art::before{ content:""; position:absolute; inset:0; background:linear-gradient(180deg,rgba(0,0,0,0) 20%,rgba(0,0,0,.82)); } .hero-art .in{ position:relative; padding:18px; color:#fff; } .hero-art b{ display:block; font:800 24px/1.18 var(--font); letter-spacing:-.02em; } .hero-art p{ margin:6px 0 8px; font:400 15px/1.4 var(--font); opacity:.85; }
+.hero-art .meta{ color:rgba(255,255,255,.7); }
+.imp{ display:inline-flex; gap:5px; align-items:center; font:700 12px var(--font); padding:3px 8px; border-radius:8px; } .imp.up{ background:rgba(92,192,110,.18); color:var(--good); } .imp.down{ background:rgba(238,98,89,.18); color:var(--bad); }
+.hero-art .imp.up,.hero-art .imp.down{ background:rgba(0,0,0,.45); }
+.detail-img{ width:100%; height:240px; border-radius:var(--r-xl); background:linear-gradient(150deg,var(--tint2),var(--tint)) center/cover; margin-bottom:16px; }
+.detail h3{ font:800 26px/1.2 var(--font); letter-spacing:-.025em; margin:0 0 10px; } .detail p{ font:400 18px/1.55 var(--font); margin:0 0 16px; }
+@media (min-width:760px){ .banner li{ justify-content:flex-start } .banner .lbl{ text-align:left } }
+</style></head><body><div id="app"></div>
+<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
+<script>
+const { h, esc, ago, group } = Kit, W = OS.data.WANTED_DATA, M = OS.worldModel;
+const SEC_NAMES = { land: 'Land', residential: 'Residential property', commercial: 'Commercial property', industrial: 'Industrial property', luxury: 'Luxury property' };
+let imgs = [], thumbs = new Map();
+function impactChip(a){ if(!a.impact) return null; const p = a.impact.pct * 100, up = p >= 0, label = a.impact.el ? OS.chem.elements[a.impact.el].name + ' price' : SEC_NAMES[a.impact.sector]; return h('span', { class: 'imp ' + (up ? 'up' : 'down') }, (up ? '▲ ' : '▼ ') + label + ' ' + (up ? '+' : '−') + Math.abs(p).toFixed(0) + '%'); }
+const A = Kit.app({ title: 'News', build: (body) => {
+  const poster = h('div', { class: 'banner wp' }), feed = h('div'); body.append(poster, feed);
+  poster.onclick = () => OS.toast && 0;
+  poster.innerHTML = '<div class="stamp">FEDERAL<br>NOTICE</div><div class="eyebrow">By order of the court</div><h1 style="font-size:clamp(44px,12vw,84px)">WANTED</h1><div class="subject">Colin West</div><div class="rule"></div><div class="cols"><div><div class="lbl">Charges</div><ul>' + W.charges.map(c => '<li><b>' + esc(c.count) + '</b><span>' + esc(c.text) + '</span></li>').join('') + '</ul></div><div><div class="lbl">Sentence if apprehended</div><ul>' + W.sentence.map(c => '<li><b>' + esc(c.count) + '</b><span>' + esc(c.text) + '</span></li>').join('') + '</ul></div></div><div class="final">Your days are numbered.</div>';
+  let ids = '';
+  async function loadImgs(){ try{ imgs = (await OS.gallery.list()).filter(m => m.type !== 'video'); }catch(e){} paint(true); }
+  function thumbFor(a, idx){ if(!imgs.length || idx >= OS.cfg.newsImageCount) return null; return imgs[a.img % imgs.length]; }
+  function setThumb(el, m){ if(thumbs.has(m.id)){ el.style.backgroundImage = 'url("' + thumbs.get(m.id) + '")'; return; } OS.gallery.thumb(m).then(t => { if(t){ thumbs.set(m.id, t); el.style.backgroundImage = 'url("' + t + '")'; } }); }
+  function paint(force){
+    const list = OS.world.articles(14), key = list.map(a => a.id).join() + imgs.length; if(!force && key === ids) return; ids = key; feed.innerHTML = '';
+    feed.appendChild(h('h2', { class: 'sec', style: { marginBottom: '0' } }, 'Latest chemistry news'));
+    if(!list.length) return feed.appendChild(h('div', { class: 'empty' }, 'No news yet today.'));
+    const f = list[0], fm = thumbFor(f, 0), hero = h('div', { class: 'hero-art', onclick: () => openArticle(f, fm) }, h('div', { class: 'in' }, h('div', { class: 'meta', style: { marginBottom: '8px' } }, h('span', null, 'TOP STORY'), impactChip(f)), h('b', null, f.headline), h('p', null, f.body), h('div', { class: 'meta' }, ago(f.t))));
+    if(fm) setThumb(hero, fm); feed.appendChild(hero);
+    feed.appendChild(h('div', { class: 'card', style: { padding: 0, marginTop: '14px', overflow: 'hidden' } }, ...list.slice(1).map((a, i) => { const m = thumbFor(a, i + 1), im = h('div', { class: 'im' + (m ? '' : ' none') }); if(m) setThumb(im, m);
+      return h('button', { class: 'art reveal', onclick: () => openArticle(a, m) }, im, h('div', { class: 'tx' }, h('b', null, a.headline), h('p', null, a.body), h('div', { class: 'meta' }, h('span', null, ago(a.t)), impactChip(a)))); })));
+    feed.appendChild(h('div', { class: 'foot', style: { textAlign: 'center', margin: '18px 0' } }, 'New stories appear through the day — and some of them move prices in WestShop and Real Estate.'));
+  }
+  function openArticle(a, m){
+    A.push({ title: 'Story', large: false, backLabel: 'News', build: (b) => {
+      const im = h('div', { class: 'detail-img', style: m ? {} : { display: 'none' } }); if(m) setThumb(im, m);
+      const open = a.impact ? h('button', { class: 'btn block tinted', onclick: () => OS.open(a.impact.el ? 'WestShop' : 'RealEstate') }, a.impact.el ? 'See prices in WestShop' : 'Open Real Estate') : null;
+      b.appendChild(h('div', { class: 'detail' }, im, h('div', { class: 'meta', style: { marginBottom: '8px' } }, h('span', null, new Date(a.t).toLocaleString([], { weekday: 'long', hour: 'numeric', minute: '2-digit' })), impactChip(a)), h('h3', null, a.headline), h('p', null, a.body), a.impact ? h('p', { class: 'sub' }, a.impact.el ? 'Traders react: the price of ' + OS.chem.elements[a.impact.el].name + ' (and compounds made from it) shifts for a few days, then fades.' : 'Property in this sector reacts to the news for about a week, then drifts back.') : null, open));
+    } });
+  }
+  paint(); loadImgs(); setInterval(() => paint(), 30000);
+} });
+</script></body></html>

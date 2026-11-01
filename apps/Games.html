@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Games</title>
+<link rel="stylesheet" href="../os/tokens.css"><link rel="stylesheet" href="../os/app/kit.css">
+<style>
+.today{ background:linear-gradient(150deg,#7a45b8,#412070); color:#fff; border-radius:var(--r-xl); padding:18px 20px; box-shadow:var(--shadow); } .today small{ opacity:.75; font:600 12.5px var(--font); text-transform:uppercase; letter-spacing:.05em; } .today .bignum{ font-size:34px; margin:2px 0 10px; } .today .bar-prog{ background:rgba(255,255,255,.2); } .today .bar-prog i{ background:#fff; } .today .nt{ font:500 13px/1.4 var(--font); opacity:.85; margin-top:8px; }
+.gg{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
+.gt{ background:var(--card); border-radius:20px; padding:14px; text-align:left; display:flex; flex-direction:column; gap:3px; min-height:130px; position:relative; transition:transform .25s var(--spring); } .gt:active{ transform:scale(.95); } .gt .ic{ font-size:34px; line-height:1.1; margin-bottom:4px; } .gt b{ font:700 15.5px/1.2 var(--font); } .gt small{ color:var(--label2); font:400 13px/1.3 var(--font); } .gt .pl{ position:absolute; top:12px; right:12px; font:700 11px var(--font); color:var(--label2); background:var(--fill); padding:3px 7px; border-radius:8px; }
+.gbox{ background:var(--card); border-radius:var(--r-xl); padding:20px; user-select:text; -webkit-user-select:text; } .gbox h3{ margin:0 0 6px; font:800 24px/1.2 var(--font); letter-spacing:-.02em; }
+.gbox input[type=text],.gbox input[type=number]{ height:44px; padding:0 14px; border-radius:var(--r-m); border:0; outline:0; background:var(--fill); color:var(--label); font-size:17px; } .gbox input:focus{ box-shadow:0 0 0 2px var(--tint); }
+.gbox button:disabled{ opacity:.4; } .gbox table{ border-collapse:collapse; } .gbox select{ height:42px; border-radius:var(--r-m); border:0; background:var(--fill); padding:0 10px; color:var(--label); }
+.game-result{ margin-top:14px; padding:14px 16px; border-radius:var(--r-m); font:600 16px/1.4 var(--font); animation:rev .45s var(--ease) both; } .game-result.win{ background:rgba(92,192,110,.16); color:var(--good); } .game-result.lose{ background:rgba(238,98,89,.14); color:var(--bad); }
+.again{ margin-top:14px; }
+</style></head><body><div id="app"></div>
+<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
+<script>
+/* The games ported from the old site read these reference tables by bare name. */
+const { ELEMENTS, BOILING_POINTS, MELTING_POINTS, OXIDATION, RECIPES, WANTED_DATA, COMPOUND_LOOKUP, POLYATOMIC_IONS } = OS.data;
+</script>
+<script src="games/manifest.js"></script>
+<script>
+const { h, row, group, esc, money } = Kit; const REG = {}, loading = {};
+const Games = { register(g){ REG[g.id] = g; } };
+function loadGame(id){ if(REG[id]) return Promise.resolve(REG[id]); if(loading[id]) return loading[id]; return loading[id] = new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'games/' + id + '.js'; s.onload = () => REG[id] ? res(REG[id]) : rej(new Error('Game failed to register')); s.onerror = () => rej(new Error('Couldn’t load the game')); document.head.appendChild(s); }); }
+let cat = 'all';
+const A = Kit.app({ title: 'Games', right: [{ el: Kit.cashChip() }], build: (body) => {
+  const today = h('div'), chips = h('div', { class: 'chips', style: { marginTop: '16px' } }), grid = h('div', { class: 'gg', style: { marginTop: '14px' } }); body.append(today, chips, grid);
+  function paintToday(){ const g = OS.games.info(), pct = Math.min(100, g.earned / g.softcap * 100);
+    today.innerHTML = ''; today.appendChild(h('div', { class: 'today' }, h('small', null, 'Earned today'), h('div', { class: 'bignum num' }, money(g.earned, { dp: 2 })), h('div', { class: 'bar-prog' }, h('i', { style: { width: pct + '%' } })), h('div', { class: 'nt' }, g.earned >= g.softcap ? 'Past ' + money(g.softcap) + ' wins pay a quarter as much until tomorrow.' : money(g.softcap - g.earned, { dp: 0 }) + ' more before payouts shrink. Repeating a game lowers its payout' + (g.bonus > 1.005 ? ' · collection bonus ×' + g.bonus.toFixed(2) : '') + '.'))); }
+  function paintChips(){ chips.innerHTML = ''; ['all', ...Object.keys(GAME_CATEGORIES)].forEach(c => chips.appendChild(h('button', { class: 'chip' + (c === cat ? ' on' : ''), onclick: () => { cat = c; paintChips(); paintGrid(); } }, c === 'all' ? 'All games' : GAME_CATEGORIES[c]))); }
+  function paintGrid(){ const plays = OS.games.info().plays; grid.innerHTML = ''; GAME_MANIFEST.filter(g => cat === 'all' || g.category === cat).forEach(g => grid.appendChild(h('button', { class: 'gt reveal', onclick: () => play(g) }, plays[g.id] ? h('span', { class: 'pl' }, plays[g.id] + '×') : null, h('span', { class: 'ic' }, g.icon), h('b', null, g.name), h('small', null, g.desc)))); }
+  function play(meta){
+    A.push({ title: meta.name, large: false, backLabel: 'Games', build: async (b) => {
+      const box = h('div', { class: 'gbox' }), content = h('div'); box.appendChild(content); b.appendChild(box); b.appendChild(h('div', { class: 'foot', style: { textAlign: 'center', marginTop: '14px' } }, 'Win to earn cash — it goes straight to your wallet.'));
+      let game; try{ game = await loadGame(meta.id); }catch(e){ return content.appendChild(h('div', { class: 'empty' }, e.message)); }
+      let done = false;
+      const finish = (resultEl, cls, html) => { done = true; if(resultEl) resultEl.innerHTML = '<div class="game-result ' + cls + '">' + html + '</div>'; content.style.pointerEvents = 'none'; box.appendChild(h('button', { class: 'btn block again', onclick: () => start() }, 'Play again')); paintToday(); };
+      const api = {
+        win(id, base, resultEl, label){ if(done) return; const r = OS.games.award(id, base); finish(resultEl, 'win', esc(label || 'Correct!') + ' <b>+' + money(r.amount, { dp: 2 }) + '</b>' + (r.bonus > 1.005 ? ' (collection ×' + r.bonus.toFixed(2) + ')' : '') + (r.drop ? ' · found ' + r.drop.n + '× ' + esc(r.drop.sym) : '')); Kit.toast('+' + money(r.amount, { dp: 2 }), 'good'); },
+        lose(resultEl, label){ if(done) return; finish(resultEl, 'lose', esc(label || 'Not quite — try again!')); }
+      };
+      function start(){ done = false; content.style.pointerEvents = ''; const old = box.querySelector('.again'); if(old) old.remove(); content.innerHTML = ''; try{ game.play(content, api); }catch(e){ content.appendChild(h('div', { class: 'empty' }, 'This game hit an error: ' + e.message)); } }
+      start();
+    } });
+  }
+  paintToday(); paintChips(); paintGrid(); Kit.live('games', () => { paintToday(); paintGrid(); });
+} });
+</script></body></html>
