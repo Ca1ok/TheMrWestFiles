@@ -68,8 +68,12 @@
 
   /* ---- UI preferences (not progress, so they are kept in localStorage for everyone; signed-in users also sync them) ---- */
   const PREF_KEY = 'westos_ui';
-  const PREF_DEFAULT = { theme: 'auto', device: 'auto', wall: { light: null, dark: null }, lock: true, banners: true, reduceMotion: false, reduceTransparency: false, layout: null, dock: ['Messages', 'Stocks', 'News', 'Settings'], wallBlur: 0 };
-  try{ K.prefs = Object.assign({}, PREF_DEFAULT, JSON.parse(localStorage.getItem(PREF_KEY) || '{}')); }catch(e){ K.prefs = Object.assign({}, PREF_DEFAULT); }
+  const PREF_DEFAULT = { theme: 'auto', wall: { light: null, dark: null }, lock: false, banners: true, reduceMotion: false, reduceTransparency: false, layout: null, dock: [], winGeom: {} };
+  try{
+    const stored = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
+    if(stored.device !== undefined){ delete stored.device; stored.dock = []; stored.layout = null; stored.lock = false; delete stored.wallBlur; }     // settings from the earlier tablet-style layout: start the desktop fresh
+    K.prefs = Object.assign({}, PREF_DEFAULT, stored);
+  }catch(e){ K.prefs = Object.assign({}, PREF_DEFAULT); }
   K.prefs.wall = Object.assign({ light: null, dark: null }, K.prefs.wall);
   K.setPref = function(k, v){
     K.prefs[k] = v; try{ localStorage.setItem(PREF_KEY, JSON.stringify(K.prefs)); }catch(e){}
