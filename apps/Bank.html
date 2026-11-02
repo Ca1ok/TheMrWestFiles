@@ -28,7 +28,7 @@ const A = Kit.app({ title: 'Bank', build: (body, P) => {
     hero.querySelector('[data-s]').innerHTML = Object.keys(COL).map(k => '<i style="width:' + (br[k] / tot * 100) + '%;background:' + COL[k] + '"></i>').join('');
     hero.querySelector('[data-l]').innerHTML = Object.keys(COL).map(k => '<span style="--c:' + COL[k] + '">' + k[0].toUpperCase() + k.slice(1) + ' ' + money(br[k], { compact: true }) + '</span>').join('');
   }
-  function paintGuest(){ guest.innerHTML = ''; if(!OS.auth.signedIn()) guest.appendChild(h('div', { class: 'guest', onclick: () => OS.open('Settings') }, h('span', { html: Kit.icon('cloudOff', 22, 2) }), h('span', null, 'You’re not signed in, so your money isn’t saved. Tap to sign in.'))); }
+  function paintGuest(){ guest.innerHTML = ''; if(!OS.auth.signedIn()) guest.appendChild(h('div', { class: 'guest', onclick: () => OS.open('Settings') }, h('span', { html: Kit.icon('cloudOff', 22, 2) }), h('span', null, 'You’re not signed in, so your money isn’t saved. Click to sign in.'))); }
   function fmtLeft(ms){ if(ms <= 0) return 'overdue'; const h2 = Math.floor(ms / 3600000), m = Math.floor(ms % 3600000 / 60000), s = Math.floor(ms % 60000 / 1000); return (h2 ? h2 + 'h ' : '') + m + 'm ' + String(s).padStart(2, '0') + 's'; }
   let timers = [];
   function paintTax(){

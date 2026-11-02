@@ -57,14 +57,13 @@ const A = Kit.app({ title: 'Settings', build: (body) => {
       row({ glyph: 'image', color: '#c0563a', title: 'Wallpapers', sub: 'Pick a photo for light and dark mode', chev: true, onClick: openWallpapers })));
     rest.appendChild(h('div', { class: 'cap' }, 'Display'));
     rest.appendChild(group(
-      h('div', { class: 'row' }, h('div', { class: 'tx' }, h('b', null, 'Device'), h('small', null, 'Auto fits your screen')), h('div', { style: { width: '210px' } }, seg([{ id: 'auto', label: 'Auto' }, { id: 'ipad', label: 'iPad' }, { id: 'iphone', label: 'iPhone' }], P_.get('device'), v => P_.set('device', v)))),
-      row({ title: 'Lock screen on start', right: toggle(P_.get('lock') !== false, v => P_.set('lock', v)) }), row({ title: 'Notification banners', right: toggle(P_.get('banners') !== false, v => P_.set('banners', v)) }),
+      row({ title: 'Show lock screen on start', sub: 'A clock screen you click to enter', right: toggle(P_.get('lock') === true, v => P_.set('lock', v)) }), row({ title: 'Notification banners', right: toggle(P_.get('banners') !== false, v => P_.set('banners', v)) }),
       row({ title: 'Reduce motion', sub: 'Skips zoom and slide animations', right: toggle(!!P_.get('reduceMotion'), v => P_.set('reduceMotion', v)) }), row({ title: 'Reduce transparency', sub: 'Turns off blur — faster on older devices', right: toggle(!!P_.get('reduceTransparency'), v => P_.set('reduceTransparency', v)) })));
-    // Home screen
-    rest.appendChild(h('div', { class: 'cap' }, 'Home screen'));
-    rest.appendChild(group(row({ glyph: 'grid', color: '#4a6fa8', title: 'Dock apps', sub: OS.prefs.get('dock').join(', '), chev: true, onClick: openDock }),
-      row({ glyph: 'refresh', color: '#7b7468', title: 'Reset layout', sub: 'Restore the default icons and widgets', onClick: async () => { if(await Kit.confirm({ title: 'Reset home screen?', ok: 'Reset', destructive: true })){ OS.shell.resetLayout(); Kit.toast('Home screen reset'); } } })));
-    rest.appendChild(h('div', { class: 'foot' }, 'Tip: on the home screen tap Edit (top left) to add widgets and rearrange icons.'));
+    // Desktop
+    rest.appendChild(h('div', { class: 'cap' }, 'Desktop'));
+    rest.appendChild(group(row({ glyph: 'grid', color: '#4a6fa8', title: 'Dock apps', sub: OS.prefs.get('dock').length ? OS.prefs.get('dock').join(', ') : 'All apps', chev: true, onClick: openDock }),
+      row({ glyph: 'refresh', color: '#7b7468', title: 'Reset layout', sub: 'Restore the default widgets and window sizes', onClick: async () => { if(await Kit.confirm({ title: 'Reset the desktop?', ok: 'Reset', destructive: true })){ OS.shell.resetLayout(); Kit.toast('Desktop reset'); } } })));
+    rest.appendChild(h('div', { class: 'foot' }, 'Tip: click “Edit desktop” (top left) to add widgets, resize them and drag them around. Drag a window by its title bar; the green button maximizes.'));
     // Data
     rest.appendChild(h('div', { class: 'cap' }, 'Data & storage'));
     const u = OS.usage(), kb = n => n > 1e6 ? (n / 1e6).toFixed(2) + ' MB' : Math.max(0, Math.round(n / 1e3)) + ' KB';
@@ -93,9 +92,9 @@ const A = Kit.app({ title: 'Settings', build: (body) => {
   }
   function openDock(){
     A.push({ title: 'Dock apps', backLabel: 'Settings', build: (b) => {
-      const sel = new Set(P_.get('dock')); const apps = OS.apps(); const list = h('div');
-      const draw = () => { list.innerHTML = ''; list.appendChild(group(apps.map(a => row({ left: h('span', { html: Kit.tile(a.id, 34).replace('class="tile"', 'class="tile" style="border-radius:8px"') || '' }), title: a.name, right: h('span', { style: { color: 'var(--tint)', opacity: sel.has(a.id) ? 1 : 0 }, html: Kit.icon('check', 20, 3) }), onClick: () => { if(sel.has(a.id)){ if(sel.size <= 2) return Kit.toast('Keep at least two apps'); sel.delete(a.id); } else { if(sel.size >= 5) return Kit.toast('The dock holds up to five'); sel.add(a.id); } P_.set('dock', apps.map(x => x.id).filter(id => sel.has(id))); draw(); } })))); };
-      b.append(h('p', { class: 'sub' }, 'Choose 2–5 apps for the dock.'), list); draw();
+      const apps = OS.apps(), sel = new Set(P_.get('dock').length ? P_.get('dock') : apps.map(a => a.id)); const list = h('div');
+      const draw = () => { list.innerHTML = ''; list.appendChild(group(apps.map(a => row({ left: h('span', { html: Kit.tile(a.id, 34).replace('class="tile"', 'class="tile" style="border-radius:8px"') || '' }), title: a.name, right: h('span', { style: { color: 'var(--tint)', opacity: sel.has(a.id) ? 1 : 0 }, html: Kit.icon('check', 20, 3) }), onClick: () => { if(sel.has(a.id)){ if(sel.size <= 2) return Kit.toast('Keep at least two apps'); sel.delete(a.id); } else sel.add(a.id); P_.set('dock', apps.map(x => x.id).filter(id => sel.has(id))); draw(); } })))); };
+      b.append(h('p', { class: 'sub' }, 'Choose which apps live in the dock. Apps you remove can be added back as desktop shortcuts.'), list); draw();
     } });
   }
   function openAdmin(){

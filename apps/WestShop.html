@@ -20,7 +20,7 @@ const { h, row, group, money, esc } = Kit, SH = OS.shop, CH = OS.chem, COLORS = 
 let tab = 'elements', q = '', cat = 'all';
 const pf = f => CH.prettyFormula(f);
 const mvTag = m => Math.abs(m - 1) < 0.02 ? null : h('span', { class: 'mv ' + (m > 1 ? 'u' : 'd') }, (m > 1 ? '▲ +' : '▼ −') + Math.abs(Math.round((m - 1) * 100)) + '%');
-const A = Kit.app({ title: 'WestShop', right: [{ el: Kit.cashChip() }], build: (body) => {
+const A = Kit.app({ title: 'WestShop', build: (body) => {
   const tabs = Kit.seg([{ id: 'elements', label: 'Elements' }, { id: 'compounds', label: 'Compounds' }, { id: 'inventory', label: 'My items' }], tab, t => { tab = t; q = ''; cat = 'all'; draw(); });
   const search = h('div', { class: 'search', style: { marginTop: '12px' } }, h('span', { html: Kit.icon('search', 17, 2) }), h('input', { class: 'field', placeholder: 'Search', oninput: e => { q = e.target.value.toLowerCase(); list(); } }));
   const chips = h('div', { class: 'chips', style: { marginTop: '10px' } }), main = h('div', { style: { marginTop: '12px' } }), top = h('div');

@@ -17,8 +17,8 @@ const { h, row, group, esc } = Kit, D = OS.data, CH = OS.chem, pf = f => CH.pret
 const stateOf = n => D.GAS_AT_25C.has(n) ? 'gas' : D.LIQUID_AT_25C.has(n) ? 'liquid' : D.UNKNOWN_STATE.has(n) ? 'unknown' : 'solid';
 const blockOf = e => { const g = e[6], c = e[4]; if(c === 'lanthanide' || c === 'actinide') return 'f'; if(e[1] === 'He' || g <= 2) return 's'; if(g >= 13) return 'p'; return 'd'; };
 const A = Kit.app({ title: 'Notes', build: (body) => {
-  body.appendChild(h('div', { class: 'cap', style: { marginTop: 0 } }, 'iPad'.replace('iPad', 'Chemistry')));
-  body.appendChild(group(row({ glyph: 'grid', color: '#d9843f', title: 'Periodic Table', sub: 'All 118 elements — tap any for details', chev: true, onClick: periodic }), row({ glyph: 'notes', color: '#d4a72c', title: 'Data Book', sub: D.DATABOOK.length + ' reference tables', chev: true, onClick: databook }), row({ glyph: 'search', color: '#2a8f8a', title: 'Compound Lookup', sub: 'Names, formulas and molar masses', chev: true, onClick: lookup })));
+  body.appendChild(h('div', { class: 'cap', style: { marginTop: 0 } }, 'Chemistry'));
+  body.appendChild(group(row({ glyph: 'grid', color: '#d9843f', title: 'Periodic Table', sub: 'All 118 elements — click any for details', chev: true, onClick: periodic }), row({ glyph: 'notes', color: '#d4a72c', title: 'Data Book', sub: D.DATABOOK.length + ' reference tables', chev: true, onClick: databook }), row({ glyph: 'search', color: '#2a8f8a', title: 'Compound Lookup', sub: 'Names, formulas and molar masses', chev: true, onClick: lookup })));
   body.appendChild(h('div', { class: 'foot' }, 'These notes are a standalone study reference — nothing here affects your game.'));
 } });
 function periodic(){

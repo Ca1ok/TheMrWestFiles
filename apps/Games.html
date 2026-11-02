@@ -22,7 +22,7 @@ const { h, row, group, esc, money } = Kit; const REG = {}, loading = {};
 const Games = { register(g){ REG[g.id] = g; } };
 function loadGame(id){ if(REG[id]) return Promise.resolve(REG[id]); if(loading[id]) return loading[id]; return loading[id] = new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'games/' + id + '.js'; s.onload = () => REG[id] ? res(REG[id]) : rej(new Error('Game failed to register')); s.onerror = () => rej(new Error('Couldn’t load the game')); document.head.appendChild(s); }); }
 let cat = 'all';
-const A = Kit.app({ title: 'Games', right: [{ el: Kit.cashChip() }], build: (body) => {
+const A = Kit.app({ title: 'Games', build: (body) => {
   const today = h('div'), chips = h('div', { class: 'chips', style: { marginTop: '16px' } }), grid = h('div', { class: 'gg', style: { marginTop: '14px' } }); body.append(today, chips, grid);
   function paintToday(){ const g = OS.games.info(), pct = Math.min(100, g.earned / g.softcap * 100);
     today.innerHTML = ''; today.appendChild(h('div', { class: 'today' }, h('small', null, 'Earned today'), h('div', { class: 'bignum num' }, money(g.earned, { dp: 2 })), h('div', { class: 'bar-prog' }, h('i', { style: { width: pct + '%' } })), h('div', { class: 'nt' }, g.earned >= g.softcap ? 'Past ' + money(g.softcap) + ' wins pay a quarter as much until tomorrow.' : money(g.softcap - g.earned, { dp: 0 }) + ' more before payouts shrink. Repeating a game lowers its payout' + (g.bonus > 1.005 ? ' · collection bonus ×' + g.bonus.toFixed(2) : '') + '.'))); }

@@ -17,7 +17,7 @@ const { h, row, group, money, esc } = Kit, P = OS.props, SEC = OS.data.PROPERTY_
 let filter = 'all';
 const pct = (a, b) => b ? (a - b) / b * 100 : 0, chgTag = p => h('span', { class: p >= 0 ? 'up' : 'down' }, (p >= 0 ? '▲ ' : '▼ ') + Math.abs(p).toFixed(1) + '%');
 function sectorSeries(sec, days, n){ const now = OS.now(), out = []; for(let i = 0; i <= n; i++){ const t = now - days * DAY + days * DAY * i / n; out.push([t, OS.worldModel.sectorIndex(sec, t) * 100]); } return out; }
-const A = Kit.app({ title: 'Real Estate', right: [{ el: Kit.cashChip() }], build: (body) => {
+const A = Kit.app({ title: 'Real Estate', build: (body) => {
   const sum = h('div'), idx = h('div'), list = h('div'), news = h('div'); body.append(sum, h('h2', { class: 'sec' }, 'Market'), idx, h('h2', { class: 'sec' }, 'Listings'), list, news);
   function paintSum(){
     const own = P.list().filter(p => p.owned), val = P.value(), rent = P.rentDue(), paid = own.reduce((s, p) => s + p.paid, 0), gain = own.reduce((s, p) => s + P.sellValue(p.id) - p.paid, 0);
@@ -25,7 +25,7 @@ const A = Kit.app({ title: 'Real Estate', right: [{ el: Kit.cashChip() }], build
       h('div', { class: 'hstack', style: { justifyContent: 'space-between', flexWrap: 'wrap' } }, h('div', { style: { opacity: .85, font: '500 14px var(--font)' } }, own.length ? own.length + (own.length === 1 ? ' property' : ' properties') + ' · ' + (gain >= 0 ? '+' : '−') + money(Math.abs(gain), { compact: true }) + ' vs. paid' : 'Buy your first property below'), h('button', { class: 'btn', style: rent < 0.01 ? { opacity: .4 } : {}, onclick: () => { const r = P.collectRent(); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); } }, 'Collect rent ' + money(rent, { dp: 2 })))));
   }
   function paintIdx(){
-    idx.innerHTML = ''; const box = h('div', { class: 'sec-scroll' }); box.appendChild(h('button', { class: 'idx' + (filter === 'all' ? ' on' : ''), style: { '--c': 'var(--tint)' }, onclick: () => { filter = 'all'; paintIdx(); paintList(); } }, h('b', null, 'All sectors'), h('div', { class: 'v' }, P.list().length + ' listings'), h('small', { class: 'dim' }, 'Tap a sector to filter')));
+    idx.innerHTML = ''; const box = h('div', { class: 'sec-scroll' }); box.appendChild(h('button', { class: 'idx' + (filter === 'all' ? ' on' : ''), style: { '--c': 'var(--tint)' }, onclick: () => { filter = 'all'; paintIdx(); paintList(); } }, h('b', null, 'All sectors'), h('div', { class: 'v' }, P.list().length + ' listings'), h('small', { class: 'dim' }, 'Click a sector to filter')));
     Object.keys(SEC).forEach(k => { const s = sectorSeries(k, 14, 28), now = s[s.length - 1][1], ch = pct(now, s[0][1]), cv = h('canvas'); box.appendChild(h('button', { class: 'idx' + (filter === k ? ' on' : ''), style: { '--c': SEC[k].color }, onclick: () => { filter = k; paintIdx(); paintList(); } }, h('b', { style: { color: SEC[k].color } }, SEC[k].name), h('div', { class: 'v' }, now.toFixed(1), ' ', chgTag(ch)), cv)); requestAnimationFrame(() => Kit.spark(cv, s, ch >= 0 ? 'var(--good)' : 'var(--bad)')); });
     idx.appendChild(box);
   }

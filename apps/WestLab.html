@@ -27,7 +27,7 @@ const TOOLNAME = id => (OS.data.TOOLS.find(t => t.id === id) || {}).name || id;
 const hue = s => [...String(s)].reduce((a, c) => (a * 33 + c.charCodeAt(0)) % 360, 17);
 const colorOfKey = k => { const sp = CH.speciesOf(k); if(sp && sp.kind === 'element'){ return COLORS[CH.elements[sp.el].cat] || '#aaa'; } return 'hsl(' + hue(k) + ' 62% 58%)'; };
 let tab = 'reactor', reagents = [], target = '', batches = 1, last = null;
-const A = Kit.app({ title: 'WestLab', right: [{ el: Kit.cashChip() }], build: (body) => {
+const A = Kit.app({ title: 'WestLab', build: (body) => {
   const tabs = Kit.seg([{ id: 'reactor', label: 'Reactor' }, { id: 'synth', label: 'Synthesize' }, { id: 'equip', label: 'Equipment' }, { id: 'found', label: 'Discoveries' }], tab, t => { tab = t; batches = 1; draw(); });
   const main = h('div', { style: { marginTop: '14px' } }); body.append(tabs, main);
   function draw(){ main.innerHTML = ''; ({ reactor: reactorTab, synth: synthTab, equip: equipTab, found: foundTab })[tab](main); }
