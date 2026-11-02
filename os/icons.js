@@ -1,6 +1,7 @@
-// WestOS icon set: hand-drawn 24×24 line glyphs (stroke = currentColor) + the app-tile registry.
-// Adding an app = one entry in OS_APPS (+ its glyph below) — the home screen, dock, widgets gallery and window
-// animations all read from this registry.
+// WestOS icon set: hand-drawn 24×24 line glyphs (stroke = currentColor) for the UI, + the app registry.
+// App icons themselves are PNG files in /assets/icons/<AppId>.png (regenerate with tools/make-icons.py).
+// Adding an app = one entry in OS_APPS here, its glyph below, and a PNG in assets/icons — the desktop, dock and window
+// title bars all read from this registry.
 const OS_GLYPHS = {
   news:'<path d="M5 4h11a2 2 0 0 1 2 2v13a1 1 0 0 0 1 1H7a3 3 0 0 1-3-3V5a1 1 0 0 1 1-1z"/><path d="M18 9h2a1 1 0 0 1 1 1v8a2 2 0 0 1-2 2"/><path d="M8 8h7M8 12h7M8 16h4"/>',
   stocks:'<path d="M3 17l5.5-5.5 4 4L21 7"/><path d="M15 7h6v6"/>',
@@ -31,7 +32,8 @@ const OS_GLYPHS = {
   layers:'<path d="M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5"/>', refresh:'<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>', shield:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/>',
   wifi:'<path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.8 16a5 5 0 0 1 6.4 0M12 19.5h.01"/>', bolt:'<path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>'
 };
-// id, display name, file (relative to /apps), tile gradient, glyph, tagline
+// id, display name, file (relative to /apps), tile gradient + glyph (used only by tools/make-icons.py to draw the PNG)
+const OS_ICON_BASE = (() => { const s = document.currentScript; return s && s.src ? s.src.replace(/os\/icons\.js.*$/, 'assets/icons/') : 'assets/icons/'; })();
 const OS_APPS = [
   { id:'Messages',   name:'Messages',    file:'Messages.html',   g:['#6fd070','#2f9a49'], glyph:'messages' },
   { id:'Stocks',     name:'Stocks',      file:'Stocks.html',     g:['#3fae78','#1c6a4a'], glyph:'stocks'   },
@@ -49,8 +51,8 @@ const OS_APPS = [
 function osIcon(name, size, sw){
   return '<svg class="gl" viewBox="0 0 24 24" width="' + (size || 24) + '" height="' + (size || 24) + '" fill="none" stroke="currentColor" stroke-width="' + (sw || 1.8) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (OS_GLYPHS[name] || '') + '</svg>';
 }
-function osAppTile(app, size){   // the squircle app icon (used on the home screen, dock, notifications, settings rows…)
+function osAppTile(app, size){   // the app icon: a PNG from /assets/icons (used on the desktop, dock, window title bars, notifications…)
   const a = typeof app === 'string' ? OS_APPS.find(x => x.id === app) : app; if(!a) return '';
-  return '<span class="tile" style="width:' + size + 'px;height:' + size + 'px;background:linear-gradient(160deg,' + a.g[0] + ',' + a.g[1] + ')">' + osIcon(a.glyph, Math.round(size * 0.56), 1.9) + '</span>';
+  return '<span class="tile" style="width:' + size + 'px;height:' + size + 'px"><img src="' + OS_ICON_BASE + a.id + '.png" width="' + size + '" height="' + size + '" alt="" draggable="false" decoding="async"></span>';
 }
 if(typeof module !== 'undefined') module.exports = { OS_APPS, OS_GLYPHS };

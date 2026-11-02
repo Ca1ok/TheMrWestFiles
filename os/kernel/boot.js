@@ -1,5 +1,5 @@
 /* BOOT — runs the kernel modules and the shell privately (nothing global is left behind except the narrow `OS` facade), then loads
- * Firebase *after* the first paint so the home screen is on screen immediately even on a slow connection. */
+ * Firebase *after* the first paint so the desktop is on screen immediately even on a slow connection. */
 (function(){
   const K = { Chem, World };
   (window.__OSM || []).forEach(m => m(K)); delete window.__OSM;

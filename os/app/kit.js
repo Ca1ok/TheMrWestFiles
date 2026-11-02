@@ -1,7 +1,7 @@
 /* WestOS app kit (runtime). Every app does:  <script src="../os/icons.js"> <script src="../os/app/kit.js">  and then uses `Kit` and `OS`.
  *  - bridges to the shell's `OS` facade (an app opened on its own redirects to the OS, which opens it properly)
  *  - theme + safe-area sync, automatic cleanup of live subscriptions when the app is closed
- *  - iOS-style page stack (large titles that collapse, push/pop slides), sheets, alerts, toasts, segmented controls */
+ *  - page stack (large titles that collapse, push/pop slides), sheets, alerts, toasts, segmented controls */
 (function(){
   let OS = null; try{ OS = window.parent !== window ? window.parent.OS : null; }catch(e){}
   if(!OS){
@@ -13,7 +13,7 @@
   const root = document.documentElement, subs = [];
   const $ = (s, r) => (r || document).querySelector(s), $$ = (s, r) => [...(r || document).querySelectorAll(s)];
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  function applyEnv(){ root.dataset.theme = OS.theme(); const sc = OS.screen(); root.style.setProperty('--sat', sc.sat + 'px'); root.style.setProperty('--sab', sc.sab + 'px'); root.classList.toggle('rm', !!OS.prefs.get('reduceMotion')); root.classList.toggle('rt', !!OS.prefs.get('reduceTransparency')); }
+  function applyEnv(){ root.dataset.theme = OS.theme(); const sc = OS.screen(); root.style.setProperty('--sat', (sc.sat || 0) + 'px'); root.style.setProperty('--sab', (sc.sab || 0) + 'px'); root.classList.toggle('reduce-motion', !!OS.prefs.get('reduceMotion')); root.classList.toggle('reduce-transparency', !!OS.prefs.get('reduceTransparency')); }
   applyEnv();
   const live = (evt, fn) => { const off = OS.on(evt, fn); subs.push(off); return off; };
   live('theme', applyEnv); live('screen', applyEnv); live('prefs', applyEnv);
@@ -68,7 +68,7 @@
   function app(opts){
     const host = $('#app') || document.body.appendChild(h('div', { id: 'app' })), stack = [];
     function page(o, isRoot){
-      const pg = h('div', { class: 'pg' }), bar = h('div', { class: 'bar' }), row = h('div', { class: 'row1' }), L = h('div', { class: 'l' }), R = h('div', { class: 'r' }), ttl = h('div', { class: 'ttl' }, o.title || '');
+      const pg = h('div', { class: 'pg' + (isRoot && !(o.right && o.right.length) && !o.left ? ' plain' : '') }), bar = h('div', { class: 'bar' }), row = h('div', { class: 'row1' }), L = h('div', { class: 'l' }), R = h('div', { class: 'r' }), ttl = h('div', { class: 'ttl' }, o.title || '');
       row.append(L, ttl, R); bar.appendChild(row);
       const sc = h('div', { class: 'sc' }), inner = h('div', { class: 'sc-in' }), big = o.large === false ? null : h('div', { class: 'lt' }, o.title || ''), body = h('div', { class: 'body' });
       if(big) inner.appendChild(big); inner.appendChild(body); sc.appendChild(inner); pg.append(sc, bar);
