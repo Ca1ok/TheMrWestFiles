@@ -1,5 +1,7 @@
 // WestLab exports (run hourly by .github/workflows/export-lab-cache.yml):
 //  1) discoveries:  Firebase labCache/<reaction>  ->  lab-cache/discoveries.json   (newest 300; who made what first)
+//  3) compound library: every compound that appears in a verified reaction (and the built-in registry) is looked up on PubChem (free, no key) and its real name + structure saved to
+//     lab-cache/compounds/<shard>.json — so the browser doesn't have to ask PubChem again. Compounds PubChem doesn't know get a structure built from valence rules (flagged real:0).
 //  2) reaction library:  Firebase labSubmit/<id>  ->  lab-cache/reactions/<shard>.json
 //     Players only submit the INPUTS of a reaction they calculated (reagents, temperature, pressure, equipment). This script RECOMPUTES each one with the
 //     very same engine (os/lib/chem.js + os/lib/phys.js) and commits the result only if it is a valid, feasible reaction. A client can therefore never put a
@@ -15,7 +17,7 @@ async function discoveries(){
   console.log(write(path.join(OUTD, 'discoveries.json'), clean) ? 'Wrote ' + Object.keys(clean).length + ' discoveries.' : 'Discoveries: no change.');
 }
 async function reactions(){
-  const { Phys } = load(ROOT); Phys.init();
+  const { Phys } = load(ROOT); Phys.init(); const fresh = [];
   const stateF = path.join(RX, '_state.json'), state = fs.existsSync(stateF) ? JSON.parse(fs.readFileSync(stateF, 'utf8')) : { t: 0 };
   let sub; try{ sub = (await getJSON('/labSubmit.json?orderBy="t"&startAt=' + (state.t + 1))) || {}; }catch(e){ sub = (await getJSON('/labSubmit.json')) || {}; }   // (needs ".indexOn": ["t"] in the rules; falls back to a full read)
   const shards = {}, getShard = id => shards[id] || (shards[id] = (() => { const f = path.join(RX, id + '.json'); return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : {}; })());
@@ -29,10 +31,23 @@ async function reactions(){
     if(!card || !card.ok){ rejected++; return; }
     const sh = getShard(Phys.shardOf(card.key)); if(sh[card.key]) return;
     if(Phys.fnv(card.key) !== id){ rejected++; return; }                                   // the id must be the hash of the recomputed key
-    sh[card.key] = card; added++;
+    sh[card.key] = card; fresh.push(card); added++;
   });
   let changed = 0; Object.keys(shards).forEach(id => { if(write(path.join(RX, id + '.json'), shards[id])) changed++; });
   if(maxT !== state.t) write(stateF, { t: maxT });
   console.log('Reaction library: ' + added + ' added, ' + rejected + ' rejected, ' + changed + ' shard file(s) written.');
+  return fresh;
 }
-(async () => { await discoveries(); await reactions(); })().catch(e => { console.error(e); process.exit(1); });
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function compounds(fresh){
+  const { Chem, Phys, Mol } = load(ROOT); Phys.init(); const CD = path.join(OUTD, 'compounds'), shards = {}, getShard = id => shards[id] || (shards[id] = (() => { const f = path.join(CD, id + '.json'); return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : {}; })());
+  const want = []; fresh.forEach(c => c.R.concat(c.Pr).forEach(x => x[4] === 'compound' && want.push(x[3]))); Chem.registryList().forEach(r => want.push(r.formula));
+  let done = 0, real = 0;
+  for(const f0 of want){ if(done >= 40) break; const sp = Chem.speciesOf(f0); if(!sp || sp.kind !== 'compound') continue; const f = sp.f, sh = getShard(Phys.fnv(f).slice(0, 2)); if(sh[f]) continue;
+    let rec = null; try{ rec = await Mol.lookup(f, sp.comp); }catch(e){}
+    if(rec){ if(!rec.n) rec.n = Chem.nameOf(f); real++; } else { const g = Mol.layout(Mol.build(sp)); if(!g.a.length) continue; rec = Mol.record(f, Chem.nameOf(f), g, false, 0); }
+    sh[f] = rec; done++; await sleep(300); }                                           // PubChem asks for ≤ 5 requests/second
+  let changed = 0; Object.keys(shards).forEach(id => { if(write(path.join(CD, id + '.json'), shards[id])) changed++; });
+  console.log('Compound library: ' + done + ' added (' + real + ' found on PubChem), ' + changed + ' shard file(s) written.');
+}
+(async () => { await discoveries(); const fresh = await reactions(); await compounds(fresh); })().catch(e => { console.error(e); process.exit(1); });
