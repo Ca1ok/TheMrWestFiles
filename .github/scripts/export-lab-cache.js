@@ -1,21 +1,38 @@
-// Exports the WestLab discovery registry from Firebase into the repo as a static file, so players read it from GitHub Pages
-// (free, cached) instead of from the database. Players only WRITE to Firebase when they make a brand-new discovery.
-//   labCache/<reaction>  ->  lab-cache/discoveries.json   (newest 300 entries; each: { by, t, eq, n })
-// The chemistry itself is never cached or trusted: every client recomputes reactions with the same deterministic engine
-// (os/lib/chem.js), so a poisoned cache entry can't change what a reaction makes or what it is worth.
-const fs = require('fs'), path = require('path');
-const DB = 'https://mrwestfiles-default-rtdb.asia-southeast1.firebasedatabase.app';
-const OUT = path.join(__dirname, '..', '..', 'lab-cache', 'discoveries.json');
-(async () => {
-  const res = await fetch(DB + '/labCache.json');
-  if(!res.ok) throw new Error('Firebase read failed: ' + res.status);
-  const data = (await res.json()) || {};
-  const clean = {};
-  Object.keys(data).filter(k => data[k] && typeof data[k].by === 'string').sort((a, b) => (data[b].t || 0) - (data[a].t || 0)).slice(0, 300).forEach(k => {
-    const d = data[k]; clean[k] = { by: String(d.by).slice(0, 20), t: +d.t || 0, eq: String(d.eq || '').slice(0, 240), n: String(d.n || '').slice(0, 240) };
+// WestLab exports (run hourly by .github/workflows/export-lab-cache.yml):
+//  1) discoveries:  Firebase labCache/<reaction>  ->  lab-cache/discoveries.json   (newest 300; who made what first)
+//  2) reaction library:  Firebase labSubmit/<id>  ->  lab-cache/reactions/<shard>.json
+//     Players only submit the INPUTS of a reaction they calculated (reagents, temperature, pressure, equipment). This script RECOMPUTES each one with the
+//     very same engine (os/lib/chem.js + os/lib/phys.js) and commits the result only if it is a valid, feasible reaction. A client can therefore never put a
+//     wrong number into the library — the library holds nothing but what the engine itself produced.
+const fs = require('fs'), path = require('path'), ROOT = path.join(__dirname, '..', '..'), load = require('./westlab-loader.js');
+const DB = 'https://mrwestfiles-default-rtdb.asia-southeast1.firebasedatabase.app', OUTD = path.join(ROOT, 'lab-cache'), RX = path.join(OUTD, 'reactions');
+const getJSON = async u => { const r = await fetch(DB + u); if(!r.ok) throw new Error(u + ' -> ' + r.status); return r.json(); };
+const write = (f, o) => { const next = JSON.stringify(o); if(fs.existsSync(f) && fs.readFileSync(f, 'utf8') === next) return false; fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, next); return true; };
+
+async function discoveries(){
+  const data = (await getJSON('/labCache.json')) || {}, clean = {};
+  Object.keys(data).filter(k => data[k] && typeof data[k].by === 'string').sort((a, b) => (data[b].t || 0) - (data[a].t || 0)).slice(0, 300).forEach(k => { const d = data[k]; clean[k] = { by: String(d.by).slice(0, 20), t: +d.t || 0, eq: String(d.eq || '').slice(0, 240), n: String(d.n || '').slice(0, 240) }; });
+  console.log(write(path.join(OUTD, 'discoveries.json'), clean) ? 'Wrote ' + Object.keys(clean).length + ' discoveries.' : 'Discoveries: no change.');
+}
+async function reactions(){
+  const { Phys } = load(ROOT); Phys.init();
+  const stateF = path.join(RX, '_state.json'), state = fs.existsSync(stateF) ? JSON.parse(fs.readFileSync(stateF, 'utf8')) : { t: 0 };
+  let sub; try{ sub = (await getJSON('/labSubmit.json?orderBy="t"&startAt=' + (state.t + 1))) || {}; }catch(e){ sub = (await getJSON('/labSubmit.json')) || {}; }   // (needs ".indexOn": ["t"] in the rules; falls back to a full read)
+  const shards = {}, getShard = id => shards[id] || (shards[id] = (() => { const f = path.join(RX, id + '.json'); return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : {}; })());
+  let added = 0, rejected = 0, maxT = state.t;
+  Object.keys(sub).sort((a, b) => (sub[a].t || 0) - (sub[b].t || 0)).forEach(id => {
+    const s = sub[id]; if(!s || typeof s !== 'object') return; maxT = Math.max(maxT, +s.t || 0);
+    const keys = Array.isArray(s.r) ? s.r.filter(x => typeof x === 'string' && x.length < 40).slice(0, 4) : [], target = typeof s.g === 'string' ? s.g.slice(0, 60) : '';
+    if(!target && !keys.length) return; const T = Math.round(+s.T), P = +s.P || 1;
+    if(!(T >= 75 && T <= 1500) || ![1, 2, 5, 10, 20, 50, 100, 200, 500].includes(P)) { rejected++; return; }
+    let card; try{ card = Phys.card({ keys, target, T, P, cat: !!s.c, elec: !!s.e }); }catch(e){ rejected++; return; }
+    if(!card || !card.ok){ rejected++; return; }
+    const sh = getShard(Phys.shardOf(card.key)); if(sh[card.key]) return;
+    if(Phys.fnv(card.key) !== id){ rejected++; return; }                                   // the id must be the hash of the recomputed key
+    sh[card.key] = card; added++;
   });
-  fs.mkdirSync(path.dirname(OUT), { recursive: true });
-  const next = JSON.stringify(clean);
-  if(fs.existsSync(OUT) && fs.readFileSync(OUT, 'utf8') === next){ console.log('No change.'); return; }
-  fs.writeFileSync(OUT, next); console.log('Wrote ' + Object.keys(clean).length + ' discoveries.');
-})().catch(e => { console.error(e); process.exit(1); });
+  let changed = 0; Object.keys(shards).forEach(id => { if(write(path.join(RX, id + '.json'), shards[id])) changed++; });
+  if(maxT !== state.t) write(stateF, { t: maxT });
+  console.log('Reaction library: ' + added + ' added, ' + rejected + ' rejected, ' + changed + ' shard file(s) written.');
+}
+(async () => { await discoveries(); await reactions(); })().catch(e => { console.error(e); process.exit(1); });
