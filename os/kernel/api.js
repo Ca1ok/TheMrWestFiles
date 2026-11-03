@@ -51,6 +51,19 @@
     if(card.ok && !SEEN.sent.has(key)){ SEEN.sent.add(key); K.cloud.submitReaction(Phys.fnv(key), a); }
     return r;
   }
+  /* ---- identify a species: GitHub compound library → free PubChem lookup → constructed from valence rules. Real structures drive the reactor visuals. ---- */
+  const IDENT = new Map(), GRAPHS = new Map(), CSHARDS = {};
+  async function cshard(id){ if(CSHARDS[id]) return CSHARDS[id]; try{ const r = await fetch('lab-cache/compounds/' + id + '.json', { cache: 'no-cache' }); CSHARDS[id] = r.ok ? await r.json() : {}; }catch(e){ CSHARDS[id] = {}; } return CSHARDS[id]; }
+  function graphOf(key){ const sp = Chem.speciesOf(key); if(!sp) return { a: [], b: [], x: [], y: [], q: [] }; if(GRAPHS.has(sp.f + '|' + sp.kind + sp.apu)) return GRAPHS.get(sp.f + '|' + sp.kind + sp.apu); const g = Mol.layout(Mol.build(sp)); GRAPHS.set(sp.f + '|' + sp.kind + sp.apu, g); return g; }
+  function identify(key){
+    const sp = Chem.speciesOf(key); if(!sp) return Promise.resolve(null); if(sp.kind === 'element') return Promise.resolve({ f: sp.f, name: Chem.elements[sp.el].name, real: true, src: 'element', graph: graphOf(key) });
+    if(IDENT.has(sp.f)) return IDENT.get(sp.f);
+    const p = (async () => { const sh = await cshard(Phys.fnv(sp.f).slice(0, 2)); let rec = sh[sp.f], src = rec ? 'github' : '';
+      if(!rec){ try{ rec = await Mol.lookup(sp.f, sp.comp); if(rec) src = 'pubchem'; }catch(e){} }
+      const g = rec && rec.a ? Mol.fromRecord(rec) : null; if(g){ GRAPHS.set(sp.f + '|' + sp.kind + sp.apu, g); }
+      return { f: sp.f, name: (rec && rec.n) || Chem.nameOf(sp.f), real: !!(rec && rec.real), cid: (rec && rec.cid) || 0, src: src || 'constructed', graph: g || graphOf(key) }; })();
+    IDENT.set(sp.f, p); return p;
+  }
   const tierOf = () => Math.min(6, Object.keys(K.S.lab.tools).filter(t => K.S.lab.tools[t] && t !== 'basic').length);
   const lab = {
     tools: () => TOOLS.map(t => Object.assign({}, t, { owned: !!K.S.lab.tools[t.id] })),
@@ -60,21 +73,26 @@
     simulate(card, amounts, o){ return card && card.ok ? Phys.run(card, amounts, { removal: !!(o && o.removal) && bench().removal, tools: K.S.lab.tools, volume: o && o.volume }) : null; },
     async run(a, amounts, o){
       o = o || {}; a = clampArgs(a); const { card, src } = await getCard(a); if(!card.ok) return no(card.why);
-      const am = {}; for(const x of card.R){ const n = Math.floor(+amounts[x[0]] || 0); if(n < 1) return no('Set an amount for ' + x[3] + '.'); if(K.qty(x[4] === 'element' ? 'element' : 'compound', x[0]) < n * x[2]) return no('You don’t have ' + n + ' mol of ' + x[3] + '.'); am[x[0]] = n; }
+      const am = {}; for(const x of card.R){ const n = Math.floor(+amounts[x[0]] || 0); if(n < 1) return no('Set an amount for ' + x[3] + '.'); if(K.qty(x[4] === 'element' ? 'element' : 'compound', x[0]) + (K.S.lab.tray[x[0]] || 0) < n * x[2]) return no('You don’t have ' + n + ' mol of ' + x[3] + '.'); am[x[0]] = n; }
       const sim = Phys.run(card, am, { removal: !!o.removal && bench().removal, tools: K.S.lab.tools }); if(!(sim.xi > 0)) return no('Nothing reacts under these conditions.');
       if(sim.hazard && !o.risk) return no('This run is unsafe for your vessel — confirm to run it anyway.', { hazard: sim.hazard });
       const keep = sim.hazard ? 0.5 : 1, used = {}, made = {}; let value = 0;
       card.R.forEach(x => { const u = Math.round(x[1] * sim.xi) * x[2]; if(u > 0){ used[x[0]] = u; value += K.listValue(x[0]) * u; } });
       card.Pr.forEach(x => { const dis = (sim.dissolved && sim.dissolved[x[0]]) || 0, u = Math.floor((x[1] * sim.xi - dis) * keep + 1e-9) * x[2]; if(u > 0) made[x[0]] = u; });
       const fee = K.round2(value * 0.02 + 0.25 * (1 + tierOf()) + (sim.kWh || 0) * 0.5 + (sim.hazard ? 25 : 0)); if(!K.spend(fee, 'Lab fee')) return no('The lab fee is ' + fmt(fee) + '.');
-      Object.keys(used).forEach(k => K.invTake(K.kindOf(k), k, used[k]));
-      const out = []; Object.keys(made).forEach(k => { const t = K.kindOf(k); K.invAdd(t, k, made[k]); out.push({ key: k, n: made[k], name: t === 'element' ? Chem.elements[k].name : Chem.nameOf(k) }); });
+      Object.keys(used).forEach(k => { const fromTray = Math.min(used[k], K.S.lab.tray[k] || 0); if(fromTray){ K.S.lab.tray[k] -= fromTray; if(K.S.lab.tray[k] <= 0) delete K.S.lab.tray[k]; } if(used[k] - fromTray > 0) K.invTake(K.kindOf(k), k, used[k] - fromTray); });
+      const out = []; Object.keys(made).forEach(k => { const t = K.kindOf(k); K.S.lab.tray[k] = (K.S.lab.tray[k] || 0) + made[k]; out.push({ key: k, n: made[k] / (Chem.speciesOf(k).apu || 1), name: t === 'element' ? Chem.elements[k].name : Chem.nameOf(k) }); });
       K.S.lab.runs++; let bonus = 0, firstGlobal = false; const newly = [];
       for(const x of card.Pr){ if(x[4] !== 'compound' || !made[x[0]] || K.S.lab.found.includes(x[0])) continue; K.S.lab.found.push(x[0]); newly.push(x[0]); bonus += Math.max(5, K.round2(Chem.valueOf(x[0]) * 0.5)); }
       if(newly.length){ const id = card.R.map(x => x[3]).sort().join('+') + '>' + card.Pr.map(x => x[3]).sort().join('+'), r = await K.cloud.discover(id, { eq: card.eq, n: newly.join(',') }); if(r.first){ firstGlobal = true; bonus += 100; } }
       if(bonus > 0) K.earn(bonus, 'Discovery bonus'); K.touch('lab'); K.emit('lab');
       return ok('Made ' + (out.map(m => m.n + ' × ' + m.name).join(', ') || 'nothing'), { made: out, fee, bonus, newly: newly.map(k => ({ key: k, name: Chem.nameOf(k) })), firstGlobal, equation: card.eq, y: sim.y, hazard: sim.hazard, src, tLabel: sim.tLabel, heat: sim.heat });
     },
+    tray: () => Object.keys(K.S.lab.tray).map(k => { const sp = Chem.speciesOf(k), u = K.S.lab.tray[k], apu = sp.apu || 1; return { key: k, units: u, moles: Math.floor(u / apu), f: sp.f, kind: sp.kind, name: sp.kind === 'element' ? Chem.elements[k].name : Chem.nameOf(k) }; }),
+    trayUnits: k => K.S.lab.tray[k] || 0,
+    collect(key){ const u = K.S.lab.tray[key]; if(!(u > 0)) return no('Nothing to collect.'); K.invAdd(K.kindOf(key), key, u); delete K.S.lab.tray[key]; K.touch('lab'); K.emit('lab'); return ok('Added to your inventory.'); },
+    collectAll(){ Object.keys(K.S.lab.tray).forEach(k => { K.invAdd(K.kindOf(k), k, K.S.lab.tray[k]); delete K.S.lab.tray[k]; }); K.touch('lab'); K.emit('lab'); return ok('Everything added to your inventory.'); },
+    graph: key => graphOf(key), identify: key => identify(key),
     found: () => K.S.lab.found.slice(), runs: () => K.S.lab.runs, cacheInfo: () => Object.assign({ cards: SEEN.cards.size }, SEEN.hits),
     async registry(){ try{ const r = await fetch('lab-cache/discoveries.json', { cache: 'no-cache' }); return r.ok ? await r.json() : {}; }catch(e){ return {}; } }
   };
@@ -136,7 +154,7 @@
     now: K.now, today: K.today, cash: () => K.S.cash,
     prefs: { get: k => K.prefs[k], all: () => JSON.parse(JSON.stringify(K.prefs)), set: (k, v) => K.setPref(k, v) },
     shop, lab, props, bank, mail, auth, stock, games, files, world, admin, gallery,
-    chem: Chem, phys: Phys, worldModel: World,
+    chem: Chem, phys: Phys, mol: Mol, worldModel: World,
     data: { ELEMENTS, CATEGORY_COLORS, CATEGORY_LABELS, GAS_AT_25C, LIQUID_AT_25C, UNKNOWN_STATE, STATE_COLORS, STATE_LABELS, BLOCK_COLORS, BLOCK_LABELS, COMPOUND_LOOKUP, CATEGORY_LOOKUP_LABELS, POLYATOMIC_IONS, DATABOOK, WANTED_DATA, PROPERTIES, PROPERTY_SECTORS, TOOLS, MELTING_POINTS, BOILING_POINTS, OXIDATION, ELECTRONEG, RECIPES },
     nameOk: K.nameOk, netWorth: K.netWorth, sync: () => K.cloud.flushNow(), usage: () => ({ bytes: C.bytes, reads: C.reads, writes: C.writes }),
     notify: n => K.emit('notify', n)

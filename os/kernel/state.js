@@ -22,7 +22,7 @@
   K.defaults = () => ({
     v: 3, cash: CFG.startCash, inv: { e: {}, c: {} }, lots: [], props: {},
     bank: { last: '', bills: [], hist: [] }, mail: [],
-    lab: { found: [], tools: { basic: 1 }, runs: 0 }, games: { day: '', plays: {}, earned: 0 },
+    lab: { found: [], tools: { basic: 1 }, runs: 0, tray: {} }, games: { day: '', plays: {}, earned: 0 },
     shop: { demand: {} }, meta: { created: Date.now(), name: '', lastBroadcast: 0 }
   });
   K.S = K.defaults();
@@ -46,6 +46,7 @@
     S.bank = Object.assign({ last: '', bills: [], hist: [] }, S.bank); S.bank.bills = K.toArr(S.bank.bills); S.bank.hist = K.toArr(S.bank.hist);
     S.mail = K.toArr(S.mail);
     S.lab = Object.assign({ found: [], tools: { basic: 1 }, runs: 0 }, S.lab); S.lab.found = K.toArr(S.lab.found); S.lab.tools = Object.assign({ basic: 1 }, S.lab.tools);
+    { const tr = {}, src = (S.lab.tray && typeof S.lab.tray === 'object') ? S.lab.tray : {}; Object.keys(src).forEach(k => { const v = Math.floor(+src[k]); if(v > 0 && v < 1e6 && Chem.speciesOf(k)) tr[k] = v; }); S.lab.tray = tr; }   // WestLab output tray: products waiting to be collected into the inventory
     S.games = Object.assign({ day: '', plays: {}, earned: 0 }, S.games);
     S.shop = Object.assign({ demand: {} }, S.shop); S.shop.demand = S.shop.demand || {};
     S.meta = Object.assign({ created: Date.now(), name: '', lastBroadcast: 0 }, S.meta);
