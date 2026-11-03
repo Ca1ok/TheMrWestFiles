@@ -136,6 +136,15 @@
     }catch(e){ return { first: false }; }
   };
 
+
+  /* ---- WestLab reaction library: clients only submit the INPUTS of a reaction they just calculated (reagents, T, P, equipment).
+   *      A GitHub Action recomputes every submission with the same engine and commits the verified result to lab-cache/reactions/. Create-only. ---- */
+  C.submitReaction = function(id, a){
+    if(!C.db || !C.signedIn()) return;
+    const rec = { r: (a.keys || []).slice(0, 4).map(String), g: a.target ? String(a.target).slice(0, 60) : '', T: Math.round(a.T), P: +a.P || 1, c: a.cat ? 1 : 0, e: a.elec ? 1 : 0, t: firebase.database.ServerValue.TIMESTAMP };
+    C.db.ref('labSubmit/' + id).transaction(cur => cur === null ? rec : undefined).catch(() => {});
+  };
+
   /* ---- admin (every call is also enforced by database.rules.json — hiding buttons is not the security) ---- */
   const A = C.admin = {};
   const need = () => { if(!C.isAdmin()) throw new Error('Admin only.'); };

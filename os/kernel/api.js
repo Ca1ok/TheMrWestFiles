@@ -3,7 +3,7 @@
  * (or a console) can't hand in a fabricated result — for example the lab recomputes the chemistry itself, it never accepts "products".
  * There is deliberately no addMoney(). The only sources of money are the game's own rules. */
 (window.__OSM = window.__OSM || []).push(function(K){
-  const CFG = OS_CONFIG, ok = (msg, extra) => Object.assign({ ok: true, msg }, extra), no = msg => ({ ok: false, msg });
+  const CFG = OS_CONFIG, ok = (msg, extra) => Object.assign({ ok: true, msg }, extra), no = (msg, extra) => Object.assign({ ok: false, msg }, extra);
   const fmt = n => '$' + (+n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const COND_TOOL = { heat: 'burner', spark: 'electrolysis', pressure: 'pressure', catalyst: 'catalysis', distill: 'distillation', polymer: 'polymer', cryo: 'cryo' };
   const TOOL_COND = Object.keys(COND_TOOL).reduce((o, c) => (o[COND_TOOL[c]] = c, o), {});
@@ -34,46 +34,48 @@
     value: () => K.inventoryValue(), movers: () => World.elementMults(K.now())
   };
 
-  /* ---------------- lab ---------------- */
-  const labFee = (sol, plan) => { let v = 0; Object.keys(plan.consume).forEach(k => { v += K.listValue(k) * plan.consume[k]; }); const tier = Math.max(0, ...sol.needs.map(n => TOOLS.findIndex(t => t.id === COND_TOOL[n]))); return K.round2(v * 0.02 + 0.25 * plan.batches * Math.max(1, tier)); };
-  function describeRun(sol, plan){
-    return { ok: sol.ok, type: sol.type, equation: sol.equation, needs: sol.needs, missing: sol.missing || [], reason: sol.reason, note: sol.note || '', key: sol.key,
-      products: sol.products.map(p => ({ key: p.s.key, kind: p.s.kind, formula: p.s.f, name: p.s.kind === 'element' ? Chem.elements[p.s.el].name : Chem.nameOf(p.s.key), coeff: p.coeff, known: K.S.lab.found.includes(p.s.key) || p.s.kind === 'element' })),
-      reactants: sol.reactants.map(r => ({ key: r.s.key, formula: r.s.f, coeff: r.coeff, have: K.qty(r.s.kind, r.s.key) })),
-      maxBatches: plan.maxBatches, perBatchIn: plan.perBatchIn, perBatchOut: plan.perBatchOut, feePer: labFee(sol, { consume: Object.fromEntries(plan.perBatchIn.map(x => [x.key, x.perBatch])), batches: 1 }) };
+  /* ---------------- lab (WestPhys: real thermodynamics, equilibrium and kinetics; WestChem decides what can happen) ---------------- */
+  const P_STEPS = [1, 2, 5, 10, 20, 50, 100, 200, 500], SEEN = { cards: new Map(), shards: {}, sent: new Set(), hits: { github: 0, session: 0, local: 0 } };
+  const bench = () => Phys.limits(K.S.lab.tools);
+  function clampArgs(a){                                  // whatever the app asks for is limited to what the player's equipment can actually do
+    const b = bench(), P0 = +a.P || 1, P = P_STEPS.filter(p => p <= b.Pmax).reduce((m, p) => Math.abs(p - P0) < Math.abs(m - P0) ? p : m, 1);
+    const T = Math.min(Math.floor(b.Tmax / 25) * 25, Math.max(Math.ceil(b.Tmin / 25) * 25, Math.round((+a.T || 300) / 25) * 25));
+    return { keys: a.target ? [] : (a.keys || []).map(String).slice(0, 4), target: a.target ? String(a.target).trim().slice(0, 60) : '', T, P, cat: !!a.cat && b.cat, elec: !!a.elec && b.elec };
   }
-  const resolve = (keys, target) => target ? Chem.formation(target) : Chem.solve(keys, ownedConds());
+  async function shard(id){ if(SEEN.shards[id]) return SEEN.shards[id]; try{ const r = await fetch('lab-cache/reactions/' + id + '.json', { cache: 'no-cache' }); SEEN.shards[id] = r.ok ? await r.json() : {}; }catch(e){ SEEN.shards[id] = {}; } return SEEN.shards[id]; }
+  async function getCard(a){                              // 1) this session  2) the verified library on GitHub  3) calculate it here (and offer it to the library)
+    const key = Phys.cacheKey(a), hit0 = SEEN.cards.get(key); if(hit0){ SEEN.hits.session++; return hit0; }
+    const sh = await shard(Phys.shardOf(key)), hit = sh && sh[key];
+    if(hit && hit.ok && hit.key === key && Array.isArray(hit.R) && Array.isArray(hit.Pr)){ const r = { card: hit, src: 'github' }; SEEN.cards.set(key, r); SEEN.hits.github++; return r; }
+    const card = Phys.card(a), r = { card, src: 'local' }; SEEN.cards.set(key, r); SEEN.hits.local++;
+    if(card.ok && !SEEN.sent.has(key)){ SEEN.sent.add(key); K.cloud.submitReaction(Phys.fnv(key), a); }
+    return r;
+  }
+  const tierOf = () => Math.min(6, Object.keys(K.S.lab.tools).filter(t => K.S.lab.tools[t] && t !== 'basic').length);
   const lab = {
     tools: () => TOOLS.map(t => Object.assign({}, t, { owned: !!K.S.lab.tools[t.id] })),
     buyTool(id){ const t = TOOLS.find(x => x.id === id); if(!t) return no('Unknown equipment.'); if(K.S.lab.tools[id]) return no('You already own that.'); if(!K.spend(t.cost, 'Bought ' + t.name)) return no('You need ' + fmt(t.cost) + '.'); K.S.lab.tools[id] = 1; K.touch('lab'); K.emit('lab'); return ok('Bought ' + t.name + '.'); },
-    conditions: ownedConds,
-    describe: f => Chem.describe(f),
-    validate: f => Chem.validate(f),
-    preview(keys, target){
-      const sol = target ? Chem.formation(target) : Chem.solve(keys, ownedConds());
-      if(!sol || !sol.reactants){ return { ok: false, reason: (sol && sol.reason) || 'Choose some reagents.' }; }
-      if(target){ const miss = sol.needs.filter(n => !ownedConds().includes(n)); sol.missing = miss; sol.ok = miss.length === 0; sol.reason = miss.length ? 'Needs ' + miss.map(Chem.condLabel).join(' + ') + '.' : ''; }
-      return describeRun(sol, Chem.plan(sol, K.invFlat(), 0));
-    },
-    async run(keys, target, batches){
-      const sol = resolve(keys, target); if(!sol || !sol.reactants) return no((sol && sol.reason) || 'Nothing to run.');
-      if(target){ const miss = sol.needs.filter(n => !ownedConds().includes(n)); if(miss.length) return no('Needs ' + miss.map(Chem.condLabel).join(' + ') + '.'); } else if(!sol.ok) return no(sol.reason);
-      const plan = Chem.plan(sol, K.invFlat(), Math.floor(batches)); if(plan.batches < 1) return no('You don’t have enough reagents for even one batch.');
-      const fee = labFee(sol, plan); if(!K.spend(fee, 'Lab fee')) return no('The lab fee is ' + fmt(fee) + '.');
-      Object.keys(plan.consume).forEach(k => { const t = K.kindOf(k); K.invTake(t, k, plan.consume[k]); });
-      const made = [];
-      Object.keys(plan.produce).forEach(k => { const t = K.kindOf(k); K.invAdd(t, k, plan.produce[k]); made.push({ key: k, n: plan.produce[k], name: t === 'element' ? Chem.elements[k].name : Chem.nameOf(k) }); });
+    bench, describe: f => Chem.describe(f), validate: f => Chem.validate(f), owned: () => Object.assign({}, K.S.lab.tools),
+    async plan(a){ a = clampArgs(a); const r = await getCard(a); return { card: r.card, src: r.src, args: a }; },
+    simulate(card, amounts, o){ return card && card.ok ? Phys.run(card, amounts, { removal: !!(o && o.removal) && bench().removal, tools: K.S.lab.tools, volume: o && o.volume }) : null; },
+    async run(a, amounts, o){
+      o = o || {}; a = clampArgs(a); const { card, src } = await getCard(a); if(!card.ok) return no(card.why);
+      const am = {}; for(const x of card.R){ const n = Math.floor(+amounts[x[0]] || 0); if(n < 1) return no('Set an amount for ' + x[3] + '.'); if(K.qty(x[4] === 'element' ? 'element' : 'compound', x[0]) < n * x[2]) return no('You don’t have ' + n + ' mol of ' + x[3] + '.'); am[x[0]] = n; }
+      const sim = Phys.run(card, am, { removal: !!o.removal && bench().removal, tools: K.S.lab.tools }); if(!(sim.xi > 0)) return no('Nothing reacts under these conditions.');
+      if(sim.hazard && !o.risk) return no('This run is unsafe for your vessel — confirm to run it anyway.', { hazard: sim.hazard });
+      const keep = sim.hazard ? 0.5 : 1, used = {}, made = {}; let value = 0;
+      card.R.forEach(x => { const u = Math.round(x[1] * sim.xi) * x[2]; if(u > 0){ used[x[0]] = u; value += K.listValue(x[0]) * u; } });
+      card.Pr.forEach(x => { const dis = (sim.dissolved && sim.dissolved[x[0]]) || 0, u = Math.floor((x[1] * sim.xi - dis) * keep + 1e-9) * x[2]; if(u > 0) made[x[0]] = u; });
+      const fee = K.round2(value * 0.02 + 0.25 * (1 + tierOf()) + (sim.kWh || 0) * 0.5 + (sim.hazard ? 25 : 0)); if(!K.spend(fee, 'Lab fee')) return no('The lab fee is ' + fmt(fee) + '.');
+      Object.keys(used).forEach(k => K.invTake(K.kindOf(k), k, used[k]));
+      const out = []; Object.keys(made).forEach(k => { const t = K.kindOf(k); K.invAdd(t, k, made[k]); out.push({ key: k, n: made[k], name: t === 'element' ? Chem.elements[k].name : Chem.nameOf(k) }); });
       K.S.lab.runs++; let bonus = 0, firstGlobal = false; const newly = [];
-      for(const p of sol.products){
-        if(p.s.kind !== 'compound' || K.S.lab.found.includes(p.s.key)) continue;
-        K.S.lab.found.push(p.s.key); newly.push(p.s.key); bonus += Math.max(5, K.round2(Chem.valueOf(p.s.key) * 0.5));
-      }
-      if(newly.length){ const r = await K.cloud.discover(sol.key, { eq: sol.equation, n: newly.join(',') }); if(r.first){ firstGlobal = true; bonus += 100; } }
-      if(bonus > 0) K.earn(bonus, 'Discovery bonus');
-      K.touch('lab'); K.emit('lab');
-      return ok('Made ' + made.map(m => m.n + ' × ' + m.name).join(', '), { made, fee, bonus, newly: newly.map(k => ({ key: k, name: Chem.nameOf(k) })), firstGlobal, equation: sol.equation });
+      for(const x of card.Pr){ if(x[4] !== 'compound' || !made[x[0]] || K.S.lab.found.includes(x[0])) continue; K.S.lab.found.push(x[0]); newly.push(x[0]); bonus += Math.max(5, K.round2(Chem.valueOf(x[0]) * 0.5)); }
+      if(newly.length){ const id = card.R.map(x => x[3]).sort().join('+') + '>' + card.Pr.map(x => x[3]).sort().join('+'), r = await K.cloud.discover(id, { eq: card.eq, n: newly.join(',') }); if(r.first){ firstGlobal = true; bonus += 100; } }
+      if(bonus > 0) K.earn(bonus, 'Discovery bonus'); K.touch('lab'); K.emit('lab');
+      return ok('Made ' + (out.map(m => m.n + ' × ' + m.name).join(', ') || 'nothing'), { made: out, fee, bonus, newly: newly.map(k => ({ key: k, name: Chem.nameOf(k) })), firstGlobal, equation: card.eq, y: sim.y, hazard: sim.hazard, src, tLabel: sim.tLabel, heat: sim.heat });
     },
-    found: () => K.S.lab.found.slice(), runs: () => K.S.lab.runs,
+    found: () => K.S.lab.found.slice(), runs: () => K.S.lab.runs, cacheInfo: () => Object.assign({ cards: SEEN.cards.size }, SEEN.hits),
     async registry(){ try{ const r = await fetch('lab-cache/discoveries.json', { cache: 'no-cache' }); return r.ok ? await r.json() : {}; }catch(e){ return {}; } }
   };
 
@@ -134,7 +136,7 @@
     now: K.now, today: K.today, cash: () => K.S.cash,
     prefs: { get: k => K.prefs[k], all: () => JSON.parse(JSON.stringify(K.prefs)), set: (k, v) => K.setPref(k, v) },
     shop, lab, props, bank, mail, auth, stock, games, files, world, admin, gallery,
-    chem: Chem, worldModel: World,
+    chem: Chem, phys: Phys, worldModel: World,
     data: { ELEMENTS, CATEGORY_COLORS, CATEGORY_LABELS, GAS_AT_25C, LIQUID_AT_25C, UNKNOWN_STATE, STATE_COLORS, STATE_LABELS, BLOCK_COLORS, BLOCK_LABELS, COMPOUND_LOOKUP, CATEGORY_LOOKUP_LABELS, POLYATOMIC_IONS, DATABOOK, WANTED_DATA, PROPERTIES, PROPERTY_SECTORS, TOOLS, MELTING_POINTS, BOILING_POINTS, OXIDATION, ELECTRONEG, RECIPES },
     nameOk: K.nameOk, netWorth: K.netWorth, sync: () => K.cloud.flushNow(), usage: () => ({ bytes: C.bytes, reads: C.reads, writes: C.writes }),
     notify: n => K.emit('notify', n)

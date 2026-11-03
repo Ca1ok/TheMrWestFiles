@@ -489,6 +489,6 @@ const Chem = (function(){
     return Math.round(base * bonus * 100) / 100;
   }
   const registryList = () => { init(); return Object.keys(registry).map(k => registry[k]); };
-  return { init, parse, hill, compKey, balance, ions, build, nameOf, describe, classify, solve, plan, validate, formation, valueOf, price, speciesOf, massOf, atoms, prettyFormula, condLabel, registryList, isMetal, get elements(){ init(); return EL; } };
+  return { init, parse, hill, compKey, balance, ions, build, nameOf, describe, classify, solve, plan, validate, formation, valueOf, price, speciesOf, massOf, atoms, prettyFormula, condLabel, registryList, isMetal, candidates: (a, b) => { init(); return binaryCandidates(a, b); }, get elements(){ init(); return EL; } };
 })();
 if(typeof module !== 'undefined' && module.exports) module.exports = Chem;
