@@ -80,11 +80,11 @@
    * exact price function (noise × trend × game layer × admin ledger) is evaluated at a fixed number of points, averaging a few sub-samples per point (anti-aliasing). */
   const loaded = {}; let smp = null, smpAt = 0;
   async function ensure(span){ if(span > 1800e3) await loadRecent(); if(span > 47 * 3600e3 || !isFinite(span)) await loadHourly(); }
-  const candleSamples = (res, items) => { const r = []; items.forEach(it => { const t = marketCandleTicks(it[0], res); for(let k = 0; k < 4; k++) r.push([t[k], it[1][k]]); }); return r; };
+  const candleSamples = (res, items) => { const r = []; (items || []).forEach(it => { if(!it || !Array.isArray(it[1]) || !(res > 0)) return; const t = marketCandleTicks(it[0], res); for(let k = 0; k < 4; k++){ const v = +it[1][k]; if(isFinite(v) && v > 0 && isFinite(t[k])) r.push([t[k], v]); } }); return r; };
   function samples(){
     const now = K.now(); const sig = cp.tickIndex + ':' + (recent ? 1 : 0) + (hourly ? 1 : 0); if(smp && now - smpAt < 2000 && smp.sig === sig) return smp.m; const layers = [];
-    if(hourly) layers.push(candleSamples(hourly.res, hourly.c.map((c, i) => [(hourly.b0 || 0) + i, c])));
-    if(recent) layers.push(candleSamples(recent.res, recent.c.map((c, i) => [recent.b0 + i, c])));
+    try{ if(hourly) layers.push(candleSamples(hourly.res, hourly.c.map((c, i) => [(hourly.b0 || 0) + i, c]))); }catch(e){}
+    try{ if(recent) layers.push(candleSamples(recent.res, recent.c.map((c, i) => [recent.b0 + i, c]))); }catch(e){}
     layers.push(candleSamples(LOCAL_RES, lcandles)); const lv = []; for(let i = 0; i < live.length; i += 2) lv.push([live[i], live[i + 1]]); layers.push(lv);
     let m = []; layers.forEach(Ly => { if(!Ly.length) return; const lo = Ly[0][0], hi = Ly[Ly.length - 1][0]; m = m.filter(x => x[0] < lo || x[0] > hi).concat(Ly); });   // the finest source wins where they overlap
     m.sort((x, y) => x[0] - y[0]); smp = { m, sig }; smpAt = now; return m;
@@ -97,8 +97,11 @@
     for(let k = 0; k < n; k++){ const a = from + bt * k, b = a + bt; let s = 0, lo = Infinity, hi = -Infinity; for(let j = 0; j < sub; j++){ const tk = Math.round(a + (b - a) * (j + .5) / sub), pr = marketDisplayPrice(noiseAt(m, tk), tk, adj); s += pr; if(pr < lo) lo = pr; if(pr > hi) hi = pr; } out.push([marketTimeForTickIndex(Math.round(a + bt / 2)), s / sub, lo, hi]); }
     out.push([K.now(), price, price, price]); return out;
   }
-  mk.series = async function(range, n){ const span = SPANS[range] || SPANS['1H']; await ensure(span); loaded[range] = true; return build(range, n); };
-  mk.seriesFast = (range, n) => loaded[range] ? build(range, n) : null;       // sync, for the live chart (needs one prior series() call for that range)
+  const safeBuild = (range, n) => { try{ const o = build(range, n); if(o.length > 2 && o.every(p => p.every(isFinite))) return o; }catch(e){} return build2(range, n); };
+  function build2(range, n){ const span = SPANS[range] || SPANS['1H'], pts = [], to = cp.tickIndex, from = isFinite(span) ? Math.max(0, to - Math.round(span / MARKET_TICK_MS)) : Math.max(0, to - 345600 * 2), bt = (to - from) / (n || 120);   // last resort: exact price at evenly spaced ticks from the live buffer's noise
+    for(let k = 0; k <= (n || 120); k++){ const tk = Math.round(from + bt * k); pts.push([marketTimeForTickIndex(tk), price, price, price]); } return pts; }
+  mk.series = async function(range, n){ const span = SPANS[range] || SPANS['1H']; try{ await ensure(span); }catch(e){} loaded[range] = true; return safeBuild(range, n); };
+  mk.seriesFast = (range, n) => loaded[range] ? safeBuild(range, n) : null;       // sync, for the live chart (needs one prior series() call for that range)
   mk.change24 = async function(){
     const pts = await mk.series('1D'); if(pts.length < 2) return { abs: 0, pct: 0 };
     const first = pts[0][1]; return { abs: price - first, pct: first ? (price - first) / first * 100 : 0 };

@@ -175,13 +175,73 @@ const A = Kit.app({ title: 'WestLab', build: (body) => {
   }
 
   /* ================= LIBRARY ================= */
+  /* the structure viewer: real PubChem structure, MMFF94-minimised 3-D geometry calculated on this computer (os/lib/ff.js) */
+  const qCol = (q, m) => { const t = Math.max(-1, Math.min(1, q / (m || 1))), g = 150, r = t < 0 ? g + (235 - g) * -t : g * (1 - t) + 70 * t, b = t > 0 ? g + (245 - g) * t : g * (1 + t) + 70 * -t, gg = g * (1 - Math.abs(t)) + 80 * Math.abs(t); return 'rgb(' + Math.round(r) + ',' + Math.round(gg) + ',' + Math.round(b) + ')'; };
+  const sgn = v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(3);
+  function viewer3D(cv, rec, st, onPick){
+    const n = rec.a.length, cen = [0, 1, 2].map(k => rec.xyz.reduce((s, p) => s + p[k], 0) / n), C = rec.xyz.map(p => [p[0] - cen[0], p[1] - cen[1], p[2] - cen[2]]), R = Math.max(1, ...C.map(p => Math.hypot(p[0], p[1], p[2]))), qm = Math.max(.05, ...rec.q.map(Math.abs));
+    let S = [];
+    function draw(){
+      const r = devicePixelRatio || 1, W = cv.clientWidth || 320, Hh = cv.clientHeight || 260; if(cv.width !== Math.round(W * r)){ cv.width = Math.round(W * r); cv.height = Math.round(Hh * r); }
+      const c = cv.getContext('2d'); c.setTransform(r, 0, 0, r, 0, 0); c.clearRect(0, 0, W, Hh);
+      const cy = Math.cos(st.yaw), sy = Math.sin(st.yaw), cp = Math.cos(st.pitch), sp = Math.sin(st.pitch), sc = Math.min(W, Hh) * .4 / R;
+      S = C.map((p, i) => { const x1 = p[0] * cy + p[2] * sy, z1 = -p[0] * sy + p[2] * cy, y2 = p[1] * cp - z1 * sp, z2 = p[1] * sp + z1 * cp, f = 1 / (1 - z2 / (R * 5 + 2)); return { x: W / 2 + x1 * sc * f, y: Hh / 2 + y2 * sc * f, z: z2, r: (rec.a[i] === 'H' ? .27 : .4) * sc * f * (1.1 + .12 * Math.min(R, 6) / 6), i }; });
+      c.lineCap = 'round';
+      rec.b.forEach(([i, j, t]) => { const A = S[i], B = S[j], dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy) || 1, nx = -dy / d, ny = dx / d, w = Math.max(1.6, sc * .09 * (A.r / (sc * .3))), off = t === 2 ? [-1.6, 1.6] : t === 3 ? [-3, 0, 3] : [0];
+        c.strokeStyle = 'rgba(210,214,222,.75)'; c.lineWidth = w; off.forEach(o => { c.beginPath(); c.moveTo(A.x + nx * o, A.y + ny * o); c.lineTo(B.x + nx * o, B.y + ny * o); c.stroke(); });
+        if(t === 1.5){ c.setLineDash([4, 4]); c.strokeStyle = 'rgba(255,255,255,.85)'; c.lineWidth = w * .8; c.beginPath(); c.moveTo(A.x + nx * 3.4, A.y + ny * 3.4); c.lineTo(B.x + nx * 3.4, B.y + ny * 3.4); c.stroke(); c.setLineDash([]); } });
+      S.slice().sort((p, q) => p.z - q.z).forEach(p => { const el = rec.a[p.i], col = st.mode === 'q' ? qCol(rec.q[p.i], qm) : elCol(el), g = c.createRadialGradient(p.x - p.r * .35, p.y - p.r * .35, 1, p.x, p.y, p.r);
+        g.addColorStop(0, '#fff'); g.addColorStop(.28, col); g.addColorStop(1, 'rgba(0,0,0,.55)'); c.fillStyle = g; c.beginPath(); c.arc(p.x, p.y, p.r, 0, 7); c.fill();
+        if(st.sel.includes(p.i)){ c.strokeStyle = '#ffd36a'; c.lineWidth = 2.4; c.beginPath(); c.arc(p.x, p.y, p.r + 3, 0, 7); c.stroke(); }
+        if(p.r >= 8){ c.fillStyle = (el === 'H' || el === 'S' || st.mode === 'q') ? '#222' : '#fff'; c.font = '700 ' + Math.round(p.r * .9) + 'px system-ui'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(el, p.x, p.y + 1); } });
+      if(st.sel.length === 2){ const A = S[st.sel[0]], B = S[st.sel[1]]; c.setLineDash([3, 4]); c.strokeStyle = '#ffd36a'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(A.x, A.y); c.lineTo(B.x, B.y); c.stroke(); c.setLineDash([]); }
+    }
+    let down = null;
+    cv.style.touchAction = 'none'; cv.style.cursor = 'grab';
+    cv.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, moved: 0 }; cv.setPointerCapture(e.pointerId); });
+    cv.addEventListener('pointermove', e => { if(!down) return; const dx = e.clientX - down.x, dy = e.clientY - down.y; down.moved += Math.abs(dx) + Math.abs(dy); down.x = e.clientX; down.y = e.clientY; st.spin = false; st.yaw += dx * .012; st.pitch = Math.max(-1.5, Math.min(1.5, st.pitch + dy * .012)); });
+    cv.addEventListener('pointerup', e => { if(down && down.moved < 5){ const b = cv.getBoundingClientRect(), x = e.clientX - b.left, y = e.clientY - b.top, hit = S.slice().sort((p, q) => q.z - p.z).find(p => Math.hypot(p.x - x, p.y - y) <= p.r + 6); if(hit){ st.sel = st.sel.includes(hit.i) ? st.sel.filter(k => k !== hit.i) : st.sel.concat(hit.i).slice(-2); onPick(); } else { st.sel = []; onPick(); } } down = null; });
+    return draw;
+  }
   function showMolecule(f, by){
-    Kit.sheet({ title: pf(f), build: (sb) => {
-      const cv = h('canvas', { style: { width: '100%', height: '230px', borderRadius: '16px', background: 'var(--card2)', display: 'block' } }), info = h('div', { style: { marginTop: '12px' } }); sb.append(cv, info);
-      const paint = g => { const r = devicePixelRatio || 1, w = cv.clientWidth || 320; cv.width = w * r; cv.height = 230 * r; const c = cv.getContext('2d'); c.setTransform(r, 0, 0, r, 0, 0); c.clearRect(0, 0, w, 230); if(g && g.a.length) drawGraph(c, w, 230, g); };
-      paint(L.graph(f)); const d = L.describe(f);
-      L.identify(f).then(id => { if(!id) return; paint(id.graph); info.innerHTML = ''; info.append(h('div', { class: 'eq' }, id.name || f), h('div', { class: 'chips' }, h('span', { class: 'tag ' + (id.real ? 'good' : 'warn') }, id.real ? 'Known real-world compound' : 'Structure built from valence rules'), id.cid ? h('a', { class: 'tag tint', href: 'https://pubchem.ncbi.nlm.nih.gov/compound/' + id.cid, target: '_blank', rel: 'noopener' }, 'PubChem ' + id.cid) : null, d ? h('span', { class: 'tag' }, d.category) : null), d && d.mass ? h('div', { class: 'sub' }, 'Molar mass ' + d.mass.toFixed(2) + ' g/mol') : null, by ? h('div', { class: 'sub' }, 'First made by ' + by) : null, id.real ? null : h('div', { class: 'foot' }, 'PubChem has no match for this formula, so the bonds shown are a plausible valence-correct construction, not a measured structure.')); });
+    Kit.sheet({ title: pf(f), tall: true, build: (sb) => {
+      const cv = h('canvas', { style: { width: '100%', height: '260px', borderRadius: '16px', background: 'var(--card2)', display: 'block' } }), info = h('div', { style: { marginTop: '12px' } }), st = { yaw: .6, pitch: -.35, spin: true, mode: 'el', sel: [] }; sb.append(cv, info);
+      const paint2 = g => { const r = devicePixelRatio || 1, w = cv.clientWidth || 320; cv.width = w * r; cv.height = 260 * r; const c = cv.getContext('2d'); c.setTransform(r, 0, 0, r, 0, 0); c.clearRect(0, 0, w, 260); if(g && g.a.length) drawGraph(c, w, 260, g); };
+      paint2(L.graph(f)); const d = L.describe(f);
+      info.append(h('div', { class: 'sub' }, 'Looking up the structure — if it isn’t in the library yet it is calculated right here on your computer (first time can take a few seconds)…'));
+      L.identify(f).then(id => {
+        if(!id) return; info.innerHTML = ''; const rec = id.ff, srcTag = { library: 'From the shared library', device: 'Cached on this device', computed: 'Calculated just now on your computer', github: 'From the shared library', constructed: '' }[id.src] || '';
+        if(!rec){ paint2(id.graph); info.append(h('div', { class: 'eq' }, id.name || f), h('div', { class: 'chips' }, h('span', { class: 'tag warn' }, 'Structure built from valence rules'), d ? h('span', { class: 'tag' }, d.category) : null), h('div', { class: 'foot' }, 'PubChem has no usable match for this formula (or the calculation is unavailable), so the bonds shown are a plausible valence-correct construction, not a measured or force-field structure.')); return; }
+        const draw = viewer3D(cv, rec, st, () => readout()); let raf = 0; const loop = () => { if(!cv.isConnected) return; if(st.spin) st.yaw += .007; draw(); raf = requestAnimationFrame(loop); }; loop();
+        const kv = (k, v) => h('div', null, h('small', null, k), h('b', null, v)), M = WestFF.matrix(rec), out = h('div', { class: 'sub', style: { minHeight: '20px', margin: '6px 0' } }, 'Tap an atom, then a second one, to read the distance.');
+        const readout = () => { if(st.sel.length < 2){ out.textContent = st.sel.length ? rec.a[st.sel[0]] + (st.sel[0] + 1) + ' selected — tap a second atom.' : 'Tap an atom, then a second one, to read the distance.'; return; } const [i, j] = st.sel, dd = M[i][j], bd = rec.b.find(x => (x[0] === i && x[1] === j) || (x[0] === j && x[1] === i)); out.textContent = rec.a[i] + (i + 1) + ' – ' + rec.a[j] + (j + 1) + ':  ' + (dd == null ? 'different ions, not computed' : dd.toFixed(2) + ' Å') + (bd ? '  ·  ' + WestFF.bondType(bd[2]) + ' bond' : dd == null ? '' : '  ·  not bonded'); };
+        const seg2 = Kit.seg([{ id: 'el', label: 'Elements' }, { id: 'q', label: 'Charges' }], st.mode, m => { st.mode = m; });
+        const kj = rec.E == null ? null : rec.E * 4.184, maxq = rec.q.reduce((m, v) => Math.abs(v) > Math.abs(m) ? v : m, 0);
+        info.append(h('div', { class: 'eq' }, id.name || f), h('div', { class: 'sub' }, [rec.n && rec.n.toLowerCase() !== String(id.name).toLowerCase() ? 'PubChem: ' + rec.n : '', rec.iupac ? 'IUPAC: ' + rec.iupac : ''].filter(Boolean).join(' · ')),
+          h('div', { class: 'chips' }, h('span', { class: 'tag good' }, 'Real compound'), srcTag ? h('span', { class: 'tag' }, srcTag) : null, rec.cid ? h('a', { class: 'tag tint', href: 'https://pubchem.ncbi.nlm.nih.gov/compound/' + rec.cid, target: '_blank', rel: 'noopener' }, 'PubChem ' + rec.cid) : null, d ? h('span', { class: 'tag' }, d.category) : null,
+            rec.tier === 'embed' ? h('span', { class: 'tag warn' }, 'Empirical geometry · no force-field energy') : null, rec.warn ? h('span', { class: 'tag warn' }, 'Geometry unverified') : null, rec.ion ? h('span', { class: 'tag' }, 'Ionic: ions minimised separately') : null),
+          seg2, out,
+          h('div', { class: 'kg' }, kv('Force field', rec.ff || '—'), kv('Potential energy', rec.E == null ? '—' : rec.E.toFixed(1) + ' kcal/mol'), kv('In kJ/mol', kj == null ? '—' : Math.round(kj).toLocaleString()), kv('Conformers tried', String(rec.nconf)), kv('Atoms · bonds', rec.a.length + ' · ' + rec.b.length), kv('Molar mass', (rec.mw || (d && d.mass) || 0).toFixed(2) + ' g/mol'), kv('Net charge', (rec.chg > 0 ? '+' : '') + rec.chg), kv('Largest partial charge', sgn(maxq))),
+          h('div', { class: 'foot' }, rec.E == null ? 'No reliable force-field energy for this species (MMFF94 has no parameters tuned for it, or it failed the bond-length check), so only the empirical geometry is shown.' : 'The energy is the MMFF94 strain of the minimised conformer (lowest of ' + rec.nconf + ' tried). It is only comparable between conformers of the same molecule — not between different compounds, and not a heat of formation. Partial charges: ' + rec.qm + (rec.qpart ? ' (some atoms have no parameters).' : '.') + ' Calculated with ' + rec.eng + '.'));
+        const grp = {}; rec.b.forEach(([i, j, t]) => { const k = [rec.a[i], rec.a[j]].sort().join('–') + '|' + t, dd = M[i][j]; if(dd == null) return; grp[k] = grp[k] || { n: 0, s: 0, lab: [rec.a[i], rec.a[j]].sort().join('–'), t }; grp[k].n++; grp[k].s += dd; });
+        info.append(h('details', { class: 'card', style: { marginTop: '10px' } }, h('summary', { style: { cursor: 'pointer', fontWeight: 700 } }, 'Bond lookup (type · average length)'), h('div', { style: { marginTop: '8px' } }, ...Object.values(grp).sort((p, q) => q.n - p.n).map(x => h('div', { class: 'sub' }, x.lab + ' · ' + WestFF.bondType(x.t) + ' × ' + x.n + ' · ' + (x.s / x.n).toFixed(3) + ' Å')))));
+        info.append(h('details', { class: 'card', style: { marginTop: '8px' } }, h('summary', { style: { cursor: 'pointer', fontWeight: 700 } }, 'Partial charges'), h('div', { style: { marginTop: '8px' } }, ...rec.a.map((e, i) => [e, i]).filter(([e, i]) => Math.abs(rec.q[i]) >= .005).sort((p, q) => Math.abs(rec.q[q[1]]) - Math.abs(rec.q[p[1]])).slice(0, 40).map(([e, i]) => h('div', { class: 'sub' }, e + (i + 1) + '   ' + sgn(rec.q[i]))))));
+        info.append(h('div', { style: { marginTop: '10px' } }, h('button', { class: 'btn tinted sm', onclick: () => { navigator.clipboard && navigator.clipboard.writeText(WestFF.toXYZ(rec)).then(() => Kit.toast('XYZ coordinates copied.')); } }, 'Copy XYZ')), by ? h('div', { class: 'sub' }, 'First made by ' + by) : null);
+      });
     } });
+  }
+  function pipelineCard(){
+    const S = L.ff.sync, card = h('div', { class: 'card', style: { marginTop: '14px' } }), msg = h('div', { class: 'sub' });
+    const repo = h('input', { class: 'field', placeholder: 'owner/repository' }), branch = h('input', { class: 'field', placeholder: 'branch', value: 'main', style: { marginTop: '8px' } }), tok = h('input', { class: 'field', type: 'password', placeholder: 'GitHub fine-grained token (Contents: read & write, this repo only)', style: { marginTop: '8px' } });
+    const paint = () => { const s = S.status(); msg.textContent = (s.configured ? 'Connected to ' + s.repo + '@' + s.branch + '. ' : 'Not connected — calculations still work and stay on this device. ') + s.pending + ' record' + (s.pending === 1 ? '' : 's') + ' waiting' + (s.busy ? ' · pushing…' : '') + '. ' + (s.last.msg || ''); };
+    S.onChange(paint); paint();
+    card.append(h('div', { class: 'cap' }, 'Structure database · auto-commit (admin)'), h('div', { class: 'foot', style: { margin: '0 0 8px' } }, 'Every compound is calculated in your browser (PubChem + MMFF94). With a token on THIS computer, new results are committed to lab-cache/ff/ on GitHub in batches, so every future run starts from the cache. The token stays in this browser only.'), repo, branch, tok,
+      h('div', { class: 'ex', style: { marginTop: '10px' } },
+        h('button', { class: 'btn sm', onclick: () => { const r = S.setCfg({ repo: repo.value, branch: branch.value, token: tok.value }); tok.value = ''; if(!r.ok) Kit.toast(r.msg, 'bad'); else Kit.toast('Saved on this device.'); paint(); } }, 'Connect'),
+        h('button', { class: 'btn tinted sm', onclick: async () => { await L.ff.pushLocal(); paint(); } }, 'Push device cache'),
+        h('button', { class: 'btn tinted sm', onclick: async e => { const b = e.currentTarget; b.disabled = true; const r = await L.ff.buildRegistry((i, n, bad) => { b.textContent = 'Calculating ' + i + '/' + n + (bad ? ' (' + bad + ' unavailable)' : ''); }); b.textContent = 'Build whole library here'; b.disabled = false; Kit.toast('Done: ' + r.done + ' checked.'); paint(); } }, 'Build whole library here'),
+        h('button', { class: 'btn sm', onclick: () => { S.clear(); paint(); } }, 'Disconnect')), msg);
+    return card;
   }
   function foundTab(root){
     const mine = L.found(), ci = L.cacheInfo(), listBox = h('div'), kp = h('div', { class: 'kpis' }), q = h('input', { class: 'field', placeholder: 'Search compounds', style: { margin: '12px 0' } }); let world = {};
@@ -196,7 +256,8 @@ const A = Kit.app({ title: 'WestLab', build: (body) => {
       listBox.appendChild(all.length ? group(all.map(f => row({ left: h('div', { class: 'mono', style: { width: '78px', fontSize: '15px' }, html: pf(f) }), title: CH.nameOf(f), sub: 'First made by ' + world[f].by, right: world[f].t ? Kit.ago(world[f].t) : '', onClick: () => showMolecule(f, world[f].by) }))) : h('div', { class: 'sub' }, 'Loading the shared library…'));
     };
     kp.append(h('div', { class: 'kpi' }, h('small', null, 'Your discoveries'), h('b', null, String(mine.length))), h('div', { class: 'kpi' }, h('small', null, 'Reactions run'), h('b', null, Kit.num(L.runs()))), h('div', { class: 'kpi' }, h('small', null, 'Library lookups'), h('b', null, ci.github + ' hit · ' + ci.local + ' new')));
-    root.appendChild(h('p', { class: 'foot' }, 'There is no fixed list: any compound that real chemistry allows can be made. Each new one is identified against PubChem (a free public database) and saved to the shared GitHub library for everyone; if PubChem doesn’t know it, its structure is built from valence rules.'));
+    root.appendChild(h('p', { class: 'foot' }, 'There is no fixed list: any compound that real chemistry allows can be made. Each one is looked up on PubChem (free public data) and its 3-D geometry is minimised with the MMFF94 force field on your own computer — no quantum chemistry, no server load. Results are cached on your device and in the shared GitHub library; if PubChem doesn’t know a formula, its structure is built from valence rules.'));
+    if(L.ff && L.ff.sync && OS.auth.isAdmin && OS.auth.isAdmin()) root.appendChild(pipelineCard());
     L.registry().then(reg => { Object.keys(reg || {}).forEach(k => { const d = reg[k]; if(!d || !d.by) return; String(d.n || '').split(',').filter(Boolean).forEach(f => { if(!world[f] || (d.t || 0) < (world[f].t || 1e99)) world[f] = { by: d.by, t: d.t }; }); }); kp.insertBefore(h('div', { class: 'kpi' }, h('small', null, 'In the world library'), h('b', null, String(Object.keys(world).length))), kp.children[1]); render(); }); q.addEventListener('input', render); render();
   }
   draw(); ['inv', 'lab'].forEach(e => Kit.live(e, Kit.debounce(() => { if(!busy && main._paint && tab === 'reactor') main._paint(); }, 150)));

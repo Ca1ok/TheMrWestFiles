@@ -55,15 +55,32 @@
   const IDENT = new Map(), GRAPHS = new Map(), CSHARDS = {};
   async function cshard(id){ if(CSHARDS[id]) return CSHARDS[id]; try{ const r = await fetch('lab-cache/compounds/' + id + '.json', { cache: 'no-cache' }); CSHARDS[id] = r.ok ? await r.json() : {}; }catch(e){ CSHARDS[id] = {}; } return CSHARDS[id]; }
   function graphOf(key){ const sp = Chem.speciesOf(key); if(!sp) return { a: [], b: [], x: [], y: [], q: [] }; if(GRAPHS.has(sp.f + '|' + sp.kind + sp.apu)) return GRAPHS.get(sp.f + '|' + sp.kind + sp.apu); const g = Mol.layout(Mol.build(sp)); GRAPHS.set(sp.f + '|' + sp.kind + sp.apu, g); return g; }
+  /* identify(): shared library on GitHub (lab-cache/ff) → this device (IndexedDB) → calculate here (PubChem + MMFF94, on the player's own CPU) → legacy valence-built graph.
+     Firebase is never involved. A freshly calculated record is queued for the maintainer's GitHub commit (WestFFSync) when a token is configured on this machine. */
+  const FF = typeof WestFF !== 'undefined' ? WestFF : null, FFS = typeof WestFFSync !== 'undefined' ? WestFFSync : null;
+  if(FF && FFS) FF.onNew = rec => FFS.enqueue(rec);
   function identify(key){
     const sp = Chem.speciesOf(key); if(!sp) return Promise.resolve(null); if(sp.kind === 'element') return Promise.resolve({ f: sp.f, name: Chem.elements[sp.el].name, real: true, src: 'element', graph: graphOf(key) });
     if(IDENT.has(sp.f)) return IDENT.get(sp.f);
-    const p = (async () => { const sh = await cshard(Phys.fnv(sp.f).slice(0, 2)); let rec = sh[sp.f], src = rec ? 'github' : '';
-      if(!rec){ try{ rec = await Mol.lookup(sp.f, sp.comp); if(rec) src = 'pubchem'; }catch(e){} }
-      const g = rec && rec.a ? Mol.fromRecord(rec) : null; if(g){ GRAPHS.set(sp.f + '|' + sp.kind + sp.apu, g); }
-      return { f: sp.f, name: (rec && rec.n) || Chem.nameOf(sp.f), real: !!(rec && rec.real), cid: (rec && rec.cid) || 0, src: src || 'constructed', graph: g || graphOf(key) }; })();
+    const p = (async () => {
+      let ff = null; if(FF){ try{ ff = await FF.lookup(Chem.hill(sp.comp)); }catch(e){} }
+      if(ff && ff.rec){ const g = FF.toGraph(ff.rec); GRAPHS.set(sp.f + '|' + sp.kind + sp.apu, g); SEEN.hits[ff.src === 'library' ? 'github' : ff.src === 'device' ? 'session' : 'local']++;
+        return { f: sp.f, name: Chem.nameOf(sp.f), pubchemName: ff.rec.n, real: true, cid: ff.rec.cid || 0, src: ff.src, graph: g, ff: ff.rec }; }
+      const sh = await cshard(Phys.fnv(sp.f).slice(0, 2)), rec = sh[sp.f], g = rec && rec.a ? Mol.fromRecord(rec) : null; if(g) GRAPHS.set(sp.f + '|' + sp.kind + sp.apu, g);
+      return { f: sp.f, name: (rec && rec.n) || Chem.nameOf(sp.f), real: !!(rec && rec.real), cid: (rec && rec.cid) || 0, src: rec ? 'github' : 'constructed', graph: g || graphOf(key) }; })();
     IDENT.set(sp.f, p); return p;
   }
+  const ffTools = {
+    available: () => !!FF, stats: () => FF ? FF.stats() : {},
+    sync: FFS ? { status: () => FFS.status(), setCfg: c => FFS.setCfg(c), clear: () => FFS.clearCfg(), flush: () => FFS.flush(), onChange: f => FFS.onChange(f) } : null,
+    /* maintainer: calculate every registry compound on THIS computer (PubChem + MMFF94) and queue the results for one batched GitHub commit */
+    async buildRegistry(progress){
+      const list = Chem.registryList().map(r => Chem.speciesOf(r.formula)).filter(s => s && s.kind === 'compound'); let done = 0, bad = 0;
+      for(const sp of list){ const r = await FF.lookup(Chem.hill(sp.comp)).catch(() => null); if(!r) bad++; else if(FFS && r.src !== 'library') FFS.enqueue(r.rec); done++; progress && progress(done, list.length, bad); }
+      if(FFS) FFS.flush(); return { done, bad };
+    },
+    async pushLocal(){ if(!FF || !FFS) return 0; const all = await FF.local.all(); all.filter(r => FF.valid(r)).forEach(r => FFS.enqueue(r)); await FFS.flush(); return all.length; }
+  };
   const tierOf = () => Math.min(6, Object.keys(K.S.lab.tools).filter(t => K.S.lab.tools[t] && t !== 'basic').length);
   const lab = {
     tools: () => TOOLS.map(t => Object.assign({}, t, { owned: !!K.S.lab.tools[t.id] })),
@@ -92,7 +109,7 @@
     trayUnits: k => K.S.lab.tray[k] || 0,
     collect(key){ const u = K.S.lab.tray[key]; if(!(u > 0)) return no('Nothing to collect.'); K.invAdd(K.kindOf(key), key, u); delete K.S.lab.tray[key]; K.touch('lab'); K.emit('lab'); return ok('Added to your inventory.'); },
     collectAll(){ Object.keys(K.S.lab.tray).forEach(k => { K.invAdd(K.kindOf(k), k, K.S.lab.tray[k]); delete K.S.lab.tray[k]; }); K.touch('lab'); K.emit('lab'); return ok('Everything added to your inventory.'); },
-    graph: key => graphOf(key), identify: key => identify(key),
+    graph: key => graphOf(key), identify: key => identify(key), ff: ffTools,
     found: () => K.S.lab.found.slice(), runs: () => K.S.lab.runs, cacheInfo: () => Object.assign({ cards: SEEN.cards.size }, SEEN.hits),
     async registry(){ try{ const r = await fetch('lab-cache/discoveries.json', { cache: 'no-cache' }); return r.ok ? await r.json() : {}; }catch(e){ return {}; } }
   };
@@ -136,7 +153,7 @@
   };
 
   /* ---------------- stock + games + files + world ---------------- */
-  const stock = { price: K.market.price, series: K.market.series, seriesFast: K.market.seriesFast, sellQty: K.market.sellQty, sellFraction: K.market.sellFraction, buyFraction: K.market.buyFraction, ranges: K.market.ranges, change24: K.market.change24, lots: K.market.lots, buy: K.market.buy, sell: K.market.sell, sellAll: K.market.sellAll, value: K.stockValue, ready: () => K.market.ready, wantFast: K.market.wantFast };
+  const stock = { price: K.market.price, series: K.market.series, seriesFast: K.market.seriesFast, sellQty: K.market.sellQty, sellFraction: K.market.sellFraction, buyFraction: K.market.buyFraction, seriesFast: K.market.seriesFast, sellQty: K.market.sellQty, sellFraction: K.market.sellFraction, buyFraction: K.market.buyFraction, ranges: K.market.ranges, change24: K.market.change24, lots: K.market.lots, buy: K.market.buy, sell: K.market.sell, sellAll: K.market.sellAll, value: K.stockValue, ready: () => K.market.ready, wantFast: K.market.wantFast };
   const games = { award: (id, base) => { base = Math.max(0, Math.min(40, +base || 0)); return K.award(String(id).slice(0, 30), base); }, info: () => { const g = K.gameDay(); return { earned: g.earned, softcap: CFG.game.dailySoftcap, plays: Object.assign({}, g.plays), bonus: K.collectionBonus() }; } };
   const files = { record: uid => C.serverRecord(uid), usage: () => ({ bytes: C.bytes, reads: C.reads, writes: C.writes }) };
   const world = { articles: n => World.latestArticles(K.now(), n || 12), mults: () => World.elementMults(K.now()), sector: s => World.sectorIndex(s, K.now()), impacts: () => World.impactsBefore(K.now(), 6) };

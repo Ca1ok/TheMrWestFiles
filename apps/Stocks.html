@@ -58,11 +58,13 @@ const A = Kit.app({ title: 'Stocks', build: (body, P) => {
     if(cv.width !== Math.round(w * dpr) || cv.height !== Math.round(hh * dpr)){ cv.width = Math.round(w * dpr); cv.height = Math.round(hh * dpr); }
     const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, hh);
     const cs = getComputedStyle(document.documentElement), good = cs.getPropertyValue('--good').trim(), bad = cs.getPropertyValue('--bad').trim(), lab = cs.getPropertyValue('--label3').trim(), sep = cs.getPropertyValue('--sep').trim();
-    const band = RANGES[range] > 300e3; let lo = Infinity, hi = -Infinity; pts.forEach(p => { lo = Math.min(lo, band ? p[2] : p[1]); hi = Math.max(hi, band ? p[3] : p[1]); }); const pad = (hi - lo) * 0.12 || 0.5; lo -= pad; hi += pad;
-    const t0 = pts[0][0], t1 = pts[pts.length - 1][0], axisW = 50, W = w - axisW, X = t => (t - t0) / (t1 - t0 || 1) * W, Y = v => 8 + (1 - (v - lo) / (hi - lo)) * (hh - 22);
+    const band = RANGES[range] > 300e3; let lo = Infinity, hi = -Infinity; pts.forEach(p => { if(!isFinite(p[1])) return; lo = Math.min(lo, band && isFinite(p[2]) ? p[2] : p[1]); hi = Math.max(hi, band && isFinite(p[3]) ? p[3] : p[1]); });
+    const useLog = lo > 0 && hi / lo > 3, F = useLog ? Math.log : (v => v), Fi = useLog ? Math.exp : (v => v);      // long histories with big swings (ALL) use a log scale so today's price stays readable
+    let flo = F(lo), fhi = F(hi); const pad = (fhi - flo) * (useLog ? .06 : .12) || 0.5; flo -= pad; fhi += pad; if(!useLog && flo < 0 && lo >= 0) flo = Math.max(flo, 0);
+    const t0 = pts[0][0], t1 = pts[pts.length - 1][0], axisW = 50, W = w - axisW, X = t => (t - t0) / (t1 - t0 || 1) * W, Y = v => 8 + (1 - (F(Math.max(v, 1e-6)) - flo) / (fhi - flo)) * (hh - 22);
     const up = pts[pts.length - 1][1] >= pts[0][1], col = up ? good : bad;
     g.font = '11px ' + cs.getPropertyValue('--font'); g.textAlign = 'left'; g.fillStyle = lab; g.strokeStyle = sep; g.lineWidth = 1;
-    for(let i = 0; i < 4; i++){ const v = lo + (hi - lo) * (1 - i / 3), y = Math.round(Y(v)) + .5; g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); g.fillText('$' + (v >= 100 ? v.toFixed(0) : v.toFixed(2)), W + 6, y + 4); }
+    for(let i = 0; i < 4; i++){ const v = Fi(flo + (fhi - flo) * (1 - i / 3)), y = Math.round(Y(v)) + .5; g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); g.fillText('$' + (v >= 100 ? v.toFixed(0) : v.toFixed(2)), W + 6, y + 4); }
     g.setLineDash([3, 4]); const by = Y(pts[0][1]); g.beginPath(); g.moveTo(0, by); g.lineTo(W, by); g.strokeStyle = lab; g.stroke(); g.setLineDash([]);
     const xy = pts.map(p => [X(p[0]), Y(p[1])]), lx = xy[xy.length - 1][0], ly = xy[xy.length - 1][1];
     const smooth = (arr, move) => { if(move) g.moveTo(arr[0][0], arr[0][1]); else g.lineTo(arr[0][0], arr[0][1]); for(let i = 1; i < arr.length - 1; i++) g.quadraticCurveTo(arr[i][0], arr[i][1], (arr[i][0] + arr[i + 1][0]) / 2, (arr[i][1] + arr[i + 1][1]) / 2); g.lineTo(arr[arr.length - 1][0], arr[arr.length - 1][1]); };
@@ -79,7 +81,7 @@ const A = Kit.app({ title: 'Stocks', build: (body, P) => {
     const p = at != null ? at : S.price(), base = pts.length ? pts[0][1] : p, d = p - base, pc = base ? d / base * 100 : 0;
     px.textContent = money(p, { dp: 2 }); chg.className = 'chg num ' + (d >= 0 ? 'up' : 'down'); chg.textContent = (d >= 0 ? '▲ ' : '▼ ') + money(Math.abs(d), { dp: 2 }) + ' (' + (pc >= 0 ? '+' : '') + pc.toFixed(2) + '%) ' + (at != null ? '' : ({ ALL: 'all time', '1D': 'past day', '1W': 'past week', '1M': 'past month' })[range] || 'past ' + range);
   }
-  async function load(){ cv.style.opacity = .4; try{ pts = (await S.series(range, nPts())).slice(); }catch(e){ pts = []; } cv.style.opacity = 1; lastBuild = OS.now(); hover = -1; draw(); head(); }
+  async function load(){ cv.style.opacity = .4; try{ pts = (await S.series(range, nPts())).slice().filter(p => p && isFinite(p[1])); }catch(e){ pts = []; } cv.style.opacity = 1; lastBuild = OS.now(); hover = -1; draw(); head(); }
   let lastDraw = 0;
   Kit.live('market', () => { const p = S.price(), now = OS.now(); if(p !== lastPx){ px.className = 'px num ' + (p > lastPx ? 'tu' : 'td'); setTimeout(() => px.className = 'px num', 350); lastPx = p; }
     if(pts.length && hover < 0){ pts[pts.length - 1] = [now, p, p, p];                                       // only the last point follows the live price; the rest is rebuilt on a timer
