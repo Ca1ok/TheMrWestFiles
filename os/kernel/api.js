@@ -136,7 +136,7 @@
   };
 
   /* ---------------- stock + games + files + world ---------------- */
-  const stock = { price: K.market.price, series: K.market.series, ranges: K.market.ranges, change24: K.market.change24, lots: K.market.lots, buy: K.market.buy, sell: K.market.sell, sellAll: K.market.sellAll, value: K.stockValue, ready: () => K.market.ready, wantFast: K.market.wantFast };
+  const stock = { price: K.market.price, series: K.market.series, seriesFast: K.market.seriesFast, sellQty: K.market.sellQty, sellFraction: K.market.sellFraction, buyFraction: K.market.buyFraction, ranges: K.market.ranges, change24: K.market.change24, lots: K.market.lots, buy: K.market.buy, sell: K.market.sell, sellAll: K.market.sellAll, value: K.stockValue, ready: () => K.market.ready, wantFast: K.market.wantFast };
   const games = { award: (id, base) => { base = Math.max(0, Math.min(40, +base || 0)); return K.award(String(id).slice(0, 30), base); }, info: () => { const g = K.gameDay(); return { earned: g.earned, softcap: CFG.game.dailySoftcap, plays: Object.assign({}, g.plays), bonus: K.collectionBonus() }; } };
   const files = { record: uid => C.serverRecord(uid), usage: () => ({ bytes: C.bytes, reads: C.reads, writes: C.writes }) };
   const world = { articles: n => World.latestArticles(K.now(), n || 12), mults: () => World.elementMults(K.now()), sector: s => World.sectorIndex(s, K.now()), impacts: () => World.impactsBefore(K.now(), 6) };

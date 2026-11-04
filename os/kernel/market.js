@@ -7,7 +7,7 @@
   const mk = K.market = { ready: !1 };
   let cp = { tickIndex: BOOT.tickIndex, state: Object.assign({}, BOOT.state) };
   let adj = [], adjKeys = new Set(), price = 0, live = [], recent = null, hourly = null, vol = { list: [], sig: '[]', synced: !K.cloud.db };
-  const BASE = 'market/';
+  const BASE = 'market/', LOCAL_RES = 240, lcandles = [], lcb = marketCandleBuilder(LOCAL_RES, (b, c) => { lcandles.push([b, c]); if(lcandles.length > 30000) lcandles.splice(0, lcandles.length - 30000); });
   const cleanAdj = (id, a) => { if(!a || typeof a.tickIndex !== 'number' || typeof a.delta !== 'number' || !isFinite(a.tickIndex + a.delta) || a.tickIndex < 0 || Math.abs(a.delta) > 1e7) return null; const o = { tickIndex: Math.floor(a.tickIndex), delta: a.delta, at: +a.at || 0, id }; if(a.fadeSec > 0 && a.fadeSec <= 2592000) o.fadeSec = a.fadeSec; return o; };
   function mergeAdj(list){
     let changed = false;
@@ -20,7 +20,7 @@
   function advance(){
     const target = marketTickIndexForTime(K.now()); let guard = 0;
     while(cp.tickIndex < target && guard++ < 20){
-      const res = marketSimulate(cp, target, (i, p) => { live.push(i, p); }, 2000000);
+      const res = marketSimulate(cp, target, (i, p) => { live.push(i, p); lcb.push(i, p); }, 2000000);
       cp = { tickIndex: res.tickIndex, state: res.state };
     }
     if(live.length > 16000) live.splice(0, live.length - 16000);
@@ -74,23 +74,31 @@
   }
   const SPANS = { '1m': 60e3, '5m': 300e3, '30m': 1800e3, '1H': 3600e3, '6H': 21600e3, '1D': 86400e3, '1W': 604800e3, '1M': 2592000e3, 'ALL': Infinity };
   mk.ranges = Object.keys(SPANS);
-  mk.series = async function(range){
-    const span = SPANS[range] || SPANS['1H'], now = K.now(), key = range + ':' + Math.floor(now / 5000);
-    if(history_cache[key]) return history_cache[key];
-    const liveOnly = span <= 1800e3;
-    const livePts = []; for(let i = 0; i < live.length; i += 2){ const t = marketTimeForTickIndex(live[i]); livePts.push([t, marketDisplayPrice(live[i + 1], live[i], adj), live[i]]); }
-    let pts = [];
-    if(!liveOnly){
-      const rec = await loadRecent();
-      if(span > 604800e3 || !isFinite(span)){ const h = await loadHourly(); if(h && rec){ const recStart = rec.b0 * rec.res; h.c.forEach((c, i) => { if((i + 1) * h.res - 1 < recStart) pts.push(...candlePoints(i, h.res, c)); }); } }
-      if(rec) rec.c.forEach((c, i) => { pts.push(...candlePoints(rec.b0 + i, rec.res, c)); });
-      const end = rec ? rec.end : -1; pts = pts.concat(livePts.filter(p => p[2] > end));
-    } else pts = livePts;
-    const from = isFinite(span) ? now - span : -Infinity;
-    pts = pts.filter(p => p[0] >= from);
-    if(pts.length < 2) pts = livePts.slice(-60);
-    history_cache[key] = pts.map(p => [p[0], p[1]]); return history_cache[key];
-  };
+  /* The stored candles only hold 4 noise samples per 5 min (hourly for old data) while the fast 'game' layer moves every few seconds, so drawing candle
+   * samples directly gave sparse jagged points joined by straight lines (worse the further you zoomed out), glued to the dense live ticks. Instead the chart is
+   * RESAMPLED: normalised noise is interpolated from the finest data available (live ticks → 1-min local candles → 5-min candles → hourly candles), and the
+   * exact price function (noise × trend × game layer × admin ledger) is evaluated at a fixed number of points, averaging a few sub-samples per point (anti-aliasing). */
+  const loaded = {}; let smp = null, smpAt = 0;
+  async function ensure(span){ if(span > 1800e3) await loadRecent(); if(span > 47 * 3600e3 || !isFinite(span)) await loadHourly(); }
+  const candleSamples = (res, items) => { const r = []; items.forEach(it => { const t = marketCandleTicks(it[0], res); for(let k = 0; k < 4; k++) r.push([t[k], it[1][k]]); }); return r; };
+  function samples(){
+    const now = K.now(); const sig = cp.tickIndex + ':' + (recent ? 1 : 0) + (hourly ? 1 : 0); if(smp && now - smpAt < 2000 && smp.sig === sig) return smp.m; const layers = [];
+    if(hourly) layers.push(candleSamples(hourly.res, hourly.c.map((c, i) => [(hourly.b0 || 0) + i, c])));
+    if(recent) layers.push(candleSamples(recent.res, recent.c.map((c, i) => [recent.b0 + i, c])));
+    layers.push(candleSamples(LOCAL_RES, lcandles)); const lv = []; for(let i = 0; i < live.length; i += 2) lv.push([live[i], live[i + 1]]); layers.push(lv);
+    let m = []; layers.forEach(Ly => { if(!Ly.length) return; const lo = Ly[0][0], hi = Ly[Ly.length - 1][0]; m = m.filter(x => x[0] < lo || x[0] > hi).concat(Ly); });   // the finest source wins where they overlap
+    m.sort((x, y) => x[0] - y[0]); smp = { m, sig }; smpAt = now; return m;
+  }
+  function noiseAt(m, t){ if(!m.length) return cp.state.price; let lo = 0, hi = m.length - 1; if(t <= m[0][0]) return m[0][1]; if(t >= m[hi][0]) return m[hi][1]; while(hi - lo > 1){ const mid = (lo + hi) >> 1; m[mid][0] <= t ? lo = mid : hi = mid; } const a = m[lo], b = m[hi], f = (t - a[0]) / ((b[0] - a[0]) || 1); return a[1] + (b[1] - a[1]) * f; }
+  function build(range, n){
+    const span = SPANS[range] || SPANS['1H'], m = samples(), to = cp.tickIndex; n = Math.max(40, Math.min(480, n || 240));
+    let from = isFinite(span) ? to - Math.round(span / MARKET_TICK_MS) : (m.length ? m[0][0] : 0); if(m.length) from = Math.max(from, m[0][0]); if(to - from < 40) from = Math.max(0, to - 40);
+    const bt = (to - from) / n, out = [], sub = Math.max(1, Math.min(6, Math.floor(bt)));
+    for(let k = 0; k < n; k++){ const a = from + bt * k, b = a + bt; let s = 0, lo = Infinity, hi = -Infinity; for(let j = 0; j < sub; j++){ const tk = Math.round(a + (b - a) * (j + .5) / sub), pr = marketDisplayPrice(noiseAt(m, tk), tk, adj); s += pr; if(pr < lo) lo = pr; if(pr > hi) hi = pr; } out.push([marketTimeForTickIndex(Math.round(a + bt / 2)), s / sub, lo, hi]); }
+    out.push([K.now(), price, price, price]); return out;
+  }
+  mk.series = async function(range, n){ const span = SPANS[range] || SPANS['1H']; await ensure(span); loaded[range] = true; return build(range, n); };
+  mk.seriesFast = (range, n) => loaded[range] ? build(range, n) : null;       // sync, for the live chart (needs one prior series() call for that range)
   mk.change24 = async function(){
     const pts = await mk.series('1D'); if(pts.length < 2) return { abs: 0, pct: 0 };
     const first = pts[0][1]; return { abs: price - first, pct: first ? (price - first) / first * 100 : 0 };
@@ -114,6 +122,16 @@
     const l = K.S.lots[i], proceeds = K.round2(l.q * price); K.S.lots.splice(i, 1); K.earn(proceeds, 'Sold $WEST'); K.touch('lots'); K.emit('stock');
     return { ok: true, msg: 'Sold for $' + proceeds.toFixed(2), proceeds, profit: K.round2(proceeds - l.q * l.p) };
   };
+  mk.sellQty = function(q){
+    if(!mk.ready) return { ok: false, msg: 'Syncing the market — try again in a moment.' };
+    q = r4(q); const total = K.S.lots.reduce((t, l) => t + l.q, 0); if(!(q > 0) || !isFinite(q)) return { ok: false, msg: 'Enter a quantity.' }; if(!(total > 0)) return { ok: false, msg: 'You have no shares.' };
+    if(q > total - 0.00005) q = total; let left = q, proceeds = 0, profit = 0;
+    K.S.lots.slice().sort((x, y) => x.t - y.t).forEach(l => { if(left <= 0) return; const take = Math.min(l.q, left); proceeds += take * price; profit += take * (price - l.p); left = r4(left - take); if(take >= l.q - 0.00005) K.S.lots.splice(K.S.lots.indexOf(K.S.lots.find(x => x.id === l.id)), 1); else K.S.lots.find(x => x.id === l.id).q = r4(l.q - take); });
+    proceeds = K.round2(proceeds); if(proceeds > 0) K.earn(proceeds, 'Sold $WEST'); K.touch('lots'); K.emit('stock');
+    return { ok: true, msg: 'Sold ' + q + ' $WEST for $' + proceeds.toFixed(2), proceeds, profit: K.round2(profit) };
+  };
+  mk.sellFraction = f => { const total = K.S.lots.reduce((t, l) => t + l.q, 0); return f >= 1 ? mk.sellAll() : mk.sellQty(total * f); };
+  mk.buyFraction = function(f){ let q = Math.floor(K.S.cash * f / price * 10000) / 10000; while(q > 0 && K.round2(q * price) > K.S.cash * f + 0.004) q = r4(q - 0.0001); return mk.buy(q); };
   mk.sellAll = function(){ if(!K.S.lots.length) return { ok: false, msg: 'Nothing to sell.' }; let tot = 0, profit = 0; K.S.lots.slice().forEach(l => { const r = mk.sell(l.id); if(r.ok){ tot += r.proceeds; profit += r.profit; } }); return { ok: true, msg: 'Sold everything for $' + tot.toFixed(2), proceeds: K.round2(tot), profit: K.round2(profit) }; };
 
   /* ---- admin: volatility + price shoves (rules only accept these from the admin account) ---- */

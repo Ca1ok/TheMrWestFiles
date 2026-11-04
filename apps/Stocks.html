@@ -5,58 +5,69 @@
 .head{ display:flex; align-items:flex-end; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:6px; }
 .tick{ font:700 15px var(--font); color:var(--label2); letter-spacing:.08em; } .px{ font:700 46px/1 var(--font); letter-spacing:-.035em; font-variant-numeric:tabular-nums; transition:color .3s; } .px.tu{ color:var(--good); } .px.td{ color:var(--bad); }
 .chg{ font:600 16px var(--font); font-variant-numeric:tabular-nums; margin-top:4px; }
-.chartbox{ position:relative; margin:10px -4px 6px; } .chartbox canvas{ height:var(--ch,250px); }
+.chartbox{ position:relative; margin:10px -4px 6px; touch-action:pan-y; } .chartbox canvas{ width:100%; height:var(--ch,250px); display:block; }
 .tip{ position:absolute; top:0; left:0; pointer-events:none; background:var(--material); backdrop-filter:blur(14px); border-radius:12px; padding:6px 10px; font:600 13px/1.25 var(--font); box-shadow:var(--shadow); opacity:0; transition:opacity .15s; white-space:nowrap; z-index:2; } .tip small{ display:block; color:var(--label2); font-weight:500; font-size:11.5px; }
 .cols{ display:grid; gap:16px; } @media (min-width:900px){ .cols{ grid-template-columns:1.5fr 1fr; align-items:start; } .chartbox canvas{ height:var(--ch,300px); } }
 .qty{ display:flex; gap:8px; align-items:center; } .qty .field{ text-align:center; font:700 22px var(--font); height:52px; }
 .presets{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:8px; }
 .est{ display:flex; justify-content:space-between; margin:12px 4px 12px; font:500 15px var(--font); color:var(--label2); } .est b{ color:var(--label); font-variant-numeric:tabular-nums; }
-.lot .tx small{ font-variant-numeric:tabular-nums; }
+.qrow{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:8px; } .qrow .btn{ height:42px; font-size:14.5px; padding:0; } .qlab{ font:600 12px var(--font); color:var(--label2); margin:14px 2px 0; letter-spacing:.04em; text-transform:uppercase; }
+.lot .tx small{ font-variant-numeric:tabular-nums; } .lotr{ display:flex; align-items:center; gap:12px; } .lotr .btn{ height:34px; padding:0 16px; font-size:14px; }
 .seg button{ font-size:12.5px; padding:0 1px; }
 </style></head><body><div id="app"></div>
 <script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
 <script>
 const { h, row, group, money, esc } = Kit, S = OS.stock;
-let range = '1D', pts = [], hover = -1, lastPx = 0;
+let range = '1D', pts = [], hover = -1, lastPx = 0, lastBuild = 0;
 const RANGES = { '1m': 60e3, '5m': 300e3, '30m': 1800e3, '1H': 3600e3, '6H': 21600e3, '1D': 86400e3, '1W': 604800e3, '1M': 2592000e3, 'ALL': Infinity };
 const A = Kit.app({ title: 'Stocks', build: (body, P) => {
   const px = h('div', { class: 'px num' }), chg = h('div', { class: 'chg num' }), cv = h('canvas', { class: 'chart' }), tip = h('div', { class: 'tip' }), chartbox = h('div', { class: 'chartbox' }, cv, tip);
   const rseg = Kit.seg(Object.keys(RANGES).map(r => ({ id: r, label: r })), range, r => { range = r; load(); });
   const left = h('div', null, h('div', { class: 'head' }, h('div', null, h('div', { class: 'tick' }, '$WEST · MR WEST COIN'), px, chg)), chartbox, rseg);
   const qty = h('input', { class: 'field', type: 'number', min: '0', step: 'any', value: '1', inputmode: 'decimal' }), est = h('div', { class: 'est' }), msg = h('div', { class: 'foot', style: { textAlign: 'center', minHeight: '18px' } });
-  const pos = h('div'), lots = h('div'), trade = h('div', { class: 'card' }, h('div', { class: 'cap', style: { marginTop: 0 } }, 'Trade'), h('div', { class: 'qty' }, h('button', { class: 'btn gray', style: { width: '52px', padding: 0 }, onclick: () => step(-1) }, '−'), qty, h('button', { class: 'btn gray', style: { width: '52px', padding: 0 }, onclick: () => step(1) }, '+')),
+  const pos = h('div'), lots = h('div'), btn = (label, cls, fn) => h('button', { class: 'btn ' + cls, onclick: fn }, label);
+  const FR = [['¼', .25], ['½', .5], ['All', 1]];
+  const trade = h('div', { class: 'card' }, h('div', { class: 'cap', style: { marginTop: 0 } }, 'Trade'),
+    h('div', { class: 'qty' }, h('button', { class: 'btn gray', style: { width: '52px', padding: 0 }, onclick: () => step(-1) }, '−'), qty, h('button', { class: 'btn gray', style: { width: '52px', padding: 0 }, onclick: () => step(1) }, '+')),
     h('div', { class: 'presets' }, ...[['1', 1], ['5', 5], ['25', 25], ['Max', 0]].map(([l, v]) => h('button', { class: 'chip', style: { textAlign: 'center', padding: 0 }, onclick: () => { qty.value = v ? v : maxBuy(); upd(); } }, l))), est,
-    h('div', { class: 'hstack' }, h('button', { class: 'btn good grow', onclick: buy }, 'Buy'), h('button', { class: 'btn bad grow', onclick: sellAll }, 'Sell all')), msg);
+    h('div', { class: 'hstack' }, btn('Buy', 'good grow', buy), btn('Sell', 'bad grow', sell)),
+    h('div', { class: 'qlab' }, 'Quick buy · share of your cash'), h('div', { class: 'qrow' }, ...FR.map(([l, f]) => btn('Buy ' + l, 'good tinted', () => done(S.buyFraction(f))))),
+    h('div', { class: 'qlab' }, 'Quick sell · share of your shares'), h('div', { class: 'qrow' }, ...FR.map(([l, f]) => btn(f === 1 ? 'Sell all' : 'Sell ' + l, 'bad tinted', () => doneSell(S.sellFraction(f))))), msg);
   body.append(h('div', { class: 'cols' }, left, h('div', { class: 'stack' }, trade, pos)), lots);
   const step = d => { qty.value = Math.max(0, Math.round(((parseFloat(qty.value) || 0) + d) * 10000) / 10000); upd(); };
   const maxBuy = () => Math.floor(OS.cash() / S.price() * 10000) / 10000;
-  function upd(){ const q = parseFloat(qty.value) || 0; est.innerHTML = '<span>Estimated cost</span><b>' + money(q * S.price(), { dp: 2 }) + '</b>'; }
+  function upd(){ const q = parseFloat(qty.value) || 0; est.innerHTML = '<span>Estimated value</span><b>' + money(q * S.price(), { dp: 2 }) + '</b>'; }
   qty.addEventListener('input', upd);
-  function buy(){ const r = S.buy(parseFloat(qty.value)); msg.style.color = r.ok ? 'var(--good)' : 'var(--bad)'; msg.textContent = r.msg; if(r.ok) Kit.toast(r.msg, 'good'); paintPos(); }
-  async function sellAll(){ if(!S.lots().length) return Kit.toast('You have no shares', 'bad'); const r = S.sellAll(); Kit.toast(r.msg + (r.profit >= 0 ? ' (+' : ' (−') + money(Math.abs(r.profit), { dp: 2 }) + ')', r.profit >= 0 ? 'good' : 'bad'); paintPos(); }
+  const pl = r => (r.profit >= 0 ? ' (+' : ' (−') + money(Math.abs(r.profit), { dp: 2 }) + ')';
+  function done(r){ msg.style.color = r.ok ? 'var(--good)' : 'var(--bad)'; msg.textContent = r.msg; Kit.toast(r.msg, r.ok ? 'good' : 'bad'); paintPos(); }
+  function doneSell(r){ msg.style.color = r.ok ? 'var(--good)' : 'var(--bad)'; msg.textContent = r.msg + (r.ok ? pl(r) : ''); Kit.toast(r.msg + (r.ok ? pl(r) : ''), r.ok ? (r.profit >= 0 ? 'good' : 'bad') : 'bad'); paintPos(); }
+  function buy(){ done(S.buy(parseFloat(qty.value))); }
+  function sell(){ doneSell(S.sellQty(parseFloat(qty.value))); }
   function paintPos(){
-    const L = S.lots(), p = S.price(); let q = 0, cost = 0; L.forEach(l => { q += l.q; cost += l.q * l.p; }); const val = q * p, pl = val - cost;
-    pos.innerHTML = ''; pos.appendChild(h('div', { class: 'card' }, h('div', { class: 'cap', style: { marginTop: 0 } }, 'Your position'), L.length ? h('div', { class: 'kpis', style: { gridTemplateColumns: '1fr 1fr' } }, kpi('Shares', Kit.num(q, 4)), kpi('Market value', money(val, { dp: 2 })), kpi('Avg. cost', money(cost / q, { dp: 2 })), kpi('Profit / loss', (pl >= 0 ? '+' : '−') + money(Math.abs(pl), { dp: 2 }), pl >= 0 ? 'up' : 'down')) : h('div', { class: 'sub' }, 'You don’t own any $WEST yet. Buy a few shares and watch the line.')));
-    lots.innerHTML = ''; if(L.length){ lots.appendChild(h('h2', { class: 'sec' }, 'Positions')); lots.appendChild(group(L.map(l => { const g = (p - l.p) * l.q; return row({ cls: 'lot', title: Kit.num(l.q, 4) + ' shares @ ' + money(l.p, { dp: 2 }), sub: 'Bought ' + Kit.ago(l.t), right: h('div', { style: { textAlign: 'right' } }, h('b', { class: 'num' }, money(l.q * p, { dp: 2 })), h('div', { class: 'num ' + (g >= 0 ? 'up' : 'down'), style: { fontSize: '13px' } }, (g >= 0 ? '+' : '−') + money(Math.abs(g), { dp: 2 }))), onClick: async () => { if(await Kit.confirm({ title: 'Sell this position?', msg: Kit.num(l.q, 4) + ' shares for about ' + money(l.q * S.price(), { dp: 2 }), ok: 'Sell' })){ const r = S.sell(l.id); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); paintPos(); } } }); }))); lots.appendChild(h('div', { class: 'foot' }, 'Click a position to sell just that one.')); }
+    const L = S.lots(), p = S.price(); let q = 0, cost = 0; L.forEach(l => { q += l.q; cost += l.q * l.p; }); const val = q * p, pnl = val - cost;
+    pos.innerHTML = ''; pos.appendChild(h('div', { class: 'card' }, h('div', { class: 'cap', style: { marginTop: 0 } }, 'Your position'), L.length ? h('div', { class: 'kpis', style: { gridTemplateColumns: '1fr 1fr' } }, kpi('Shares', Kit.num(q, 4)), kpi('Market value', money(val, { dp: 2 })), kpi('Avg. cost', money(cost / q, { dp: 2 })), kpi('Profit / loss', (pnl >= 0 ? '+' : '−') + money(Math.abs(pnl), { dp: 2 }), pnl >= 0 ? 'up' : 'down')) : h('div', { class: 'sub' }, 'You don’t own any $WEST yet. Buy a few shares and watch the line.')));
+    lots.innerHTML = ''; if(L.length){ lots.appendChild(h('h2', { class: 'sec' }, 'Positions')); lots.appendChild(group(L.map(l => { const g = (p - l.p) * l.q; return row({ cls: 'lot', title: Kit.num(l.q, 4) + ' shares @ ' + money(l.p, { dp: 2 }), sub: 'Bought ' + Kit.ago(l.t), right: h('div', { class: 'lotr' }, h('div', { style: { textAlign: 'right' } }, h('b', { class: 'num' }, money(l.q * p, { dp: 2 })), h('div', { class: 'num ' + (g >= 0 ? 'up' : 'down'), style: { fontSize: '13px' } }, (g >= 0 ? '+' : '−') + money(Math.abs(g), { dp: 2 }))), h('button', { class: 'btn bad', onclick: e => { e.stopPropagation(); doneSell(S.sell(l.id)); } }, 'Sell')) }); }))); }
   }
   const kpi = (l, v, c) => h('div', { class: 'kpi' }, h('small', null, l), h('b', { class: c || '' }, v));
 
-  /* ---------- chart ---------- */
+  /* ---------- chart: a fixed, modest number of points (the kernel resamples the price function), drawn as a smooth curve with a faint high–low band ---------- */
   const fmtT = t => { const d = new Date(t); return RANGES[range] <= 86400e3 * 1.1 ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: RANGES[range] <= 300e3 ? '2-digit' : undefined }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); };
+  const nPts = () => { const w = cv.clientWidth || 600, base = Math.max(60, Math.min(240, Math.round(w / 3))); return ({ '1m': 60, '5m': 100, '30m': 150 })[range] ? Math.min(base, ({ '1m': 60, '5m': 100, '30m': 150 })[range]) : base; };
   function draw(){
     const dpr = Math.min(2, window.devicePixelRatio || 1), w = cv.clientWidth, hh = cv.clientHeight; if(!w || !hh || pts.length < 2) return;
     if(cv.width !== Math.round(w * dpr) || cv.height !== Math.round(hh * dpr)){ cv.width = Math.round(w * dpr); cv.height = Math.round(hh * dpr); }
     const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, hh);
     const cs = getComputedStyle(document.documentElement), good = cs.getPropertyValue('--good').trim(), bad = cs.getPropertyValue('--bad').trim(), lab = cs.getPropertyValue('--label3').trim(), sep = cs.getPropertyValue('--sep').trim();
-    let lo = Infinity, hi = -Infinity; pts.forEach(p => { lo = Math.min(lo, p[1]); hi = Math.max(hi, p[1]); }); const pad = (hi - lo) * 0.12 || 0.5; lo -= pad; hi += pad;
-    const t0 = pts[0][0], t1 = pts[pts.length - 1][0], axisW = 46, W = w - axisW, X = t => (t - t0) / (t1 - t0 || 1) * W, Y = v => 8 + (1 - (v - lo) / (hi - lo)) * (hh - 22);
+    const band = RANGES[range] > 300e3; let lo = Infinity, hi = -Infinity; pts.forEach(p => { lo = Math.min(lo, band ? p[2] : p[1]); hi = Math.max(hi, band ? p[3] : p[1]); }); const pad = (hi - lo) * 0.12 || 0.5; lo -= pad; hi += pad;
+    const t0 = pts[0][0], t1 = pts[pts.length - 1][0], axisW = 50, W = w - axisW, X = t => (t - t0) / (t1 - t0 || 1) * W, Y = v => 8 + (1 - (v - lo) / (hi - lo)) * (hh - 22);
     const up = pts[pts.length - 1][1] >= pts[0][1], col = up ? good : bad;
     g.font = '11px ' + cs.getPropertyValue('--font'); g.textAlign = 'left'; g.fillStyle = lab; g.strokeStyle = sep; g.lineWidth = 1;
-    for(let i = 0; i < 4; i++){ const v = lo + (hi - lo) * (1 - i / 3), y = Math.round(Y(v)) + .5; g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); g.fillText('$' + v.toFixed(2), W + 6, y + 4); }
+    for(let i = 0; i < 4; i++){ const v = lo + (hi - lo) * (1 - i / 3), y = Math.round(Y(v)) + .5; g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); g.fillText('$' + (v >= 100 ? v.toFixed(0) : v.toFixed(2)), W + 6, y + 4); }
     g.setLineDash([3, 4]); const by = Y(pts[0][1]); g.beginPath(); g.moveTo(0, by); g.lineTo(W, by); g.strokeStyle = lab; g.stroke(); g.setLineDash([]);
-    const step = Math.max(1, Math.floor(pts.length / (W / 1.2))); g.beginPath(); let first = true;
-    for(let i = 0; i < pts.length; i += step){ const x = X(pts[i][0]), y = Y(pts[i][1]); first ? g.moveTo(x, y) : g.lineTo(x, y); first = false; } const lx = X(t1), ly = Y(pts[pts.length - 1][1]); g.lineTo(lx, ly);
-    g.strokeStyle = col; g.lineWidth = 2.2; g.lineJoin = 'round'; g.stroke(); g.lineTo(lx, hh); g.lineTo(0, hh); g.closePath(); const gr = g.createLinearGradient(0, 0, 0, hh); gr.addColorStop(0, col + '44'); gr.addColorStop(1, col + '00'); g.fillStyle = gr; g.fill();
+    const xy = pts.map(p => [X(p[0]), Y(p[1])]), lx = xy[xy.length - 1][0], ly = xy[xy.length - 1][1];
+    const smooth = (arr, move) => { if(move) g.moveTo(arr[0][0], arr[0][1]); else g.lineTo(arr[0][0], arr[0][1]); for(let i = 1; i < arr.length - 1; i++) g.quadraticCurveTo(arr[i][0], arr[i][1], (arr[i][0] + arr[i + 1][0]) / 2, (arr[i][1] + arr[i + 1][1]) / 2); g.lineTo(arr[arr.length - 1][0], arr[arr.length - 1][1]); };
+    if(band && pts[0].length > 3){ const hiL = pts.map(p => [X(p[0]), Y(p[3])]), loL = pts.map(p => [X(p[0]), Y(p[2])]).reverse(); g.beginPath(); smooth(hiL, true); smooth(loL, false); g.closePath(); g.fillStyle = col + '1f'; g.fill(); }
+    g.beginPath(); smooth(xy, true); g.strokeStyle = col; g.lineWidth = 2.2; g.lineJoin = 'round'; g.lineCap = 'round'; g.stroke(); g.lineTo(lx, hh); g.lineTo(xy[0][0], hh); g.closePath(); const gr = g.createLinearGradient(0, 0, 0, hh); gr.addColorStop(0, col + '40'); gr.addColorStop(1, col + '00'); g.fillStyle = gr; g.fill();
     g.beginPath(); g.arc(lx, ly, 4, 0, 7); g.fillStyle = col; g.fill(); g.beginPath(); g.arc(lx, ly, 9, 0, 7); g.fillStyle = col + '33'; g.fill();
     if(hover >= 0){ const p = pts[hover], x = X(p[0]), y = Y(p[1]); g.strokeStyle = lab; g.beginPath(); g.moveTo(x, 0); g.lineTo(x, hh); g.stroke(); g.beginPath(); g.arc(x, y, 5, 0, 7); g.fillStyle = col; g.fill(); g.strokeStyle = cs.getPropertyValue('--bg').trim(); g.lineWidth = 2; g.stroke();
       tip.innerHTML = money(p[1], { dp: 2 }) + '<small>' + fmtT(p[0]) + '</small>'; tip.style.opacity = 1; tip.style.transform = 'translate(' + Math.max(4, Math.min(W - 110, x - 50)) + 'px,0)'; } else tip.style.opacity = 0;
@@ -68,11 +79,12 @@ const A = Kit.app({ title: 'Stocks', build: (body, P) => {
     const p = at != null ? at : S.price(), base = pts.length ? pts[0][1] : p, d = p - base, pc = base ? d / base * 100 : 0;
     px.textContent = money(p, { dp: 2 }); chg.className = 'chg num ' + (d >= 0 ? 'up' : 'down'); chg.textContent = (d >= 0 ? '▲ ' : '▼ ') + money(Math.abs(d), { dp: 2 }) + ' (' + (pc >= 0 ? '+' : '') + pc.toFixed(2) + '%) ' + (at != null ? '' : ({ ALL: 'all time', '1D': 'past day', '1W': 'past week', '1M': 'past month' })[range] || 'past ' + range);
   }
-  async function load(){ cv.style.opacity = .4; try{ pts = (await S.series(range)).slice(); }catch(e){ pts = []; } cv.style.opacity = 1; const now = OS.now(); pts.push([now, S.price()]); hover = -1; draw(); head(); }
+  async function load(){ cv.style.opacity = .4; try{ pts = (await S.series(range, nPts())).slice(); }catch(e){ pts = []; } cv.style.opacity = 1; lastBuild = OS.now(); hover = -1; draw(); head(); }
   let lastDraw = 0;
   Kit.live('market', () => { const p = S.price(), now = OS.now(); if(p !== lastPx){ px.className = 'px num ' + (p > lastPx ? 'tu' : 'td'); setTimeout(() => px.className = 'px num', 350); lastPx = p; }
-    if(pts.length){ pts.push([now, p]); if(isFinite(RANGES[range])){ const from = now - RANGES[range]; while(pts.length > 2 && pts[1][0] < from) pts.shift(); } if(pts.length > 9000) pts.splice(1, pts.length - 9000); }
-    if(hover < 0){ head(); if(performance.now() - lastDraw > 90){ draw(); lastDraw = performance.now(); } } upd(); });
+    if(pts.length && hover < 0){ pts[pts.length - 1] = [now, p, p, p];                                       // only the last point follows the live price; the rest is rebuilt on a timer
+      const every = Math.max(1000, Math.min(15000, (isFinite(RANGES[range]) ? RANGES[range] : 6e6) / nPts())); if(now - lastBuild > every){ const q = S.seriesFast(range, nPts()); if(q){ pts = q; lastBuild = now; } }
+      head(); if(performance.now() - lastDraw > 90){ draw(); lastDraw = performance.now(); } } upd(); });
   Kit.live('volatility', load); ['stock', 'cash'].forEach(e => Kit.live(e, () => { paintPos(); upd(); }));
   new ResizeObserver(() => draw()).observe(cv);
   S.wantFast(true); window.addEventListener('pagehide', () => S.wantFast(false));
