@@ -40,7 +40,7 @@
   function clampArgs(a){                                  // whatever the app asks for is limited to what the player's equipment can actually do
     const b = bench(), P0 = +a.P || 1, P = P_STEPS.filter(p => p <= b.Pmax).reduce((m, p) => Math.abs(p - P0) < Math.abs(m - P0) ? p : m, 1);
     const T = Math.min(Math.floor(b.Tmax / 25) * 25, Math.max(Math.ceil(b.Tmin / 25) * 25, Math.round((+a.T || 300) / 25) * 25));
-    return { keys: a.target ? [] : (a.keys || []).map(String).slice(0, 4), target: a.target ? String(a.target).trim().slice(0, 60) : '', T, P, cat: !!a.cat && b.cat, elec: !!a.elec && b.elec };
+    return { keys: a.target ? [] : (a.keys || []).map(String).slice(0, 4), target: a.target ? String(a.target).trim().slice(0, 60) : '', T, P, cat: !!a.cat && b.cat, elec: !!a.elec && b.elec, ign: !!a.ign };
   }
   async function shard(id){ if(SEEN.shards[id]) return SEEN.shards[id]; try{ const r = await fetch('lab-cache/reactions/' + id + '.json', { cache: 'no-cache' }); SEEN.shards[id] = r.ok ? await r.json() : {}; }catch(e){ SEEN.shards[id] = {}; } return SEEN.shards[id]; }
   async function getCard(a){                              // 1) this session  2) the verified library on GitHub  3) calculate it here (and offer it to the library)

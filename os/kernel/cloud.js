@@ -141,7 +141,7 @@
    *      A GitHub Action recomputes every submission with the same engine and commits the verified result to lab-cache/reactions/. Create-only. ---- */
   C.submitReaction = function(id, a){
     if(!C.db || !C.signedIn()) return;
-    const rec = { r: (a.keys || []).slice(0, 4).map(String), g: a.target ? String(a.target).slice(0, 60) : '', T: Math.round(a.T), P: +a.P || 1, c: a.cat ? 1 : 0, e: a.elec ? 1 : 0, t: firebase.database.ServerValue.TIMESTAMP };
+    const rec = { r: (a.keys || []).slice(0, 4).map(String), g: a.target ? String(a.target).slice(0, 60) : '', T: Math.round(a.T), P: +a.P || 1, c: a.cat ? 1 : 0, e: a.elec ? 1 : 0, i: a.ign ? 1 : 0, t: firebase.database.ServerValue.TIMESTAMP };
     C.db.ref('labSubmit/' + id).transaction(cur => cur === null ? rec : undefined).catch(() => {});
   };
 
