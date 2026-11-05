@@ -232,13 +232,13 @@ const Chem = (function(){
   function speciesOf(key){                                    // inventory key -> species used in equations
     init(); const comp = parse(key); if(!comp) return null;
     const els = Object.keys(comp);
-    if(els.length === 1 && comp[els[0]] === 1){ const s = els[0], dia = I.DIA.has(s); return { key: s, kind: 'element', el: s, f: dia ? s + '2' : s, comp: dia ? { [s]: 2 } : { [s]: 1 }, apu: dia ? 2 : 1 }; }
+    if(els.length === 1 && comp[els[0]] === 1){ const s = els[0], dia = I.DIA.has(s); return { key: s, kind: 'element', el: s, f: s, comp: { [s]: 1 }, apu: 1 }; }   // F, H, O… are FREE ATOMS; the molecules (F2, H2, O2) are compounds below
     const reg = registry[compKey(comp)]; const f = reg ? reg.formula : key;
     return { key: f, kind: 'compound', f, comp, apu: 1 };
   }
   function speciesFromComp(comp){                             // product species from a composition
     init(); const els = Object.keys(comp);
-    if(els.length === 1){ const s = els[0], dia = I.DIA.has(s); const n = comp[s]; if(dia && n === 2 || !dia && n === 1) return { key: s, kind: 'element', el: s, f: dia ? s + '2' : s, comp: dia ? { [s]: 2 } : { [s]: 1 }, apu: dia ? 2 : 1 }; }
+    if(els.length === 1){ const s = els[0], dia = I.DIA.has(s); const n = comp[s]; if(n === 1) return { key: s, kind: 'element', el: s, f: s, comp: { [s]: 1 }, apu: 1 }; }
     const reg = registry[compKey(comp)]; const f = reg ? reg.formula : (ions(comp) ? buildFromIons(comp).formula : hill(comp));
     return { key: f, kind: 'compound', f, comp, apu: 1 };
   }
@@ -477,6 +477,20 @@ const Chem = (function(){
     if(tot > 30 && !needs.includes('pressure')) needs.push('pressure');
     return { ok: true, type: 'Direct synthesis from elements', how: v.how, needs, reactants, products, equation: fmtEquation(reactants, products), key: eqKey(reactants, products), target: sp };
   }
+
+  // ---------------------------------------------------------------- public: form (atom / molecule / metal / noble gas / compound + phase at 298 K)
+  function form(key){
+    init(); const sp = speciesOf(key); if(!sp) return null; const T = typeof THERMO !== 'undefined' ? THERMO : {}, comp = sp.comp, els = Object.keys(comp), e = els[0];
+    const PH = { g: 'gas', l: 'liquid', s: 'solid' }, ph = f => PH[(T[f] || [])[0]] || '';
+    if(els.length === 1){ const n = comp[e], cat = (EL[e] || {}).cat || '';
+      if(n === 1 && I.DIA.has(e)) return { cls: 'atom', label: 'free atom (radical)', phase: 'gas', dHat: (T[e] || [])[1], warn: 'Free ' + e + ' atoms only exist in plasma or UV light. They have no bond to give back: pairing up into ' + e + '2 releases the full bond energy, with no barrier.' };
+      if(n > 1) return { cls: 'molecule', label: n === 2 ? 'diatomic molecule' : n + '-atom molecule', phase: ph(sp.f) };
+      const noble = /noble/.test(cat), metal = isMetal(e), semi = /metalloid/.test(cat);
+      return { cls: noble ? 'noble' : metal ? 'metal' : semi ? 'metalloid' : 'nonmetal', label: noble ? 'noble gas (monatomic)' : metal ? 'metal (metallic lattice)' : semi ? 'metalloid (network solid)' : 'nonmetal', phase: ph(e) };
+    }
+    const d = ions(comp), ionic = !!(d && d.cation && (isMetal(d.cation.f) || d.cation.f === 'NH4'));
+    return { cls: 'compound', label: ionic ? 'ionic compound (crystal lattice)' : 'covalent compound', phase: ph(sp.f) };
+  }
   // ---------------------------------------------------------------- public: values
   function price(sym){ init(); return I.PRICES[sym] || 0; }
   function valueOf(key){                                      // list value of one unit (1 mol) of an inventory item
@@ -489,6 +503,6 @@ const Chem = (function(){
     return Math.round(base * bonus * 100) / 100;
   }
   const registryList = () => { init(); return Object.keys(registry).map(k => registry[k]); };
-  return { init, parse, hill, compKey, balance, ions, build, nameOf, describe, classify, solve, plan, validate, formation, valueOf, price, speciesOf, massOf, atoms, prettyFormula, condLabel, registryList, isMetal, fmtEquation, eqKey, candidates: (a, b) => { init(); return binaryCandidates(a, b); }, get elements(){ init(); return EL; } };
+  return { init, parse, hill, compKey, balance, ions, build, nameOf, describe, classify, solve, plan, validate, formation, valueOf, price, speciesOf, form, massOf, atoms, prettyFormula, condLabel, registryList, isMetal, fmtEquation, eqKey, candidates: (a, b) => { init(); return binaryCandidates(a, b); }, get elements(){ init(); return EL; } };
 })();
 if(typeof module !== 'undefined' && module.exports) module.exports = Chem;

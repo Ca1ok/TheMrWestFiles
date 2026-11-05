@@ -54,3 +54,6 @@ const KSP = { AgCl:1.8e-10, AgBr:5.4e-13, AgI:8.5e-17, Ag2S:6e-51, PbCl2:1.7e-5,
 // ---- weak acids / bases for pH: [pKa of the conjugate pair]; strong ones are treated as fully dissociated ----
 const PKA = { HF:3.17, HNO2:3.25, CH3COOH:4.76, HCOOH:3.75, H2CO3:6.35, H2S:7.0, HCN:9.21, H3PO4:2.15, HClO:7.54, NH4:9.25 };
 const STRONG_ACIDS = ['HCl', 'HBr', 'HI', 'HNO3', 'H2SO4', 'HClO4'];
+
+// ---- free gaseous ATOMS of the diatomic elements: dHf = +1/2 bond energy (kJ/mol per atom). Unstable; they recombine into X2 ----
+Object.assign(THERMO, { H:['g',218.0,114.7,20.79], N:['g',472.7,153.3,20.79], O:['g',249.2,161.1,21.9], F:['g',79.4,158.8,22.7], Cl:['g',121.3,165.2,21.8], Br:['g',111.9,175.0,20.79], I:['g',106.8,180.8,20.79] });
