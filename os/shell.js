@@ -52,8 +52,8 @@
 
   /* ================= desktop layout ================= */
   const DEFAULT_DOCK = OS_APPS.map(a => a.id);
-  const SIZES = { xs: [1, 1], h: [2, 1], v: [1, 2], s: [2, 2], w: [3, 2], b: [4, 1], m: [4, 2], l: [4, 4] };
-  const SIZE_NAMES = { xs: 'Tiny · 1×1', h: 'Strip · 2×1', v: 'Tall · 1×2', s: 'Small · 2×2', w: 'Medium · 3×2', b: 'Banner · 4×1', m: 'Wide · 4×2', l: 'Large · 4×4' };
+  const SIZES = { xs: [1, 1], h: [2, 1], v: [1, 2], s: [2, 2], x3: [3, 2], b: [4, 1], m: [4, 2], l: [4, 4] };
+  const SIZE_NAMES = { xs: 'Tiny · 1×1', h: 'Strip · 2×1', v: 'Tall · 1×2', s: 'Small · 2×2', x3: 'Medium · 3×2', b: 'Banner · 4×1', m: 'Wide · 4×2', l: 'Large · 4×4' };
   let layout = [], M = null, editing = false, pageCount = 1, curPage = 0;
   const items = new Map();                        // key → { el, it, inst }
   const dockIds = () => { const base = (K.prefs.dock && K.prefs.dock.length ? K.prefs.dock : DEFAULT_DOCK).filter(id => APP(id)); wins.forEach((w, id) => { if(!base.includes(id)) base.push(id); }); return base; };

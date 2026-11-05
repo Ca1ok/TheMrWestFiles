@@ -1,5 +1,5 @@
 // Widget: bank balance and tax status (links to Bank).
-(window.__OSW = window.__OSW || []).push({ id: 'bank', name: 'Bank', app: 'Bank', desc: 'Your balance and any tax bill.', sizes: ['xs', 'h', 'v', 's', 'w', 'b', 'm'], on: ['cash', 'bank'],
+(window.__OSW = window.__OSW || []).push({ id: 'bank', name: 'Bank', app: 'Bank', desc: 'Your balance and any tax bill.', sizes: ['xs', 'h', 'v', 's', 'x3', 'b', 'm'], on: ['cash', 'bank'],
   mount(el, size, c){
     el.innerHTML = '<div class="wh">' + c.tile('Bank') + '<span>Balance</span></div><div class="grow"></div><div class="big" data-b>$0</div><div class="sub" data-t>&nbsp;</div>';
     const B = el.querySelector('[data-b]'), T = el.querySelector('[data-t]');

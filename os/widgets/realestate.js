@@ -1,5 +1,5 @@
 // Widget: property portfolio (links to Real Estate).
-(window.__OSW = window.__OSW || []).push({ id: 'realestate', name: 'Real Estate', app: 'RealEstate', desc: 'Property value and rent waiting for you.', sizes: ['xs', 'h', 'v', 's', 'w', 'b', 'm'], on: ['props', 'cash'],
+(window.__OSW = window.__OSW || []).push({ id: 'realestate', name: 'Real Estate', app: 'RealEstate', desc: 'Property value and rent waiting for you.', sizes: ['xs', 'h', 'v', 's', 'x3', 'b', 'm'], on: ['props', 'cash'],
   mount(el, size, c){
     el.innerHTML = '<div class="wh">' + c.tile('RealEstate') + '<span>Properties</span></div><div class="grow"></div><div class="big" data-v>$0</div><div class="sub" data-r>&nbsp;</div>';
     const V = el.querySelector('[data-v]'), R = el.querySelector('[data-r]');

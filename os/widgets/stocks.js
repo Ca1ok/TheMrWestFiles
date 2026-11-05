@@ -1,5 +1,5 @@
 // Widget: live $WEST price with a sparkline (links to Stocks). Updates every market tick.
-(window.__OSW = window.__OSW || []).push({ id: 'stocks', name: 'Stocks', app: 'Stocks', desc: 'Live $WEST price and trend.', sizes: ['xs', 'h', 'v', 's', 'w', 'b', 'm', 'l'], on: ['market'],
+(window.__OSW = window.__OSW || []).push({ id: 'stocks', name: 'Stocks', app: 'Stocks', desc: 'Live $WEST price and trend.', sizes: ['xs', 'h', 'v', 's', 'x3', 'b', 'm', 'l'], on: ['market'],
   mount(el, size, c){
     const tiny = size === 'xs' || size === 'h' || size === 'b';
     el.innerHTML = '<div class="wh">' + c.tile('Stocks') + '<span>$WEST</span></div>' + (tiny ? '' : '<div class="grow" style="max-height:6px"></div>') + '<div class="big" data-p>$--</div><div class="sub" data-c>&nbsp;</div>' + (size === 'xs' ? '' : '<canvas></canvas>');

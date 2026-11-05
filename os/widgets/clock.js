@@ -1,5 +1,5 @@
 // Widget: clock + date (links to Settings).
-(window.__OSW = window.__OSW || []).push({ id: 'clock', name: 'Clock', app: 'Settings', desc: 'Time and date.', sizes: ['xs', 'h', 'v', 's', 'w', 'b', 'm'], on: [],
+(window.__OSW = window.__OSW || []).push({ id: 'clock', name: 'Clock', app: 'Settings', desc: 'Time and date.', sizes: ['xs', 'h', 'v', 's', 'x3', 'b', 'm'], on: [],
   mount(el, size, c){
     el.innerHTML = '<div class="grow"></div><div class="big" data-t style="font-size:' + (size === 'xs' || size === 'v' ? 22 : size === 's' || size === 'h' ? 34 : 44) + 'px"></div><div class="sub" data-d></div>';
     const T = el.querySelector('[data-t]'), D = el.querySelector('[data-d]');
