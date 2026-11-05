@@ -20,19 +20,24 @@ const { h, row, group, esc, money } = Kit, G = OS.gallery;
 let items = [], filter = 'all', stats = null, viewing = -1;
 const A = Kit.app({ title: 'Photos', right: OS.auth.isAdmin() ? [{ icon: 'plus', label: 'Add', fill: true, onClick: () => fileIn.click() }] : [], build: (body) => {
   const fseg = Kit.seg([{ id: 'all', label: 'All' }, { id: 'image', label: 'Photos' }, { id: 'gif', label: 'GIFs' }, { id: 'video', label: 'Videos' }], filter, v => { filter = v; paint(); });
-  const info = h('div'), grid = h('div', { class: 'pgrid', style: { marginTop: '14px' } }); body.append(fseg, info, grid);
+  const info = h('div'), gate = h('div'), grid = h('div', { class: 'pgrid', style: { marginTop: '14px' } }); body.append(fseg, gate, info, grid);
   const io = new IntersectionObserver(es => es.forEach(e => { if(e.isIntersecting){ io.unobserve(e.target); const m = e.target._m; G.thumb(m).then(t => { if(t){ e.target.style.backgroundImage = 'url("' + t + '")'; e.target.classList.remove('ld'); } }); } }), { root: null, rootMargin: '300px' });
   async function load(force){
     grid.innerHTML = ''; info.innerHTML = ''; for(let i = 0; i < 12; i++) grid.appendChild(h('div', { class: 'pt ld' }));
     try{ items = await G.list(force); }catch(e){ items = []; } paint();
     G.stats().then(s => { stats = s; });
   }
+  function paintGate(){
+    gate.innerHTML = ''; if(G.canOpen()) return;
+    gate.appendChild(h('div', { class: 'card', style: { marginTop: '12px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' } }, h('div', { style: { flex: 1, minWidth: '180px', font: '500 14px/1.4 var(--font)' } }, 'You’re viewing low-quality previews. Sign in to open, expand and download photos.'), h('button', { class: 'btn sm', onclick: () => OS.open('Settings') }, 'Sign in')));
+  }
+  function tapTile(list, i){ if(!G.canOpen()){ Kit.toast('Sign in to open and download photos'); OS.open('Settings'); return; } open(list, i); }
   function paint(){
-    grid.innerHTML = ''; info.innerHTML = ''; const list = items.filter(m => filter === 'all' || m.type === filter);
+    paintGate(); grid.innerHTML = ''; info.innerHTML = ''; const list = items.filter(m => filter === 'all' || m.type === filter);
     if(!G.budgetOk()) info.appendChild(h('div', { class: 'card', style: { marginTop: '12px', background: 'var(--tint-dim)', color: 'var(--tint)', fontWeight: 500, fontSize: '14px' } }, 'The monthly photo-data budget has been reached. Photos you’ve already viewed still work; others return next month.'));
     if(!list.length){ grid.style.display = 'block'; grid.appendChild(h('div', { class: 'empty', html: Kit.icon('photos', 56, 1.4) + (items.length ? 'Nothing in this album.' : 'No photos yet.' + (OS.auth.isAdmin() ? '<br>Click + to add some.' : '')) })); return; } grid.style.display = '';
-    list.forEach((m, i) => { const t = h('button', { class: 'pt ld', 'aria-label': m.title || 'Photo', onclick: () => open(list, i) }); t._m = m; if(m.type !== 'image') t.appendChild(h('span', { class: 'bd' }, m.type === 'gif' ? 'GIF' : '▶ ' + (m.duration ? Math.floor(m.duration / 60) + ':' + String(m.duration % 60).padStart(2, '0') : 'Video'))); grid.appendChild(t); io.observe(t); });
-    info.appendChild(h('div', { class: 'foot', style: { textAlign: 'center', marginTop: '14px' } }, list.length + ' item' + (list.length === 1 ? '' : 's') + ' · thumbnails load as you scroll and are saved on this device'));
+    list.forEach((m, i) => { const t = h('button', { class: 'pt ld', 'aria-label': m.title || 'Photo', onclick: () => tapTile(list, i) }); t._m = m; if(m.type !== 'image') t.appendChild(h('span', { class: 'bd' }, m.type === 'gif' ? 'GIF' : '▶ ' + (m.duration ? Math.floor(m.duration / 60) + ':' + String(m.duration % 60).padStart(2, '0') : 'Video'))); grid.appendChild(t); io.observe(t); });
+    info.appendChild(h('div', { class: 'foot', style: { textAlign: 'center', marginTop: '14px' } }, list.length + ' item' + (list.length === 1 ? '' : 's') + ' · previews load as you scroll and are saved on this device'));
   }
   /* ---------- viewer ---------- */
   function open(list, i0){
@@ -51,7 +56,7 @@ const A = Kit.app({ title: 'Photos', right: OS.auth.isAdmin() ? [{ icon: 'plus',
       catch(e){ if(my !== gen) return; stage.innerHTML = ''; stage.appendChild(h('div', { class: 'msgbox' }, G.errText(e))); }
     }
     stage.addEventListener('click', () => v.classList.toggle('hide'));
-    let sx = null; v.addEventListener('pointerdown', e => { sx = e.clientX; }); v.addEventListener('pointerup', e => { if(sx != null && Math.abs(e.clientX - sx) > 70) go(e.clientX < sx ? 1 : -1); sx = null; });
+    let sx = null; v.addEventListener('pointerdown', e => { sx = e.target.closest('button,video') ? null : e.clientX; }); v.addEventListener('pointerup', e => { if(sx != null && Math.abs(e.clientX - sx) > 70) go(e.clientX < sx ? 1 : -1); sx = null; });
     function buttons(m){
       vb.innerHTML = '';
       vb.appendChild(h('button', { class: 'vbtn', html: Kit.icon('share', 18, 2) + 'Save', onclick: () => download(m) }));

@@ -40,7 +40,7 @@ const A = Kit.app({ title: 'Real Estate', build: (body) => {
   }
   function open(id){
     const p0 = P.list().find(x => x.id === id);
-    A.push({ title: p0.name, large: false, backLabel: 'Listings', build: (b, pg) => {
+    let tt; A.push({ title: p0.name, large: false, backLabel: 'Listings', destroy: () => clearInterval(tt), build: (b, pg) => {
       const top = h('div'), cv = h('canvas', { class: 'chart dchart' }), info = h('div'), act = h('div'); b.append(top, cv, h('div', { style: { display: 'flex', gap: '8px', margin: '0 0 14px' } }), info, act);
       let range = 30; const rs = Kit.seg([{ id: 7, label: '1W' }, { id: 30, label: '1M' }, { id: 90, label: '3M' }], range, v => { range = +v; draw(); }); b.insertBefore(rs, info);
       function draw(){ const p = P.list().find(x => x.id === id), hist = P.history(id, range, 60), ch = pct(p.price, hist[0][1]);
@@ -49,9 +49,9 @@ const A = Kit.app({ title: 'Real Estate', build: (body) => {
         info.innerHTML = ''; info.appendChild(group(row({ title: 'Rent', sub: 'Paid into your account while you own it', right: money(p.price * p.rate, { dp: 0 }) + ' / day' }), row({ title: 'Yearly yield', right: (p.rate * 365 * 100).toFixed(0) + '%' }), p.owned ? row({ title: 'You paid', right: money(p.paid, { dp: 0 }) }) : null, p.owned ? row({ title: 'Sells for', sub: 'The agent takes 5%', right: h('span', { class: P.sellValue(id) >= p.paid ? 'up' : 'down' }, money(P.sellValue(id), { dp: 0 })) }) : null));
         act.innerHTML = ''; act.appendChild(p.owned ? h('button', { class: 'btn block bad', style: { marginTop: '14px' }, onclick: async () => { if(await Kit.confirm({ title: 'Sell ' + p.name + '?', msg: 'You’ll receive ' + money(P.sellValue(id), { dp: 0 }) + ' plus any unpaid rent.', ok: 'Sell', destructive: true })){ const r = P.sell(id); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); A.pop(); } } }, 'Sell for ' + money(P.sellValue(id), { dp: 0 })) : h('button', { class: 'btn block', style: { marginTop: '14px' }, onclick: async () => { if(await Kit.confirm({ title: 'Buy ' + p.name + '?', msg: 'It costs ' + money(p.price, { dp: 0 }) + '. You earn rent every day you own it.', ok: 'Buy' })){ const r = P.buy(id); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); draw(); } } }, 'Buy for ' + money(p.price, { dp: 0 })));
       }
-      draw(); new ResizeObserver(() => draw()).observe(cv);
+      draw(); new ResizeObserver(() => draw()).observe(cv); tt = setInterval(() => { if(!document.hidden) draw(); }, 20000);
     } });
   }
-  paintSum(); paintIdx(); paintList(); paintNews(); ['props', 'cash'].forEach(e => Kit.live(e, Kit.debounce(() => { paintSum(); paintList(); }, 100))); setInterval(() => { paintSum(); }, 20000);
+  paintSum(); paintIdx(); paintList(); paintNews(); ['props', 'cash'].forEach(e => Kit.live(e, Kit.debounce(() => { paintSum(); paintList(); }, 100))); setInterval(() => { if(!document.hidden && A.current === A.root){ paintSum(); paintIdx(); paintList(); } }, 20000);     // prices drift with time and news
 } });
 </script></body></html>

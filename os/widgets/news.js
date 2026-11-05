@@ -1,7 +1,7 @@
 // Widget: latest headline with a thumbnail from the Photos archive (links to News).
-(window.__OSW = window.__OSW || []).push({ id: 'news', name: 'News', app: 'News', desc: 'The latest chemistry headlines.', sizes: ['s', 'm', 'l'], photo: true,
+(window.__OSW = window.__OSW || []).push({ id: 'news', name: 'News', app: 'News', desc: 'The latest chemistry headlines.', sizes: ['xs', 'h', 'v', 's', 'w', 'b', 'm', 'l'], photo: true, on: [],
   mount(el, size, c){
-    const n = size === 'l' ? 3 : size === 'm' ? 2 : 1; el.classList.add('photo');
+    const n = size === 'l' ? 4 : size === 'm' || size === 'w' ? 2 : 1; el.classList.add('photo');
     el.innerHTML = '<div class="thumb"></div><div class="shade"></div><div class="wh">' + c.tile('News') + '<span>News</span></div><div class="grow"></div><div data-h></div>';
     const H = el.querySelector('[data-h]'), T = el.querySelector('.thumb'); let key = '', alive = true;
     function paint(){

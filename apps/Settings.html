@@ -63,11 +63,19 @@ const A = Kit.app({ title: 'Settings', build: (body) => {
     rest.appendChild(h('div', { class: 'cap' }, 'Desktop'));
     rest.appendChild(group(row({ glyph: 'grid', color: '#4a6fa8', title: 'Dock apps', sub: OS.prefs.get('dock').length ? OS.prefs.get('dock').join(', ') : 'All apps', chev: true, onClick: openDock }),
       row({ glyph: 'refresh', color: '#7b7468', title: 'Reset layout', sub: 'Restore the default widgets and window sizes', onClick: async () => { if(await Kit.confirm({ title: 'Reset the desktop?', ok: 'Reset', destructive: true })){ OS.shell.resetLayout(); Kit.toast('Desktop reset'); } } })));
+    rest.appendChild(group(
+      h('div', { class: 'row' }, h('div', { class: 'tx' }, h('b', null, 'Icon size'), h('small', null, 'App icons on the desktop')), h('div', { style: { width: '210px' } }, seg([{ id: 'small', label: 'Small' }, { id: 'medium', label: 'Medium' }, { id: 'large', label: 'Large' }], P_.get('iconSize') || 'medium', v => P_.set('iconSize', v)))),
+      row({ title: '24-hour clock', sub: 'Used by the Clock widget', right: toggle(!!P_.get('clock24'), v => P_.set('clock24', v)) }),
+      row({ title: 'Show seconds on the clock', right: toggle(!!P_.get('clockSeconds'), v => P_.set('clockSeconds', v)) })));
+    rest.appendChild(h('div', { class: 'cap' }, 'Performance'));
+    rest.appendChild(group(h('div', { class: 'row' }, h('div', { class: 'tx' }, h('b', null, 'Live update speed'), h('small', { class: 'wrap' }, 'How often prices and widgets refresh. Saver is lighter on batteries and older computers.')), h('div', { style: { width: '230px' } }, seg([{ id: 'saver', label: 'Saver' }, { id: 'balanced', label: 'Balanced' }, { id: 'smooth', label: 'Smooth' }], P_.get('updateSpeed') || 'balanced', v => P_.set('updateSpeed', v))))));
+    rest.appendChild(h('div', { class: 'cap' }, 'News'));
+    rest.appendChild(group(row({ glyph: 'news', color: '#a2321f', title: 'Open the Wanted poster as a page', sub: 'Opens preview.html in a new tab — printable', chev: true, onClick: () => OS.openPage('preview.html') })));
     rest.appendChild(h('div', { class: 'foot' }, 'Tip: click “Edit desktop” (top left) to add widgets, resize them and drag them around. Drag a window by its title bar; the green button maximizes.'));
     // Data
     rest.appendChild(h('div', { class: 'cap' }, 'Data & storage'));
     const u = OS.usage(), kb = n => n > 1e6 ? (n / 1e6).toFixed(2) + ' MB' : Math.max(0, Math.round(n / 1e3)) + ' KB';
-    rest.appendChild(group(row({ title: 'Downloaded this session', right: kb(u.bytes) }), row({ title: 'Database reads / saves', right: u.reads + ' / ' + u.writes }), row({ title: 'Saving', sub: OS.auth.signedIn() ? 'Changes are batched and saved every ~20 seconds.' : 'Off — sign in to save progress.', wrap: true })));
+    rest.appendChild(group(row({ title: 'Downloaded this session', right: kb(u.bytes) }), row({ title: 'Database reads / saves', right: u.reads + ' / ' + u.writes }), row({ glyph: 'trash', color: '#7b7468', title: 'Clear saved photos', sub: 'Frees the space photos use on this device', onClick: async () => { const n = await OS.gallery.cacheSize(); if(await Kit.confirm({ title: 'Clear saved photos?', msg: (n / 1e6).toFixed(1) + ' MB will be removed. Photos download again when you next open them.', ok: 'Clear', destructive: true })){ await OS.gallery.clearCache(); Kit.toast('Cleared', 'good'); } } }), row({ title: 'Saving', sub: OS.auth.signedIn() ? 'Changes are batched and saved every ~20 seconds.' : 'Off — sign in to save progress.', wrap: true })));
     rest.appendChild(h('div', { class: 'foot' }, 'WestOS is built to stay inside Firebase’s free limits: prices are computed on your device, photos are cached after the first view, and only changed data is saved.'));
     // About
     rest.appendChild(h('div', { class: 'cap' }, 'About'));

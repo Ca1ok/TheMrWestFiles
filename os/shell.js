@@ -52,10 +52,12 @@
 
   /* ================= desktop layout ================= */
   const DEFAULT_DOCK = OS_APPS.map(a => a.id);
-  const SIZES = { s: [2, 2], m: [4, 2], l: [4, 4] };
+  const SIZES = { xs: [1, 1], h: [2, 1], v: [1, 2], s: [2, 2], w: [3, 2], b: [4, 1], m: [4, 2], l: [4, 4] };
+  const SIZE_NAMES = { xs: 'Tiny · 1×1', h: 'Strip · 2×1', v: 'Tall · 1×2', s: 'Small · 2×2', w: 'Medium · 3×2', b: 'Banner · 4×1', m: 'Wide · 4×2', l: 'Large · 4×4' };
   let layout = [], M = null, editing = false, pageCount = 1, curPage = 0;
   const items = new Map();                        // key → { el, it, inst }
   const dockIds = () => { const base = (K.prefs.dock && K.prefs.dock.length ? K.prefs.dock : DEFAULT_DOCK).filter(id => APP(id)); wins.forEach((w, id) => { if(!base.includes(id)) base.push(id); }); return base; };
+  const szLabel = z => SIZES[z][0] + '×' + SIZES[z][1];
   const wk = () => 'w' + Math.random().toString(36).slice(2, 8);
   function defaultLayout(){
     return [['wanted', 'm'], ['stocks', 's'], ['bank', 's'], ['news', 'm'], ['messages', 's'], ['realestate', 's'], ['clock', 's'], ['element', 's'], ['games', 's']]
@@ -70,7 +72,7 @@
   const saveLayout = () => K.setPref('layout', layout.map(it => it.t === 'a' ? { t: 'a', id: it.id, k: it.k } : { t: 'w', id: it.id, size: it.size, k: it.k }));
 
   function metrics(){
-    const W = S.w, pad = 26, cols = Math.max(4, Math.floor((W - pad * 2) / 138)), cw = (W - pad * 2) / cols, ic = Math.round(Math.min(72, cw * 0.5)), rh = ic + 30 + 12;
+    const W = S.w, pad = 26, cols = Math.max(4, Math.floor((W - pad * 2) / 138)), cw = (W - pad * 2) / cols, ic = Math.round(Math.min(72, cw * 0.5) * ({ small: 0.8, large: 1.15 }[K.prefs.iconSize] || 1)), rh = ic + 30 + 12;
     const topY = MB + 20, dockH = 104, rows = Math.max(2, Math.floor((S.h - topY - dockH) / rh));
     return { cols, pad, cw, ic, rh, topY, rows, dockH };
   }
@@ -93,7 +95,7 @@
     const el = document.createElement('div'); el.className = 'item'; el.dataset.k = it.k; el.style.setProperty('--jd', (-Math.random() * 0.26).toFixed(2) + 's');
     const rec = { el, it, inst: null };
     if(it.t === 'a'){ const a = APP(it.id); el.innerHTML = '<div class="in"><div class="app desk-app" data-app="' + a.id + '">' + osAppTile(a, M.ic) + '<span class="lb">' + esc(a.name) + '</span><button class="rmbtn" aria-label="Remove">' + osIcon('minus', 14, 3) + '</button></div></div>'; }
-    else { const def = WIDGETS.find(w => w.id === it.id); el.innerHTML = '<div class="in"><div class="widget ' + (def.cls || '') + ' ' + it.size + '" data-w="' + def.id + '"><div class="w"></div><button class="rmbtn" aria-label="Remove">' + osIcon('minus', 14, 3) + '</button><button class="sz">' + it.size.toUpperCase() + '</button></div></div>'; }
+    else { const def = WIDGETS.find(w => w.id === it.id); el.innerHTML = '<div class="in"><div class="widget ' + (def.cls || '') + ' ' + it.size + '" data-w="' + def.id + '"><div class="w"></div><button class="rmbtn" aria-label="Remove">' + osIcon('minus', 14, 3) + '</button><button class="sz" aria-label="Change size">' + szLabel(it.size) + '</button></div></div>'; }
     items.set(it.k, rec); return rec;
   }
   function mountWidget(rec){
@@ -147,7 +149,9 @@
     const step = Math.max(1, Math.floor(pts.length / (w / 1.5))); g.beginPath(); pts.forEach((p, i) => { if(i % step && i !== pts.length - 1) return; const x = X(p[0]), y = Y(p[1]); i ? g.lineTo(x, y) : g.moveTo(x, y); });
     g.strokeStyle = c; g.lineWidth = 2; g.lineJoin = 'round'; g.stroke(); g.lineTo(w, h); g.lineTo(0, h); g.closePath(); const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, c + '55'); gr.addColorStop(1, c + '00'); try{ g.fillStyle = gr; g.fill(); }catch(e){}
   }
-  ['cash', 'mail', 'bank', 'props', 'market', 'lab', 'games', 'inv', 'stock'].forEach(evt => K.on(evt, () => { items.forEach(rec => { if(rec.inst && rec.inst.update) try{ rec.inst.update(); }catch(e){} }); }));
+  /* Widgets say which events matter to them (`on`); the 1 Hz market tick no longer repaints widgets that don't show the price. */
+  const EVENTS = ['cash', 'mail', 'bank', 'props', 'market', 'lab', 'games', 'inv', 'stock'];
+  EVENTS.forEach(evt => K.on(evt, () => { items.forEach(rec => { if(!rec.inst || !rec.inst.update) return; const def = WIDGETS.find(w => w.id === rec.it.id), on = def && def.on; if(on && !on.includes(evt)) return; try{ rec.inst.update(evt); }catch(e){} }); }));
 
   /* ================= edit mode + dragging ================= */
   function setEditing(on){
@@ -158,7 +162,7 @@
   doneBtn.addEventListener('click', () => { setEditing(false); saveLayout(); });
   desk.addEventListener('click', e => {
     const rmBtn = e.target.closest('.rmbtn'); if(rmBtn && editing){ const k = rmBtn.closest('.item').dataset.k; layout = layout.filter(i => i.k !== k); relayoutHome(true); saveLayout(); return; }
-    const sz = e.target.closest('.sz'); if(sz && editing){ const it = layout.find(i => i.k === sz.closest('.item').dataset.k), def = WIDGETS.find(w => w.id === it.id), i = def.sizes.indexOf(it.size); it.size = def.sizes[(i + 1) % def.sizes.length]; relayoutHome(true); saveLayout(); }
+    const sz = e.target.closest('.sz'); if(sz && editing){ const it = layout.find(i => i.k === sz.closest('.item').dataset.k), def = WIDGETS.find(w => w.id === it.id), i = def.sizes.indexOf(it.size); it.size = def.sizes[(i + 1) % def.sizes.length]; sz.textContent = szLabel(it.size); relayoutHome(true); saveLayout(); }
   });
   let drag = null;
   const pageRect = () => pagesEl.children[curPage].getBoundingClientRect();
@@ -200,7 +204,7 @@
     if(drag){ clearTimeout(drag.edgeT); const el = drag.el; drag = null; el.classList.remove('dragging'); try{ el.releasePointerCapture(st.id); }catch(_){} pagesEl.style.overflowX = 'auto'; relayoutHome(true); saveLayout(); return; }
     if(!st.moved && !editing && Date.now() - st.t < 600){
       const a = e.target.closest && e.target.closest('[data-app]'); if(a){ openApp(a.dataset.app, $('.tile', a)); return; }
-      const w = e.target.closest && e.target.closest('.widget'); if(w){ const def = WIDGETS.find(x => x.id === w.dataset.w); if(def) openApp(def.app, w); }
+      const w = e.target.closest && e.target.closest('.widget'); if(w){ const def = WIDGETS.find(x => x.id === w.dataset.w); if(def && def.url){ window.open(def.url, '_blank', 'noopener'); } else if(def) openApp(def.app, w); }
     }
   }
   window.addEventListener('pointerup', endPress); window.addEventListener('pointercancel', endPress);
@@ -208,22 +212,23 @@
 
   /* ================= add-to-desktop panel ================= */
   const sheetWrap = $('#sheetwrap'), sheet = $('#sheet'); let galPreview = [];
+  const dflt = w => w.sizes.includes('s') ? 's' : w.sizes[0];
   function openGallery(tab){
     tab = tab || 'w'; const inUse = new Set(layout.filter(i => i.t === 'a').map(i => i.id).concat(dockIds()));
     sheet.innerHTML = '<div class="sh"><h2>Add to desktop</h2><button class="x" aria-label="Close">' + osIcon('x', 15, 2.6) + '</button></div>' +
       '<div class="seg" style="--n:2"><div class="thumb" style="transform:translateX(' + (tab === 'w' ? 0 : 100) + '%)"></div><button data-t="w">Widgets</button><button data-t="a">App shortcuts</button></div><div class="body"></div>';
     const body = $('.body', sheet); galPreview.forEach(p => { try{ p.destroy && p.destroy(); }catch(e){} }); galPreview = [];
     if(tab === 'w'){
-      body.innerHTML = '<div class="gal-grid">' + WIDGETS.map(w => '<div class="gal-item" data-wid="' + w.id + '"><div class="gal-prev"></div><div><b>' + esc(w.name) + '</b><br><small>' + esc(w.desc) + '</small></div><div class="sizes">' + w.sizes.map((s, i) => '<button class="btn sm ' + (i ? 'alt' : '') + '" data-size="' + s + '">' + ({ s: 'Small', m: 'Wide', l: 'Large' })[s] + '</button>').join('') + '</div></div>').join('') + '</div>';
+      body.innerHTML = '<div class="gal-grid">' + WIDGETS.map(w => '<div class="gal-item" data-wid="' + w.id + '"><div class="gal-prev"></div><div><b>' + esc(w.name) + '</b><br><small>' + esc(w.desc) + '</small></div><div class="sizes">' + w.sizes.map((s, i) => '<button class="btn sm ' + (s === dflt(w) ? '' : 'alt') + '" data-size="' + s + '">' + (SIZE_NAMES[s] || s) + '</button>').join('') + '</div></div>').join('') + '</div>';
       $$('.gal-item', body).forEach(card => {
         const def = WIDGETS.find(w => w.id === card.dataset.wid), prev = $('.gal-prev', card);
         const show = size => { galPreview.forEach(p => { if(p.card === card && p.destroy) try{ p.destroy(); }catch(e){} }); prev.innerHTML = ''; const [cw, ch] = SIZES[size], W = cw * M.cw - 12, H = ch * M.rh - 14, wd = document.createElement('div'); wd.className = 'widget ' + (def.cls || '') + ' ' + size; wd.style.cssText = 'width:' + W + 'px;height:' + H + 'px'; wd.innerHTML = '<div class="w"></div>'; prev.appendChild(wd);
           const k = Math.min((prev.clientWidth - 16) / W, (prev.clientHeight - 12) / H); wd.style.transform = 'translate(' + (-W * k / 2) + 'px,' + (-H * k / 2) + 'px) scale(' + k + ')'; wd.style.left = '50%'; wd.style.top = '50%';
           try{ const inst = def.mount($('.w', wd), size, wctx) || {}; inst.card = card; galPreview.push(inst); }catch(e){} card.dataset.cur = size; };
-        show(def.sizes[0]);
+        show(dflt(def));
         card.addEventListener('click', e => { const b = e.target.closest('[data-size]'); if(!b) return; $$('[data-size]', card).forEach(x => x.classList.toggle('alt', x !== b)); show(b.dataset.size); });
         const add = document.createElement('button'); add.className = 'btn sm'; add.textContent = 'Add'; $('.sizes', card).after(add);
-        add.addEventListener('click', () => { addToDesk({ t: 'w', id: def.id, size: card.dataset.cur || def.sizes[0], k: wk() }); closeSheet(); toast(def.name + ' added'); });
+        add.addEventListener('click', () => { addToDesk({ t: 'w', id: def.id, size: card.dataset.cur || dflt(def), k: wk() }); closeSheet(); toast(def.name + ' added'); });
       });
     } else {
       const free = OS_APPS.filter(a => !inUse.has(a.id));
@@ -285,6 +290,7 @@
   function closeApp(id){
     const w = wins.get(id); if(!w) return Promise.resolve(); wins.delete(id); if(focusId === id){ const next = [...wins.entries()].filter(([, x]) => !x.el.classList.contains('hidden')).sort((a, b) => (+b[1].el.style.zIndex || 0) - (+a[1].el.style.zIndex || 0))[0]; setFocus(next ? next[0] : null); }
     renderDock(); if(!wins.size) history.replaceState(null, '', location.pathname);
+    try{ w.iframe.contentWindow.dispatchEvent(new Event('pagehide')); }catch(e){}                       // lets the app release its live subscriptions (market ticks, listeners)
     const done = () => { w.el.remove(); }; if(reduceMotion()) { done(); return Promise.resolve(); }
     const g = w.g, a = w.el.animate([{ opacity: 1, transform: 'translate3d(' + g.x + 'px,' + g.y + 'px,0) scale(1)' }, { opacity: 0, transform: 'translate3d(' + g.x + 'px,' + g.y + 'px,0) scale(.92)' }], { duration: 190, easing: 'ease-in', fill: 'forwards' });
     return new Promise(res => { a.onfinish = () => { done(); res(); }; });
@@ -381,9 +387,10 @@
   OS.home = () => { [...wins.keys()].forEach(minimizeWin); };           // "show desktop"
   OS.focused = () => focusId; OS.openApps = () => [...wins.keys()];
   OS.theme = theme; OS.screen = () => ({ w: S.w, h: S.h, kind: 'desktop', sat: 0, sab: 0 });
-  OS.toast = toast; OS.apps = () => OS_APPS.map(a => ({ id: a.id, name: a.name, g: a.g, glyph: a.glyph }));
+  OS.toast = toast; OS.openPage = url => window.open(url, '_blank', 'noopener'); OS.apps = () => OS_APPS.map(a => ({ id: a.id, name: a.name, g: a.g, glyph: a.glyph }));
   OS.shell = { resetLayout(){ K.setPref('layout', null); K.setPref('winGeom', {}); loadLayout(); relayoutHome(true); }, relayout: () => { loadLayout(); relayoutHome(true); } };
-  K.on('prefs', k => { if(k === 'theme' || k === 'reduceMotion' || k === 'reduceTransparency' || k === '*') applyTheme(); if(k === 'wall' || k === '*'){ wallKey = ''; paintWall(); } if(k === 'dock' || k === '*'){ dockEl.dataset.sig = ''; loadLayout(); relayoutHome(true); } });
+  K.on('prefs', k => { if(k === 'theme' || k === 'reduceMotion' || k === 'reduceTransparency' || k === '*') applyTheme(); if(k === 'wall' || k === '*'){ wallKey = ''; paintWall(); } if(k === 'iconSize' || k === '*'){ dockEl.dataset.sig = ''; items.forEach(r => { r.cols = -1; }); relayoutHome(true); }
+    if(k === 'dock' || k === '*'){ dockEl.dataset.sig = ''; loadLayout(); relayoutHome(true); } });
   K.on('loaded', () => { applyTheme(); loadLayout(); relayoutHome(false); });
   setEditing(false); measure(); applyTheme(); loadLayout(); relayoutHome(false); K.emit('screen', { w: S.w, h: S.h });
   if(K.prefs.lock === true) showLock(); else setTimeout(afterUnlock, 80);

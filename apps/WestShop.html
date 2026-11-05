@@ -69,9 +69,13 @@ const A = Kit.app({ title: 'WestShop', build: (body) => {
       const pre = [1, 10, 100].map(v => h('button', { class: 'chip', style: { flex: 1, textAlign: 'center', padding: 0 }, onclick: () => { nq.value = v; paint(); } }, '×' + v)); pre.push(h('button', { class: 'chip', style: { flex: 1, textAlign: 'center', padding: 0 }, onclick: () => { nq.value = Math.max(1, Math.floor(OS.cash() / SH.price(key))); paint(); } }, 'Max'), h('button', { class: 'chip', style: { flex: 1, textAlign: 'center', padding: 0 }, onclick: () => { nq.value = Math.max(1, SH.qty(type, key)); paint(); } }, 'All'));
       nq.addEventListener('input', paint); sb.append(head, stat, h('div', { class: 'qrow' }, nq), h('div', { class: 'qrow', style: { margin: '0 0 12px' } }, ...pre), est, h('div', { class: 'hstack' }, buyB, sellB));
       if(!isEl) sb.appendChild(h('div', { class: 'foot' }, 'Tip: you can make this in WestLab from its elements, usually for less than the shop price.'));
+      document.addEventListener('shop-refresh', paint); const old = api.close; api.close = function(){ document.removeEventListener('shop-refresh', paint); old(); };
       paint();
     } });
   }
-  draw(); ['inv', 'cash'].forEach(e => Kit.live(e, Kit.debounce(() => { if(tab !== 'inventory' || true) list(); }, 150)));
+  draw(); ['inv', 'cash'].forEach(e => Kit.live(e, Kit.debounce(() => { list(); }, 150)));
+  /* Prices move with the news, so refresh the grid, the movers strip and any open item sheet every 20 s (and when the window regains focus). Skips while someone is typing in the search box. */
+  let sig = ''; const refresh = () => { if(document.hidden) return; const a = document.activeElement; if(a && a.tagName === 'INPUT') return; const m = JSON.stringify(OS.world.mults()); if(m === sig) return; sig = m; if(tab === 'elements') paintTop(); list(); document.dispatchEvent(new Event('shop-refresh')); };
+  setInterval(refresh, 20000); document.addEventListener('visibilitychange', refresh); window.addEventListener('focus', refresh);
 } });
 </script></body></html>

@@ -8,6 +8,16 @@
   const CFG = OS_CONFIG, CHUNK = 300000, LIMITS = { image: 25e6, gif: 10e6, video: 25e6 }, PREVIEW_PX = 1600, SINGLE_COPY_MAX = 500e3, DISK_CACHE = 120e6, MAX_ITEMS = 150;
   const G = K.gallery = { usage: { until: 0, bytes: 0 } };
   const db = () => K.cloud.db;
+  /* Previews are PUBLIC: the item list and the tiny thumbnails can be read by anyone (guests included, no sign-in, no anonymous session needed).
+   * Opening, expanding and downloading (the ~1600px preview, the original, GIFs, videos) needs a real signed-in account. */
+  const dbReady = () => new Promise(res => { if(db()) return res(true); let n = 0; const t = setInterval(() => { if(db() || ++n > 80){ clearInterval(t); res(!!db()); } }, 100); });
+  const denied = e => !!e && (e.code === 'PERMISSION_DENIED' || /permission/i.test(e.message || ''));
+  async function publicRead(path, fn){                                    // try anonymously first; if the rules still want a session, fall back to an anonymous one
+    if(!(await dbReady())) throw new Error('offline');
+    try{ return await fn(db().ref(path)); }
+    catch(e){ if(!denied(e) || K.cloud.user || !(await K.cloud.ensureReadAccess())) throw e; return fn(db().ref(path)); }
+  }
+  G.canOpen = () => K.cloud.signedIn();
   let pending = 0, listP = null, listAt = 0, itemsCache = [];
   const thumbMem = new Map(), blobCache = new Map(), viewUrl = new Map();
 
@@ -32,29 +42,32 @@
     if(pending > 0) setTimeout(flushBytes, 1500);
   }
   setInterval(flushBytes, 20000); document.addEventListener('visibilitychange', () => { if(document.hidden) flushBytes(); }); window.addEventListener('pagehide', flushBytes);
-  G.loadUsage = async () => { if(!(await K.cloud.ensureReadAccess())) return G.usage; try{ const s = await db().ref('gallery/usage').once('value'); G.usage = s.val() || { until: 0, bytes: 0 }; }catch(e){} return G.usage; };
+  G.loadUsage = async () => { if(!K.cloud.signedIn() || !(await dbReady())) return G.usage; try{ const s = await db().ref('gallery/usage').once('value'); G.usage = s.val() || { until: 0, bytes: 0 }; }catch(e){} return G.usage; };
 
   /* ---- listing / thumbnails ---- */
   G.list = async function(force){
     if(!force && listP && Date.now() - listAt < 300000) return listP;
     listAt = Date.now();
     listP = (async () => {
-      if(!(await K.cloud.ensureReadAccess())) return itemsCache;
       try{
-        const s = await db().ref('gallery/items').orderByKey().limitToLast(MAX_ITEMS).once('value'); const v = s.val() || {};
+        const s = await publicRead('gallery/items', r => r.orderByKey().limitToLast(MAX_ITEMS).once('value')); const v = s.val() || {};
         try{ addBytes(JSON.stringify(v).length); }catch(e){}
         itemsCache = Object.keys(v).sort().reverse().map(id => Object.assign({ id }, v[id]));
-      }catch(e){ listP = null; }
+      }catch(e){ listP = null; listAt = 0; }
       return itemsCache;
     })();
     return listP;
   };
   G.item = id => itemsCache.find(m => m.id === id) || null;
+  const thumbWait = new Map();                                         // de-duplicates simultaneous requests for the same thumbnail
   G.thumb = async function(m){
-    if(!m) return null; if(m.thumb) return m.thumb; if(thumbMem.has(m.id)) return thumbMem.get(m.id);
-    let t = await idbGet('thumb', m.id);
-    if(!t){ try{ if(await K.cloud.ensureReadAccess()){ t = (await db().ref('gallery/thumbs/' + m.id).once('value')).val(); } }catch(e){} if(t){ addBytes(t.length); idbPut('thumb', m.id, t); } }
-    if(t) thumbMem.set(m.id, t); return t || null;
+    if(!m) return null; if(m.thumb) return m.thumb; if(thumbMem.has(m.id)) return thumbMem.get(m.id); if(thumbWait.has(m.id)) return thumbWait.get(m.id);
+    const p = (async () => {
+      let t = await idbGet('thumb', m.id);
+      if(!t){ try{ t = (await publicRead('gallery/thumbs/' + m.id, r => r.once('value'))).val(); }catch(e){} if(t){ addBytes(t.length); idbPut('thumb', m.id, t); } }
+      if(t) thumbMem.set(m.id, t); return t || null;
+    })();
+    thumbWait.set(m.id, p); p.then(() => thumbWait.delete(m.id), () => thumbWait.delete(m.id)); return p;
   };
 
   /* ---- chunk loading: memory → IndexedDB → Firebase ---- */
@@ -63,9 +76,10 @@
   G.isCached = async key => blobCache.has(key) || !!((await idbGet('media', key)) || {}).blob;
   async function loadBlob(kind, id, count, mime, onProg){
     const key = kind + '/' + id;
+    if(!K.cloud.signedIn()) throw new Error('signin');
     if(blobCache.has(key)){ const c = blobCache.get(key); blobCache.delete(key); blobCache.set(key, c); return c.blob; }
     const rec = await idbGet('media', key); if(rec && rec.blob){ cachePut(key, rec.blob); idbPut('media', key, { blob: rec.blob, size: rec.size, ts: Date.now() }); return rec.blob; }
-    if(!G.budgetOk()) throw new Error('budget'); if(!(await K.cloud.ensureReadAccess())) throw new Error('offline');
+    if(!K.cloud.signedIn()) throw new Error('signin'); if(!G.budgetOk()) throw new Error('budget'); if(!(await dbReady())) throw new Error('offline');
     const parts = new Array(count); let next = 0, done = 0, got = 0;
     const worker = async () => { while(next < count){ const i = next++; const v = (await db().ref('gallery/' + kind + '/' + id + '/' + i).once('value')).val(); if(typeof v !== 'string') throw new Error('missing chunk ' + i); got += v.length; parts[i] = b64ToBytes(v); done++; if(onProg) onProg(done / count); } };
     try{ await Promise.all([worker(), worker(), worker(), worker()]); } finally { addBytes(got); }
@@ -73,17 +87,19 @@
   }
   G.view = async function(m, onProg){ const blob = await loadBlob('view', m.id, m.chunks, m.viewMime || m.mime, onProg); return { blob, url: (blobCache.get('view/' + m.id) || cachePut('view/' + m.id, blob)).url }; };
   G.full = async function(m, onProg){ if(m.type === 'image' && m.fullChunks) return { blob: await loadBlob('full', m.id, m.fullChunks, m.origMime || m.mime, onProg), mime: m.origMime || m.mime }; return { blob: (await G.view(m, onProg)).blob, mime: m.viewMime || m.mime }; };
-  G.errText = e => (e && (e.message === 'budget' || /permission/i.test(e.message || ''))) ? 'Monthly data budget reached — media loading resumes next month.' : 'Could not load this file.';
+  G.errText = e => (e && e.message === 'signin') ? 'Sign in to open, expand and download photos.' : (e && (e.message === 'budget' || /permission/i.test(e.message || ''))) ? 'Monthly data budget reached — media loading resumes next month.' : 'Could not load this file.';
   // wallpapers: the ~1600px preview of an image, resolved to an object URL (cached in IndexedDB, so it costs data once per device)
   G.wallpaper = async function(id){
     if(!id) return null; if(viewUrl.has(id)) return viewUrl.get(id);
     const m = G.item(id) || (await G.list()).find(x => x.id === id); if(!m || m.type === 'video') return null;
-    try{ const { url } = await G.view(m); viewUrl.set(id, url); return url; }catch(e){ return null; }
+    try{ const { url } = await G.view(m); viewUrl.set(id, url); return url; }catch(e){ return e && e.message === 'signin' ? (await G.thumb(m)) : null; }
   };
 
+  G.cacheSize = async () => { const vals = await idbReq('media', 'readonly', st => st.getAll()); return (vals || []).reduce((n, v) => n + ((v && v.size) || 0), 0); };
+  G.clearCache = async () => { blobCache.forEach(c => URL.revokeObjectURL(c.url)); blobCache.clear(); viewUrl.clear(); await idbReq('media', 'readwrite', st => st.clear()); };
   /* ---- counters ---- */
   const seen = new Set(); try{ JSON.parse(sessionStorage.getItem('gal_seen') || '[]').forEach(x => seen.add(x)); }catch(e){}
-  G.stats = async () => { if(!(await K.cloud.ensureReadAccess())) return {}; try{ const s = await db().ref('gallery/stats').once('value'); const v = s.val() || {}; try{ addBytes(JSON.stringify(v).length); }catch(e){} return v; }catch(e){ return {}; } };
+  G.stats = async () => { if(!K.cloud.signedIn() || !(await dbReady())) return {}; try{ const s = await db().ref('gallery/stats').once('value'); const v = s.val() || {}; try{ addBytes(JSON.stringify(v).length); }catch(e){} return v; }catch(e){ return {}; } };
   G.countView = id => { if(!db() || !K.cloud.user || seen.has(id)) return; seen.add(id); try{ sessionStorage.setItem('gal_seen', JSON.stringify([...seen])); }catch(e){} db().ref('gallery/stats/' + id + '/views').transaction(v => (v || 0) + 1).catch(() => {}); };
   G.countDownload = id => db() && K.cloud.user ? db().ref('gallery/stats/' + id + '/downloads').transaction(v => (v || 0) + 1).catch(() => {}) : null;
 

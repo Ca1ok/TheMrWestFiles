@@ -45,10 +45,16 @@ const A = Kit.app({ title: 'Stocks', build: (body, P) => {
   function sell(){ doneSell(S.sellQty(parseFloat(qty.value))); }
   function paintPos(){
     const L = S.lots(), p = S.price(); let q = 0, cost = 0; L.forEach(l => { q += l.q; cost += l.q * l.p; }); const val = q * p, pnl = val - cost;
-    pos.innerHTML = ''; pos.appendChild(h('div', { class: 'card' }, h('div', { class: 'cap', style: { marginTop: 0 } }, 'Your position'), L.length ? h('div', { class: 'kpis', style: { gridTemplateColumns: '1fr 1fr' } }, kpi('Shares', Kit.num(q, 4)), kpi('Market value', money(val, { dp: 2 })), kpi('Avg. cost', money(cost / q, { dp: 2 })), kpi('Profit / loss', (pnl >= 0 ? '+' : '−') + money(Math.abs(pnl), { dp: 2 }), pnl >= 0 ? 'up' : 'down')) : h('div', { class: 'sub' }, 'You don’t own any $WEST yet. Buy a few shares and watch the line.')));
-    lots.innerHTML = ''; if(L.length){ lots.appendChild(h('h2', { class: 'sec' }, 'Positions')); lots.appendChild(group(L.map(l => { const g = (p - l.p) * l.q; return row({ cls: 'lot', title: Kit.num(l.q, 4) + ' shares @ ' + money(l.p, { dp: 2 }), sub: 'Bought ' + Kit.ago(l.t), right: h('div', { class: 'lotr' }, h('div', { style: { textAlign: 'right' } }, h('b', { class: 'num' }, money(l.q * p, { dp: 2 })), h('div', { class: 'num ' + (g >= 0 ? 'up' : 'down'), style: { fontSize: '13px' } }, (g >= 0 ? '+' : '−') + money(Math.abs(g), { dp: 2 }))), h('button', { class: 'btn bad', onclick: e => { e.stopPropagation(); doneSell(S.sell(l.id)); } }, 'Sell')) }); }))); }
+    pos.innerHTML = ''; pos.appendChild(h('div', { class: 'card' }, h('div', { class: 'cap', style: { marginTop: 0 } }, 'Your position'), L.length ? h('div', { class: 'kpis', style: { gridTemplateColumns: '1fr 1fr' } }, kpi('Shares', Kit.num(q, 4)), kpi('Market value', money(val, { dp: 2 }), '', 'val'), kpi('Avg. cost', money(cost / q, { dp: 2 })), kpi('Profit / loss', (pnl >= 0 ? '+' : '−') + money(Math.abs(pnl), { dp: 2 }), pnl >= 0 ? 'up' : 'down', 'pnl')) : h('div', { class: 'sub' }, 'You don’t own any $WEST yet. Buy a few shares and watch the line.')));
+    lots.innerHTML = ''; if(L.length){ lots.appendChild(h('h2', { class: 'sec' }, 'Positions')); lots.appendChild(group(L.map(l => { const g = (p - l.p) * l.q; return row({ cls: 'lot', title: Kit.num(l.q, 4) + ' shares @ ' + money(l.p, { dp: 2 }), sub: 'Bought ' + Kit.ago(l.t), right: h('div', { class: 'lotr' }, h('div', { style: { textAlign: 'right' } }, h('b', { class: 'num', 'data-lv': l.id }, money(l.q * p, { dp: 2 })), h('div', { class: 'num ' + (g >= 0 ? 'up' : 'down'), 'data-lg': l.id, style: { fontSize: '13px' } }, (g >= 0 ? '+' : '−') + money(Math.abs(g), { dp: 2 }))), h('button', { class: 'btn bad', onclick: e => { e.stopPropagation(); doneSell(S.sell(l.id)); } }, 'Sell')) }); }))); }
   }
-  const kpi = (l, v, c) => h('div', { class: 'kpi' }, h('small', null, l), h('b', { class: c || '' }, v));
+  /* The position, market value and every lot's gain follow the live price in place (no rebuilding, so buttons stay clickable while prices move). */
+  function tickPos(){
+    const L = S.lots(), p = S.price(); let q = 0, cost = 0; L.forEach(l => { q += l.q; cost += l.q * l.p; }); const val = q * p, pnl = val - cost;
+    const v = pos.querySelector('[data-k="val"]'), g = pos.querySelector('[data-k="pnl"]'); if(v) v.textContent = money(val, { dp: 2 }); if(g){ g.textContent = (pnl >= 0 ? '+' : '−') + money(Math.abs(pnl), { dp: 2 }); g.className = pnl >= 0 ? 'up' : 'down'; }
+    L.forEach(l => { const a = lots.querySelector('[data-lv="' + l.id + '"]'), b = lots.querySelector('[data-lg="' + l.id + '"]'), gg = (p - l.p) * l.q; if(a) a.textContent = money(l.q * p, { dp: 2 }); if(b){ b.textContent = (gg >= 0 ? '+' : '−') + money(Math.abs(gg), { dp: 2 }); b.className = 'num ' + (gg >= 0 ? 'up' : 'down'); } });
+  }
+  const kpi = (l, v, c, k) => h('div', { class: 'kpi' }, h('small', null, l), h('b', { class: c || '', 'data-k': k || null }, v));
 
   /* ---------- chart: a fixed, modest number of points (the kernel resamples the price function), drawn as a smooth curve with a faint high–low band ---------- */
   const fmtT = t => { const d = new Date(t); return RANGES[range] <= 86400e3 * 1.1 ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: RANGES[range] <= 300e3 ? '2-digit' : undefined }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); };
@@ -82,11 +88,11 @@ const A = Kit.app({ title: 'Stocks', build: (body, P) => {
     px.textContent = money(p, { dp: 2 }); chg.className = 'chg num ' + (d >= 0 ? 'up' : 'down'); chg.textContent = (d >= 0 ? '▲ ' : '▼ ') + money(Math.abs(d), { dp: 2 }) + ' (' + (pc >= 0 ? '+' : '') + pc.toFixed(2) + '%) ' + (at != null ? '' : ({ ALL: 'all time', '1D': 'past day', '1W': 'past week', '1M': 'past month' })[range] || 'past ' + range);
   }
   async function load(){ cv.style.opacity = .4; try{ pts = (await S.series(range, nPts())).slice().filter(p => p && isFinite(p[1])); }catch(e){ pts = []; } cv.style.opacity = 1; lastBuild = OS.now(); hover = -1; draw(); head(); }
-  let lastDraw = 0;
+  let lastDraw = 0, lastPos = 0;
   Kit.live('market', () => { const p = S.price(), now = OS.now(); if(p !== lastPx){ px.className = 'px num ' + (p > lastPx ? 'tu' : 'td'); setTimeout(() => px.className = 'px num', 350); lastPx = p; }
     if(pts.length && hover < 0){ pts[pts.length - 1] = [now, p, p, p];                                       // only the last point follows the live price; the rest is rebuilt on a timer
       const every = Math.max(1000, Math.min(15000, (isFinite(RANGES[range]) ? RANGES[range] : 6e6) / nPts())); if(now - lastBuild > every){ const q = S.seriesFast(range, nPts()); if(q){ pts = q; lastBuild = now; } }
-      head(); if(performance.now() - lastDraw > 90){ draw(); lastDraw = performance.now(); } } upd(); });
+      head(); if(performance.now() - lastDraw > 90){ draw(); lastDraw = performance.now(); } } upd(); if(now - lastPos > 400){ lastPos = now; tickPos(); } });
   Kit.live('volatility', load); ['stock', 'cash'].forEach(e => Kit.live(e, () => { paintPos(); upd(); }));
   new ResizeObserver(() => draw()).observe(cv);
   S.wantFast(true); window.addEventListener('pagehide', () => S.wantFast(false));

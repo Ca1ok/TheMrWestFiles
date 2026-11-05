@@ -157,3 +157,28 @@ html[data-theme=light] .dock .app.open::after{ background:var(--label); box-shad
 
 /* narrow browser windows: apps always fill the screen */
 @media (max-width:700px){ .lights{ gap:10px; } .lbtn{ width:15px; height:15px; } .dock{ padding:6px 8px 7px; gap:4px; } }
+
+/* ---------- extra widget sizes: tiny 1×1, strip 2×1, tall 1×2, medium 3×2, banner 4×1 ---------- */
+.widget.xs .w,.widget.h .w,.widget.b .w{ padding:9px 12px; }
+.widget.xs .wh span,.widget.v .wh span{ display:none; }
+.widget.row-layout .w,.widget.h .w,.widget.b .w{ flex-direction:row; align-items:center; gap:10px; }
+.widget.row-layout .grow,.widget.h .grow,.widget.b .grow{ display:none; }
+.widget.row-layout .w .sub:empty{ display:none; }
+.widget.xs .w{ flex-direction:column; justify-content:center; gap:2px; }
+.widget.xs .w .big,.widget.v .w .big{ font-size:clamp(17px,15cqw,24px); }
+.widget.xs .w .sub,.widget.xs .w .hl{ font-size:11px; -webkit-line-clamp:2; }
+.widget.xs .w .hl{ font-size:11.5px; -webkit-line-clamp:3; }
+.widget.h .w .hl,.widget.b .w .hl{ -webkit-line-clamp:2; font-size:13px; }
+.widget.h .w canvas,.widget.b .w canvas{ flex:1; height:100%; max-width:46%; }
+.widget.v .w canvas{ min-height:30px; }
+.widget.xs .w svg,.widget.v .w svg{ width:60px; height:60px; }
+.widget.h .w .wh span,.widget.b .w .wh span{ display:none; }
+.widget.h .w>div:not(.wh):not(.big),.widget.b .w>div:not(.wh):not(.big){ min-width:0; }
+.widget.wanted.xs .wp,.widget.wanted.h .wp,.widget.wanted.b .wp{ padding:6px 8px; }
+.widget.wanted.xs .wp h1{ font-size:21px; } .widget.wanted.xs .wp .subject{ font-size:9px; }
+.widget.wanted.h .wp h1,.widget.wanted.b .wp h1{ font-size:30px; } .widget.wanted.h .wp .subject,.widget.wanted.b .wp .subject{ font-size:11px; }
+.widget.wanted.v .wp h1{ font-size:24px; } .widget.wanted.v .wp li span{ font-size:10px; } .widget.wanted.v .wp .stamp{ display:none; }
+.widget.wanted.w .wp h1{ font-size:42px; }
+.widget.wanted{ cursor:alias; }
+.wp.flat::before,.wp.flat::after{ inset:4px; }
+.widget .w .grow.mini{ flex:0 0 4px; }

@@ -32,7 +32,9 @@
   /* ---- run loop: 1 Hz in the background, 4 Hz only while something (the Stocks app) wants smooth ticks ---- */
   let fast = 0, timer = null, lastEmit = 0;
   function loop(){ advance(); K.emit('market', price); }
-  function arm(){ clearInterval(timer); timer = setInterval(loop, fast > 0 ? 250 : 1000); }
+  const SPEED = { smooth: [200, 1000], balanced: [250, 1000], saver: [1000, 3000] };
+  function arm(){ clearInterval(timer); const sp = SPEED[K.prefs.updateSpeed] || SPEED.balanced; timer = setInterval(loop, fast > 0 ? sp[0] : sp[1]); }
+  K.on('prefs', k => { if(k === 'updateSpeed' || k === '*') arm(); });
   mk.wantFast = on => { fast = Math.max(0, fast + (on ? 1 : -1)); arm(); };
   arm();
   document.addEventListener('visibilitychange', () => { if(!document.hidden) loop(); });

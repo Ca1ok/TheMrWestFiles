@@ -165,7 +165,7 @@
     setVolatility: l => K.market.admin.setVolatility(l), adjustPrice: (d, f) => K.market.admin.adjust(d, f), volatility: () => C.isAdmin() ? K.market.volLevel() : null, volLevels: () => C.isAdmin() ? K.market.admin.levels() : [], volLedger: () => C.isAdmin() ? K.market.volLedger() : [],
     gallery: { upload: (f, p) => K.gallery.upload(f, p), rename: (i, t) => K.gallery.rename(i, t), remove: i => K.gallery.remove(i), usage: () => K.gallery.loadUsage() }
   };
-  const gallery = { list: f => K.gallery.list(f), thumb: m => K.gallery.thumb(m), view: (m, p) => K.gallery.view(m, p), full: (m, p) => K.gallery.full(m, p), stats: () => K.gallery.stats(), countView: id => K.gallery.countView(id), countDownload: id => K.gallery.countDownload(id), isCached: k => K.gallery.isCached(k), budgetOk: () => K.gallery.budgetOk(), wallpaper: id => K.gallery.wallpaper(id), errText: e => K.gallery.errText(e), item: id => K.gallery.item(id) };
+  const gallery = { list: f => K.gallery.list(f), thumb: m => K.gallery.thumb(m), view: (m, p) => K.gallery.view(m, p), full: (m, p) => K.gallery.full(m, p), stats: () => K.gallery.stats(), countView: id => K.gallery.countView(id), countDownload: id => K.gallery.countDownload(id), isCached: k => K.gallery.isCached(k), budgetOk: () => K.gallery.budgetOk(), wallpaper: id => K.gallery.wallpaper(id), errText: e => K.gallery.errText(e), item: id => K.gallery.item(id), canOpen: () => K.gallery.canOpen(), cacheSize: () => K.gallery.cacheSize(), clearCache: () => K.gallery.clearCache() };
 
   K.facade = {
     version: '1.0', cfg: { adminEmail: CFG.adminEmail, tax: CFG.tax },

@@ -46,5 +46,64 @@ const NEWS_TEMPLATES = [
   { kind:'fun', h:'{el} and {el2} spotted "getting along suspiciously well"',                    b:'Chemists say a reaction is "inevitable, but not tonight".' },
   { kind:'fun', h:'Lab goggles fog up; productivity down 40%',                                   b:'Experts recommend "not breathing so much".' },
   { kind:'fun', h:'Local school bans the phrase "it’s probably fine" in labs',                   b:'The ban took effect immediately, then took effect again, louder.' },
-  { kind:'fun', h:'Man arrested for impersonating a catalyst',                                   b:'He claimed he "made everything go faster". He did not.' }
+  { kind:'fun', h:'Man arrested for impersonating a catalyst',                                   b:'He claimed he "made everything go faster". He did not.' },
+  // ---- more element movers ----
+  { kind:'el', cat:'Markets', pct:[0.10,0.32], h:'{el} demand surges as three schools announce a “{el} week”',         b:'Teachers are reportedly “thrilled, exhausted, and out of stock”.', x:'Wholesalers say orders for {el} tripled overnight, with {el2} suppliers watching nervously from the sidelines.' },
+  { kind:'el', cat:'Markets', pct:[0.12,0.38], h:'Hoarders blamed after {el} vanishes from shelves in {city}',          b:'One shopper was seen leaving with a trolley and a look of quiet triumph.', x:'Stores in {city} have introduced a limit of two per customer. Customers have responded by sending their cousins.' },
+  { kind:'el', cat:'Science', pct:[0.10,0.28], h:'Lab breakthrough: {el} found to make a surprisingly good sandwich plate', b:'The research team insists the plate is “purely hypothetical” and also “washable”.', x:'Peer reviewers asked for more data. The team sent lunch.' },
+  { kind:'el', cat:'Markets', pct:[0.12,0.34], h:'{el} futures jump after cryptic message in a fortune cookie',          b:'The cookie also predicted “a small fire”. Insurers are listening.', x:'Analysts caution that fortune cookies have a poor track record, apart from the one time.' },
+  { kind:'el', cat:'Science', pct:[0.10,0.30], h:'New alloy of {el} and {el2} is “alarmingly shiny”',                    b:'Testers report that staring at it is “not recommended but extremely tempting”.', x:'A pilot plant is planned. Sunglasses have been ordered in bulk.' },
+  { kind:'el', cat:'Markets', pct:[0.10,0.30], h:'{el} added to the school tuck-shop menu, nobody knows why',            b:'It sits between the crisps and the stationery, unchallenged.', x:'Pupils have bought the lot, mostly to say they did.' },
+  { kind:'el', cat:'Markets', pct:[-0.32,-0.10], h:'{el} price slumps as rival {el2} “just does it better”',           b:'A spokesperson for {el} called the claim “rude, but fair”.', x:'Brokers expect a rebound once somebody remembers what {el} is actually for.' },
+  { kind:'el', cat:'Markets', pct:[-0.30,-0.10], h:'Dockworkers stumble on a forgotten container of {el}',              b:'It was labelled “DO NOT OPEN (but it’s only {el})”.', x:'The sudden extra supply has sent buyers shopping elsewhere.' },
+  { kind:'el', cat:'Markets', pct:[-0.28,-0.10], h:'Report: {el} “mostly marketing”, claims unqualified analyst',        b:'The analyst was last seen leaving a trade show with a very large tote bag.', x:'Traders shrugged, then sold.' },
+  { kind:'el', cat:'Science', pct:[-0.30,-0.12], h:'Experiment shows {el} is “not the answer” to anything in particular', b:'The lab notebook entry simply reads: “Hm.”', x:'Funding for follow-up work has been redirected to {el2}.' },
+  { kind:'el', cat:'Markets', pct:[0.14,0.42], h:'Museum heist: thieves target glass case of {el}; case remains unharmed', b:'Police describe the crime as “surgical, theatrical, and unnecessary”.', x:'Collectors have since offered to pay extra for “the one that was almost stolen”.' },
+  { kind:'el', cat:'Markets', pct:[0.10,0.30], h:'Influencer unboxes {el}, calls it “literally just vibes”',            b:'Followers responded by buying every gram available.', x:'The influencer later clarified that it was “a rock, but a nice one”.' },
+  // ---- more real-estate movers ----
+  { kind:'sec', cat:'Property', sector:'residential', pct:[0.02,0.05],  h:'{city} introduces free test-tube recycling; house hunters rejoice',       b:'Estate agents describe the bins as “a lifestyle upgrade”.', x:'Open days in {city} saw record turnout, mostly people asking about bins.' },
+  { kind:'sec', cat:'Property', sector:'residential', pct:[-0.05,-0.02], h:'Ghostly green glow reported over {city} flats; landlords “not worried”', b:'Surveyors say it is “probably just a very ambitious night-light”.', x:'Tenants have been advised to keep the curtains closed and the rent paid.' },
+  { kind:'sec', cat:'Property', sector:'residential', pct:[0.02,0.06],  h:'Quiet street in {city} named “most reactive-free” in the county',        b:'Locals say the title “is boring, which is the point”.', x:'Prices on the street rose within the hour.' },
+  { kind:'sec', cat:'Property', sector:'commercial',  pct:[0.02,0.06],  h:'Beaker-shaped skyscraper approved in {city}',                                b:'Critics call it “a bit much”. The architect says that is the brief.', x:'Retail space in the lower floors is already half-let to people who like beakers.' },
+  { kind:'sec', cat:'Property', sector:'commercial',  pct:[-0.06,-0.02], h:'Shopping centre in {city} evacuated after “suspiciously bubbly” fountain', b:'The fountain, now cordoned off, has been described as “just soap, probably”.', x:'Shops reopened by the afternoon, smelling faintly of lemon.' },
+  { kind:'sec', cat:'Property', sector:'industrial',  pct:[0.03,0.07],  h:'{city} awarded “Chemical Works of the Year” by a panel that visited once', b:'The panel says it was “impressed, and also lost”.', x:'The honour is expected to attract new tenants to the nearby units.' },
+  { kind:'sec', cat:'Property', sector:'industrial',  pct:[-0.07,-0.03], h:'Warehouse district in {city} flooded with “harmless pink liquid”',        b:'Cleanup crews describe it as “weirdly persistent”.', x:'Insurance assessors have asked for a bigger mop.' },
+  { kind:'sec', cat:'Property', sector:'land',        pct:[0.03,0.08],  h:'Surveyors find fossilised beaker near {city}; land prices climb',          b:'The beaker is thought to be about nine years old, which experts call “ancient”.', x:'Neighbouring plots have been marked “of archaeological interest (maybe)”.' },
+  { kind:'sec', cat:'Property', sector:'land',        pct:[-0.08,-0.03], h:'Meadow outside {city} “permanently damp” after pipe incident',            b:'Farmers say the grass is thriving. Buyers say it is squelchy.', x:'Land agents have rebranded the plot as “wetland-adjacent”.' },
+  { kind:'sec', cat:'Property', sector:'luxury',      pct:[0.03,0.08],  h:'Penthouse in {city} features a private fume cupboard',                      b:'The estate agent calls it “the ultimate status symbol”.', x:'Viewings are by appointment, goggles provided.' },
+  { kind:'sec', cat:'Property', sector:'luxury',      pct:[-0.07,-0.03], h:'Billionaire’s chemistry mansion “looks great, smells odd”',               b:'Guests describe the entrance hall as “an experience”.', x:'The listing has since been updated to mention the smell, in smaller type.' },
+  // ---- Science & discovery ----
+  { kind:'fun', cat:'Science', h:'Researchers discover a colour between blue and green; name it “greal”',              b:'Linguists immediately objected. Chemists said it was “fine”.', x:'A shade card has been printed. It is very much a colour.' },
+  { kind:'fun', cat:'Science', h:'Study: stirring clockwise “feels more correct”, results inconclusive',               b:'The control group stirred anticlockwise and said nothing.', x:'A follow-up using a bigger spoon is planned.' },
+  { kind:'fun', cat:'Science', h:'Physicists and chemists agree on something; scientists “lie down”',                  b:'The agreement was about lunch. It has not been repeated.', x:'Both camps declined to discuss which lunch.' },
+  { kind:'fun', cat:'Science', h:'Crystal grows to the size of a fist, then politely stops',                           b:'The lab says it “knew when to quit”. The lab is envious.', x:'It now lives in a glass case with a small sign reading “Good crystal”.' },
+  { kind:'fun', cat:'Science', h:'Lab finds a cure for the common “I forgot my goggles”',                              b:'The cure is a spare pair on every desk. Experts are stunned.', x:'Side effects include seeing clearly.' },
+  { kind:'fun', cat:'Science', h:'Fume cupboard achieves “peak extraction” and refuses all further credit',            b:'Nobody dared tell it that it was a fume cupboard.', x:'It continues to hum, quietly.' },
+  { kind:'fun', cat:'Science', h:'Periodic table poster “runs out of wall” in classroom 9C',                           b:'The table now continues around the corner and onto the door.', x:'Staff are calling it “an expansion project”.' },
+  { kind:'fun', cat:'Science', h:'Scientists teach a pipette to wait; it “mostly listens”',                            b:'Results were “inconsistent, drippy, and adorable”.', x:'The pipette has been given a lanyard.' },
+  // ---- Local & school life ----
+  { kind:'fun', cat:'Local', h:'Corridor 4 declared a “no-sprint zone” after beaker incident',                         b:'Signs read: “Walk. Calmly. We mean it.”', x:'Students have been seen power-walking, which officials say is “technically fine”.' },
+  { kind:'fun', cat:'Local', h:'Canteen introduces “periodic pie”: every slice is a different element',                b:'Diners report “a lot of noble gases, and a bit of crust”.', x:'The pie is served with a data booklet and a napkin.' },
+  { kind:'fun', cat:'Local', h:'School bell replaced by a single, confident titration',                                b:'It ends the lesson when the colour changes. Nobody is sure when that is.', x:'Lessons are now “as long as it takes”. Teachers have mixed feelings.' },
+  { kind:'fun', cat:'Local', h:'Lost property office finds 400 pairs of goggles, none claimed',                        b:'Staff believe the owners are “just looking elsewhere”.', x:'The office has opened a small museum.' },
+  { kind:'fun', cat:'Local', h:'Homework club forms around a single, particularly warm radiator',                      b:'Members say it “makes the maths less cold”.', x:'The radiator has not commented.' },
+  { kind:'fun', cat:'Local', h:'Staff-room kettle claims to have “seen things”',                                       b:'It declined to elaborate, but boiled on cue.', x:'A spokesperson says the kettle is “fine, mostly”.' },
+  // ---- Opinion ----
+  { kind:'fun', cat:'Opinion', h:'OPINION: It’s time we all admitted that {el} is overrated',                          b:'The author, a person who owns a lot of {el2}, would like you to consider that.', x:'Readers wrote in to say “no”, in capital letters.' },
+  { kind:'fun', cat:'Opinion', h:'OPINION: Why the humble beaker deserves a statue',                                    b:'The column calls for “something tasteful, and also glass”.', x:'The council has agreed to “think about it, later”.' },
+  { kind:'fun', cat:'Opinion', h:'OPINION: In defence of the unlabelled bottle',                                        b:'The author says every mystery is “a chance to be brave”. Safety officers disagree.', x:'The bottle remains unlabelled, and unopened.' },
+  // ---- Breaking ----
+  { kind:'fun', cat:'Breaking', h:'BREAKING: Classroom 3 temporarily “too cold for chemistry”',                         b:'A heater has been dispatched. It is “on its way, probably”.', x:'Updates will follow once feeling returns to the fingers.' },
+  { kind:'fun', cat:'Breaking', h:'BREAKING: Mr West seen near {city}, carrying a clipboard',                           b:'Residents have been advised to “act natural, and tidy”.', x:'Reports that the clipboard was “mostly empty” have not been confirmed.' },
+  { kind:'fun', cat:'Breaking', h:'BREAKING: Unattended Bunsen burner found “still on, still fine”',                    b:'Officials call it “a minor miracle, and a major reminder”.', x:'The burner has since been turned off and given a talking-to.' }
+];
+
+// Presentation: bylines, sections and how each story is laid out in the News app.
+const NEWS_BYLINES = ['Priya Moles', 'Tobias Reagent', 'Ada Bunsen', 'Mx. Titrate', 'Lena Fumé', 'Oscar Ionic', 'Wren Catalyst', 'Dr. Helena Flask', 'Sam Burette', 'Noor Entropy'];
+const NEWS_DEFAULT_CAT = { el: 'Markets', sec: 'Property', fun: 'Science' };
+const NEWS_FILLER = [
+  'Observers say the story is “developing”, which in this town can mean anything from a rumour to a small fire.',
+  'Local chemists were seen nodding thoughtfully, then checking their goggles.',
+  'Officials have promised “a full and fairly thorough review”.',
+  'At press time, nobody had touched anything. That was the plan.'
 ];

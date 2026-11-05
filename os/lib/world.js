@@ -5,7 +5,7 @@
 const World = (function(){
   'use strict';
   const DAY = 86400000, EPOCH = 1787270400000, SEED = 77123;           // day 0 = 2026-08-21 (same as the market)
-  const ARTICLES_PER_DAY = 8, NEWS_DECAY_DAYS = 5, EL_DECAY_DAYS = 3;
+  const ARTICLES_PER_DAY = 12, NEWS_DECAY_DAYS = 5, EL_DECAY_DAYS = 3;
   const hash = (a, b, c) => {                                          // integer hash -> [0,1)
     let h = Math.imul((a | 0) ^ 0x9E3779B9, 0x85EBCA6B) ^ Math.imul((b | 0) + 0x7F4A7C15, 0xC2B2AE35) ^ Math.imul((c | 0) + 0x165667B1, 0x27D4EB2F);
     h ^= h >>> 15; h = Math.imul(h, 0x2C1B3C6D); h ^= h >>> 12; h = Math.imul(h, 0x297A2D39); h ^= h >>> 15; return (h >>> 0) / 4294967296;
@@ -29,7 +29,9 @@ const World = (function(){
       const fill = s => s.replace(/\{el2\}/g, Chem.elements[el2].name).replace(/\{el\}/g, Chem.elements[el].name).replace(/\{city\}/g, city).replace(/\{num\}/g, num);
       const t = dayStart(d) + Math.floor((i + 0.15 + 0.7 * hash(d, i, 25)) / ARTICLES_PER_DAY * DAY);
       const mag = tpl.pct ? tpl.pct[0] + (tpl.pct[1] - tpl.pct[0]) * hash(d, i, 26) : 0;
-      const a = { id: d + '-' + i, t, kind: tpl.kind, headline: fill(tpl.h), body: fill(tpl.b), img: Math.floor(hash(d, i, 27) * 1e6), impact: null };
+      const filler = NEWS_FILLER[Math.floor(hash(d, i, 28) * NEWS_FILLER.length)], paras = [fill(tpl.b)];
+      if(tpl.x) paras.push(fill(tpl.x)); paras.push(filler);
+      const a = { id: d + '-' + i, t, kind: tpl.kind, cat: tpl.cat || NEWS_DEFAULT_CAT[tpl.kind] || 'News', by: NEWS_BYLINES[Math.floor(hash(d, i, 29) * NEWS_BYLINES.length)], headline: fill(tpl.h), body: fill(tpl.b), paras: paras, mins: Math.max(1, Math.round(paras.join(' ').split(' ').length / 70)), img: Math.floor(hash(d, i, 27) * 1e6), impact: null };
       if(tpl.kind === 'el') a.impact = { el, pct: mag };
       if(tpl.kind === 'sec') a.impact = { sector: tpl.sector, pct: mag, city };
       out.push(a);

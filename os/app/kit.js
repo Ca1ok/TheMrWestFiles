@@ -50,7 +50,7 @@
     sh.append(h('div', { class: 'grab' }), hd, sb); document.body.append(scrim, sh);
     const api = { el: sh, body: sb, close(){ scrim.classList.remove('in'); sh.classList.remove('in'); sh.style.transform = ''; setTimeout(() => { scrim.remove(); sh.remove(); o.onClose && o.onClose(); }, 480); } };
     scrim.addEventListener('click', () => api.close());
-    let dy = null; const grab = e => { dy = { y: e.clientY, t: performance.now() }; sh.style.transition = 'none'; e.currentTarget.setPointerCapture(e.pointerId); };
+    let dy = null; const grab = e => { if(e.target.closest('button,input,select,textarea,a')) return; dy = { y: e.clientY, t: performance.now() }; sh.style.transition = 'none'; e.currentTarget.setPointerCapture(e.pointerId); };
     const move = e => { if(!dy) return; const d = Math.max(0, e.clientY - dy.y); sh.style.transform = 'translate(-50%,' + d + 'px)'; }, up = e => { if(!dy) return; const d = Math.max(0, e.clientY - dy.y), v = d / Math.max(1, performance.now() - dy.t); dy = null; sh.style.transition = ''; if(d > 120 || v > 0.6) api.close(); else sh.style.transform = ''; };
     [$('.grab', sh), hd].forEach(el => { el.addEventListener('pointerdown', grab); el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up); });
     o.build && o.build(sb, api); requestAnimationFrame(() => { scrim.classList.add('in'); sh.classList.add('in'); }); return api;
