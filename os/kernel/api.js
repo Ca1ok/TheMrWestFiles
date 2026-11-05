@@ -96,6 +96,8 @@
       const keep = sim.hazard ? 0.5 : 1, used = {}, made = {}; let value = 0;
       card.R.forEach(x => { const u = Math.round(x[1] * sim.xi) * x[2]; if(u > 0){ used[x[0]] = u; value += K.listValue(x[0]) * u; } });
       card.Pr.forEach(x => { const dis = (sim.dissolved && sim.dissolved[x[0]]) || 0, u = Math.floor((x[1] * sim.xi - dis) * keep + 1e-9) * x[2]; if(u > 0) made[x[0]] = u; });
+      const tiny = card.Pr.filter(x => (x[1] * sim.xi - ((sim.dissolved && sim.dissolved[x[0]]) || 0)) * keep < 1 - 1e-9);   // every product must come out at 1 mol or more
+      if(tiny.length) return no('This run would make less than 1 mol of ' + tiny.map(x => x[3]).join(', ') + '. Load more reagent or improve the yield.');
       const fee = K.round2(value * 0.02 + 0.25 * (1 + tierOf()) + (sim.kWh || 0) * 0.5 + (sim.hazard ? 25 : 0)); if(!K.spend(fee, 'Lab fee')) return no('The lab fee is ' + fmt(fee) + '.');
       Object.keys(used).forEach(k => { const fromTray = Math.min(used[k], K.S.lab.tray[k] || 0); if(fromTray){ K.S.lab.tray[k] -= fromTray; if(K.S.lab.tray[k] <= 0) delete K.S.lab.tray[k]; } if(used[k] - fromTray > 0) K.invTake(K.kindOf(k), k, used[k] - fromTray); });
       const out = []; Object.keys(made).forEach(k => { const t = K.kindOf(k); K.S.lab.tray[k] = (K.S.lab.tray[k] || 0) + made[k]; out.push({ key: k, n: made[k] / (Chem.speciesOf(k).apu || 1), name: t === 'element' ? Chem.elements[k].name : Chem.nameOf(k) }); });
