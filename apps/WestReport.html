@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WestReport</title>
+<link rel="stylesheet" href="../os/tokens.css"><link rel="stylesheet" href="../os/app/kit.css">
+<style>
+.lbl2{ font:600 13px var(--font); color:var(--label2); margin:16px 2px 6px; display:block; } .lbl2 small{ font-weight:400; color:var(--label3); }
+select.field{ appearance:none; background-image:linear-gradient(45deg,transparent 50%,var(--label3) 50%),linear-gradient(135deg,var(--label3) 50%,transparent 50%); background-position:calc(100% - 20px) 20px,calc(100% - 14px) 20px; background-size:6px 6px; background-repeat:no-repeat; padding-right:34px; }
+textarea.field{ line-height:1.45; }
+.dot{ width:10px; height:10px; border-radius:50%; background:var(--c); flex:none; box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 22%,transparent); }
+.ctx{ white-space:pre-wrap; word-break:break-word; font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--card); border-radius:var(--r-m); padding:12px 14px; color:var(--label2); margin:0; max-height:260px; overflow:auto; }
+.tag{ display:inline-block; font:700 11px var(--font); letter-spacing:.06em; text-transform:uppercase; padding:3px 8px; border-radius:999px; background:var(--fill); color:var(--label2); margin-right:6px; }
+.tag.open{ background:color-mix(in srgb,#e8a33d 25%,transparent); color:#e8a33d; } .tag.fixed{ background:color-mix(in srgb,#4cc46e 25%,transparent); color:#4cc46e; }
+.detail h3{ margin:4px 0 10px; font:700 24px/1.2 var(--font); } .detail .blk{ margin:14px 0 4px; font:700 12px var(--font); letter-spacing:.08em; text-transform:uppercase; color:var(--label3); } .detail p{ margin:0; white-space:pre-wrap; font:400 16px/1.5 var(--font); }
+.bar2{ display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; } .bar2 .btn{ flex:1; min-width:140px; }
+.exp{ width:100%; min-height:300px; font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+.cnt{ font:800 34px/1 var(--font); letter-spacing:-.02em; } .stats{ display:flex; gap:12px; margin-top:12px; } .stats .card{ flex:1; padding:14px 16px; } .stats small{ display:block; margin-top:4px; color:var(--label3); font:600 12px var(--font); }
+</style></head><body><div id="app"></div>
+<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
+<script>
+const { h, row, group, seg, toggle, ago, esc } = Kit, R = OS.report;
+const AREAS = ['Desktop / menu bar', 'Widgets', 'Sign-in / account', 'Messages', 'Stocks', 'News', 'WestShop', 'WestLab', 'Real Estate', 'Bank', 'Games', 'Photos', 'Notes', 'Files', 'Settings', 'WestReport', 'Something else'];
+const APP_AREA = { Messages: 'Messages', Stocks: 'Stocks', News: 'News', WestShop: 'WestShop', WestLab: 'WestLab', RealEstate: 'Real Estate', Bank: 'Bank', Games: 'Games', Photos: 'Photos', Notes: 'Notes', Files: 'Files', Settings: 'Settings', WestReport: 'WestReport' };
+const SEV = { low: ['Minor', '#6ab0ff'], medium: ['Normal', '#e8b64f'], high: ['Serious', '#e8803d'], critical: ['Blocking', '#e5484d'] };
+const HKEY = 'westreport.sent';
+let tab = 'report', filter = 'open', reports = [], loaded = false, loading = false, lastSent = 0;
+const store = { get(){ try{ return JSON.parse(localStorage.getItem(HKEY) || '[]'); }catch(e){ return []; } }, add(r){ try{ const l = store.get(); l.unshift(r); localStorage.setItem(HKEY, JSON.stringify(l.slice(0, 40))); }catch(e){} } };
+
+/* ---------- plain-text export: written so the whole thing can be pasted straight to Claude ---------- */
+const when = t => t ? new Date(t).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : 'unknown';
+function fmt(r, i){
+  const L = ['## BUG #' + (i + 1) + ' [' + (SEV[r.sev] || SEV.medium)[0].toUpperCase() + '] ' + r.title, 'id: ' + r.id + ' | status: ' + (r.status || 'open') + ' | area: ' + (r.area || '—') + ' | reported: ' + when(r.t) + ' by ' + (r.name || 'Player'), '', 'What went wrong:', r.desc];
+  if(r.steps) L.push('', 'Steps to reproduce:', r.steps); if(r.expected) L.push('', 'Expected:', r.expected); if(r.ctx) L.push('', 'Technical details:', r.ctx);
+  return L.join('\n');
+}
+function fmtAll(list, label){
+  return ['# WestReport — ' + list.length + ' ' + label + ' bug report' + (list.length === 1 ? '' : 's') + ' for The Mr West Files', 'Exported: ' + when(Date.now()), '', 'Please go through each report below, find the cause in the project code and fix it. Reports are independent; ignore any that cannot be reproduced from the details given and tell me which.', '', '-----', ''].join('\n') + '\n' + list.map((r, i) => fmt(r, i)).join('\n\n-----\n\n') + '\n';
+}
+async function copyText(text){
+  try{ await navigator.clipboard.writeText(text); return true; }catch(e){}
+  try{ const t = document.createElement('textarea'); t.value = text; t.style.cssText = 'position:fixed;left:-999px;top:0'; document.body.appendChild(t); t.select(); const ok = document.execCommand('copy'); t.remove(); return ok; }catch(e){ return false; }
+}
+function exportPage(text, title){        // fallback when the browser blocks clipboard access: a text box to select and copy by hand
+  A.push({ title: title, backLabel: 'Back', build: (b) => { const t = h('textarea', { class: 'field exp', readonly: true }); t.value = text; b.append(h('p', { class: 'sub', style: { marginTop: 0 } }, 'Your browser blocked automatic copying. Select all and copy:'), t); setTimeout(() => { t.focus(); t.select(); }, 60); } });
+}
+async function doCopy(text, title, ok){ if(await copyText(text)) Kit.toast(ok || 'Copied', 'good'); else exportPage(text, title || 'Copy'); }
+
+const A = Kit.app({ title: 'WestReport', build: (body) => {
+  const top = h('div'), main = h('div'); body.append(top, main);
+  function paintTabs(){
+    top.innerHTML = ''; const admin = OS.auth.isAdmin(), items = [{ id: 'report', label: 'Report a bug' }, { id: 'mine', label: 'My reports' }]; if(admin) items.push({ id: 'all', label: 'All reports' });
+    if(!items.some(i => i.id === tab)) tab = 'report'; top.appendChild(seg(items, tab, v => { tab = v; paintTabs(); paint(); }));
+  }
+  function paint(){ main.innerHTML = ''; if(tab === 'report') paintForm(); else if(tab === 'mine') paintMine(); else paintAll(); }
+
+  /* ---------------- file a report ---------------- */
+  function paintForm(){
+    if(!OS.auth.signedIn()){ main.appendChild(h('div', { class: 'card', style: { marginTop: '16px', padding: '18px' } }, h('b', { style: { display: 'block', font: '700 17px var(--font)', marginBottom: '6px' } }, 'Sign in to send a report'), h('p', { class: 'sub', style: { margin: '0 0 12px' } }, 'Reports are tied to your account so spam stays out and the fix can be followed up with you.'), h('button', { class: 'btn', onclick: () => OS.open('Settings') }, 'Open Settings'))); return; }
+    const ctx = OS.reportContext(), guess = APP_AREA[ctx.app] || 'Desktop / menu bar';
+    const area = h('select', { class: 'field' }, ...AREAS.map(a => h('option', { value: a }, a))); area.value = guess;
+    let sev = 'medium';
+    const sevSeg = seg(Object.keys(SEV).map(k => ({ id: k, label: SEV[k][0] })), sev, v => { sev = v; });
+    const title = h('input', { class: 'field', placeholder: 'Short summary, e.g. “Sell button does nothing”', maxlength: 100 });
+    const desc = h('textarea', { class: 'field', placeholder: 'What went wrong? What did you see?', maxlength: 2000, rows: 4 });
+    const steps = h('textarea', { class: 'field', placeholder: '1. Open …  2. Click …  3. …', maxlength: 1500, rows: 3 });
+    const expd = h('textarea', { class: 'field', placeholder: 'What did you expect to happen?', maxlength: 1000, rows: 2 });
+    let attach = true; const text = () => ['Page: ' + ctx.url, 'Last app used: ' + (ctx.app || 'none') + (ctx.recentApps.length > 1 ? ' (recent: ' + ctx.recentApps.join(', ') + ')' : ''), 'Open windows: ' + (ctx.openWindows.join(', ') || 'none'), 'Screen: ' + ctx.screen + ' · theme ' + ctx.theme + ' · update speed ' + ctx.speed, 'Browser: ' + ctx.browser, 'Online: ' + ctx.online + ' · signed in: ' + ctx.signedIn,
+      ctx.errors.length ? 'Recent script errors:\n' + ctx.errors.map(e => '  [' + e.src + '] ' + e.msg).join('\n') : 'Recent script errors: none'].join('\n');
+    const pre = h('pre', { class: 'ctx' }, text());
+    const send = h('button', { class: 'btn block', style: { marginTop: '18px' }, onclick: submit }, 'Send report');
+    main.append(h('label', { class: 'lbl2' }, 'Where did it happen?'), area, h('label', { class: 'lbl2' }, 'How bad is it?'), sevSeg, h('label', { class: 'lbl2' }, 'Summary'), title, h('label', { class: 'lbl2' }, 'What went wrong?'), desc, h('label', { class: 'lbl2' }, 'Steps to reproduce ', h('small', null, '(optional, but very helpful)')), steps, h('label', { class: 'lbl2' }, 'What should have happened? ', h('small', null, '(optional)')), expd,
+      h('div', { style: { marginTop: '16px' } }, group(row({ title: 'Include technical details', sub: 'Browser, screen, open apps and recent errors help me find the bug', right: toggle(true, v => { attach = v; pre.style.display = v ? '' : 'none'; }) }))), pre, send,
+      h('div', { class: 'foot' }, 'Please don’t include passwords or private information.'));
+    async function submit(){
+      if(Date.now() - lastSent < 20000) return Kit.toast('Give it a few seconds before sending another', 'bad');
+      const t = title.value.trim(), d = desc.value.trim(); if(t.length < 3) return Kit.toast('Add a short summary', 'bad'); if(d.length < 10) return Kit.toast('Describe what went wrong (a sentence or two)', 'bad');
+      send.disabled = true; send.textContent = 'Sending…';
+      try{ await R.submit({ title: t, area: area.value, sev, desc: d, steps: steps.value, expected: expd.value, ctx: attach ? text() : '' }); lastSent = Date.now(); store.add({ title: t, area: area.value, sev, t: Date.now() }); Kit.toast('Report sent — thank you!', 'good'); tab = 'mine'; paintTabs(); paint(); }
+      catch(e){ Kit.toast((e && e.message) || 'Could not send. Try again.', 'bad'); send.disabled = false; send.textContent = 'Send report'; }
+    }
+  }
+
+  /* ---------------- what this device has sent ---------------- */
+  function paintMine(){
+    const l = store.get();
+    main.appendChild(l.length ? group(l.map(r => row({ title: r.title, sub: r.area + ' · ' + ago(r.t), left: h('span', { class: 'dot', style: { '--c': (SEV[r.sev] || SEV.medium)[1] } }) }))) : h('div', { class: 'empty', style: { marginTop: '24px' } }, 'You haven’t sent any reports from this device yet.'));
+    if(l.length) main.appendChild(h('div', { class: 'foot' }, 'Reports you send are stored for the site owner to review.'));
+  }
+
+  /* ---------------- admin: every report, ready to copy ---------------- */
+  async function load(force){ if(loading) return; if(loaded && !force) return; loading = true; try{ reports = await R.list(); loaded = true; }catch(e){ Kit.toast((e && e.message) || 'Could not load reports', 'bad'); } loading = false; if(tab === 'all') paint(); }
+  const shown = () => reports.filter(r => filter === 'all' || (r.status || 'open') === filter);
+  function paintAll(){
+    if(!loaded){ main.appendChild(h('div', { class: 'spin', style: { margin: '40px auto' } })); load(); return; }
+    const open = reports.filter(r => (r.status || 'open') === 'open').length, fixed = reports.filter(r => r.status === 'fixed').length, list = shown();
+    main.appendChild(h('div', { class: 'stats' }, h('div', { class: 'card' }, h('div', { class: 'cnt' }, String(open)), h('small', null, 'OPEN')), h('div', { class: 'card' }, h('div', { class: 'cnt' }, String(fixed)), h('small', null, 'FIXED')), h('div', { class: 'card' }, h('div', { class: 'cnt' }, String(reports.length)), h('small', null, 'TOTAL'))));
+    main.appendChild(h('div', { style: { marginTop: '14px' } }, seg([{ id: 'open', label: 'Open' }, { id: 'fixed', label: 'Fixed' }, { id: 'all', label: 'All' }], filter, v => { filter = v; paint(); })));
+    main.appendChild(h('div', { class: 'bar2' }, h('button', { class: 'btn', disabled: !list.length, onclick: () => doCopy(fmtAll(list, filter === 'all' ? 'total' : filter), 'All reports', 'Copied ' + list.length + ' report' + (list.length === 1 ? '' : 's') + ' — paste them to Claude') }, 'Copy all ' + list.length + (filter === 'all' ? '' : ' ' + filter)), h('button', { class: 'btn alt', onclick: async () => { loaded = false; main.innerHTML = ''; main.appendChild(h('div', { class: 'spin', style: { margin: '40px auto' } })); await load(true); } }, 'Refresh')));
+    if(!list.length){ main.appendChild(h('div', { class: 'empty', style: { marginTop: '24px' } }, filter === 'open' ? 'No open reports. 🎉' : 'Nothing here.')); return; }
+    main.appendChild(h('div', { style: { marginTop: '14px' } }, group(list.map(r => row({ title: r.title, wrap: true, sub: (r.area || '—') + ' · ' + (r.name || 'Player') + ' · ' + ago(r.t) + (r.status && r.status !== 'open' ? ' · ' + r.status : ''), left: h('span', { class: 'dot', style: { '--c': (SEV[r.sev] || SEV.medium)[1] } }), chev: true, onClick: () => detail(r) })))));
+    if(filter === 'open') main.appendChild(h('div', { class: 'bar2' }, h('button', { class: 'btn alt', onclick: async () => { if(!(await Kit.confirm({ title: 'Mark ' + list.length + ' reports as fixed?', msg: 'Do this after Claude has fixed them. You can still see them under “Fixed”.', ok: 'Mark fixed' }))) return; try{ for(const r of list){ await R.setStatus(r.id, 'fixed'); r.status = 'fixed'; } Kit.toast('Marked as fixed', 'good'); paint(); }catch(e){ Kit.toast((e && e.message) || 'Failed', 'bad'); } } }, 'Mark all listed as fixed')));
+  }
+  function detail(r){
+    A.push({ title: 'Report', backLabel: 'Reports', build: (b) => {
+      const st = h('span'), paintSt = () => { st.innerHTML = ''; st.appendChild(h('span', { class: 'tag ' + (r.status || 'open') }, r.status || 'open')); };
+      paintSt(); const sv = SEV[r.sev] || SEV.medium;
+      const mk = (l, t) => t ? [h('div', { class: 'blk' }, l), h('p', null, t)] : [];
+      const setS = async s => { try{ await R.setStatus(r.id, s); r.status = s; paintSt(); Kit.toast(s === 'fixed' ? 'Marked fixed' : 'Updated', 'good'); }catch(e){ Kit.toast((e && e.message) || 'Failed', 'bad'); } };
+      const d = h('div', { class: 'detail' }, h('div', null, st, h('span', { class: 'tag', style: { color: sv[1] } }, sv[0]), h('span', { class: 'tag' }, r.area || '—')), h('h3', null, r.title), h('p', { style: { color: 'var(--label3)', font: '500 13px var(--font)' } }, (r.name || 'Player') + ' · ' + when(r.t)));
+      mk('What went wrong', r.desc).concat(mk('Steps to reproduce', r.steps), mk('Expected', r.expected)).forEach(n => d.appendChild(n)); if(r.ctx){ d.appendChild(h('div', { class: 'blk' }, 'Technical details')); d.appendChild(h('pre', { class: 'ctx' }, r.ctx)); }
+      b.innerHTML = ''; b.appendChild(d);
+      b.appendChild(h('div', { class: 'bar2' }, h('button', { class: 'btn', onclick: () => doCopy(fmtAll([r], r.status || 'open'), 'Report', 'Copied this report') }, 'Copy report'), h('button', { class: 'btn alt', onclick: () => setS((r.status || 'open') === 'fixed' ? 'open' : 'fixed') }, 'Toggle fixed')));
+      b.appendChild(h('div', { class: 'bar2' }, h('button', { class: 'btn bad', onclick: async () => { if(!(await Kit.confirm({ title: 'Delete this report?', msg: 'This can’t be undone.', ok: 'Delete', destructive: true }))) return; try{ await R.remove(r.id); reports = reports.filter(x => x.id !== r.id); Kit.toast('Deleted', 'good'); A.pop ? A.pop() : null; paint(); }catch(e){ Kit.toast((e && e.message) || 'Failed', 'bad'); } } }, 'Delete')));
+    } });
+  }
+  paintTabs(); paint(); Kit.live('auth', () => { loaded = false; paintTabs(); paint(); });
+} });
+</script></body></html>

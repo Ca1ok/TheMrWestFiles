@@ -36,6 +36,7 @@
   }
 
   /* ================= menu bar ================= */
+  const reportBtn = $('#reportBtn'); reportBtn.innerHTML = osIcon('bug', 14, 2.2) + '<span>Report a bug</span>'; reportBtn.addEventListener('click', () => openApp('WestReport', reportBtn));
   const editBtn = $('#editBtn'), doneBtn = $('#doneBtn'), mbApp = $('#mbApp'), syncBtn = $('#syncIc'), bellBtn = $('#bell'), cashBtn = $('#mbCash');
   function paintMenuRight(){
     const si = K.cloud.signedIn(); syncBtn.innerHTML = osIcon(si ? 'cloud' : 'cloudOff', 16, 2); syncBtn.title = si ? 'Progress is saved to your account' : 'Not signed in — progress is not saved (click to sign in)';
@@ -246,8 +247,13 @@
   /* ================= windows ================= */
   const wins = new Map();                         // appId → { el, g:{x,y,w,h,max,prev}, iframe, loaded }
   let zTop = 10, focusId = null, cascade = 0;
+  /* ---- bug-report context: recent script errors from the desktop and every app, so a report arrives with the evidence ---- */
+  const ERRS = [], recent = [];
+  const logErr = (src, msg) => { ERRS.push({ t: Date.now(), src, msg: String(msg).slice(0, 300) }); if(ERRS.length > 25) ERRS.shift(); };
+  const hookErrs = (win, src) => { try{ win.addEventListener('error', e => logErr(src, (e.message || 'error') + (e.filename ? ' @' + String(e.filename).split('/').pop() + ':' + e.lineno : ''))); win.addEventListener('unhandledrejection', e => logErr(src, 'promise: ' + ((e.reason && e.reason.message) || e.reason))); }catch(_){} };
+  hookErrs(window, 'desktop');
   const EASE = 'cubic-bezier(.22,.9,.28,1)', MIN_W = 380, MIN_H = 300;
-  const DEFAULT_SIZE = { Stocks: [1040, 720], WestLab: [1080, 740], WestShop: [1040, 720], Photos: [1040, 720], Notes: [1000, 720], Files: [940, 660], Settings: [860, 660], Messages: [860, 640], Bank: [900, 720], News: [940, 740], RealEstate: [1000, 720], Games: [940, 700] };
+  const DEFAULT_SIZE = { Stocks: [1040, 720], WestLab: [1080, 740], WestShop: [1040, 720], Photos: [1040, 720], Notes: [1000, 720], WestReport: [820, 700], Files: [940, 660], Settings: [860, 660], Messages: [860, 640], Bank: [900, 720], News: [940, 740], RealEstate: [1000, 720], Games: [940, 700] };
   const small = () => S.w < 700;
   const winArea = () => ({ w: S.w, h: S.h - MB });
   const maxRect = () => ({ x: 0, y: 0, w: S.w, h: S.h - MB - (small() ? 0 : 92) });
@@ -264,6 +270,7 @@
   const clampGeom = g => { const A = winArea(); g.w = Math.max(MIN_W, Math.min(g.w, A.w)); g.h = Math.max(MIN_H, Math.min(g.h, A.h)); g.x = Math.max(-g.w + 140, Math.min(g.x, A.w - 140)); g.y = Math.max(0, Math.min(g.y, A.h - 38)); return g; };
   function fitWindows(){ wins.forEach(w => { if(small() || w.g.max){ Object.assign(w.g, maxRect(), { max: true }); } else clampGeom(w.g); applyGeom(w); }); }
   function setFocus(id){
+    if(id && id !== 'WestReport'){ const i = recent.indexOf(id); if(i > -1) recent.splice(i, 1); recent.unshift(id); recent.length = Math.min(recent.length, 4); }
     focusId = id; wins.forEach((w, k) => w.el.classList.toggle('focus', k === id)); const w = wins.get(id); if(w) w.el.style.zIndex = ++zTop;
     mbApp.textContent = id && APP(id) ? APP(id).name : ''; K.emit('focus', id);
   }
@@ -280,7 +287,7 @@
     $('.lbtn.z', el).addEventListener('click', e => { e.stopPropagation(); toggleMax(id); });
     el.addEventListener('pointerdown', () => { if(focusId !== id) setFocus(id); }, true);
     wireDrag(id, w); wireResize(id, w);
-    w.iframe.addEventListener('load', () => { w.loaded = true; $('.splash', el).classList.add('gone'); try{ w.iframe.contentWindow.addEventListener('pointerdown', () => { if(focusId !== id) setFocus(id); }, true); }catch(e){} });
+    w.iframe.addEventListener('load', () => { w.loaded = true; hookErrs(w.iframe.contentWindow, id); $('.splash', el).classList.add('gone'); try{ w.iframe.contentWindow.addEventListener('pointerdown', () => { if(focusId !== id) setFocus(id); }, true); }catch(e){} });
     setTimeout(() => { if(wins.get(id) === w) $('.splash', el).classList.add('gone'); }, 4500);          // never leave the splash up forever
     setFocus(id); renderDock(); history.replaceState(null, '', '#open=' + id);
     if(!reduceMotion()){ const o = originEl ? relRect(originEl) : iconRect(id), sc = 0.12; el.animate([{ opacity: 0, transform: 'translate3d(' + (o.x + o.w / 2 - g.w / 2) + 'px,' + (o.y + o.h / 2 - g.h / 2) + 'px,0) scale(' + sc + ')' }, { opacity: 1, transform: 'translate3d(' + g.x + 'px,' + g.y + 'px,0) scale(1)' }], { duration: 420, easing: EASE }); }
@@ -387,6 +394,7 @@
   OS.home = () => { [...wins.keys()].forEach(minimizeWin); };           // "show desktop"
   OS.focused = () => focusId; OS.openApps = () => [...wins.keys()];
   OS.theme = theme; OS.screen = () => ({ w: S.w, h: S.h, kind: 'desktop', sat: 0, sab: 0 });
+  OS.reportContext = () => { const a = OS.auth.user(); return { url: location.href.split('#')[0], app: recent[0] || null, recentApps: recent.slice(), openWindows: Array.from(wins.keys()), screen: S.w + 'x' + S.h + ' @' + (window.devicePixelRatio || 1) + 'x', theme: document.documentElement.dataset.theme || '', browser: navigator.userAgent, lang: navigator.language, signedIn: !!a, online: navigator.onLine, speed: K.prefs.updateSpeed || 'balanced', errors: ERRS.slice(-12) }; };
   OS.toast = toast; OS.openPage = url => window.open(url, '_blank', 'noopener'); OS.apps = () => OS_APPS.map(a => ({ id: a.id, name: a.name, g: a.g, glyph: a.glyph }));
   OS.shell = { resetLayout(){ K.setPref('layout', null); K.setPref('winGeom', {}); loadLayout(); relayoutHome(true); }, relayout: () => { loadLayout(); relayoutHome(true); } };
   K.on('prefs', k => { if(k === 'theme' || k === 'reduceMotion' || k === 'reduceTransparency' || k === '*') applyTheme(); if(k === 'wall' || k === '*'){ wallKey = ''; paintWall(); } if(k === 'iconSize' || k === '*'){ dockEl.dataset.sig = ''; items.forEach(r => { r.cols = -1; }); relayoutHome(true); }

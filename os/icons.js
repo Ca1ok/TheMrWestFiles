@@ -30,7 +30,8 @@ const OS_GLYPHS = {
   star:'<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 17l-5.2 2.7 1-5.9L3.5 9.7l5.9-.8L12 3.5z"/>', flame:'<path d="M12 21a6 6 0 0 0 6-6c0-4-3-5.5-4-9-2 1.5-3 3.5-3 5.5-1.2-.7-1.8-1.8-2-3C7.3 10 6 12.3 6 15a6 6 0 0 0 6 6z"/>',
   key:'<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>', flask:'<path d="M9 3h6M10 3v6L4.6 18.4A2 2 0 0 0 6.3 21.5h11.4a2 2 0 0 0 1.7-3.1L14 9V3"/>',
   layers:'<path d="M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5"/>', refresh:'<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>', shield:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/>',
-  wifi:'<path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.8 16a5 5 0 0 1 6.4 0M12 19.5h.01"/>', bolt:'<path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>'
+  wifi:'<path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.8 16a5 5 0 0 1 6.4 0M12 19.5h.01"/>', bolt:'<path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>',
+  bug:'<path d="M9 7.5V7a3 3 0 0 1 6 0v.5M7 10h10v4a5 5 0 0 1-10 0v-4zM12 10v9M3 12h4M17 12h4M4 6.5l3 2.5M20 6.5l-3 2.5M4 19l3-2.5M20 19l-3-2.5"/>'
 };
 // id, display name, file (relative to /apps), tile gradient + glyph (used only by tools/make-icons.py to draw the PNG)
 const OS_ICON_BASE = (() => { const s = document.currentScript; return s && s.src ? s.src.replace(/os\/icons\.js.*$/, 'assets/icons/') : 'assets/icons/'; })();
@@ -46,6 +47,7 @@ const OS_APPS = [
   { id:'Photos',     name:'Photos',      file:'Photos.html',     g:['#f4a35a','#c23b6b'], glyph:'photos'   },
   { id:'Notes',      name:'Notes',       file:'Notes.html',      g:['#f4d96f','#d09a22'], glyph:'notes'    },
   { id:'Files',      name:'Files',       file:'Files.html',      g:['#5aaef5','#2d6bb8'], glyph:'files'    },
+  { id:'WestReport', name:'WestReport',  file:'WestReport.html', g:['#ef6a5a','#a3262e'], glyph:'bug'      },
   { id:'Settings',   name:'Settings',    file:'Settings.html',   g:['#9a9387','#55504a'], glyph:'settings' }
 ];
 function osIcon(name, size, sw){
