@@ -36,7 +36,7 @@
   }
 
   /* ================= menu bar ================= */
-  const reportBtn = $('#reportBtn'); reportBtn.innerHTML = osIcon('bug', 14, 2.2) + '<span>Report a bug</span>'; reportBtn.addEventListener('click', () => openApp('WestReport', reportBtn));
+  const reportBtn = $('#reportBtn'); reportBtn.addEventListener('click', () => openApp('WestReport', reportBtn));
   const editBtn = $('#editBtn'), doneBtn = $('#doneBtn'), mbApp = $('#mbApp'), syncBtn = $('#syncIc'), bellBtn = $('#bell'), cashBtn = $('#mbCash');
   function paintMenuRight(){
     const si = K.cloud.signedIn(); syncBtn.innerHTML = osIcon(si ? 'cloud' : 'cloudOff', 16, 2); syncBtn.title = si ? 'Progress is saved to your account' : 'Not signed in — progress is not saved (click to sign in)';
@@ -64,7 +64,15 @@
     return [['wanted', 'm'], ['stocks', 's'], ['bank', 's'], ['news', 'm'], ['messages', 's'], ['realestate', 's'], ['clock', 's'], ['element', 's'], ['games', 's']]
       .filter(([id]) => WIDGETS.find(w => w.id === id)).map(([id, size]) => ({ t: 'w', id, size, k: wk() }));
   }
+  /* Apps added after a player saved their dock/desktop are appended once, so new apps (WestReport) show up for existing accounts. */
+  const NEW_APPS = ['WestReport'];
+  function addNewApps(){
+    const seen = K.prefs.seenApps || []; const fresh = NEW_APPS.filter(id => !seen.includes(id) && APP(id)); if(!fresh.length) return;
+    K.setPref('seenApps', seen.concat(fresh)); const dock = K.prefs.dock;
+    if(dock && dock.length) K.setPref('dock', dock.concat(fresh.filter(id => !dock.includes(id))));
+  }
   function loadLayout(){
+    addNewApps();
     let l = K.prefs.layout; const dk = new Set((K.prefs.dock && K.prefs.dock.length ? K.prefs.dock : DEFAULT_DOCK));
     if(!Array.isArray(l) || !l.length) l = defaultLayout();
     l = l.filter(it => it && ((it.t === 'a' && APP(it.id) && !dk.has(it.id)) || (it.t === 'w' && WIDGETS.find(w => w.id === it.id)))).map(it => it.k ? it : Object.assign({}, it, { k: it.t === 'a' ? 'a-' + it.id : wk() }));

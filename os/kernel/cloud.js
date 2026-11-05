@@ -149,17 +149,18 @@
   /* ---- admin (every call is also enforced by database.rules.json — hiding buttons is not the security) ---- */
   const A = C.admin = {};
   /* ---- WestReport: bug reports (anyone signed in can file one; only the admin can read, triage and export them) ---- */
-  const AREAS = 60, clip = (s, n) => String(s == null ? '' : s).trim().slice(0, n);
+  const AREAS = 60, clip = (s, n) => String(s == null ? '' : s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u202A-\u202E\u2066-\u2069]/g, '').replace(/\n{4,}/g, '\n\n\n').trim().slice(0, n);
   C.report = {
     async submit(r){
       if(!C.signedIn()) throw new Error('Sign in to send a report.'); if(!C.db) throw new Error('Offline — try again in a moment.');
-      const o = { uid: C.user.uid, name: clip(K.S.meta.name || (C.user.email || '').split('@')[0] || 'Player', 30), title: clip(r.title, 100), area: clip(r.area, AREAS), sev: ['low', 'medium', 'high', 'critical'].includes(r.sev) ? r.sev : 'medium', desc: clip(r.desc, 2000), status: 'open', t: firebase.database.ServerValue.TIMESTAMP };
-      if(o.title.length < 3 || o.desc.length < 10) throw new Error('Add a short title and describe what went wrong.');
+      const kind = r.kind === 'feature' ? 'feature' : 'bug';
+      const o = { kind, uid: C.user.uid, name: clip(K.S.meta.name || (C.user.email || '').split('@')[0] || 'Player', 30), title: clip(r.title, 100), area: clip(r.area, AREAS), sev: ['low', 'medium', 'high', 'critical'].includes(r.sev) ? r.sev : 'medium', desc: clip(r.desc, 2000), status: kind === 'feature' ? 'pending' : 'open', t: firebase.database.ServerValue.TIMESTAMP };
+      if(o.title.length < 3 || o.desc.length < 10) throw new Error(kind === 'feature' ? 'Add a short title and describe the feature.' : 'Add a short title and describe what went wrong.');
       const st = clip(r.steps, 1500), ex = clip(r.expected, 1000), cx = clip(r.ctx, 4000); if(st) o.steps = st; if(ex) o.expected = ex; if(cx) o.ctx = cx;
       await C.db.ref('reports').push(o);
     },
     async list(){ if(!C.isAdmin()) throw new Error('Admin only.'); const s = await C.db.ref('reports').orderByChild('t').limitToLast(300).once('value'); count(s); const out = []; s.forEach(c => { out.push(Object.assign({ id: c.key }, c.val())); }); return out.reverse(); },
-    async setStatus(id, st){ if(!C.isAdmin()) throw new Error('Admin only.'); if(!['open', 'fixed', 'wontfix'].includes(st)) return; await C.db.ref('reports/' + id + '/status').set(st); },
+    async setStatus(id, st){ if(!C.isAdmin()) throw new Error('Admin only.'); if(!['open', 'fixed', 'wontfix', 'pending', 'approved', 'rejected', 'done'].includes(st)) return; await C.db.ref('reports/' + id + '/status').set(st); },
     async remove(id){ if(!C.isAdmin()) throw new Error('Admin only.'); await C.db.ref('reports/' + id).remove(); }
   };
   const need = () => { if(!C.isAdmin()) throw new Error('Admin only.'); };

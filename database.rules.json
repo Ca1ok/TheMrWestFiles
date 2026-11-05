@@ -249,6 +249,55 @@
         ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous'",
         ".validate": "newData.hasChildren(['bytes','until']) && newData.child('bytes').isNumber() && newData.child('until').isNumber() && newData.child('bytes').val() >= 0 && (!data.exists() || now > data.child('until').val() || newData.child('bytes').val() <= data.child('bytes').val() + 60000000)"
       }
+    },
+    "reports": {
+      ".read": "auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true",
+      ".indexOn": [
+        "t"
+      ],
+      "$id": {
+        ".write": "(auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true) || ((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && !data.exists() && newData.exists() && newData.child('status').val() === (newData.child('kind').val() === 'feature' ? 'pending' : 'open'))",
+        ".validate": "newData.hasChildren(['kind','uid','title','desc','status','t'])",
+        "uid": {
+          ".validate": "newData.val() === auth.uid || (auth != null && auth.token.email === 'kirattdhaliwal@gmail.com')"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length >= 0 && newData.val().length <= 30"
+        },
+        "title": {
+          ".validate": "newData.isString() && newData.val().length >= 3 && newData.val().length <= 100"
+        },
+        "area": {
+          ".validate": "newData.isString() && newData.val().length >= 0 && newData.val().length <= 60"
+        },
+        "sev": {
+          ".validate": "newData.isString() && newData.val().matches(/^(low|medium|high|critical)$/)"
+        },
+        "desc": {
+          ".validate": "newData.isString() && newData.val().length >= 10 && newData.val().length <= 2000"
+        },
+        "steps": {
+          ".validate": "newData.isString() && newData.val().length >= 0 && newData.val().length <= 1500"
+        },
+        "expected": {
+          ".validate": "newData.isString() && newData.val().length >= 0 && newData.val().length <= 1000"
+        },
+        "ctx": {
+          ".validate": "newData.isString() && newData.val().length >= 0 && newData.val().length <= 4000"
+        },
+        "status": {
+          ".validate": "newData.isString() && newData.val().matches(/^(open|fixed|wontfix|pending|approved|rejected|done)$/)"
+        },
+        "t": {
+          ".validate": "newData.isNumber()"
+        },
+        "$other": {
+          ".validate": false
+        },
+        "kind": {
+          ".validate": "newData.isString() && newData.val().matches(/^(bug|feature)$/)"
+        }
+      }
     }
   }
 }
