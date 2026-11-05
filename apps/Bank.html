@@ -53,13 +53,13 @@ const A = Kit.app({ title: 'Bank', build: (body, P) => {
   function paintAct(){
     actSec.innerHTML = ''; const hist = B.history(); actSec.appendChild(h('h2', { class: 'sec' }, 'Activity'));
     actSec.appendChild(hist.length ? group(hist.slice(0, 15).map(x => row({ title: x.n || 'Transaction', sub: Kit.ago(x.t), right: h('span', { class: 'num ' + (x.d >= 0 ? 'up' : 'down') }, (x.d >= 0 ? '+' : '−') + money(Math.abs(x.d), { dp: 2 })) }))) : h('div', { class: 'card empty', style: { padding: '28px' } }, 'No transactions yet.'));
-    extra.innerHTML = ''; extra.appendChild(h('h2', { class: 'sec' }, 'More')); extra.appendChild(group(row({ glyph: 'star', color: '#d9a441', title: 'Wealth ranking', sub: 'The richest players', chev: true, onClick: openRanking })));
+    extra.innerHTML = ''; extra.appendChild(h('h2', { class: 'sec' }, 'More')); extra.appendChild(group(row({ glyph: 'star', color: '#d9a441', title: 'Wealth ranking', sub: 'Players ranked by bank balance', chev: true, onClick: openRanking })));
   }
   function openRanking(){
     A.push({ title: 'Wealth ranking', backLabel: 'Bank', build: async (b) => {
       b.appendChild(h('div', { class: 'spin', style: { margin: '30px auto' } }));
-      let list = []; try{ list = await B.ranking(25); }catch(e){} b.innerHTML = '';
-      b.appendChild(list.length ? group(list.map((p, i) => row({ left: h('span', { class: 'rk' }, '#' + (i + 1)), title: p.name || 'Player', right: h('b', { class: 'num' }, money(p.value, { compact: true })) }))) : h('div', { class: 'empty' }, 'No one is on the board yet. Sign in and pick a display name in Settings to appear here.'));
+      let list = []; try{ list = await B.ranking(25); }catch(e){} b.innerHTML = ''; const me = OS.auth.user(), myUid = me ? me.uid : null;
+      b.appendChild(list.length ? group(list.map((p, i) => row({ left: h('span', { class: 'rk' }, '#' + (i + 1)), title: p.name || 'Player', sub: p.uid === myUid ? 'You' : null, right: h('b', { class: 'num' }, money(p.value, { compact: true })) }))) : h('div', { class: 'empty' }, 'No one is on the board yet. Sign in and pick a display name in Settings to appear here.'));
     } });
   }
   function paintAll(){ paintGuest(); paintHero(); paintTax(); paintAct(); }

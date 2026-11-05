@@ -108,10 +108,11 @@
   /* ---- leaderboard (public, tiny) ---- */
   function publishBoard(force){
     if(!C.signedIn() || !K.S.meta.name) return;
-    const nw = K.netWorth(), now = Date.now();
-    if(!force && (now - lbAt < CFG.leaderboardEveryMs || Math.abs(nw - lbLast) < Math.max(5, lbLast * 0.02))) return;
-    lbAt = now; lbLast = nw;
-    C.db.ref('leaderboard/' + C.user.uid).set({ name: K.S.meta.name, value: Math.round(nw * 100) / 100, updatedAt: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+    /* The board shows exactly the "Total balance" on the player's Bank screen (their cash), to the cent, and follows every change. */
+    const bal = Math.round(K.S.cash * 100) / 100, now = Date.now();
+    if(!force && (now - lbAt < CFG.leaderboardEveryMs || bal === lbLast)) return;
+    lbAt = now; lbLast = bal;
+    return C.db.ref('leaderboard/' + C.user.uid).set({ name: K.S.meta.name, value: bal, updatedAt: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
   }
   C.publishBoard = publishBoard;
   C.setName = async function(name){

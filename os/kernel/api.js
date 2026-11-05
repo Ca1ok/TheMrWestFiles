@@ -135,7 +135,7 @@
     balance: () => K.S.cash, bills: K.bank.bills, open: K.bank.open, owed: K.bank.owed, preview: K.bank.preview, pay: K.bank.pay, payAll: K.bank.payAll, rate: K.bank.rate,
     history: () => K.S.bank.hist.slice(), config: () => Object.assign({}, CFG.tax), netWorth: K.netWorth,
     breakdown: () => ({ cash: K.S.cash, inventory: K.inventoryValue(), stock: K.stockValue(), property: K.propValue() }),
-    ranking: n => K.cloud.leaderboard(n)
+    ranking: async n => { try{ await K.cloud.publishBoard(true); }catch(e){} return K.cloud.leaderboard(n); }
   };
 
   /* ---------------- mail ---------------- */
