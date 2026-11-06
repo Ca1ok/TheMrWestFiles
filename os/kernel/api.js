@@ -137,6 +137,12 @@
     breakdown: () => ({ cash: K.S.cash, inventory: K.inventoryValue(), stock: K.stockValue(), property: K.propValue() })
   };
 
+  /* ---------------- arcade (every round is decided and paid inside the kernel; the app only asks) ---------------- */
+  const CSN = K.arcade, CG = CSN.games, frz = o => Object.freeze(o);
+  const arcade = { status: CSN.status, config: CSN.config, load: f => CSN.loadConfig(f).then(() => CSN.config()), round: CSN.round, defaults: () => JSON.parse(JSON.stringify(ArcadeGames.DEFAULT_CFG)), cardName: ArcadeGames.cardName, isRed: ArcadeGames.isRed, handName: ArcadeGames.handName,
+    slots: frz({ spin: CG.slots.spin, paytable: CG.slots.paytable }), blackjack: frz({ deal: CG.blackjack.deal, hit: CG.blackjack.hit, stand: CG.blackjack.stand, double: CG.blackjack.double, view: CG.blackjack.view }),
+    bus: frz({ start: CG.bus.start, pick: CG.bus.pick, cashOut: CG.bus.cashOut, view: CG.bus.view }), poker: frz({ start: CG.poker.start, act: CG.poker.act, next: CG.poker.next, fastForward: CG.poker.fastForward, view: CG.poker.view }) };
+
   /* ---------------- leaderboard (its own app; the Bank no longer ranks anyone) ---------------- */
   const LBC = new Map();                                              // one query per category, cached for 30 s, so opening and flipping tabs costs almost nothing
   const leaderboard = {
@@ -172,9 +178,11 @@
   const games = { award: (id, base) => { base = Math.max(0, Math.min(40, +base || 0)); return K.award(String(id).slice(0, 30), base); }, info: () => { const g = K.gameDay(); return { earned: g.earned, softcap: Math.round(CFG.game.dailySoftcap * K.econ()), plays: Object.assign({}, g.plays), bonus: K.collectionBonus() }; } };
   const files = { record: uid => C.serverRecord(uid), usage: () => ({ bytes: C.bytes, reads: C.reads, writes: C.writes }) };
   const world = { articles: n => World.latestArticles(K.now(), n || 12), mults: () => World.elementMults(K.now()), sector: s => World.sectorIndex(s, K.now()), impacts: () => World.impactsBefore(K.now(), 6) };
+  const need_ = () => { if(!C.isAdmin()) throw new Error('Admin only.'); };
   const admin = {
     ok: C.isAdmin, players: () => C.admin.players(), read: uid => C.admin.read(uid), setField: (u, p, v) => C.admin.setField(u, p, v), reset: u => C.admin.reset(u), rename: (u, n) => C.admin.rename(u, n),
     mail: (u, s, b) => C.admin.mail(u, s, b), broadcast: (s, b) => C.admin.broadcast(s, b),
+    arcadeGet: () => { need_(); return CSN.loadConfig(true).then(() => CSN.config()); }, arcadeSet: c => { need_(); return C.admin.arcadeSet(c).then(() => CSN.loadConfig(true)); },
     setVolatility: l => K.market.admin.setVolatility(l), adjustPrice: (d, f) => K.market.admin.adjust(d, f), volatility: () => C.isAdmin() ? K.market.volLevel() : null, volLevels: () => C.isAdmin() ? K.market.admin.levels() : [], volLedger: () => C.isAdmin() ? K.market.volLedger() : [],
     gallery: { upload: (f, p) => K.gallery.upload(f, p), rename: (i, t) => K.gallery.rename(i, t), remove: i => K.gallery.remove(i), usage: () => K.gallery.loadUsage() }
   };
@@ -185,7 +193,7 @@
     on: (e, f) => K.on(e, f), emit: undefined,
     now: K.now, today: K.today, cash: () => K.S.cash,
     prefs: { get: k => K.prefs[k], all: () => JSON.parse(JSON.stringify(K.prefs)), set: (k, v) => K.setPref(k, v) },
-    shop, lab, props, bank, mail, auth, stock, games, files, world, admin, gallery, leaderboard, econ: () => K.econ(),
+    shop, lab, props, bank, mail, auth, stock, games, arcade, files, world, admin, gallery, leaderboard, econ: () => K.econ(),
     report: { submit: r => C.report.submit(r), list: () => C.report.list(), setStatus: (i, s) => C.report.setStatus(i, s), remove: i => C.report.remove(i) },
     chem: Chem, phys: Phys, mol: Mol, worldModel: World,
     data: { ELEMENTS, CATEGORY_COLORS, CATEGORY_LABELS, GAS_AT_25C, LIQUID_AT_25C, UNKNOWN_STATE, STATE_COLORS, STATE_LABELS, BLOCK_COLORS, BLOCK_LABELS, COMPOUND_LOOKUP, CATEGORY_LOOKUP_LABELS, POLYATOMIC_IONS, DATABOOK, WANTED_DATA, PROPERTIES, PROPERTY_SECTORS, TOOLS, MELTING_POINTS, BOILING_POINTS, OXIDATION, ELECTRONEG, RECIPES },

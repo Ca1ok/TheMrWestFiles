@@ -33,7 +33,8 @@ const OS_GLYPHS = {
   wifi:'<path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.8 16a5 5 0 0 1 6.4 0M12 19.5h.01"/>', bolt:'<path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>',
   trophy:'<path d="M8 4h8v5a4 4 0 0 1-8 0V4z"/><path d="M8 6H5a1 1 0 0 0-1 1c0 2.2 1.6 3.6 4 3.8M16 6h3a1 1 0 0 1 1 1c0 2.2-1.6 3.6-4 3.8"/><path d="M12 13v4M8.5 20h7M10 17h4"/>',
   preview:'<rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="9" cy="10.5" r="1.6"/><path d="M3.5 16.5l4.5-4 3.5 3 3-2.5 6 4.5"/><path d="M17 3.5v3M15.5 5h3"/>',
-  bug:'<path d="M9 7.5V7a3 3 0 0 1 6 0v.5M7 10h10v4a5 5 0 0 1-10 0v-4zM12 10v9M3 12h4M17 12h4M4 6.5l3 2.5M20 6.5l-3 2.5M4 19l3-2.5M20 19l-3-2.5"/>'
+  bug:'<path d="M9 7.5V7a3 3 0 0 1 6 0v.5M7 10h10v4a5 5 0 0 1-10 0v-4zM12 10v9M3 12h4M17 12h4M4 6.5l3 2.5M20 6.5l-3 2.5M4 19l3-2.5M20 19l-3-2.5"/>',
+  arcade:'<circle cx="12" cy="6" r="3"/><path d="M12 9v6"/><path d="M4.5 21v-2.5a2.5 2.5 0 0 1 2.5-2.5h10a2.5 2.5 0 0 1 2.5 2.5V21z"/><circle cx="8.5" cy="18.8" r=".9" fill="currentColor"/><circle cx="15.5" cy="18.8" r=".9" fill="currentColor"/>'
 };
 // id, display name, file (relative to /apps), tile gradient + glyph (used only by tools/make-icons.py to draw the PNG)
 const OS_ICON_BASE = (() => { const s = document.currentScript; return s && s.src ? s.src.replace(/os\/icons\.js.*$/, 'assets/icons/') : 'assets/icons/'; })();
@@ -46,6 +47,7 @@ const OS_APPS = [
   { id:'RealEstate', name:'Real Estate', file:'RealEstate.html', g:['#c98a62','#7b4b31'], glyph:'home'     },
   { id:'Bank',       name:'Bank',        file:'Bank.html',       g:['#4a6fa8','#22375e'], glyph:'bank'     },
   { id:'Games',      name:'Games',       file:'Games.html',      g:['#b36be0','#5a2f9a'], glyph:'games'    },
+  { id:'Arcade',     name:'Arcade',      file:'Arcade.html',     g:['#ff4fd8','#3a1a8c'], glyph:'arcade'   },
   { id:'Photos',     name:'Photos',      file:'Photos.html',     g:['#f4a35a','#c23b6b'], glyph:'photos'   },
   { id:'Preview',    name:'Preview',     file:'Preview.html',    g:['#7ab8ff','#3a58c8'], glyph:'preview'  },
   { id:'Leaderboard',name:'Leaderboard', file:'Leaderboard.html',g:['#f2c14e','#c4782a'], glyph:'trophy'   },

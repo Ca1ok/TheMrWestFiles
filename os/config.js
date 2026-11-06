@@ -23,6 +23,7 @@ const OS_CONFIG = {
   startCash: 1000,
   tax: { threshold: 100000, base: 0.01, growth: 0.35, maxRate: 0.50, dueHours: 48, remindHours: 12, seizeMultiple: 2, catchupDays: 7 },
   game: { dailySoftcap: 75, dropChance: 0.18 },
+  // Arcade limits are NOT set here: the admin edits them live (Settings → Admin tools → Arcade) and they are stored in arcadeConfig, enforced by database.rules.json.
 
   // ---- world clock: tick 0 of the shared market / news / property calendars ----
   epoch: Date.UTC(2026, 7, 21)

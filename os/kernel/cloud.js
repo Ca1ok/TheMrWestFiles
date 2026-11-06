@@ -55,7 +55,7 @@
   C.flushNow = function(){
     clearTimeout(flushTimer); flushTimer = null;
     if(!C.signedIn() || !K.loaded || !K.dirty.size || !C.db) return Promise.resolve();
-    const out = {}; K.dirty.forEach(f => { if(f === 'prefs') out.prefs = K.prefs; else if(FIELDS.includes(f)) out[f] = clean(K.S[f]); });
+    const out = {}; K.dirty.forEach(f => { if(f === 'prefs') out.prefs = K.prefs; else if(f === 'arcade'){ const L = K.S.arcade, t = K.now(), d = t - (t % 86400000); if(L.d !== d){ L.d = d; L.net = 0; } out.arcade = { d: L.d, net: L.net, open: L.open, t: firebase.database.ServerValue.TIMESTAMP }; } else if(FIELDS.includes(f)) out[f] = clean(K.S[f]); });
     if(K.dirty.has('cash') || K.dirty.has('inv') || K.dirty.has('lots') || K.dirty.has('props')) K.dirty.add('lb');
     out.updatedAt = firebase.database.ServerValue.TIMESTAMP; K.dirty.clear();
     C.writes++; K.emit('sync', 'saving');
@@ -192,5 +192,7 @@
   A.reset = async uid => { need(); await C.db.ref('players/' + uid).remove(); await C.db.ref('leaderboard/' + uid).remove(); };
   A.rename = async (uid, name) => { need(); const err = K.nameOk(name); if(err) throw new Error(err); await C.db.ref('players/' + uid + '/meta/name').set(name); await C.db.ref('leaderboard/' + uid + '/name').set(name); };
   A.mail = async (uid, subj, body) => { need(); await C.db.ref('mailbox/' + uid).push({ from: 'Mr West', subj: String(subj).slice(0, 120), body: String(body).slice(0, 1000), t: firebase.database.ServerValue.TIMESTAMP }); };
+  A.arcadeSet = async c => { need(); const n = (v, lo, hi, d) => { v = +v; return isFinite(v) && v >= lo && v <= hi ? v : d; }, g = c.games || {};
+    await C.db.ref('arcadeConfig').set({ enabled: c.enabled !== false, games: { slots: g.slots !== false, bus: g.bus !== false, poker: g.poker !== false, blackjack: g.blackjack !== false }, betPct: n(c.betPct, 0.001, 1, 0.1), betCap: Math.round(n(c.betCap, 1, 1e9, 25000)), minBet: Math.round(n(c.minBet, 1, 1e6, 1)), dailyCap: Math.round(n(c.dailyCap, 0, 1e12, 100000)), cooldownMs: Math.round(n(c.cooldownMs, 0, 600000, 1500)), maxMult: n(c.maxMult, 1, 1000, 100) }); };
   A.broadcast = async (subj, body) => { need(); await C.db.ref('broadcast').push({ from: 'Mr West', subj: String(subj).slice(0, 120), body: String(body).slice(0, 1000), t: firebase.database.ServerValue.TIMESTAMP }); };
 });
