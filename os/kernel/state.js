@@ -82,17 +82,18 @@
   /* ---- prices: list value × news multiplier; the shop buys back at SELL_RATE with a demand curve (flooding one item sags it) ---- */
   const BUY = typeof BUY_RATE !== 'undefined' ? BUY_RATE : 1, SELL = typeof SELL_RATE !== 'undefined' ? SELL_RATE : 0.7;
   const S_ = typeof SELL_DEMAND_S !== 'undefined' ? SELL_DEMAND_S : 250, FLOOR = typeof SELL_FLOOR !== 'undefined' ? SELL_FLOOR : 0.35, HALF = typeof SELL_DEMAND_HALF_LIFE_H !== 'undefined' ? SELL_DEMAND_HALF_LIFE_H : 6;
-  const XF = S_ * (1 / FLOOR - 1);
-  const dF = x => x < XF ? S_ * Math.log(1 + x / S_) : S_ * Math.log(1 + XF / S_) + FLOOR * (x - XF);
+  const dFs = (x, S) => { const XF = S * (1 / FLOOR - 1); return x < XF ? S * Math.log(1 + x / S) : S * Math.log(1 + XF / S) + FLOOR * (x - XF); };
+  const econNow = () => World.econ(K.now());                                      // the economy index: prices, rents, payouts and the demand scale all ride it
+  K.econ = econNow;
   const kindOf = key => (Chem.speciesOf(key) || {}).kind === 'element' ? 'element' : 'compound';
   K.kindOf = kindOf;
-  K.listValue = key => Chem.valueOf(key) * World.itemMult(key, K.now());             // what one unit is "worth" right now
+  K.listValue = key => Chem.valueOf(key) * World.valueMult(key, K.now());             // what one unit is "worth" right now
   K.buyPrice = key => round2(Math.max(0.01, K.listValue(key) * BUY));
   function demandNow(key){ const d = K.S.shop.demand[key]; return d ? d[0] * Math.pow(0.5, (K.now() - d[1]) / (HALF * 3600000)) : 0; }
   K.sellQuote = function(key, n){                                                   // total revenue for selling n units, and the average price
-    const v = K.listValue(key), x0 = demandNow(key); n = Math.max(0, Math.floor(n));
-    const rev = v > 0 ? SELL * (dF(x0 + n * v) - dF(x0)) : 0;
-    return { total: round2(rev), avg: n ? round2(rev / n) : round2(SELL * v * (1 / (1 + x0 / S_))), v };
+    const v = K.listValue(key), x0 = demandNow(key), S = S_ * econNow(); n = Math.max(0, Math.floor(n));      // the demand scale grows with prices, so selling one pricey item doesn't "flood" the shop
+    const rev = v > 0 ? SELL * (dFs(x0 + n * v, S) - dFs(x0, S)) : 0;
+    return { total: round2(rev), avg: n ? round2(rev / n) : round2(SELL * v * (1 / (1 + x0 / S))), v };
   };
   K.sellPrice = key => K.sellQuote(key, 1).avg;
   K.noteSale = function(key, n){ const v = K.listValue(key), x0 = demandNow(key); K.S.shop.demand[key] = [x0 + n * v, K.now()]; Object.keys(K.S.shop.demand).forEach(k => { if(demandNow(k) < 1) delete K.S.shop.demand[k]; }); K.touch('shop'); };
@@ -114,11 +115,11 @@
   const CHEAP = ['H', 'C', 'N', 'O', 'Na', 'Mg', 'Al', 'Si', 'S', 'Cl', 'K', 'Ca', 'Fe', 'Zn', 'Cu'];
   K.award = function(gameId, base){
     const g = K.gameDay(), plays = (g.plays[gameId] || 0) + 1; g.plays[gameId] = plays;
-    const dim = Math.max(0.15, 1 - (plays - 1) * 0.12), soft = g.earned >= CFG.game.dailySoftcap ? 0.25 : 1, bonus = K.collectionBonus();
-    const amount = K.earn(base * dim * soft * bonus, 'Game: ' + gameId); g.earned = round2(g.earned + amount);
+    const ec = econNow(), dim = Math.max(0.15, 1 - (plays - 1) * 0.12), soft = g.earned >= CFG.game.dailySoftcap * ec ? 0.25 : 1, bonus = K.collectionBonus();
+    const amount = K.earn(base * dim * soft * bonus * ec, 'Game: ' + gameId); g.earned = round2(g.earned + amount);
     let drop = null;
     if(Math.random() < CFG.game.dropChance * (soft < 1 ? 0.5 : 1)){ const sym = CHEAP[Math.floor(Math.random() * CHEAP.length)], n = 1 + Math.floor(Math.random() * 3); K.invAdd('element', sym, n); drop = { sym, n }; }
-    K.touch('games'); K.emit('games'); return { amount, bonus, drop, earnedToday: g.earned, softcap: CFG.game.dailySoftcap };
+    K.touch('games'); K.emit('games'); return { amount, bonus, drop, earnedToday: g.earned, softcap: Math.round(CFG.game.dailySoftcap * ec) };
   };
 
   /* ---- net worth ---- */

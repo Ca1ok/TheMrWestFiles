@@ -22,7 +22,7 @@
   };
 
   /* ---- init ---- */
-  let flushTimer = null, mailRef = null, lbAt = 0, lbLast = 0;
+  let flushTimer = null, mailRef = null, lbAt = 0, lbLast = '';
   C.init = function(){
     if(typeof firebase === 'undefined'){ C.ready = true; K.emit('auth'); return; }
     try{ firebase.initializeApp(CFG.firebase); C.db = firebase.database(); C.auth = firebase.auth(); }catch(e){ console.warn('[cloud] firebase unavailable', e); C.ready = true; K.emit('auth'); return; }
@@ -105,21 +105,43 @@
     }catch(e){}
   }
 
-  /* ---- leaderboard (public, tiny) ---- */
+  /* ---- leaderboard (public, tiny) ----
+   * One small record per player (~170 bytes): name + the numbers every ranking is built from. It is rewritten only when a number changed, at most every
+   * CFG.leaderboardEveryMs (and right after a save), and a ranking is ONE query of at most 50 rows per category (cached 30 s by the Leaderboard app). */
+  const LB = C.LB = [
+    { id: 'nw',    field: 'nw',    name: 'Net worth',   unit: 'money', glyph: 'star',   color: '#d9a441', desc: 'Everything you own, added up' },
+    { id: 'cash',  field: 'value', name: 'Bank',        unit: 'money', glyph: 'bank',   color: '#4a6fa8', desc: 'Cash in your bank account' },
+    { id: 're',    field: 're',    name: 'Real estate', unit: 'money', glyph: 'home',   color: '#c98a62', desc: 'Value of the property you own' },
+    { id: 'stk',   field: 'stk',   name: 'Stocks',      unit: 'money', glyph: 'stocks', color: '#3fae78', desc: 'Your $WEST shares at today’s price' },
+    { id: 'inv',   field: 'inv',   name: 'Inventory',   unit: 'money', glyph: 'shop',   color: '#e8b64f', desc: 'Elements and compounds you hold' },
+    { id: 'disc',  field: 'disc',  name: 'Discoveries', unit: 'count', glyph: 'flask',  color: '#52b5b0', desc: 'Compounds discovered in WestLab' },
+    { id: 'runs',  field: 'runs',  name: 'Reactions',   unit: 'count', glyph: 'bolt',   color: '#e8803d', desc: 'Reactions run in WestLab' },
+    { id: 'props', field: 'props', name: 'Properties',  unit: 'count', glyph: 'key',    color: '#a08a6a', desc: 'Properties you own' },
+    { id: 'els',   field: 'els',   name: 'Elements',    unit: 'count', glyph: 'grid',   color: '#9b7bff', desc: 'Different elements collected' }
+  ];
+  C.boardEntry = function(){                                         // the live numbers for THIS player (also used by the app to show "you" without waiting on the server)
+    const S = K.S, r2 = K.round2;
+    return { name: S.meta.name || '', value: r2(S.cash), nw: r2(K.netWorth()), re: r2(K.propValue()), stk: r2(K.stockValue ? K.stockValue() : 0), inv: r2(K.inventoryValue()),
+      disc: S.lab.found.length, runs: S.lab.runs || 0, props: Object.keys(S.props).length, els: Object.keys(S.inv.e).length };
+  };
   function publishBoard(force){
     if(!C.signedIn() || !K.S.meta.name) return;
-    /* The board shows exactly the "Total balance" on the player's Bank screen (their cash), to the cent, and follows every change. */
-    const bal = Math.round(K.S.cash * 100) / 100, now = Date.now();
-    if(!force && (now - lbAt < CFG.leaderboardEveryMs || bal === lbLast)) return;
-    lbAt = now; lbLast = bal;
-    return C.db.ref('leaderboard/' + C.user.uid).set({ name: K.S.meta.name, value: bal, updatedAt: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+    const e = C.boardEntry(), sig = JSON.stringify(e), now = Date.now();
+    if(force ? (now - lbAt < 4000 && sig === lbLast) : (now - lbAt < CFG.leaderboardEveryMs || sig === lbLast)) return;
+    lbAt = now; lbLast = sig; e.updatedAt = firebase.database.ServerValue.TIMESTAMP;
+    return C.db.ref('leaderboard/' + C.user.uid).set(e).catch(() => {});
   }
   C.publishBoard = publishBoard;
   C.setName = async function(name){
     const err = K.nameOk(name); if(err) throw new Error(err);
     K.S.meta.name = name.trim(); K.touch('meta'); await C.flushNow(); publishBoard(true);
   };
-  C.leaderboard = async function(n){ if(!C.db) return []; const s = await C.db.ref('leaderboard').orderByChild('value').limitToLast(n || 20).once('value'); count(s); const out = []; s.forEach(c => { out.push(Object.assign({ uid: c.key }, c.val())); }); return out.reverse(); };
+  C.leaderboard = async function(n, field){                           // top n by one field (default: bank cash, which the admin tools use)
+    if(!C.db) return []; field = field || 'value';
+    const s = await C.db.ref('leaderboard').orderByChild(field).limitToLast(n || 20).once('value'); count(s); const out = [];
+    s.forEach(c => { const v = c.val(); if(v && typeof v[field] === 'number') out.push(Object.assign({ uid: c.key }, v)); });
+    return out.sort((a, b) => b[field] - a[field]);
+  };
 
   /* ---- Files app: a read-only view of exactly what the server stores for you ---- */
   C.serverRecord = async function(uid){

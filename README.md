@@ -16,7 +16,7 @@ A desktop operating system in the browser, built for keyboard and mouse. The who
 │  └─ icons/              ← one PNG per app (Messages.png, Stocks.png …) + WestOS.png (favicon / logo)
 ├─ apps/                  ← one HTML file per app (this is what the OS opens in a window)
 │  ├─ Messages.html  Stocks.html  News.html  WestShop.html  WestLab.html  RealEstate.html
-│  ├─ Bank.html  Games.html  Photos.html  Notes.html  Files.html  Settings.html
+│  ├─ Bank.html  Games.html  Photos.html  Preview.html  Leaderboard.html  Notes.html  Files.html  Settings.html
 │  └─ games/              ← every minigame is one file + a line in manifest.js
 │     ├─ manifest.js      ← list of games (id, name, icon, category)
 │     └─ titration.js  elementRecall.js  … (20 games)
@@ -108,10 +108,17 @@ A desktop operating system in the browser, built for keyboard and mouse. The who
 
 ## Not carried over from the old site
 
-Element Clicker, the Life simulator, contracts/crafting benches and the standalone leaderboard page (a wealth ranking now lives in Bank). The OS is built so any of them can be added back as an app. (Old save files migrate automatically: cash, shares, elements, compounds, equipment, discoveries.)
+Element Clicker, the Life simulator and contracts/crafting benches. The OS is built so any of them can be added back as an app. (Old save files migrate automatically: cash, shares, elements, compounds, equipment, discoveries.)
 
 ## Tests
 
 `node tests/chem.test.js` — the chemistry engine (60+ checks). `python3 tests/flows.py` — sign-in, saving, tax, seizure, admin visibility. `python3 tests/windows.py` — close/minimize/maximize, drag, resize, focus, reduce-motion, edit mode. `python3 tests/smoke_all.py` — every app at several screen sizes. (The Python tests need `pip install playwright`.)
 
 * **Engine (v2).** Beyond the rule engine, `Phys.card` falls back to a Gibbs-energy search over every known species (tabulated + registry + the elements) for the balanced reaction that releases the most free energy, with chemistry-sense filters (no soot, no shredded carbon skeletons, no invented hydrocarbons, no oxoacids without water; metal + acid/salt stay with the activity-series rules). Every element 1–118 has thermodynamic data (CRC tables, or an estimator flagged as estimated). **Ignite (spark)** models a local hot-spot: a reaction that is blocked at room temperature but exothermic enough to keep itself above ≈ 800 K (and with Ea ≤ 200 kJ/mol) runs; N₂ + H₂ does not. **Open vessels** (1 bar, vented) let produced gases escape — their partial pressure stays near what air holds — which is why vinegar + baking soda fizzes at room temperature and limestone calcines near 1000 K. Run `node tests/engine.test.js`.
+
+## Leaderboard, Preview and the growing economy (Nov 2026)
+
+* **Leaderboard** is its own app (the Bank no longer ranks anyone). Nine rankings from one tiny record per player (`leaderboard/<uid>`, ~170 bytes): Net worth, Bank, Real estate, Stocks, Inventory, Discoveries, Reactions, Properties, Elements. A ranking is one query of at most 50 rows, cached 30 s; your own row uses your live numbers. To add a ranking: a line in `C.LB` and `boardEntry()` in `os/kernel/cloud.js`, plus its field in `database.rules.json`.
+* **Preview** is the photo viewer app. Photos, News and the Wanted widget open pictures with `OS.preview({ kind: 'gallery', list, index })` or `{ kind: 'poster' }`; it zooms, pans, flips through, saves and sets wallpapers. `preview.html` no longer exists.
+* **Growing economy.** `World.econ(now)` (os/lib/world.js) is a deterministic index: 1.0 until 2026-11-07, then about +2%/day easing to +0.4%/day (×12.6 in a year). Element/compound values, property prices (and so rent), game payouts, the shop’s demand scale and the tax threshold all ride it. The $WEST trend compounds faster (`marketGrowthAt`, ×2.6 in 30 days) and its slow wander is calmed, so holding makes money: in a 120-day simulation every 30-day hold was profitable (`node tests/economy.test.js`). Short flips are still a gamble.
+* **Faster, synced events.** A news story every 15 minutes (effects fade in hours), a busier $WEST pump/dump generator (about one every 8 minutes) and alerts for holders. Everything is a pure function of the clock and a fixed seed, so every player sees the same thing at the same second with zero network traffic.

@@ -31,6 +31,8 @@ const OS_GLYPHS = {
   key:'<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>', flask:'<path d="M9 3h6M10 3v6L4.6 18.4A2 2 0 0 0 6.3 21.5h11.4a2 2 0 0 0 1.7-3.1L14 9V3"/>',
   layers:'<path d="M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5"/>', refresh:'<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>', shield:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/>',
   wifi:'<path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.8 16a5 5 0 0 1 6.4 0M12 19.5h.01"/>', bolt:'<path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>',
+  trophy:'<path d="M8 4h8v5a4 4 0 0 1-8 0V4z"/><path d="M8 6H5a1 1 0 0 0-1 1c0 2.2 1.6 3.6 4 3.8M16 6h3a1 1 0 0 1 1 1c0 2.2-1.6 3.6-4 3.8"/><path d="M12 13v4M8.5 20h7M10 17h4"/>',
+  preview:'<rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="9" cy="10.5" r="1.6"/><path d="M3.5 16.5l4.5-4 3.5 3 3-2.5 6 4.5"/><path d="M17 3.5v3M15.5 5h3"/>',
   bug:'<path d="M9 7.5V7a3 3 0 0 1 6 0v.5M7 10h10v4a5 5 0 0 1-10 0v-4zM12 10v9M3 12h4M17 12h4M4 6.5l3 2.5M20 6.5l-3 2.5M4 19l3-2.5M20 19l-3-2.5"/>'
 };
 // id, display name, file (relative to /apps), tile gradient + glyph (used only by tools/make-icons.py to draw the PNG)
@@ -45,6 +47,8 @@ const OS_APPS = [
   { id:'Bank',       name:'Bank',        file:'Bank.html',       g:['#4a6fa8','#22375e'], glyph:'bank'     },
   { id:'Games',      name:'Games',       file:'Games.html',      g:['#b36be0','#5a2f9a'], glyph:'games'    },
   { id:'Photos',     name:'Photos',      file:'Photos.html',     g:['#f4a35a','#c23b6b'], glyph:'photos'   },
+  { id:'Preview',    name:'Preview',     file:'Preview.html',    g:['#7ab8ff','#3a58c8'], glyph:'preview'  },
+  { id:'Leaderboard',name:'Leaderboard', file:'Leaderboard.html',g:['#f2c14e','#c4782a'], glyph:'trophy'   },
   { id:'Notes',      name:'Notes',       file:'Notes.html',      g:['#f4d96f','#d09a22'], glyph:'notes'    },
   { id:'Files',      name:'Files',       file:'Files.html',      g:['#5aaef5','#2d6bb8'], glyph:'files'    },
   { id:'WestReport', name:'WestReport',  file:'WestReport.html', g:['#ef6a5a','#a3262e'], glyph:'bug'      },

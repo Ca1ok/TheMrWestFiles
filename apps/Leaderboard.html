@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Leaderboard</title>
+<link rel="stylesheet" href="../os/tokens.css"><link rel="stylesheet" href="../os/app/kit.css">
+<style>
+.cats{ display:flex; gap:8px; overflow-x:auto; padding:2px 16px 12px; margin:0 -16px; scrollbar-width:none; } .cats::-webkit-scrollbar{ display:none; }
+.cat{ flex:none; display:inline-flex; align-items:center; gap:7px; height:36px; padding:0 14px 0 10px; border-radius:18px; background:var(--card); color:var(--label); font:600 13.5px var(--font); box-shadow:inset 0 0 0 1px var(--sep,rgba(255,255,255,.08)); transition:transform .2s var(--spring),background .2s,color .2s; }
+.cat:active{ transform:scale(.95); } .cat .gi{ width:22px; height:22px; border-radius:7px; display:grid; place-items:center; background:var(--c); color:#fff; } .cat.on{ background:var(--c); color:#fff; box-shadow:none; } .cat.on .gi{ background:rgba(255,255,255,.22); }
+.hero{ border-radius:var(--r-xl); padding:18px 20px; color:#fff; position:relative; overflow:hidden; box-shadow:var(--shadow); background:linear-gradient(155deg,var(--c),color-mix(in srgb,var(--c) 40%,#10131c)); margin-bottom:14px; }
+.hero::after{ content:""; position:absolute; right:-50px; top:-50px; width:200px; height:200px; border-radius:50%; background:radial-gradient(circle,rgba(255,255,255,.18),transparent 70%); }
+.hero small{ opacity:.78; font:600 12.5px var(--font); letter-spacing:.05em; text-transform:uppercase; } .hero .big{ font:800 40px/1.05 var(--font); letter-spacing:-.02em; margin:4px 0 2px; } .hero .sub2{ opacity:.85; font:500 14px var(--font); }
+.pod{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; align-items:end; margin:0 0 14px; }
+.pod .p{ background:var(--card); border-radius:var(--r-l); padding:12px 8px 10px; text-align:center; position:relative; box-shadow:inset 0 0 0 1px var(--sep,rgba(255,255,255,.06)); } .pod .p.me{ box-shadow:inset 0 0 0 2px var(--tint); }
+.pod .p:nth-child(1){ order:2; padding-top:20px; padding-bottom:16px; } .pod .p:nth-child(2){ order:1; } .pod .p:nth-child(3){ order:3; }
+.pod .medal{ width:34px; height:34px; border-radius:50%; margin:0 auto 6px; display:grid; place-items:center; font:800 15px var(--font); color:#241a05; background:var(--m); box-shadow:0 3px 10px rgba(0,0,0,.25),inset 0 2px 0 rgba(255,255,255,.5); }
+.pod .nm{ font:700 14px var(--font); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .pod .vl{ font:700 13px var(--font); color:var(--label2); margin-top:2px; }
+.rk{ min-width:34px; text-align:center; font:700 15px var(--font); color:var(--label2); } .rk.top{ color:var(--tint); }
+.row.me{ background:var(--tint-dim); } .row.me b{ color:var(--tint); }
+.guest{ display:flex; gap:12px; align-items:center; background:var(--tint-dim); color:var(--tint); border-radius:var(--r-l); padding:12px 14px; margin-bottom:14px; font:500 14px/1.3 var(--font); cursor:pointer; }
+.upd{ text-align:center; margin-top:14px; }
+</style></head><body><div id="app"></div>
+<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
+<script>
+const { h, row, group, money, esc, num } = Kit, LB = OS.leaderboard, CATS = LB.categories(), SHOWN = 50;
+let cat = CATS[0].id, rows = [], loadedAt = 0, gen = 0;
+const fmt = (c, v) => c.unit === 'money' ? money(v, { compact: Math.abs(v) >= 1e4, dp: 2 }) : num(v);
+const medal = ['#f3c64a', '#c9d1db', '#d99a64'];
+const A = Kit.app({ title: 'Leaderboard', right: [{ icon: 'refresh', label: 'Refresh', onClick: () => load(true) }], build: (body) => {
+  const guest = h('div'), cats = h('div', { class: 'cats' }), hero = h('div'), pod = h('div'), list = h('div'), foot = h('div', { class: 'foot upd' });
+  body.append(guest, cats, hero, pod, list, foot);
+
+  const meUid = () => { const u = OS.auth.user(); return u ? u.uid : null; };
+  const current = () => CATS.find(c => c.id === cat);
+  /* your own row always uses your live numbers (no waiting for the server), then the board is re-sorted */
+  function merged(){
+    const c = current(), me = OS.auth.user(), out = rows.filter(r => !me || r.uid !== me.uid);
+    if(me){ const live = LB.mine(); if(live.name) out.push(Object.assign({ uid: me.uid }, live)); }
+    out.sort((a, b) => (b[c.field] || 0) - (a[c.field] || 0)); return out;
+  }
+  function paintCats(){
+    cats.innerHTML = '';
+    CATS.forEach(c => cats.appendChild(h('button', { class: 'cat' + (c.id === cat ? ' on' : ''), style: { '--c': c.color }, onclick: () => { if(cat === c.id) return; cat = c.id; paintCats(); load(false); } },
+      h('span', { class: 'gi', html: Kit.icon(c.glyph, 13, 2.2) }), c.name)));
+    const on = cats.querySelector('.on'); if(on && on.scrollIntoView) on.scrollIntoView({ inline: 'center', block: 'nearest' });
+  }
+  function paintGuest(){
+    guest.innerHTML = ''; const u = OS.auth.user();
+    if(!u) guest.appendChild(h('div', { class: 'guest', onclick: () => OS.open('Settings') }, h('span', { html: Kit.icon('cloudOff', 22, 2) }), h('span', null, 'Sign in and pick a display name to get on the leaderboard.')));
+    else if(!OS.auth.name()) guest.appendChild(h('div', { class: 'guest', onclick: () => OS.open('Settings') }, h('span', { html: Kit.icon('user', 22, 2) }), h('span', null, 'Choose a display name in Settings to appear on the board.')));
+  }
+  function paint(){
+    const c = current(), all = merged().slice(0, SHOWN), uid = meUid(); hero.innerHTML = ''; pod.innerHTML = ''; list.innerHTML = '';
+    const mineIdx = uid ? all.findIndex(r => r.uid === uid) : -1, live = LB.mine(), named = !!(uid && live.name);
+    hero.appendChild(h('div', { class: 'hero', style: { '--c': c.color } },
+      h('small', null, c.name + ' · ' + c.desc),
+      h('div', { class: 'big num' }, !named ? '—' : fmt(c, live[c.field] || 0)),
+      h('div', { class: 'sub2' }, !uid ? 'Sign in to see where you stand.' : !named ? 'Pick a display name to join the board.' : mineIdx >= 0 ? 'You’re #' + (mineIdx + 1) + (all.length < SHOWN ? ' of ' + all.length : ' on the board') : 'Just outside the top ' + SHOWN + ' — keep going!')));
+    if(!all.length){ list.appendChild(h('div', { class: 'card empty', style: { padding: '28px' } }, loadedAt ? 'No one is on this board yet.' : 'Loading…')); return; }
+    if(all.length >= 3){
+      all.slice(0, 3).forEach((p, i) => pod.appendChild(h('div', { class: 'p' + (p.uid === uid ? ' me' : '') }, h('div', { class: 'medal', style: { '--m': medal[i] } }, i + 1), h('div', { class: 'nm' }, p.name || 'Player'), h('div', { class: 'vl num' }, fmt(c, p[c.field] || 0)))));
+      pod.style.display = ''; } else pod.style.display = 'none';
+    const rest = all.length >= 3 ? all.slice(3) : all, off = all.length >= 3 ? 3 : 0;
+    if(rest.length) list.appendChild(group(rest.map((p, i) => row({
+      cls: p.uid === uid ? 'me' : '', left: h('span', { class: 'rk' + (i + off < 3 ? ' top' : '') }, '#' + (i + off + 1)), title: p.name || 'Player', sub: p.uid === uid ? 'You' : subline(c, p),
+      right: h('b', { class: 'num' }, fmt(c, p[c.field] || 0)) }))));
+  }
+  /* a one-line breakdown, free because every number comes in the same record */
+  function subline(c, p){
+    const m = v => money(v || 0, { compact: true });
+    if(c.id === 'nw') return 'Bank ' + m(p.value) + ' · Stocks ' + m(p.stk) + ' · Property ' + m(p.re);
+    if(c.id === 'cash') return 'Net worth ' + m(p.nw);
+    if(c.id === 're') return (p.props || 0) + ' propert' + (p.props === 1 ? 'y' : 'ies');
+    if(c.id === 'stk') return 'Net worth ' + m(p.nw);
+    if(c.id === 'inv') return (p.els || 0) + ' different elements';
+    if(c.id === 'disc') return (p.runs || 0) + ' reactions run';
+    if(c.id === 'runs') return (p.disc || 0) + ' discoveries';
+    if(c.id === 'props') return 'Property worth ' + m(p.re);
+    return null;
+  }
+  async function load(force){
+    const my = ++gen; if(force) LB.refresh();
+    if(!rows.length) paint();
+    try{ const r = await LB.list(cat, SHOWN); if(my !== gen) return; rows = r; loadedAt = Date.now(); }catch(e){ if(my !== gen) return; rows = []; loadedAt = Date.now(); }
+    paint(); foot.textContent = rows.length ? 'Updated ' + new Date(loadedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + ' · rankings refresh as players save' : '';
+  }
+  /* your own numbers move with the market, so re-sort locally (no network) when they change */
+  const soft = Kit.debounce(() => { if(loadedAt) paint(); }, 700);
+  ['cash', 'inv', 'stock', 'props', 'lab'].forEach(e => Kit.live(e, soft));
+  const tick = setInterval(() => { if(!document.hidden && loadedAt) paint(); }, 5000); window.addEventListener('pagehide', () => clearInterval(tick));   // the market moves your stocks: refresh your own row now and then (no network)
+  Kit.live('auth', () => { paintGuest(); load(true); });
+  paintGuest(); paintCats(); load(false);
+} });
+</script></body></html>

@@ -133,9 +133,22 @@
   /* ---------------- bank ---------------- */
   const bank = {
     balance: () => K.S.cash, bills: K.bank.bills, open: K.bank.open, owed: K.bank.owed, preview: K.bank.preview, pay: K.bank.pay, payAll: K.bank.payAll, rate: K.bank.rate,
-    history: () => K.S.bank.hist.slice(), config: () => Object.assign({}, CFG.tax), netWorth: K.netWorth,
-    breakdown: () => ({ cash: K.S.cash, inventory: K.inventoryValue(), stock: K.stockValue(), property: K.propValue() }),
-    ranking: async n => { try{ await K.cloud.publishBoard(true); }catch(e){} return K.cloud.leaderboard(n); }
+    history: () => K.S.bank.hist.slice(), config: () => Object.assign({}, CFG.tax, { threshold: K.bank.threshold() }), threshold: () => K.bank.threshold(), netWorth: K.netWorth,
+    breakdown: () => ({ cash: K.S.cash, inventory: K.inventoryValue(), stock: K.stockValue(), property: K.propValue() })
+  };
+
+  /* ---------------- leaderboard (its own app; the Bank no longer ranks anyone) ---------------- */
+  const LBC = new Map();                                              // one query per category, cached for 30 s, so opening and flipping tabs costs almost nothing
+  const leaderboard = {
+    categories: () => K.cloud.LB.map(c => Object.assign({}, c)),
+    mine: () => K.cloud.boardEntry(),
+    async list(id, n){
+      const cat = K.cloud.LB.find(c => c.id === id) || K.cloud.LB[0]; n = Math.max(5, Math.min(50, n || 25)); const key = cat.id + ':' + n, hit = LBC.get(key);
+      if(hit && Date.now() - hit.at < 30000) return hit.rows;
+      try{ await K.cloud.publishBoard(true); }catch(e){}
+      const rows = await K.cloud.leaderboard(n, cat.field); LBC.set(key, { at: Date.now(), rows }); return rows;
+    },
+    refresh: () => LBC.clear()
   };
 
   /* ---------------- mail ---------------- */
@@ -156,7 +169,7 @@
 
   /* ---------------- stock + games + files + world ---------------- */
   const stock = { price: K.market.price, series: K.market.series, seriesFast: K.market.seriesFast, sellQty: K.market.sellQty, sellFraction: K.market.sellFraction, buyFraction: K.market.buyFraction, seriesFast: K.market.seriesFast, sellQty: K.market.sellQty, sellFraction: K.market.sellFraction, buyFraction: K.market.buyFraction, ranges: K.market.ranges, change24: K.market.change24, lots: K.market.lots, buy: K.market.buy, sell: K.market.sell, sellAll: K.market.sellAll, value: K.stockValue, ready: () => K.market.ready, wantFast: K.market.wantFast };
-  const games = { award: (id, base) => { base = Math.max(0, Math.min(40, +base || 0)); return K.award(String(id).slice(0, 30), base); }, info: () => { const g = K.gameDay(); return { earned: g.earned, softcap: CFG.game.dailySoftcap, plays: Object.assign({}, g.plays), bonus: K.collectionBonus() }; } };
+  const games = { award: (id, base) => { base = Math.max(0, Math.min(40, +base || 0)); return K.award(String(id).slice(0, 30), base); }, info: () => { const g = K.gameDay(); return { earned: g.earned, softcap: Math.round(CFG.game.dailySoftcap * K.econ()), plays: Object.assign({}, g.plays), bonus: K.collectionBonus() }; } };
   const files = { record: uid => C.serverRecord(uid), usage: () => ({ bytes: C.bytes, reads: C.reads, writes: C.writes }) };
   const world = { articles: n => World.latestArticles(K.now(), n || 12), mults: () => World.elementMults(K.now()), sector: s => World.sectorIndex(s, K.now()), impacts: () => World.impactsBefore(K.now(), 6) };
   const admin = {
@@ -172,7 +185,7 @@
     on: (e, f) => K.on(e, f), emit: undefined,
     now: K.now, today: K.today, cash: () => K.S.cash,
     prefs: { get: k => K.prefs[k], all: () => JSON.parse(JSON.stringify(K.prefs)), set: (k, v) => K.setPref(k, v) },
-    shop, lab, props, bank, mail, auth, stock, games, files, world, admin, gallery,
+    shop, lab, props, bank, mail, auth, stock, games, files, world, admin, gallery, leaderboard, econ: () => K.econ(),
     report: { submit: r => C.report.submit(r), list: () => C.report.list(), setStatus: (i, s) => C.report.setStatus(i, s), remove: i => C.report.remove(i) },
     chem: Chem, phys: Phys, mol: Mol, worldModel: World,
     data: { ELEMENTS, CATEGORY_COLORS, CATEGORY_LABELS, GAS_AT_25C, LIQUID_AT_25C, UNKNOWN_STATE, STATE_COLORS, STATE_LABELS, BLOCK_COLORS, BLOCK_LABELS, COMPOUND_LOOKUP, CATEGORY_LOOKUP_LABELS, POLYATOMIC_IONS, DATABOOK, WANTED_DATA, PROPERTIES, PROPERTY_SECTORS, TOOLS, MELTING_POINTS, BOILING_POINTS, OXIDATION, ELECTRONEG, RECIPES },

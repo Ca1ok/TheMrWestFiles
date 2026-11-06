@@ -36,14 +36,14 @@
 const { h, esc, ago, group } = Kit, W = OS.data.WANTED_DATA, M = OS.worldModel;
 const SEC_NAMES = { land: 'Land', residential: 'Residential property', commercial: 'Commercial property', industrial: 'Industrial property', luxury: 'Luxury property' };
 let imgs = [], thumbs = new Map();
-function impactChip(a){ if(!a.impact) return null; const p = a.impact.pct * 100, up = p >= 0, label = a.impact.el ? OS.chem.elements[a.impact.el].name + ' price' : SEC_NAMES[a.impact.sector]; return h('span', { class: 'imp ' + (up ? 'up' : 'down') }, (up ? '▲ ' : '▼ ') + label + ' ' + (up ? '+' : '−') + Math.abs(p).toFixed(0) + '%'); }
+function impactChip(a){ if(!a.impact) return null; const p = a.impact.pct * 100, up = p >= 0, label = a.impact.el ? OS.chem.elements[a.impact.el].name + ' price' : a.impact.all ? 'All prices' : SEC_NAMES[a.impact.sector]; return h('span', { class: 'imp ' + (up ? 'up' : 'down') }, (up ? '▲ ' : '▼ ') + label + ' ' + (up ? '+' : '−') + Math.abs(p).toFixed(0) + '%'); }
 const CATS = ['All', 'Breaking', 'Markets', 'Property', 'Science', 'Local', 'Opinion'];
 let cat = 'All';
 const A = Kit.app({ title: 'News', build: (body) => {
-  const poster = h('div', { class: 'banner wp', role: 'link', tabindex: '0', title: 'Open the poster as a page' }), chips = h('div', { class: 'chips2' }), feed = h('div'); body.append(poster, chips, feed);
-  const openPoster = () => { if(OS.openPage) OS.openPage('preview.html'); else window.open('../preview.html', '_blank', 'noopener'); };
+  const poster = h('div', { class: 'banner wp', role: 'link', tabindex: '0', title: 'Open the poster in Preview' }), chips = h('div', { class: 'chips2' }), feed = h('div'); body.append(poster, chips, feed);
+  const openPoster = () => OS.preview({ kind: 'poster' });
   poster.addEventListener('click', openPoster); poster.addEventListener('keydown', e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openPoster(); } });
-  poster.innerHTML = '<span class="open">Open as page ↗</span><div class="stamp">FEDERAL<br>NOTICE</div><div class="eyebrow">By order of the court</div><h1 style="font-size:clamp(44px,12vw,84px)">WANTED</h1><div class="subject">Colin West</div><div class="rule"></div><div class="cols"><div><div class="lbl">Charges</div><ul>' + W.charges.map(c => '<li><b>' + esc(c.count) + '</b><span>' + esc(c.text) + '</span></li>').join('') + '</ul></div><div><div class="lbl">Sentence if apprehended</div><ul>' + W.sentence.map(c => '<li><b>' + esc(c.count) + '</b><span>' + esc(c.text) + '</span></li>').join('') + '</ul></div></div><div class="final">Your days are numbered.</div>';
+  poster.innerHTML = '<span class="open">Open in Preview ↗</span><div class="stamp">FEDERAL<br>NOTICE</div><div class="eyebrow">By order of the court</div><h1 style="font-size:clamp(44px,12vw,84px)">WANTED</h1><div class="subject">Colin West</div><div class="rule"></div><div class="cols"><div><div class="lbl">Charges</div><ul>' + W.charges.map(c => '<li><b>' + esc(c.count) + '</b><span>' + esc(c.text) + '</span></li>').join('') + '</ul></div><div><div class="lbl">Sentence if apprehended</div><ul>' + W.sentence.map(c => '<li><b>' + esc(c.count) + '</b><span>' + esc(c.text) + '</span></li>').join('') + '</ul></div></div><div class="final">Your days are numbered.</div>';
   let ids = '';
   function paintChips(){ chips.innerHTML = ''; CATS.forEach(c => chips.appendChild(h('button', { class: 'chip' + (c === cat ? ' on' : ''), onclick: () => { cat = c; paintChips(); paint(true); } }, c))); }
   async function loadImgs(){ try{ imgs = (await OS.gallery.list()).filter(m => m.type !== 'video'); }catch(e){} paint(true); }
@@ -67,13 +67,13 @@ const A = Kit.app({ title: 'News', build: (body) => {
   function openArticle(a, m){
     A.push({ title: a.cat, large: false, backLabel: 'News', build: (b) => {
       const im = h('div', { class: 'detail-img', style: m ? {} : { display: 'none' } }); if(m) setThumb(im, m);
-      const open = a.impact ? h('button', { class: 'btn block tinted', onclick: () => OS.open(a.impact.el ? 'WestShop' : 'RealEstate') }, a.impact.el ? 'See prices in WestShop' : 'Open Real Estate') : null;
+      const open = a.impact ? h('button', { class: 'btn block tinted', onclick: () => OS.open(a.impact.el || a.impact.all ? 'WestShop' : 'RealEstate') }, a.impact.el || a.impact.all ? 'See prices in WestShop' : 'Open Real Estate') : null;
       const paras = a.paras || [a.body], rel = OS.world.articles(60).filter(x => x.id !== a.id && (x.cat === a.cat)).slice(0, 3);
       const quote = paras.length > 2 ? paras[1] : null;
       b.appendChild(h('div', { class: 'detail' }, im, h('span', { class: 'cat' }, a.cat), h('h3', null, a.headline),
         h('div', { class: 'by' }, h('span', { class: 'av2' }, a.by.split(' ').map(w => w[0]).slice(-2).join('')), h('b', null, a.by), h('span', null, '· ' + new Date(a.t).toLocaleString([], { weekday: 'long', hour: 'numeric', minute: '2-digit' }) + ' · ' + a.mins + ' min read'), impactChip(a)),
         h('p', { class: 'lead dropcap' }, paras[0]), quote ? h('blockquote', null, quote) : null, ...paras.slice(quote ? 2 : 1).map(t => h('p', null, t)),
-        a.impact ? h('div', { class: 'impactbox' }, h('small', null, 'Market impact'), h('div', null, a.impact.el ? 'Traders react: the price of ' + OS.chem.elements[a.impact.el].name + ' (and compounds made from it) shifts for a few days, then fades.' : 'Property in this sector reacts to the news for about a week, then drifts back.'), impactChip(a)) : null, open));
+        a.impact ? h('div', { class: 'impactbox' }, h('small', null, 'Market impact'), h('div', null, a.impact.el ? 'Traders react: the price of ' + OS.chem.elements[a.impact.el].name + ' (and compounds made from it) shifts for a few hours, then fades.' : a.impact.all ? 'Every price in WestShop nudges for a few hours, then settles.' : 'Property in this sector reacts to the news for about a day, then drifts back.'), impactChip(a)) : null, open));
       if(rel.length){ b.appendChild(h('h2', { class: 'sec' }, 'Related stories')); b.appendChild(group(rel.map(x => Kit.row({ title: x.headline, wrap: true, sub: x.cat + ' · ' + ago(x.t), chev: true, onClick: () => openArticle(x, null) })))); }
     } });
   }

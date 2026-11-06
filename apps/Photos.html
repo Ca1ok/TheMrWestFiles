@@ -5,14 +5,6 @@
 .pgrid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(var(--cell,112px),1fr)); gap:3px; margin:0 -16px; } @media (min-width:700px){ .pgrid{ --cell:150px; margin:0 -4px; } }
 .pt{ aspect-ratio:1; background:var(--card2) center/cover; position:relative; overflow:hidden; padding:0; transition:opacity .35s,transform .25s var(--spring); } .pt:active{ transform:scale(.96); }
 .pt.ld{ background-image:linear-gradient(90deg,var(--card2),var(--card3),var(--card2)); background-size:200% 100%; animation:sk 1.3s linear infinite; } .pt .bd{ position:absolute; left:6px; bottom:6px; font:700 11px var(--font); color:#fff; background:rgba(0,0,0,.55); border-radius:6px; padding:2px 6px; backdrop-filter:blur(6px); }
-.viewer{ position:absolute; inset:0; z-index:40; background:#000; color:#fff; display:flex; flex-direction:column; touch-action:pan-y; --label:#fff; }
-.viewer .vt{ position:absolute; top:0; left:0; right:0; padding:calc(var(--sat,0px) + 6px) 14px 30px; display:flex; align-items:center; gap:10px; background:linear-gradient(180deg,rgba(0,0,0,.7),transparent); z-index:3; transition:opacity .25s; } .viewer .vt b{ flex:1; min-width:0; font:600 16px var(--font); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:center; }
-.viewer .vb{ position:absolute; bottom:0; left:0; right:0; padding:30px 14px calc(var(--sab,0px) + 6px); display:flex; justify-content:center; gap:10px; background:linear-gradient(0deg,rgba(0,0,0,.7),transparent); z-index:3; transition:opacity .25s; } .viewer.hide .vt,.viewer.hide .vb{ opacity:0; pointer-events:none; }
-.viewer .vbtn{ height:44px; padding:0 18px; border-radius:22px; background:rgba(255,255,255,.18); backdrop-filter:blur(14px); color:#fff; font:600 15px var(--font); display:inline-flex; align-items:center; gap:7px; transition:transform .2s var(--spring); } .viewer .vbtn:active{ transform:scale(.93); } .viewer .vbtn.round{ width:44px; padding:0; justify-content:center; }
-.stage{ flex:1; display:grid; place-items:center; overflow:hidden; } .stage img,.stage video{ max-width:100%; max-height:100%; object-fit:contain; animation:fadeIn .4s ease; } @keyframes fadeIn{ from{ opacity:0; } }
-.ring{ width:64px; height:64px; } .ring circle{ fill:none; stroke-width:5; stroke-linecap:round; } .ring .bg{ stroke:rgba(255,255,255,.2); } .ring .fg{ stroke:#fff; stroke-dasharray:176; stroke-dashoffset:176; transform:rotate(-90deg); transform-origin:50% 50%; transition:stroke-dashoffset .2s; }
-.nv{ position:absolute; top:50%; width:48px; height:48px; margin-top:-24px; border-radius:50%; background:rgba(255,255,255,.16); backdrop-filter:blur(12px); display:grid; place-items:center; color:#fff; z-index:3; transition:opacity .25s; } .nv.l{ left:12px; } .nv.r{ right:12px; } .viewer.hide .nv{ opacity:0; } @media (max-width:700px){ .nv{ display:none; } }
-.msgbox{ text-align:center; padding:0 26px; max-width:420px; font:500 16px/1.45 var(--font); color:rgba(255,255,255,.85); }
 </style></head><body><div id="app"></div>
 <script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
 <script>
@@ -39,45 +31,8 @@ const A = Kit.app({ title: 'Photos', right: OS.auth.isAdmin() ? [{ icon: 'plus',
     list.forEach((m, i) => { const t = h('button', { class: 'pt ld', 'aria-label': m.title || 'Photo', onclick: () => tapTile(list, i) }); t._m = m; if(m.type !== 'image') t.appendChild(h('span', { class: 'bd' }, m.type === 'gif' ? 'GIF' : '▶ ' + (m.duration ? Math.floor(m.duration / 60) + ':' + String(m.duration % 60).padStart(2, '0') : 'Video'))); grid.appendChild(t); io.observe(t); });
     info.appendChild(h('div', { class: 'foot', style: { textAlign: 'center', marginTop: '14px' } }, list.length + ' item' + (list.length === 1 ? '' : 's') + ' · previews load as you scroll and are saved on this device'));
   }
-  /* ---------- viewer ---------- */
-  function open(list, i0){
-    let i = i0, gen = 0; const v = h('div', { class: 'viewer' }), stage = h('div', { class: 'stage' }), title = h('b'), idx = h('span', { class: 'dim', style: { fontSize: '13px' } });
-    const bClose = h('button', { class: 'vbtn round', 'aria-label': 'Close', html: Kit.icon('chevL', 22, 2.4), onclick: close }), vt = h('div', { class: 'vt' }, bClose, title, idx), vb = h('div', { class: 'vb' });
-    const nl = h('button', { class: 'nv l', html: Kit.icon('chevL', 24, 2.4), onclick: e => { e.stopPropagation(); go(-1); } }), nr = h('button', { class: 'nv r', html: Kit.icon('chevR', 24, 2.4), onclick: e => { e.stopPropagation(); go(1); } });
-    v.append(stage, vt, vb, nl, nr); document.getElementById('app').appendChild(v); if(!OS.prefs.get('reduceMotion')) v.animate([{ opacity: 0, transform: 'scale(.94)' }, { opacity: 1, transform: 'none' }], { duration: 320, easing: 'cubic-bezier(.22,.9,.28,1)' });
-    function close(){ document.removeEventListener('keydown', key); const a = OS.prefs.get('reduceMotion') ? null : v.animate([{ opacity: 1 }, { opacity: 0, transform: 'scale(.96)' }], { duration: 220 }); const f = () => { v.remove(); const vid = stage.querySelector('video'); if(vid) vid.pause(); }; a ? a.onfinish = f : f(); }
-    function key(e){ if(e.key === 'ArrowLeft') go(-1); else if(e.key === 'ArrowRight') go(1); else if(e.key === 'Escape') close(); } document.addEventListener('keydown', key);
-    function go(d){ const n = i + d; if(n < 0 || n >= list.length) return; i = n; show(); }
-    async function show(){
-      const m = list[i], my = ++gen; title.textContent = m.title || 'Untitled'; idx.textContent = (i + 1) + ' / ' + list.length; nl.style.visibility = i ? '' : 'hidden'; nr.style.visibility = i < list.length - 1 ? '' : 'hidden';
-      stage.innerHTML = '<svg class="ring" viewBox="0 0 64 64"><circle class="bg" cx="32" cy="32" r="28"/><circle class="fg" cx="32" cy="32" r="28"/></svg>'; const fg = stage.querySelector('.fg');
-      buttons(m);
-      try{ const { url } = await G.view(m, p => { if(my === gen) fg.style.strokeDashoffset = 176 * (1 - p); }); if(my !== gen) return; stage.innerHTML = ''; stage.appendChild(m.type === 'video' ? h('video', { src: url, controls: true, playsinline: true, autoplay: true, loop: true }) : h('img', { src: url, alt: m.title || '' })); G.countView(m.id); }
-      catch(e){ if(my !== gen) return; stage.innerHTML = ''; stage.appendChild(h('div', { class: 'msgbox' }, G.errText(e))); }
-    }
-    stage.addEventListener('click', () => v.classList.toggle('hide'));
-    let sx = null; v.addEventListener('pointerdown', e => { sx = e.target.closest('button,video') ? null : e.clientX; }); v.addEventListener('pointerup', e => { if(sx != null && Math.abs(e.clientX - sx) > 70) go(e.clientX < sx ? 1 : -1); sx = null; });
-    function buttons(m){
-      vb.innerHTML = '';
-      vb.appendChild(h('button', { class: 'vbtn', html: Kit.icon('share', 18, 2) + 'Save', onclick: () => download(m) }));
-      if(m.type === 'image') vb.appendChild(h('button', { class: 'vbtn', html: Kit.icon('image', 18, 2) + 'Wallpaper', onclick: () => wallpaper(m) }));
-      vb.appendChild(h('button', { class: 'vbtn round', 'aria-label': 'Info', html: Kit.icon('info', 20, 2), onclick: () => infoSheet(m) }));
-      if(OS.auth.isAdmin()){ vb.appendChild(h('button', { class: 'vbtn round', 'aria-label': 'Rename', html: Kit.icon('edit', 18, 2), onclick: async () => { const t = prompt('Title', m.title || ''); if(t != null){ await OS.admin.gallery.rename(m.id, t); m.title = t; title.textContent = t; Kit.toast('Renamed'); } } })); vb.appendChild(h('button', { class: 'vbtn round', style: { background: 'rgba(238,98,89,.55)' }, 'aria-label': 'Delete', html: Kit.icon('trash', 18, 2), onclick: async () => { if(await Kit.confirm({ title: 'Delete this ' + (m.type === 'video' ? 'video' : 'photo') + '?', msg: 'It is removed for everyone.', ok: 'Delete', destructive: true })){ await OS.admin.gallery.remove(m.id); items = items.filter(x => x.id !== m.id); list.splice(i, 1); Kit.toast('Deleted', 'good'); if(!list.length){ close(); paint(); } else { i = Math.min(i, list.length - 1); show(); paint(); } } } })); }
-    }
-    show();
-  }
-  async function download(m){
-    const cached = await G.isCached((m.type === 'image' && m.fullChunks ? 'full/' : 'view/') + m.id), mb = ((m.type === 'image' && m.fullChunks ? m.size : m.viewSize || m.size) || 0) / 1e6;
-    if(!cached && mb > 3 && !(await Kit.confirm({ title: 'Download original?', msg: 'This file is about ' + mb.toFixed(1) + ' MB. It counts toward the shared monthly data budget.', ok: 'Download' }))) return;
-    try{ const { blob } = await G.full(m); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = m.origName || ((m.title || 'photo') + '.' + ((blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg'))); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); G.countDownload(m.id); Kit.toast('Saved to your device', 'good'); }catch(e){ Kit.toast(G.errText(e), 'bad'); }
-  }
-  function wallpaper(m){
-    Kit.sheet({ title: 'Use as wallpaper', build: (sb, api) => { const set = modes => { const w = Object.assign({}, OS.prefs.get('wall')); modes.forEach(k => { w[k] = m.id; }); OS.prefs.set('wall', w); api.close(); Kit.toast('Wallpaper set', 'good'); };
-      sb.append(group(row({ glyph: 'sun', color: '#e0a23a', title: 'Light mode', onClick: () => set(['light']) }), row({ glyph: 'moon', color: '#5b58b8', title: 'Dark mode', onClick: () => set(['dark']) }), row({ glyph: 'image', color: '#c0563a', title: 'Both', onClick: () => set(['light', 'dark']) })), h('div', { class: 'foot' }, 'The image is downloaded once and kept on this device.')); } });
-  }
-  function infoSheet(m){
-    Kit.sheet({ title: m.title || 'Details', build: (sb) => { const s = (stats && stats[m.id]) || {}; sb.appendChild(group(row({ title: 'Type', right: m.type === 'gif' ? 'GIF' : m.type[0].toUpperCase() + m.type.slice(1) }), m.w ? row({ title: 'Dimensions', right: m.w + ' × ' + m.h }) : null, row({ title: 'Size', right: ((m.size || 0) / 1e6).toFixed(2) + ' MB' }), m.createdAt ? row({ title: 'Added', right: new Date(m.createdAt).toLocaleDateString() }) : null, row({ title: 'Views', right: Kit.num(s.views || 0) }), row({ title: 'Downloads', right: Kit.num(s.downloads || 0) }))); } });
-  }
+  /* ---------- viewer: pictures open in the Preview app, in their own window ---------- */
+  function open(list, i){ OS.preview({ kind: 'gallery', list: list.slice(), index: i, onChange: () => load(true) }); }
   /* ---------- upload (admin) ---------- */
   const fileIn = h('input', { type: 'file', multiple: true, accept: 'image/*,video/*', style: { display: 'none' }, onchange: async e => { const files = [...e.target.files]; e.target.value = ''; let n = 0; for(const f of files){ try{ Kit.toast('Uploading ' + (++n) + '/' + files.length + '…'); await OS.admin.gallery.upload(f, p => {}); }catch(err){ Kit.toast(f.name + ': ' + err.message, 'bad'); } } Kit.toast('Upload finished', 'good'); load(true); } });
   document.body.appendChild(fileIn);

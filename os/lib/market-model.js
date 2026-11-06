@@ -32,6 +32,19 @@ const MARKET_BASE_VALUE = 12.50;          // trend level at genesis
 const MARKET_TICKS_PER_DAY = 86400000 / MARKET_TICK_MS; // 345600
 const MARKET_DAILY_DRIFT = 1.00;          // dollars the trend level rises per real day
 const MARKET_MIN_PRICE = 0.01;
+
+// ---- GROWTH ERA (Nov 2026) --------------------------------------------------------------------------
+// From MARKET_GROWTH_T0 on, the trend level COMPOUNDS instead of climbing a flat $1/day, so holding $WEST makes money over time.
+// Everything before T0 is priced exactly as before (no history is re-priced) and the level is continuous at T0.
+//   growth(d) = (1 + d/TAU)^K * exp(C*d)   with d = days since T0   ->   about +4.4%/day at first, easing to about +0.7%/day after a year
+// (the economy index in os/lib/world.js uses the same start day, so prices, rents and payouts across WestOS rise together)
+const MARKET_GROWTH_T0 = 78 * 345600;     // 2026-11-07T00:00Z, as a tick index
+const MARKET_GROWTH_TAU = 30, MARKET_GROWTH_K = 1.2, MARKET_GROWTH_C = 0.004;
+function marketGrowthAt(tickIndex){
+  if(tickIndex <= MARKET_GROWTH_T0) return 1;
+  const d = (tickIndex - MARKET_GROWTH_T0) / MARKET_TICKS_PER_DAY;
+  return Math.pow(1 + d / MARKET_GROWTH_TAU, MARKET_GROWTH_K) * Math.exp(MARKET_GROWTH_C * d);
+}
 const MARKET_GENESIS_STATE = { fairValue: 1, momentum: 0, vol: 0.0014, spike: 0, price: 1 };
 
 // --- noise process tuning (all in "fraction of the trend level" units) ---
@@ -58,20 +71,24 @@ function marketTimeForTickIndex(i){
 // The noise process is multiplied by this level, so after a big jump the swings scale with the
 // new price exactly like a real stock's would.
 function marketLevelAtTick(tickIndex, adjustments){
-  let level = MARKET_BASE_VALUE + (tickIndex / MARKET_TICKS_PER_DAY) * MARKET_DAILY_DRIFT;
+  const growing = tickIndex > MARKET_GROWTH_T0;
+  let base = MARKET_BASE_VALUE + (Math.min(tickIndex, MARKET_GROWTH_T0) / MARKET_TICKS_PER_DAY) * MARKET_DAILY_DRIFT;
+  let extra = 0;                                  // fading spikes, and any permanent shift made after the growth era began: plain dollars on top
   if(adjustments){
     for(let k = 0; k < adjustments.length; k++){
       const a = adjustments[k];
       if(a.tickIndex > tickIndex) continue;
       if(a.fadeSec > 0){
         const fadeTicks = (a.fadeSec * 1000) / MARKET_TICK_MS;
-        level += a.delta * Math.exp(-3 * (tickIndex - a.tickIndex) / fadeTicks);
+        extra += a.delta * Math.exp(-3 * (tickIndex - a.tickIndex) / fadeTicks);
+      } else if(growing && a.tickIndex <= MARKET_GROWTH_T0){
+        base += a.delta;                          // a permanent shift from before the growth era rides the growth curve with everything else
       } else {
-        level += a.delta;
+        extra += a.delta;
       }
     }
   }
-  return level;
+  return growing ? base * marketGrowthAt(tickIndex) + extra : base + extra;
 }
 
 // ---- FAST "GAME" LAYER -------------------------------------------------------------------------
@@ -116,8 +133,32 @@ function marketValueNoise(tick, period, salt){            // smooth random curve
 // [period in ticks (1 tick = 250ms), amplitude as a fraction of price] — 2.5s, 8s, 25s, 85s, 5min, 20min waves
 const MARKET_FAST_LAYERS = [[10, 0.006], [32, 0.010], [100, 0.014], [340, 0.020], [1200, 0.026], [4800, 0.030]];
 const MARKET_EVENT_WINDOW = 480;                          // at most one pump/dump per 2-minute window (10% of windows have one)
+// MORE EVENTS (growth era): a second, busier pump/dump generator. 2.5-minute windows, 30% of them hold an event (about one every 8 minutes),
+// sized 2-7% (before the volatility multiplier), snappier ramp (5 s) and a ~40 s fade. Like everything here it is a pure function of the tick,
+// so every player sees the same event at the same second with zero network traffic. Only events that START after the growth era began exist,
+// so nothing before it is re-priced and the price stays continuous.
+const MARKET_EVENT2_WINDOW = 600, MARKET_EVENT2_CHANCE = 0.30;
+function marketEvent2Start(w){ return w * MARKET_EVENT2_WINDOW + Math.floor(marketHash(MARKET_SEED + 14, w) * 300); }
+function marketEvent2Info(w){
+  if(marketHash(MARKET_SEED + 11, w) >= MARKET_EVENT2_CHANCE) return null;
+  const startTick = marketEvent2Start(w); if(startTick < MARKET_GROWTH_T0) return null;
+  return { id: 'e' + w, dir: marketHash(MARKET_SEED + 12, w) < 0.5 ? -1 : 1, mag: 0.02 + 0.05 * marketHash(MARKET_SEED + 13, w), startTick, pick: marketHash(MARKET_SEED + 15, w) };
+}
+// the newest new-style event that has started by `tick` and is still fresh (age in ticks), for alerts: { id, dir, mag, startTick, age, pick } or null
+function marketEvent2At(tick, maxAge){
+  const w0 = Math.floor(tick / MARKET_EVENT2_WINDOW);
+  for(let w = w0; w >= w0 - 2; w--){ const e = marketEvent2Info(w); if(!e) continue; const age = tick - e.startTick; if(age < 0) continue; return age <= (maxAge || 240) ? Object.assign(e, { age }) : null; }
+  return null;
+}
 function marketFastLog(tick){
   let s = 0;
+  if(tick > MARKET_GROWTH_T0){
+    const w1 = Math.floor(tick / MARKET_EVENT2_WINDOW);
+    for(let w = w1 - 1; w <= w1; w++){
+      const e = marketEvent2Info(w); if(!e) continue; const dt = tick - e.startTick; if(dt < 0) continue;
+      if(dt < 20){ const f = dt / 20; s += e.dir * e.mag * f * f * (3 - 2 * f); } else s += e.dir * e.mag * Math.exp(-(dt - 20) / 160);
+    }
+  }
   for(let j = 0; j < MARKET_FAST_LAYERS.length; j++) s += MARKET_FAST_LAYERS[j][1] * marketValueNoise(tick, MARKET_FAST_LAYERS[j][0], MARKET_SEED + j * 7919);
   const w0 = Math.floor(tick / MARKET_EVENT_WINDOW);
   for(let w = w0 - 2; w <= w0; w++){                      // an event's tail can outlive its window, so look back two
@@ -154,8 +195,13 @@ function marketGameFactor(tick){
 
 // What every player actually sees and trades at. Rounded to 4 decimals so two engines that
 // differ in the last floating-point bit of Math.exp still agree on the exact same number.
+// Growth era: the slow, hours-long wander of the noise is calmed to ~30% (blended in over the first day, so the price never jumps), so the
+// compounding trend outruns it: a short flip is still a gamble (the fast layers and events are untouched) but holding makes money.
+const MARKET_SLOW_CALM = 0.30;
 function marketDisplayPrice(norm, tickIndex, adjustments){
-  const p = norm * marketLevelAtTick(tickIndex, adjustments) * marketGameFactor(tickIndex);
+  let n = norm;
+  if(tickIndex > MARKET_GROWTH_T0){ const f = Math.min(1, (tickIndex - MARKET_GROWTH_T0) / MARKET_TICKS_PER_DAY), k = 1 - (1 - MARKET_SLOW_CALM) * f * f * (3 - 2 * f); n = 1 + (norm - 1) * k; }
+  const p = n * marketLevelAtTick(tickIndex, adjustments) * marketGameFactor(tickIndex);
   return Math.round(Math.max(MARKET_MIN_PRICE, p) * 10000) / 10000;
 }
 
@@ -252,7 +298,7 @@ function marketCandleTicks(bucket, resTicks){
 if(typeof module !== 'undefined' && module.exports){
   module.exports = {
     MARKET_MODEL_VERSION, MARKET_SEED, MARKET_GENESIS_T, MARKET_TICK_MS, MARKET_CALLS_PER_TICK,
-    MARKET_GENESIS_STATE, MARKET_BASE_VALUE, MARKET_TICKS_PER_DAY, MARKET_DAILY_DRIFT, MARKET_MIN_PRICE,
+    MARKET_GENESIS_STATE, MARKET_BASE_VALUE, MARKET_TICKS_PER_DAY, MARKET_DAILY_DRIFT, MARKET_MIN_PRICE, MARKET_GROWTH_T0, marketGrowthAt, marketEvent2At,
     marketTickIndexForTime, marketTimeForTickIndex, marketLevelAtTick, marketDisplayPrice,
     MARKET_VOL_LEVELS, MARKET_DEFAULT_VOL_LEVEL, marketSetVolSchedule, marketVolLevelAt, marketVolAt, marketEventAt, marketGameFactor, marketFastLog,
     marketRngFromCallCount, marketAdvanceOneTick, marketSimulate,

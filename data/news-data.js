@@ -1,5 +1,5 @@
-// News templates. Every day the world generates ~8 articles from these, identically for every player (seeded by the date).
-// kind: 'el' = moves one element's price, 'sec' = moves a real-estate sector, 'fun' = pure comedy.
+// News templates. Every day the world generates ~96 articles (one every 15 minutes) from these, identically for every player (seeded by the date).
+// kind: 'el' = moves one element's price, 'sec' = moves a real-estate sector, 'eco' = nudges every price for a few hours, 'fun' = pure comedy.
 // Placeholders: {el} {el2} {city} {num}. `pct` is the size range of the effect (fraction), + or −.
 const NEWS_CITIES = ['Fumeton', 'Beakerville', 'Titration Bay', 'Mole Hill', 'Ionia Heights', 'Port Reagent', 'Bunsenburg', 'Catalyst City', 'Distillery Row', 'Lake Entropy'];
 const NEWS_TEMPLATES = [
@@ -95,12 +95,34 @@ const NEWS_TEMPLATES = [
   // ---- Breaking ----
   { kind:'fun', cat:'Breaking', h:'BREAKING: Classroom 3 temporarily “too cold for chemistry”',                         b:'A heater has been dispatched. It is “on its way, probably”.', x:'Updates will follow once feeling returns to the fingers.' },
   { kind:'fun', cat:'Breaking', h:'BREAKING: Mr West seen near {city}, carrying a clipboard',                           b:'Residents have been advised to “act natural, and tidy”.', x:'Reports that the clipboard was “mostly empty” have not been confirmed.' },
-  { kind:'fun', cat:'Breaking', h:'BREAKING: Unattended Bunsen burner found “still on, still fine”',                    b:'Officials call it “a minor miracle, and a major reminder”.', x:'The burner has since been turned off and given a talking-to.' }
+  { kind:'fun', cat:'Breaking', h:'BREAKING: Unattended Bunsen burner found “still on, still fine”',                    b:'Officials call it “a minor miracle, and a major reminder”.', x:'The burner has since been turned off and given a talking-to.' },
+  // ---- faster-paced economy: more movers, and economy-wide stories (kind 'eco' nudges every item's price for a few hours) ----
+  { kind:'eco', cat:'Markets', pct:[0.02,0.05], h:'Record demand across every market; analysts “stunned, then busy”',            b:'Order books are full from the beakers to the bunsens.', x:'Traders say it is the busiest morning “since lunch”.' },
+  { kind:'eco', cat:'Markets', pct:[0.02,0.05], h:'Interest-rate cut sends shoppers into the stores',                              b:'Basket sizes are up and so are spirits.', x:'Several wallets were seen “smiling”.' },
+  { kind:'eco', cat:'Markets', pct:[0.02,0.04], h:'Supply chains “finally untangled”, says man holding a tangle',                  b:'Prices across the board have eased upwards in celebration.', x:'The tangle was later described as “mostly cable”.' },
+  { kind:'eco', cat:'Markets', pct:[0.03,0.05], h:'Holiday-season splurge lifts the whole market',                                 b:'Even the unloved shelves saw a little love.', x:'Gift-wrap is the only thing still out of stock.' },
+  { kind:'eco', cat:'Markets', pct:[-0.04,-0.02], h:'Brief wobble on the exchange as a rumour does the rounds',                    b:'It was about a rumour of a rumour. Prices dipped, then sulked.', x:'Analysts expect a recovery “as soon as someone says something nice”.' },
+  { kind:'eco', cat:'Markets', pct:[-0.04,-0.02], h:'Warehouse strike delays deliveries; prices flinch',                           b:'The picket line is said to be “polite but firm”.', x:'Talks resume after a snack break.' },
+  { kind:'el', cat:'Markets', pct:[0.10,0.34], h:'{el} trending after viral clip of a chemist “just holding it”',                  b:'The clip has been watched four million times, mostly by other chemists.', x:'Retailers have asked people to stop cheering at the shelves.' },
+  { kind:'el', cat:'Markets', pct:[0.12,0.36], h:'Government stockpile of {el} “mysteriously smaller”, says audit',                b:'The department blamed “a rounding error the size of a lorry”.', x:'Buyers moved in before the paperwork did.' },
+  { kind:'el', cat:'Science', pct:[0.10,0.30], h:'Lab trial pairs {el} with {el2}; results “suspiciously good”',                   b:'Peer reviewers requested more coffee before they would comment.', x:'A second trial is already booked.' },
+  { kind:'el', cat:'Markets', pct:[0.10,0.30], h:'Tuck-shop adds a {el} counter; queue reaches the car park',                       b:'Staff say the demand was “totally unforeseen, and also foreseen”.', x:'A second till is being installed.' },
+  { kind:'el', cat:'Markets', pct:[-0.34,-0.10], h:'Mislabelled barrels: {el} dumped on the market by accident',                    b:'The driver says the label “looked a lot like {el2}”.', x:'Prices dropped before anyone found the forklift.' },
+  { kind:'el', cat:'Markets', pct:[-0.30,-0.10], h:'Analyst downgrades {el}, upgrades own lunch order',                              b:'The note ran to nine words and one emoji.', x:'Traders sold first and asked about the emoji later.' },
+  { kind:'el', cat:'Science', pct:[-0.30,-0.10], h:'Replication fails: {el} effect “was mostly the weather”',                        b:'The original team has issued a thoughtful sigh.', x:'Funding is being moved to {el2}, which is apparently “weather-proof”.' },
+  { kind:'sec', cat:'Property', sector:'residential', pct:[0.02,0.05], h:'Heated pavements announced for {city}; house hunters “thawed”',              b:'Councillors say the plan is “warm, and costed”.', x:'Open houses were full by mid-morning.' },
+  { kind:'sec', cat:'Property', sector:'commercial', pct:[0.02,0.05], h:'{city} high street gets a “goggles-only” fashion week',                       b:'Rents are rising faster than the hemlines.', x:'Shops are advertising “lab-coat chic”.' },
+  { kind:'sec', cat:'Property', sector:'industrial', pct:[0.03,0.06], h:'New rail link to {city} works: freight “arrives, mostly on time”',            b:'The depot is calling it “a logistics love story”.', x:'Rents on the industrial estate jumped.' },
+  { kind:'sec', cat:'Property', sector:'land', pct:[-0.06,-0.02], h:'Bog found under {city} fields; buyers “dampened”',                                  b:'Surveyors recommend wellies and optimism.', x:'Prices held steady, then squelched.' },
+  { kind:'sec', cat:'Property', sector:'luxury', pct:[0.03,0.07], h:'{city} lands a Michelin-starred lab-kitchen; penthouses take note',                b:'The tasting menu is served in test tubes and “tastes like confidence”.', x:'Agents are calling it “the gentrification of beakers”.' },
+  { kind:'fun', cat:'Local', h:'Raffle prize of one (1) mole goes to the wrong table',                                        b:'The mole was last seen exploring the buffet.', x:'The winner says it was “a clerical error and a vibe”.' },
+  { kind:'fun', cat:'Breaking', h:'BREAKING: {el} spotted in a place it “definitely shouldn’t be”',                          b:'Officials have asked everyone to stay calm and keep their goggles on.', x:'Updates every few minutes.' },
+  { kind:'fun', cat:'Science', h:'New study says reactions happen faster when you watch them; kettles disagree',                b:'Kettles have asked to be left to boil in peace.', x:'The authors will be re-running everything with a camera.' },
 ];
 
 // Presentation: bylines, sections and how each story is laid out in the News app.
 const NEWS_BYLINES = ['Priya Moles', 'Tobias Reagent', 'Ada Bunsen', 'Mx. Titrate', 'Lena Fumé', 'Oscar Ionic', 'Wren Catalyst', 'Dr. Helena Flask', 'Sam Burette', 'Noor Entropy'];
-const NEWS_DEFAULT_CAT = { el: 'Markets', sec: 'Property', fun: 'Science' };
+const NEWS_DEFAULT_CAT = { el: 'Markets', sec: 'Property', fun: 'Science', eco: 'Markets' };
 const NEWS_FILLER = [
   'Observers say the story is “developing”, which in this town can mean anything from a rumour to a small fire.',
   'Local chemists were seen nodding thoughtfully, then checking their goggles.',

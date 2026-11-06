@@ -15,7 +15,7 @@ const OS_CONFIG = {
 
   // ---- free-tier protection (Firebase Spark: 10 GB/month download, 1 GB stored) ----
   syncDebounceMs: 20000,        // cloud writes are batched: at most one write burst per 20 s, only the fields that changed
-  leaderboardEveryMs: 15000,    // bank-balance entry refreshed at most every 15 seconds (only when the balance changed)
+  leaderboardEveryMs: 15000,    // your leaderboard record (all categories) is rewritten at most every 15 s, only when a number changed
   galleryBudgetBytes: 7e9,      // the Photos archive's share of the monthly allowance (enforced in the rules too)
   newsImageCount: 6,            // News only ever loads this many (tiny, cached) thumbnails per session
 

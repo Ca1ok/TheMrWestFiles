@@ -70,7 +70,7 @@ const A = Kit.app({ title: 'Settings', build: (body) => {
     rest.appendChild(h('div', { class: 'cap' }, 'Performance'));
     rest.appendChild(group(h('div', { class: 'row' }, h('div', { class: 'tx' }, h('b', null, 'Live update speed'), h('small', { class: 'wrap' }, 'How often prices and widgets refresh. Saver is lighter on batteries and older computers.')), h('div', { style: { width: '230px' } }, seg([{ id: 'saver', label: 'Saver' }, { id: 'balanced', label: 'Balanced' }, { id: 'smooth', label: 'Smooth' }], P_.get('updateSpeed') || 'balanced', v => P_.set('updateSpeed', v))))));
     rest.appendChild(h('div', { class: 'cap' }, 'News'));
-    rest.appendChild(group(row({ glyph: 'news', color: '#a2321f', title: 'Open the Wanted poster as a page', sub: 'Opens preview.html in a new tab — printable', chev: true, onClick: () => OS.openPage('preview.html') })));
+    rest.appendChild(group(row({ glyph: 'news', color: '#a2321f', title: 'Open the Wanted poster', sub: 'Shows it in the Preview app', chev: true, onClick: () => OS.preview({ kind: 'poster' }) })));
     rest.appendChild(h('div', { class: 'foot' }, 'Tip: click “Edit desktop” (top left) to add widgets, resize them and drag them around. Drag a window by its title bar; the green button maximizes.'));
     // Data
     rest.appendChild(h('div', { class: 'cap' }, 'Data & storage'));

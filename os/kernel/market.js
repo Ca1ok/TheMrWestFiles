@@ -31,7 +31,19 @@
   mk.volLevel = () => marketVolLevelAt(cp.tickIndex);                               // admin-facing only (the shell never shows this to players)
   /* ---- run loop: 1 Hz in the background, 4 Hz only while something (the Stocks app) wants smooth ticks ---- */
   let fast = 0, timer = null, lastEmit = 0;
-  function loop(){ advance(); K.emit('market', price); }
+  /* ---- live market events: the busier pump/dump generator in market-model.js is a pure function of the clock, so every player gets the same event
+   * at the same second with no network traffic. You are alerted only when you hold shares (otherwise it would just be noise). ---- */
+  const EV_UP = ['A big buyer sweeps the order book', 'Rumour of a major partnership', 'Analysts upgrade the stock', 'A short squeeze rattles the sellers', 'Whispers of a surprise earnings beat'];
+  const EV_DOWN = ['A large holder dumps shares', 'Rumour of a delay spooks traders', 'An analyst downgrade hits the tape', 'Profit-taking sweeps the market', 'A surprise sell order lands'];
+  let lastEv = (marketEvent2At(cp.tickIndex, 400) || {}).id || '', lastEvAt = 0;
+  function watchEvents(){
+    const e = marketEvent2At(cp.tickIndex, 160); if(!e || e.id === lastEv) return; lastEv = e.id;
+    const size = e.mag * (marketVolAt(cp.tickIndex) || 1), now = Date.now();
+    if(!K.loaded || !K.S.lots.length || size < 0.04 || now - lastEvAt < 45000) return; lastEvAt = now;
+    const pool = e.dir > 0 ? EV_UP : EV_DOWN;
+    K.emit('notify', { app: 'Stocks', title: '$WEST ' + (e.dir > 0 ? 'surges' : 'dips'), body: pool[Math.min(pool.length - 1, Math.floor(e.pick * pool.length))] + ' (' + (e.dir > 0 ? '▲' : '▼') + Math.round(size * 100) + '%)' });
+  }
+  function loop(){ advance(); watchEvents(); K.emit('market', price); }
   const SPEED = { smooth: [200, 1000], balanced: [250, 1000], saver: [1000, 3000] };
   function arm(){ clearInterval(timer); const sp = SPEED[K.prefs.updateSpeed] || SPEED.balanced; timer = setInterval(loop, fast > 0 ? sp[0] : sp[1]); }
   K.on('prefs', k => { if(k === 'updateSpeed' || k === '*') arm(); });

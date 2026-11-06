@@ -11,7 +11,6 @@
 .bill.ok{ background:var(--card); box-shadow:none; } .bill .amt{ font:700 30px/1 var(--font); letter-spacing:-.02em; } .bill .cd{ font:600 14px var(--font); color:var(--bad); } .bill .warn{ font:400 13px/1.4 var(--font); color:var(--label2); margin:8px 0 12px; }
 .guest{ display:flex; gap:12px; align-items:center; background:var(--tint-dim); color:var(--tint); border-radius:var(--r-l); padding:12px 14px; margin-bottom:14px; font:500 14px/1.3 var(--font); }
 .curve{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; text-align:center; } .curve div{ background:var(--fill); border-radius:12px; padding:10px 4px; } .curve b{ display:block; font:700 15px var(--font); } .curve small{ color:var(--label2); font:500 12px var(--font); }
-.rk{ width:28px; text-align:center; font:700 15px var(--font); color:var(--label2); }
 </style></head><body><div id="app"></div>
 <script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
 <script>
@@ -45,7 +44,7 @@ const A = Kit.app({ title: 'Bank', build: (body, P) => {
       const p = B.preview();
       taxSec.appendChild(h('div', { class: 'bill ok' }, h('div', { class: 'hstack' }, Kit.ico('shield', '#4e9a63', 36), h('div', { class: 'grow' }, h('b', null, 'Nothing to pay'), h('div', { class: 'sub' }, p.amount > 0 ? 'Tomorrow’s bill at your balance: about ' + money(p.amount, { dp: 2 }) + ' (' + (p.rate * 100).toFixed(2) + '%).' : 'You’re at or under ' + money(cfg.threshold) + ' — no tax applies.')))));
     }
-    const rows = [100000, 200000, 500000, 1e6].map(c => '<div><b>' + (B.rate(c) * 100).toFixed(c < 3e5 ? 2 : 1) + '%</b><small>' + money(c, { compact: true }) + '</small></div>').join('');
+    const rows = [1, 2, 5, 10].map(m => m * cfg.threshold).map(c => '<div><b>' + (B.rate(c) * 100).toFixed(c < 3 * cfg.threshold ? 2 : 1) + '%</b><small>' + money(c, { compact: true }) + '</small></div>').join('');
     taxSec.appendChild(h('div', { class: 'card' }, h('b', null, 'How tax works'), h('p', { class: 'sub', style: { margin: '6px 0 12px' } }, 'Once a day, if your cash is above ' + money(cfg.threshold) + ', the bank sends a bill. The rate climbs exponentially the richer you are (capped at ' + (cfg.maxRate * 100) + '%). Miss the ' + cfg.dueHours + '-hour deadline and your stuff is seized.'), h('div', { class: 'curve', html: rows })));
     const past = B.bills().filter(b => b.status !== 'open').slice(0, 6);
     if(past.length){ taxSec.appendChild(h('h2', { class: 'sec' }, 'Past bills')); taxSec.appendChild(group(past.map(b => row({ title: money(b.amt, { dp: 2 }), sub: new Date(b.issued).toLocaleDateString() + (b.status === 'seized' ? ' · seized: ' + (b.seized || []).join(', ') : ''), right: h('span', { class: 'tag ' + (b.status === 'paid' ? 'good' : 'bad') }, b.status), wrap: true })))); }
@@ -53,14 +52,7 @@ const A = Kit.app({ title: 'Bank', build: (body, P) => {
   function paintAct(){
     actSec.innerHTML = ''; const hist = B.history(); actSec.appendChild(h('h2', { class: 'sec' }, 'Activity'));
     actSec.appendChild(hist.length ? group(hist.slice(0, 15).map(x => row({ title: x.n || 'Transaction', sub: Kit.ago(x.t), right: h('span', { class: 'num ' + (x.d >= 0 ? 'up' : 'down') }, (x.d >= 0 ? '+' : '−') + money(Math.abs(x.d), { dp: 2 })) }))) : h('div', { class: 'card empty', style: { padding: '28px' } }, 'No transactions yet.'));
-    extra.innerHTML = ''; extra.appendChild(h('h2', { class: 'sec' }, 'More')); extra.appendChild(group(row({ glyph: 'star', color: '#d9a441', title: 'Wealth ranking', sub: 'Players ranked by bank balance', chev: true, onClick: openRanking })));
-  }
-  function openRanking(){
-    A.push({ title: 'Wealth ranking', backLabel: 'Bank', build: async (b) => {
-      b.appendChild(h('div', { class: 'spin', style: { margin: '30px auto' } }));
-      let list = []; try{ list = await B.ranking(25); }catch(e){} b.innerHTML = ''; const me = OS.auth.user(), myUid = me ? me.uid : null;
-      b.appendChild(list.length ? group(list.map((p, i) => row({ left: h('span', { class: 'rk' }, '#' + (i + 1)), title: p.name || 'Player', sub: p.uid === myUid ? 'You' : null, right: h('b', { class: 'num' }, money(p.value, { compact: true })) }))) : h('div', { class: 'empty' }, 'No one is on the board yet. Sign in and pick a display name in Settings to appear here.'));
-    } });
+    extra.innerHTML = '';
   }
   function paintAll(){ paintGuest(); paintHero(); paintTax(); paintAct(); }
   paintAll(); ['cash', 'bank', 'inv', 'stock', 'props'].forEach(e => Kit.live(e, Kit.debounce(() => { paintHero(); if(e === 'bank') { paintTax(); } paintAct(); }, 80))); Kit.live('auth', paintGuest);

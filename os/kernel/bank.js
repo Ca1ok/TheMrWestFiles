@@ -7,11 +7,12 @@
 (window.__OSM = window.__OSM || []).push(function(K){
   const T = OS_CONFIG.tax, HOUR = 3600000, DAY = 86400000;
   const B = K.bank = {};
-  B.rate = cash => cash > T.threshold ? Math.min(T.maxRate, T.base * (Math.exp(T.growth * (cash - T.threshold) / T.threshold) - 1)) : 0;
+  B.threshold = () => Math.round(T.threshold * World.econ(K.now()));       // the free allowance grows with the economy index, so inflation never taxes you for standing still
+  B.rate = cash => { const th = B.threshold(); return cash > th ? Math.min(T.maxRate, T.base * (Math.exp(T.growth * (cash - th) / th) - 1)) : 0; };
   B.bills = () => K.S.bank.bills.map(b => Object.assign({}, b));
   B.open = () => K.S.bank.bills.filter(b => b.status === 'open');
   B.owed = () => K.round2(B.open().reduce((s, b) => s + b.amt, 0));
-  B.preview = function(){ const base = Math.max(0, K.S.cash - B.owed()), r = B.rate(base); return { base, rate: r, amount: K.round2(base * r), threshold: T.threshold }; };
+  B.preview = function(){ const base = Math.max(0, K.S.cash - B.owed()), r = B.rate(base); return { base, rate: r, amount: K.round2(base * r), threshold: B.threshold() }; };
   const dayIdx = s => Math.floor(Date.parse(s + 'T00:00:00Z') / DAY);
   const fmt = n => '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const when = t => new Date(t).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
@@ -29,7 +30,7 @@
         const bill = { id: 'T' + now.toString(36) + i, amt, rate, base: K.round2(base), issued: now, due: now + T.dueHours * HOUR, status: 'open', reminded: false };
         S.bills.unshift(bill); if(S.bills.length > 30) S.bills.length = 30;
         K.mailAdd({ id: 'tax-' + bill.id, from: 'West Bank', kind: 'tax', subj: 'Tax notice: ' + fmt(amt) + ' due ' + when(bill.due),
-          body: 'Your balance is above ' + fmt(T.threshold) + ', so a daily wealth tax of ' + (rate * 100).toFixed(2) + '% applies.\n\nAmount due: ' + fmt(amt) + '\nDue by: ' + when(bill.due) + '\n\nPay it in the Bank app. If it is still unpaid at the deadline, we will seize assets worth DOUBLE the amount owed (' + fmt(amt * T.seizeMultiple) + ').', act: { app: 'Bank', label: 'Pay now' } });
+          body: 'Your balance is above ' + fmt(B.threshold()) + ', so a daily wealth tax of ' + (rate * 100).toFixed(2) + '% applies.\n\nAmount due: ' + fmt(amt) + '\nDue by: ' + when(bill.due) + '\n\nPay it in the Bank app. If it is still unpaid at the deadline, we will seize assets worth DOUBLE the amount owed (' + fmt(amt * T.seizeMultiple) + ').', act: { app: 'Bank', label: 'Pay now' } });
         K.emit('bank');
       }
     }

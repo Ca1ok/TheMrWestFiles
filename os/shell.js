@@ -65,7 +65,7 @@
       .filter(([id]) => WIDGETS.find(w => w.id === id)).map(([id, size]) => ({ t: 'w', id, size, k: wk() }));
   }
   /* Apps added after a player saved their dock/desktop are appended once, so new apps (WestReport) show up for existing accounts. */
-  const NEW_APPS = ['WestReport'];
+  const NEW_APPS = ['WestReport', 'Leaderboard', 'Preview'];
   function addNewApps(){
     const seen = K.prefs.seenApps || []; const fresh = NEW_APPS.filter(id => !seen.includes(id) && APP(id)); if(!fresh.length) return;
     K.setPref('seenApps', seen.concat(fresh)); const dock = K.prefs.dock;
@@ -213,7 +213,7 @@
     if(drag){ clearTimeout(drag.edgeT); const el = drag.el; drag = null; el.classList.remove('dragging'); try{ el.releasePointerCapture(st.id); }catch(_){} pagesEl.style.overflowX = 'auto'; relayoutHome(true); saveLayout(); return; }
     if(!st.moved && !editing && Date.now() - st.t < 600){
       const a = e.target.closest && e.target.closest('[data-app]'); if(a){ openApp(a.dataset.app, $('.tile', a)); return; }
-      const w = e.target.closest && e.target.closest('.widget'); if(w){ const def = WIDGETS.find(x => x.id === w.dataset.w); if(def && def.url){ window.open(def.url, '_blank', 'noopener'); } else if(def) openApp(def.app, w); }
+      const w = e.target.closest && e.target.closest('.widget'); if(w){ const def = WIDGETS.find(x => x.id === w.dataset.w); if(def && def.preview){ OS.preview(def.preview); } else if(def && def.url){ window.open(def.url, '_blank', 'noopener'); } else if(def) openApp(def.app, w); }
     }
   }
   window.addEventListener('pointerup', endPress); window.addEventListener('pointercancel', endPress);
@@ -261,7 +261,7 @@
   const hookErrs = (win, src) => { try{ win.addEventListener('error', e => logErr(src, (e.message || 'error') + (e.filename ? ' @' + String(e.filename).split('/').pop() + ':' + e.lineno : ''))); win.addEventListener('unhandledrejection', e => logErr(src, 'promise: ' + ((e.reason && e.reason.message) || e.reason))); }catch(_){} };
   hookErrs(window, 'desktop');
   const EASE = 'cubic-bezier(.22,.9,.28,1)', MIN_W = 380, MIN_H = 300;
-  const DEFAULT_SIZE = { Stocks: [1040, 720], WestLab: [1080, 740], WestShop: [1040, 720], Photos: [1040, 720], Notes: [1000, 720], WestReport: [820, 700], Files: [940, 660], Settings: [860, 660], Messages: [860, 640], Bank: [900, 720], News: [940, 740], RealEstate: [1000, 720], Games: [940, 700] };
+  const DEFAULT_SIZE = { Stocks: [1040, 720], WestLab: [1080, 740], WestShop: [1040, 720], Photos: [1040, 720], Notes: [1000, 720], WestReport: [820, 700], Files: [940, 660], Settings: [860, 660], Messages: [860, 640], Bank: [900, 720], News: [940, 740], RealEstate: [1000, 720], Games: [940, 700], Leaderboard: [880, 720], Preview: [1000, 740] };
   const small = () => S.w < 700;
   const winArea = () => ({ w: S.w, h: S.h - MB });
   const maxRect = () => ({ x: 0, y: 0, w: S.w, h: S.h - MB - (small() ? 0 : 92) });
@@ -364,7 +364,9 @@
 
   /* ---- market-moving headlines become notifications while you're playing ---- */
   let lastNews = null;
-  function watchNews(){ const a = OS.world.articles(1)[0]; if(!a) return; if(lastNews && a.id !== lastNews && a.impact){ const p = a.impact.pct * 100; K.emit('notify', { app: 'News', title: 'Market news', body: a.headline + ' (' + (p >= 0 ? '▲' : '▼') + Math.abs(Math.round(p)) + '%)' }); } lastNews = a.id; }
+  /* A story now lands every 15 minutes, so only the ones that matter to YOU (you hold that element or own that kind of property) or that are big make a banner. */
+  const mattersToMe = a => { const i = a.impact, p = Math.abs(i.pct); if(i.el) return p >= 0.3 || OS.shop.qty('element', i.el) > 0; if(i.sector) return p >= 0.05 || OS.props.list().some(x => x.owned && x.sector === i.sector); return p >= 0.04; };
+  function watchNews(){ const a = OS.world.articles(1)[0]; if(!a) return; if(lastNews && a.id !== lastNews && a.impact && mattersToMe(a)){ const p = a.impact.pct * 100; K.emit('notify', { app: 'News', title: 'Market news', body: a.headline + ' (' + (p >= 0 ? '▲' : '▼') + Math.abs(Math.round(p)) + '%)' }); } lastNews = a.id; }
   setInterval(watchNews, 60000); setTimeout(watchNews, 2500);
 
   /* ================= notifications ================= */
@@ -403,6 +405,10 @@
   OS.focused = () => focusId; OS.openApps = () => [...wins.keys()];
   OS.theme = theme; OS.screen = () => ({ w: S.w, h: S.h, kind: 'desktop', sat: 0, sab: 0 });
   OS.reportContext = () => { const a = OS.auth.user(); return { url: location.href.split('#')[0], app: recent[0] || null, recentApps: recent.slice(), openWindows: Array.from(wins.keys()), screen: S.w + 'x' + S.h + ' @' + (window.devicePixelRatio || 1) + 'x', theme: document.documentElement.dataset.theme || '', browser: navigator.userAgent, lang: navigator.language, signedIn: !!a, online: navigator.onLine, speed: K.prefs.updateSpeed || 'balanced', errors: ERRS.slice(-12) }; };
+  /* Preview: the photo viewer. Anything that wants to show a picture hands it over here; one Preview window, which switches to whatever was opened last. */
+  let previewItem = null;
+  OS.preview = item => { previewItem = item; if(wins.has('Preview')){ K.emit('preview'); openApp('Preview', null); } else openApp('Preview', null); };
+  OS.previewTake = () => { const p = previewItem; previewItem = null; return p; };
   OS.toast = toast; OS.openPage = url => window.open(url, '_blank', 'noopener'); OS.apps = () => OS_APPS.map(a => ({ id: a.id, name: a.name, g: a.g, glyph: a.glyph }));
   OS.shell = { resetLayout(){ K.setPref('layout', null); K.setPref('winGeom', {}); loadLayout(); relayoutHome(true); }, relayout: () => { loadLayout(); relayoutHome(true); } };
   K.on('prefs', k => { if(k === 'theme' || k === 'reduceMotion' || k === 'reduceTransparency' || k === '*') applyTheme(); if(k === 'wall' || k === '*'){ wallKey = ''; paintWall(); } if(k === 'iconSize' || k === '*'){ dockEl.dataset.sig = ''; items.forEach(r => { r.cols = -1; }); relayoutHome(true); }
