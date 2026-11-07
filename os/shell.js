@@ -16,7 +16,7 @@
   const theme = () => { const t = K.prefs.theme; return t === 'light' || t === 'dark' ? t : (mq.matches ? 'dark' : 'light'); };
   function applyTheme(){
     const root = document.documentElement; root.dataset.theme = theme();
-    root.classList.toggle('reduce-motion', !!K.prefs.reduceMotion); root.classList.toggle('reduce-transparency', !!K.prefs.reduceTransparency);
+    root.classList.toggle('reduce-motion', !!K.prefs.reduceMotion || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)); root.classList.toggle('reduce-transparency', !!K.prefs.reduceTransparency);
     paintWall(); K.emit('theme', theme());
   }
   mq.addEventListener && mq.addEventListener('change', () => { if(K.prefs.theme === 'auto') applyTheme(); });
@@ -55,7 +55,7 @@
   const DEFAULT_DOCK = OS_APPS.map(a => a.id);
   const SIZES = { xs: [1, 1], h: [2, 1], v: [1, 2], s: [2, 2], x3: [3, 2], b: [4, 1], m: [4, 2], l: [4, 4] };
   const SIZE_NAMES = { xs: 'Tiny · 1×1', h: 'Strip · 2×1', v: 'Tall · 1×2', s: 'Small · 2×2', x3: 'Medium · 3×2', b: 'Banner · 4×1', m: 'Wide · 4×2', l: 'Large · 4×4' };
-  let layout = [], M = null, editing = false, pageCount = 1, curPage = 0;
+  let layout = [], M = null, editing = false, pageCount = 1, curPage = 0, dragPages = 0;
   const items = new Map();                        // key → { el, it, inst }
   const dockIds = () => { const base = (K.prefs.dock && K.prefs.dock.length ? K.prefs.dock : DEFAULT_DOCK).filter(id => APP(id)); wins.forEach((w, id) => { if(!base.includes(id)) base.push(id); }); return base; };
   const szLabel = z => SIZES[z][0] + '×' + SIZES[z][1];
@@ -78,32 +78,42 @@
     l = l.filter(it => it && ((it.t === 'a' && APP(it.id) && !dk.has(it.id)) || (it.t === 'w' && WIDGETS.find(w => w.id === it.id)))).map(it => it.k ? it : Object.assign({}, it, { k: it.t === 'a' ? 'a-' + it.id : wk() }));
     const seen = new Set(); layout = l.filter(it => !seen.has(it.k) && seen.add(it.k));
   }
-  const saveLayout = () => K.setPref('layout', layout.map(it => it.t === 'a' ? { t: 'a', id: it.id, k: it.k } : { t: 'w', id: it.id, size: it.size, k: it.k }));
+  const posOf = it => it.pos ? { p: it.pos.p | 0, r: it.pos.r | 0, c: it.pos.c | 0 } : undefined;
+  const saveLayout = () => K.setPref('layout', layout.map(it => { const o = it.t === 'a' ? { t: 'a', id: it.id, k: it.k } : { t: 'w', id: it.id, size: it.size, k: it.k }; const p = posOf(it); if(p) o.pos = p; return o; }));
+  /* Every item remembers the exact cell it sits in, so nothing slides around when another icon is moved or removed. */
+  const pinAll = () => layout.forEach(it => { const rec = items.get(it.k); if(rec && rec.slot) it.pos = { p: rec.slot.p, r: rec.slot.r, c: rec.slot.c }; });
 
   function metrics(){
-    const W = S.w, pad = 26, cols = Math.max(4, Math.floor((W - pad * 2) / 138)), cw = (W - pad * 2) / cols, ic = Math.round(Math.min(72, cw * 0.5) * ({ small: 0.8, large: 1.15 }[K.prefs.iconSize] || 1)), rh = ic + 30 + 12;
-    const topY = MB + 20, dockH = 104, rows = Math.max(2, Math.floor((S.h - topY - dockH) / rh));
+    const W = S.w, pad = Math.max(14, Math.round(W * 0.02)), availW = W - pad * 2, topY = MB + 16, dockH = 104, availH = Math.max(240, S.h - topY - dockH);
+    const cols = Math.max(4, Math.round(availW / 128)), rows = Math.max(3, Math.round(availH / 118)), cw = availW / cols, rh = availH / rows;
+    const mult = { small: 0.82, large: 1.18 }[K.prefs.iconSize] || 1, ic = Math.max(36, Math.round(Math.min(80, cw * 0.58, (rh - 30) * 0.92) * mult));
     return { cols, pad, cw, ic, rh, topY, rows, dockH };
   }
-  function pack(){                                // first-fit packing of items (apps 1×1, widgets s/m/l) onto pages of cols×rows
-    const pages = [], place = it => {
-      const [w0, h] = it.t === 'a' ? [1, 1] : SIZES[it.size], w = Math.min(w0, M.cols);
-      for(let p = 0; ; p++){
-        if(!pages[p]) pages[p] = Array.from({ length: M.rows }, () => new Array(M.cols).fill(false));
-        const g = pages[p];
-        for(let r = 0; r + h <= M.rows; r++) for(let c = 0; c + w <= M.cols; c++){
-          let free = true; for(let y = 0; y < h && free; y++) for(let x = 0; x < w; x++) if(g[r + y][c + x]){ free = false; break; }
-          if(free){ for(let y = 0; y < h; y++) for(let x = 0; x < w; x++) g[r + y][c + x] = true; return { p, r, c, w, h }; }
-        }
-        if(p > 40) return { p: 0, r: 0, c: 0, w, h };
-      }
-    };
-    return layout.map(place);
+  const dimsOf = it => { const d = it.t === 'a' ? [1, 1] : SIZES[it.size]; return [Math.min(d[0], M.cols), Math.min(d[1], M.rows)]; };
+  const cellFree = (g, r, c, w, h) => { if(r < 0 || c < 0 || r + h > M.rows || c + w > M.cols) return false; for(let y = 0; y < h; y++) for(let x = 0; x < w; x++) if(g[r + y][c + x]) return false; return true; };
+  const cellMark = (g, r, c, w, h) => { for(let y = 0; y < h; y++) for(let x = 0; x < w; x++) g[r + y][c + x] = true; };
+  const newGrid = () => Array.from({ length: M.rows }, () => new Array(M.cols).fill(false));
+  function nearestFree(g, r0, c0, w, h){          // closest free spot to (r0,c0) on one page, or null when the page is full
+    let best = null, bd = 1e9; for(let r = 0; r + h <= M.rows; r++) for(let c = 0; c + w <= M.cols; c++){ if(!cellFree(g, r, c, w, h)) continue; const d = (r - r0) * (r - r0) + (c - c0) * (c - c0); if(d < bd){ bd = d; best = { r, c }; } } return best;
+  }
+  function pack(){                                // pinned items keep their cell (clamped to the screen); the rest first-fit into whatever is left
+    const pages = [], G = p => pages[p] || (pages[p] = newGrid()), out = new Array(layout.length);
+    layout.forEach((it, i) => {
+      if(!it.pos) return; const [w, h] = dimsOf(it), p = Math.max(0, Math.min(40, it.pos.p | 0)), r = Math.max(0, Math.min(it.pos.r | 0, M.rows - h)), c = Math.max(0, Math.min(it.pos.c | 0, M.cols - w)), g = G(p);
+      if(cellFree(g, r, c, w, h)){ cellMark(g, r, c, w, h); out[i] = { p, r, c, w, h }; return; }
+      const n = nearestFree(g, r, c, w, h); if(n){ cellMark(g, n.r, n.c, w, h); out[i] = { p, r: n.r, c: n.c, w, h }; }
+    });
+    layout.forEach((it, i) => {
+      if(out[i]) return; const [w, h] = dimsOf(it);
+      for(let p = 0; p <= 40; p++){ const g = G(p), n = nearestFree(g, 0, 0, w, h); if(n){ cellMark(g, n.r, n.c, w, h); out[i] = { p, r: n.r, c: n.c, w, h }; return; } }
+      out[i] = { p: 0, r: 0, c: 0, w, h };
+    });
+    return out;
   }
   function makeItem(it){
     const el = document.createElement('div'); el.className = 'item'; el.dataset.k = it.k; el.style.setProperty('--jd', (-Math.random() * 0.26).toFixed(2) + 's');
     const rec = { el, it, inst: null };
-    if(it.t === 'a'){ const a = APP(it.id); el.innerHTML = '<div class="in"><div class="app desk-app" data-app="' + a.id + '">' + osAppTile(a, M.ic) + '<span class="lb">' + esc(a.name) + '</span><button class="rmbtn" aria-label="Remove">' + osIcon('minus', 14, 3) + '</button></div></div>'; }
+    if(it.t === 'a'){ const a = APP(it.id); el.innerHTML = '<div class="in"><div class="app desk-app" data-app="' + a.id + '" tabindex="0" role="button" aria-label="Open ' + esc(a.name) + '">' + osAppTile(a, M.ic) + '<span class="lb">' + esc(a.name) + '</span><button class="rmbtn" aria-label="Remove">' + osIcon('minus', 14, 3) + '</button></div></div>'; }
     else { const def = WIDGETS.find(w => w.id === it.id); el.innerHTML = '<div class="in"><div class="widget ' + (def.cls || '') + ' ' + it.size + '" data-w="' + def.id + '"><div class="w"></div><button class="rmbtn" aria-label="Remove">' + osIcon('minus', 14, 3) + '</button><button class="sz" aria-label="Change size">' + szLabel(it.size) + '</button></div></div>'; }
     items.set(it.k, rec); return rec;
   }
@@ -115,16 +125,16 @@
   }
   function relayoutHome(animate){
     if(!S.w) return; M = metrics(); S.cols = M.cols; S.rows = M.rows;
-    const slots = pack(); pageCount = Math.max(1, ...slots.map(s => s.p + 1)); if(curPage >= pageCount) curPage = pageCount - 1;
+    const slots = pack(); pageCount = Math.max(1, ...slots.map(s => s.p + 1), dragPages); if(curPage >= pageCount) curPage = pageCount - 1;
     while(pagesEl.children.length < pageCount){ const p = document.createElement('div'); p.className = 'page'; pagesEl.appendChild(p); }
     while(pagesEl.children.length > pageCount) pagesEl.lastChild.remove();
     const keep = new Set();
     layout.forEach((it, i) => {
-      keep.add(it.k); let rec = items.get(it.k); const fresh = !rec; if(!rec) rec = makeItem(it); rec.it = it; const s = slots[i], pg = pagesEl.children[s.p];
+      keep.add(it.k); let rec = items.get(it.k); const fresh = !rec; if(!rec) rec = makeItem(it); rec.it = it; const s = slots[i], pg = pagesEl.children[drag && drag.rec === rec ? curPage : s.p]; rec.slot = s;
       if(rec.el.parentNode !== pg) pg.appendChild(rec.el);
       const widget = it.t === 'w', x = M.pad + s.c * M.cw + (widget ? 6 : 0), y = M.topY + s.r * M.rh + (widget ? 4 : 0);
       rec.el.style.width = (widget ? s.w * M.cw - 12 : M.cw) + 'px'; rec.el.style.height = (widget ? s.h * M.rh - 14 : M.rh) + 'px';
-      if(widget){ const wd = $('.widget', rec.el); wd.className = 'widget ' + (WIDGETS.find(w => w.id === it.id).cls || '') + ' ' + it.size; if(fresh || rec.size !== it.size || rec.cols !== M.cols){ rec.size = it.size; rec.cols = M.cols; rec.el.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0)'; mountWidget(rec); } }
+      if(widget){ const wd = $('.widget', rec.el); wd.className = 'widget ' + (WIDGETS.find(w => w.id === it.id).cls || '') + ' ' + it.size; const sig = M.cols + 'x' + M.rows + 'x' + Math.round(M.cw / 6) + 'x' + Math.round(M.rh / 6); if(fresh || rec.size !== it.size || rec.cols !== sig){ rec.size = it.size; rec.cols = sig; rec.el.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0)'; mountWidget(rec); } }
       else { const t = $('.tile', rec.el); if(t && t.style.width !== M.ic + 'px'){ t.outerHTML = osAppTile(APP(it.id), M.ic); } }
       rec.el.classList.toggle('settle', animate && !fresh && !rec.el.classList.contains('dragging'));
       if(!rec.el.classList.contains('dragging')) rec.el.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0)';
@@ -135,13 +145,13 @@
     $('#dots').style.bottom = (M.dockH - 8) + 'px';
   }
   function renderDock(){
-    const ids = dockIds(), sig = ids.join() + '|' + Object.keys(Object.fromEntries(wins)).join(); const size = 52;
+    const ids = dockIds(), size = Math.max(30, Math.min(56, Math.floor((S.w * 0.94 - 24) / Math.max(1, ids.length) - 6))), sig = ids.join() + '|' + size;
     if(dockEl.dataset.sig !== sig){ dockEl.dataset.sig = sig; dockEl.innerHTML = ids.map(id => '<button class="app" data-app="' + id + '" data-tip="' + esc(APP(id).name) + '" aria-label="' + esc(APP(id).name) + '">' + osAppTile(id, size) + '</button>').join(''); }
     $$('.app', dockEl).forEach(a => a.classList.toggle('open', wins.has(a.dataset.app)));
     updateBadges();
   }
   function renderDots(){ const d = $('#dots'); d.innerHTML = pageCount > 1 ? Array.from({ length: pageCount }, (_, i) => '<i class="' + (i === curPage ? 'on' : '') + '"></i>').join('') : ''; }
-  pagesEl.addEventListener('scroll', () => { const p = Math.round(pagesEl.scrollLeft / Math.max(1, pagesEl.clientWidth)); if(p !== curPage){ curPage = p; $$('#dots i').forEach((e, i) => e.classList.toggle('on', i === p)); } }, { passive: true });
+  pagesEl.addEventListener('scroll', () => { if(drag) return; const p = Math.round(pagesEl.scrollLeft / Math.max(1, pagesEl.clientWidth)); if(p !== curPage){ curPage = p; $$('#dots i').forEach((e, i) => e.classList.toggle('on', i === p)); } }, { passive: true });
   function updateBadges(){
     const counts = { Messages: OS.mail.unread(), Bank: OS.bank.open().length };
     $$('[data-app]').forEach(a => { const n = counts[a.dataset.app] || 0, t = $('.tile', a); let b = $('.badge', a); if(n && t){ if(!b){ b = document.createElement('span'); b.className = 'badge'; t.appendChild(b); } if(b.textContent != n) b.textContent = n > 99 ? '99+' : n; } else if(b) b.remove(); });
@@ -170,8 +180,8 @@
   editBtn.addEventListener('click', () => { if(!editing) setEditing(true); else openGallery(); });
   doneBtn.addEventListener('click', () => { setEditing(false); saveLayout(); });
   desk.addEventListener('click', e => {
-    const rmBtn = e.target.closest('.rmbtn'); if(rmBtn && editing){ const k = rmBtn.closest('.item').dataset.k; layout = layout.filter(i => i.k !== k); relayoutHome(true); saveLayout(); return; }
-    const sz = e.target.closest('.sz'); if(sz && editing){ const it = layout.find(i => i.k === sz.closest('.item').dataset.k), def = WIDGETS.find(w => w.id === it.id), i = def.sizes.indexOf(it.size); it.size = def.sizes[(i + 1) % def.sizes.length]; sz.textContent = szLabel(it.size); relayoutHome(true); saveLayout(); }
+    const rmBtn = e.target.closest('.rmbtn'); if(rmBtn && editing){ const k = rmBtn.closest('.item').dataset.k; pinAll(); layout = layout.filter(i => i.k !== k); relayoutHome(true); saveLayout(); return; }
+    const sz = e.target.closest('.sz'); if(sz && editing){ pinAll(); const it = layout.find(i => i.k === sz.closest('.item').dataset.k), def = WIDGETS.find(w => w.id === it.id), i = def.sizes.indexOf(it.size); it.size = def.sizes[(i + 1) % def.sizes.length]; sz.textContent = szLabel(it.size); relayoutHome(true); saveLayout(); }
   });
   let drag = null;
   const pageRect = () => pagesEl.children[curPage].getBoundingClientRect();
@@ -182,41 +192,56 @@
     desk._press = st;
   });
   function beginDrag(st, e){
-    const rec = items.get(st.el.dataset.k); if(!rec) return;
-    const r = st.el.getBoundingClientRect();
-    drag = { rec, el: st.el, dx: e.clientX - r.left, dy: e.clientY - r.top, last: 0, edgeT: 0, edge: 0, id: st.id };
+    const rec = items.get(st.el.dataset.k); if(!rec) return; pinAll();
+    const r = st.el.getBoundingClientRect(), g = document.createElement('div'); g.className = 'drop-ghost';
+    drag = { rec, el: st.el, dx: e.clientX - r.left, dy: e.clientY - r.top, edgeT: 0, edge: 0, id: st.id, ghost: g, target: rec.slot ? { p: rec.slot.p, r: rec.slot.r, c: rec.slot.c } : null };
     st.el.classList.remove('settle', 'pressed'); st.el.classList.add('dragging'); try{ st.el.setPointerCapture(st.id); }catch(_){}
     pagesEl.style.overflowX = 'hidden';
+  }
+  /* The cell nearest to a point on the current page that the dragged item fits in (other items keep their cells). */
+  function dropSpot(rec, x, y){
+    const [w, h] = dimsOf(rec.it), g = newGrid(); items.forEach(o => { if(o === rec || !o.slot || o.slot.p !== curPage) return; cellMark(g, Math.min(o.slot.r, M.rows - 1), Math.min(o.slot.c, M.cols - 1), Math.min(o.slot.w, M.cols - o.slot.c), Math.min(o.slot.h, M.rows - o.slot.r)); });
+    const r0 = Math.max(0, Math.min(M.rows - h, Math.round((y - M.topY) / M.rh))), c0 = Math.max(0, Math.min(M.cols - w, Math.round((x - M.pad) / M.cw))), n = nearestFree(g, r0, c0, w, h);
+    return n ? { p: curPage, r: n.r, c: n.c } : null;
+  }
+  function paintGhost(){
+    if(!drag) return; const t = drag.target, pg = pagesEl.children[curPage]; if(!t || !pg){ drag.ghost.remove(); return; }
+    const [w, h] = dimsOf(drag.rec.it), widget = drag.rec.it.t === 'w';
+    if(drag.ghost.parentNode !== pg) pg.appendChild(drag.ghost);
+    Object.assign(drag.ghost.style, { width: (widget ? w * M.cw - 12 : M.cw) + 'px', height: (widget ? h * M.rh - 14 : M.rh) + 'px', transform: 'translate3d(' + (M.pad + t.c * M.cw + (widget ? 6 : 0)) + 'px,' + (M.topY + t.r * M.rh + (widget ? 4 : 0)) + 'px,0)' });
   }
   window.addEventListener('pointermove', e => {
     const st = desk._press; if(st && (Math.abs(e.clientX - st.x) > 6 || Math.abs(e.clientY - st.y) > 6)){ st.moved = true; if(st.el && !drag) st.el.classList.remove('pressed'); }
     if(!drag) return;
     const pr = pageRect(), x = e.clientX - pr.left - drag.dx, y = e.clientY - pr.top - drag.dy;
     drag.el.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0)';
-    const now = performance.now(), cx = e.clientX - pr.left, cy = e.clientY - pr.top;
-    if(now - drag.last > 140){
-      const target = [...items.values()].find(o => o !== drag.rec && o.page === curPage && cx > o.x && cx < o.x + parseFloat(o.el.style.width) && cy > o.y && cy < o.y + parseFloat(o.el.style.height));
-      if(target){ const from = layout.findIndex(i => i.k === drag.rec.it.k), to = layout.findIndex(i => i.k === target.it.k); if(from > -1 && to > -1 && from !== to){ const [m] = layout.splice(from, 1); layout.splice(to, 0, m); drag.last = now; relayoutHome(true); } }
-    }
-    const sw = pagesEl.clientWidth, edge = e.clientX - pr.left < 28 ? -1 : e.clientX - pr.left > sw - 28 ? 1 : 0;
+    const spot = dropSpot(drag.rec, x - (drag.rec.it.t === 'w' ? 6 : 0), y - (drag.rec.it.t === 'w' ? 4 : 0)); if(spot){ drag.target = spot; paintGhost(); }
+    const sw = pagesEl.clientWidth, edge = e.clientX - pr.left < 36 ? -1 : e.clientX - pr.left > sw - 36 ? 1 : 0;
     if(edge !== drag.edge){ drag.edge = edge; clearTimeout(drag.edgeT); if(edge) drag.edgeT = setTimeout(() => flipPage(edge), 520); }
   });
   function flipPage(dir){
-    const np = Math.max(0, Math.min(pageCount - 1, curPage + dir)); if(np === curPage || !drag) return;
-    const idxs = layout.map((it, i) => ({ i, p: items.get(it.k).page })), onNew = idxs.filter(o => o.p === np), from = layout.findIndex(i => i.k === drag.rec.it.k);
-    const [m] = layout.splice(from, 1); const at = onNew.length ? (dir > 0 ? onNew[0].i - (from < onNew[0].i ? 1 : 0) : onNew[onNew.length - 1].i + (from < onNew[onNew.length - 1].i ? 0 : 1)) : layout.length; layout.splice(Math.max(0, at), 0, m);
-    pagesEl.style.overflowX = 'auto'; pagesEl.scrollTo({ left: np * pagesEl.clientWidth, behavior: reduceMotion() ? 'auto' : 'smooth' }); curPage = np; setTimeout(() => { pagesEl.style.overflowX = 'hidden'; }, 420);
-    relayoutHome(true); drag.edge = 0;
+    if(!drag) return; const np = Math.max(0, Math.min(pageCount, curPage + dir)); if(np === curPage) return;
+    dragPages = Math.max(dragPages, np + 1); curPage = np; relayoutHome(false);        // the page just past the last one is offered as a fresh page
+    pagesEl.style.overflowX = 'auto'; pagesEl.scrollTo({ left: np * pagesEl.clientWidth, behavior: reduceMotion() ? 'auto' : 'smooth' }); setTimeout(() => { if(drag) pagesEl.style.overflowX = 'hidden'; }, 480);
+    drag.edge = 0; drag.target = null; if(drag.ghost.parentNode) drag.ghost.remove();
   }
   function endPress(e){
     const st = desk._press; desk._press = null; if(!st) return; if(st.el) st.el.classList.remove('pressed');
-    if(drag){ clearTimeout(drag.edgeT); const el = drag.el; drag = null; el.classList.remove('dragging'); try{ el.releasePointerCapture(st.id); }catch(_){} pagesEl.style.overflowX = 'auto'; relayoutHome(true); saveLayout(); return; }
+    if(drag){ clearTimeout(drag.edgeT); const el = drag.el, d = drag; drag = null; dragPages = 0; d.ghost.remove(); if(d.target) d.rec.it.pos = d.target; el.classList.remove('dragging'); try{ el.releasePointerCapture(st.id); }catch(_){} pagesEl.style.overflowX = 'auto'; const pn = Math.min(curPage, Math.max(0, (d.target ? d.target.p : curPage))); relayoutHome(true); pagesEl.scrollTo({ left: Math.min(pageCount - 1, pn) * pagesEl.clientWidth }); saveLayout(); return; }
     if(!st.moved && !editing && Date.now() - st.t < 600){
       const a = e.target.closest && e.target.closest('[data-app]'); if(a){ openApp(a.dataset.app, $('.tile', a)); return; }
       const w = e.target.closest && e.target.closest('.widget'); if(w){ const def = WIDGETS.find(x => x.id === w.dataset.w); if(def && def.preview){ OS.preview(def.preview); } else if(def && def.url){ window.open(def.url, '_blank', 'noopener'); } else if(def) openApp(def.app, w); }
     }
   }
   window.addEventListener('pointerup', endPress); window.addEventListener('pointercancel', endPress);
+  /* keyboard: Enter / Space opens the focused icon; in edit mode the arrow keys move it one cell at a time */
+  desk.addEventListener('keydown', e => {
+    const el = e.target.closest && e.target.closest('.item'); if(!el) return; const rec = items.get(el.dataset.k); if(!rec) return;
+    if(!editing && (e.key === 'Enter' || e.key === ' ')){ const a = e.target.closest('[data-app]'); if(a){ e.preventDefault(); openApp(a.dataset.app, $('.tile', a)); } return; }
+    const d = { ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [-1, 0], ArrowDown: [1, 0] }[e.key]; if(!editing || !d || !rec.slot) return; e.preventDefault(); pinAll();
+    const [w, h] = dimsOf(rec.it), g = newGrid(); items.forEach(o => { if(o !== rec && o.slot && o.slot.p === rec.slot.p) cellMark(g, o.slot.r, o.slot.c, Math.min(o.slot.w, M.cols - o.slot.c), Math.min(o.slot.h, M.rows - o.slot.r)); });
+    const r = rec.slot.r + d[0], c = rec.slot.c + d[1]; if(cellFree(g, r, c, w, h)){ rec.it.pos = { p: rec.slot.p, r, c }; relayoutHome(true); saveLayout(); const again = $('.item[data-k="' + rec.it.k + '"] [data-app]', desk); if(again) again.focus(); }
+  });
   dockEl.addEventListener('click', e => { const a = e.target.closest('[data-app]'); if(a) toggleApp(a.dataset.app, $('.tile', a)); });
 
   /* ================= add-to-desktop panel ================= */
@@ -249,7 +274,7 @@
   }
   function closeSheet(){ sheetWrap.classList.remove('open'); setTimeout(() => { galPreview.forEach(p => { try{ p.destroy && p.destroy(); }catch(e){} }); galPreview = []; }, 400); }
   $('.scrim', sheetWrap).addEventListener('click', closeSheet);
-  function addToDesk(it){ const first = layout.findIndex(i => items.get(i.k) && items.get(i.k).page === curPage); layout.splice(first < 0 ? layout.length : first, 0, it); relayoutHome(true); saveLayout(); }
+  function addToDesk(it){ pinAll(); const [w, h] = (it.t === 'a' ? [1, 1] : SIZES[it.size]), g = newGrid(); items.forEach(o => { if(o.slot && o.slot.p === curPage) cellMark(g, o.slot.r, o.slot.c, Math.min(o.slot.w, M.cols - o.slot.c), Math.min(o.slot.h, M.rows - o.slot.r)); }); const n = nearestFree(g, 0, 0, Math.min(w, M.cols), Math.min(h, M.rows)); if(n) it.pos = { p: curPage, r: n.r, c: n.c }; layout.push(it); relayoutHome(true); saveLayout(); }
   let toastT; function toast(msg){ let t = $('.toast', screen); if(!t){ t = document.createElement('div'); t.className = 'toast'; screen.appendChild(t); } t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2000); }
 
   /* ================= windows ================= */
@@ -294,7 +319,7 @@
     $('.lbtn.m', el).addEventListener('click', e => { e.stopPropagation(); minimizeWin(id); });
     $('.lbtn.z', el).addEventListener('click', e => { e.stopPropagation(); toggleMax(id); });
     el.addEventListener('pointerdown', () => { if(focusId !== id) setFocus(id); }, true);
-    wireDrag(id, w); wireResize(id, w);
+    wireDrag(id, w); wireResize(id, w); wireLights(w);
     w.iframe.addEventListener('load', () => { w.loaded = true; hookErrs(w.iframe.contentWindow, id); $('.splash', el).classList.add('gone'); try{ w.iframe.contentWindow.addEventListener('pointerdown', () => { if(focusId !== id) setFocus(id); }, true); }catch(e){} });
     setTimeout(() => { if(wins.get(id) === w) $('.splash', el).classList.add('gone'); }, 4500);          // never leave the splash up forever
     setFocus(id); renderDock(); history.replaceState(null, '', '#open=' + id);
@@ -329,6 +354,17 @@
     if(w.g.max){ const p = w.g.prev || { x: 80, y: 40, w: 900, h: 640 }; Object.assign(w.g, p, { max: false }); }
     else { w.g.prev = old; Object.assign(w.g, maxRect(), { max: true }); }
     applyGeom(w); flipTo(w, old); saveGeom();
+  }
+  /* Window buttons grow as the pointer approaches (like the dock), so they are easy to hit; a coarse pointer (touch) gets big ones permanently. */
+  function wireLights(w){
+    const tb = $('.tb', w.el), btns = $$('.lbtn', w.el), R = 72, MAXS = 1.85;
+    const reset = () => { btns.forEach(b => b.style.setProperty('--s', 1)); w.el.classList.remove('near'); };
+    tb.addEventListener('pointermove', e => {
+      if(e.pointerType === 'touch' || w.el.classList.contains('dragging')) return; let near = false;
+      btns.forEach(b => { const r = b.getBoundingClientRect(), d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)), k = Math.max(0, 1 - d / R); if(k > 0) near = true; b.style.setProperty('--s', (1 + (MAXS - 1) * k * k * (3 - 2 * k)).toFixed(3)); });
+      w.el.classList.toggle('near', near);
+    });
+    tb.addEventListener('pointerleave', reset); tb.addEventListener('pointerdown', () => { if(!w.el.classList.contains('near')) reset(); });
   }
   function wireDrag(id, w){
     const tb = $('.tb', w.el); let d = null;

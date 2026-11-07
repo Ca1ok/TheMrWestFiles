@@ -15,6 +15,28 @@ const OS_GLYPHS = {
   photos:'<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="M3.5 17l5-4.5 4 3.5 3-2.5 5 4.5"/>',
   notes:'<path d="M6 3h9l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14.5 3v4.5H19M8.5 12h7M8.5 16h5"/>',
   games:'<path d="M7 8h10a4 4 0 0 1 3.9 4.9l-.8 4a2.4 2.4 0 0 1-4 1.2L14 16.5h-4l-2.1 1.6a2.4 2.4 0 0 1-4-1.2l-.8-4A4 4 0 0 1 7 8z"/><path d="M8 11v3M6.5 12.5h3M15.5 11.5h.01M17.5 13.5h.01"/>',
+  atom:'<circle cx="12" cy="12" r="1.6"/><ellipse cx="12" cy="12" rx="9" ry="3.8"/><ellipse cx="12" cy="12" rx="9" ry="3.8" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="9" ry="3.8" transform="rotate(120 12 12)"/>',
+  scale:'<path d="M12 4v16M7 20h10M5 7h14"/><path d="M5 7l-3 7a3 3 0 0 0 6 0L5 7zM19 7l-3 7a3 3 0 0 0 6 0l-3-7z"/>',
+  radiation:'<circle cx="12" cy="12" r="1.8"/><path d="M12 3a9 9 0 0 1 7.8 4.5L15.5 10a4.4 4.4 0 0 0-3.5-2zM19.8 16.5A9 9 0 0 1 4.2 16.5L8.5 14a4.4 4.4 0 0 0 7 0zM4.2 7.5A9 9 0 0 1 12 3v5a4.4 4.4 0 0 0-3.5 2z"/>',
+  cards:'<rect x="4" y="5" width="11" height="15" rx="2"/><path d="M9 3.5h8a2 2 0 0 1 2 2V16"/><path d="M9.5 12.5l1.5-2 1.5 2-1.5 2z"/>',
+  wave:'<path d="M2 12c2.5-6 4.5-6 7 0s4.5 6 7 0 3-5 6-3"/><path d="M2 18c2.5-4 4.5-4 7 0s4.5 4 7 0 3-3 6-2"/>',
+  wind:'<path d="M3 9h10a3 3 0 1 0-3-3M3 14h14a3 3 0 1 1-3 3M3 19h6"/>',
+  microscope:'<path d="M8 3l4 2-3 7-4-2zM9 12a5 5 0 0 0 8 3M5 20h14M12 20v-2"/><path d="M17 15a5 5 0 0 1 0 5"/>',
+  clover:'<circle cx="9" cy="8.5" r="3.2"/><circle cx="15" cy="8.5" r="3.2"/><circle cx="9" cy="14.5" r="3.2"/><circle cx="15" cy="14.5" r="3.2"/><path d="M12 12l4.5 8"/>',
+  fish:'<path d="M3 12c3-5 8-6 12-3l5-3v12l-5-3c-4 3-9 2-12-3z"/><circle cx="8" cy="11" r=".8" fill="currentColor"/>',
+  target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/>',
+  scroll:'<path d="M7 4h11a2 2 0 0 1 2 2v1H9V6a2 2 0 0 0-2-2z"/><path d="M7 4a2 2 0 0 0-2 2v11a3 3 0 0 0 3 3h9a3 3 0 0 0 3-3V7M9 11h7M9 15h5"/>',
+  plug:'<path d="M9 3v5M15 3v5M6.5 8h11v3a5.5 5.5 0 0 1-11 0V8zM12 16.5V21"/>',
+  text:'<path d="M4 7V5h16v2M12 5v14M9 19h6"/>',
+  hammer:'<path d="M14 4l6 6-3 3-6-6zM12.5 8.5L4 17l3 3 8.5-8.5"/>',
+  puzzle:'<path d="M10 4a2 2 0 0 1 4 0v2h4v4h-2a2 2 0 0 0 0 4h2v5h-5v-2a2 2 0 0 0-4 0v2H4v-5h2a2 2 0 0 0 0-4H4V6h6V4z"/>',
+  petri:'<ellipse cx="12" cy="9" rx="9" ry="3.5"/><path d="M3 9v6c0 2 4 3.5 9 3.5s9-1.5 9-3.5V9"/><circle cx="9" cy="14" r=".9"/><circle cx="14" cy="15.5" r=".9"/>',
+  dna:'<path d="M6 3c0 6 12 6 12 12s-12 6-12 6M18 3c0 6-12 6-12 12s12 6 12 6"/><path d="M8 7h8M7.5 17h9M9 12h6"/>',
+  thermometer:'<path d="M10 4a2 2 0 0 1 4 0v9.2a4 4 0 1 1-4 0V4z"/><path d="M12 8v8"/>',
+  dice:'<rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1" fill="currentColor"/><circle cx="15" cy="9" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="9" cy="15" r="1" fill="currentColor"/><circle cx="15" cy="15" r="1" fill="currentColor"/>',
+  bus:'<rect x="4" y="4" width="16" height="13" rx="3"/><path d="M4 11h16M7 20v-3M17 20v-3"/><circle cx="8" cy="14.2" r=".7" fill="currentColor"/><circle cx="16" cy="14.2" r=".7" fill="currentColor"/>',
+  coin:'<circle cx="12" cy="12" r="9"/><path d="M12 7v10M14.8 9.3C14.2 8.5 13.2 8.2 12 8.2c-1.7 0-2.7.8-2.7 1.9s1 1.6 2.7 1.9 2.7.8 2.7 1.9-1 1.9-2.7 1.9c-1.2 0-2.2-.3-2.8-1.1"/>',
+  dot:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2" fill="currentColor"/>',
   // UI glyphs
   plus:'<path d="M12 5v14M5 12h14"/>', minus:'<path d="M5 12h14"/>', check:'<path d="M5 12.5l4.5 4.5L19 7"/>', x:'<path d="M6 6l12 12M18 6L6 18"/>',
   chevL:'<path d="M15 5l-7 7 7 7"/>', chevR:'<path d="M9 5l7 7-7 7"/>', chevD:'<path d="M5 9l7 7 7-7"/>', chevU:'<path d="M5 15l7-7 7 7"/>',
@@ -58,9 +80,12 @@ const OS_APPS = [
   { id:'WestReport', name:'WestReport',  file:'WestReport.html', g:['#ef6a5a','#a3262e'], glyph:'bug'      },
   { id:'Settings',   name:'Settings',    file:'Settings.html',   g:['#9a9387','#55504a'], glyph:'settings' }
 ];
-function osIcon(name, size, sw){
-  return '<svg class="gl" viewBox="0 0 24 24" width="' + (size || 24) + '" height="' + (size || 24) + '" fill="none" stroke="currentColor" stroke-width="' + (sw || 1.8) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (OS_GLYPHS[name] || '') + '</svg>';
+// Emoji render as blank boxes on systems without an emoji font, so every game/arcade tile uses one of these drawn glyphs instead.
+const OS_EMOJI = { '🧪':'flask', '⚛️':'atom', '⚛':'atom', '☢️':'radiation', '☢':'radiation', '⚖️':'scale', '⚖':'scale', '🧫':'petri', '🔌':'plug', '🧬':'dna', '🌊':'wave', '💨':'wind', '🔬':'microscope', '⚡':'bolt', '🎯':'target', '🃏':'cards', '🔨':'hammer', '🧩':'puzzle', '🎣':'fish', '📜':'scroll', '🍀':'clover', '🔤':'text', '🌡️':'thermometer', '🌡':'thermometer', '🎰':'dice', '🚌':'bus', '🪙':'coin' };
+function osIcon(name, size, sw){   // an unknown name draws a neutral dot instead of an empty box
+  return '<svg class="gl" viewBox="0 0 24 24" width="' + (size || 24) + '" height="' + (size || 24) + '" fill="none" stroke="currentColor" stroke-width="' + (sw || 1.8) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (OS_GLYPHS[name] || OS_GLYPHS.dot) + '</svg>';
 }
+function osEmoji(e, size, sw){ return osIcon(OS_EMOJI[e] || 'dot', size || 34, sw || 1.7); }
 function osAppTile(app, size){   // the app icon: a PNG from /assets/icons (used on the desktop, dock, window title bars, notifications…)
   const a = typeof app === 'string' ? OS_APPS.find(x => x.id === app) : app; if(!a) return '';
   return '<span class="tile" style="width:' + size + 'px;height:' + size + 'px"><img src="' + OS_ICON_BASE + a.id + '.png" width="' + size + '" height="' + size + '" alt="" draggable="false" decoding="async"></span>';

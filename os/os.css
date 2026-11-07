@@ -95,13 +95,15 @@ html[data-theme=light] .dock .app.open::after{ background:var(--label); box-shad
 .win{ position:absolute; left:0; top:0; display:flex; flex-direction:column; border-radius:12px; background:var(--bg); pointer-events:auto; overflow:hidden; will-change:transform; box-shadow:0 0 0 1px rgba(0,0,0,.4),0 14px 44px rgba(0,0,0,.38); transform-origin:50% 50%; }
 .win.focus{ box-shadow:0 0 0 1px rgba(0,0,0,.5),0 0 0 2px rgba(255,255,255,.06),0 30px 90px rgba(0,0,0,.55); }
 .win.max{ border-radius:0; } .win.hidden{ display:none; }
-.tb{ flex:none; height:38px; display:flex; align-items:center; padding:0 13px; background:var(--card); border-bottom:1px solid var(--sep); position:relative; cursor:default; touch-action:none; transition:background .2s; }
+.tb{ flex:none; height:40px; display:flex; align-items:center; padding:0 13px; background:var(--card); border-bottom:1px solid var(--sep); position:relative; cursor:default; touch-action:none; transition:background .2s; }
 .win:not(.focus) .tb{ background:var(--bg2); } .win:not(.focus) .tb .ttl,.win:not(.focus) .lights{ opacity:.55; }
-.lights{ display:flex; gap:8px; z-index:3; padding:6px 0; }
-.lbtn{ width:13px; height:13px; border-radius:50%; position:relative; display:grid; place-items:center; color:rgba(0,0,0,.6); box-shadow:inset 0 0 0 .5px rgba(0,0,0,.25); transition:transform .15s var(--spring),filter .15s; }
+.lights{ display:flex; gap:12px; z-index:3; padding:8px 14px 8px 2px; margin-right:-8px; position:relative; }
+.lbtn{ --s:1; width:15px; height:15px; border-radius:50%; transform:scale(var(--s)); transform-origin:center; position:relative; display:grid; place-items:center; color:rgba(0,0,0,.6); box-shadow:inset 0 0 0 .5px rgba(0,0,0,.25); transition:transform .12s ease-out,filter .15s; }
+.lbtn::before{ content:""; position:absolute; inset:-7px -6px; border-radius:50%; }
 .lbtn.c{ background:#ff5f57; } .lbtn.m{ background:#febc2e; } .lbtn.z{ background:#28c840; }
-.lbtn svg{ opacity:0; width:8px; height:8px; transition:opacity .12s; } .lights:hover .lbtn svg{ opacity:1; } .lbtn:active{ transform:scale(.88); filter:brightness(.85); }
-.tb .ttl{ position:absolute; left:84px; right:84px; top:0; bottom:0; display:flex; align-items:center; justify-content:center; gap:7px; font:600 13px/1 var(--font); white-space:nowrap; overflow:hidden; pointer-events:none; }
+.lbtn svg{ opacity:0; width:9px; height:9px; transition:opacity .12s; } .lights:hover .lbtn svg,.win.near .lbtn svg,.lbtn:focus-visible svg{ opacity:1; } .lbtn:active{ transform:scale(calc(var(--s) * .9)); filter:brightness(.85); }
+.win.near .lights{ z-index:8; }
+.tb .ttl{ position:absolute; left:104px; right:104px; top:0; bottom:0; display:flex; align-items:center; justify-content:center; gap:7px; font:600 13px/1 var(--font); white-space:nowrap; overflow:hidden; pointer-events:none; }
 .tb .ttl .tile{ width:16px !important; height:16px !important; filter:none; border-radius:4px; }
 .win .body{ flex:1; position:relative; min-height:0; }
 .win iframe{ position:absolute; inset:0; width:100%; height:100%; border:0; background:var(--bg); color-scheme:normal; }
@@ -156,7 +158,22 @@ html[data-theme=light] .dock .app.open::after{ background:var(--label); box-shad
 .toast.show{ opacity:1; transform:translate(-50%,0); }
 
 /* narrow browser windows: apps always fill the screen */
-@media (max-width:700px){ .lights{ gap:10px; } .lbtn{ width:15px; height:15px; } .dock{ padding:6px 8px 7px; gap:4px; } }
+@media (max-width:700px){ .dock{ padding:6px 8px 7px; gap:4px; } }
+/* touch / coarse pointers: window buttons are always large (no hover to grow them) */
+@media (pointer:coarse){ .tb{ height:46px; } .lights{ gap:16px; } .lbtn{ --s:1.7 !important; } .lbtn svg{ opacity:1; } .tb .ttl{ left:128px; right:128px; } }
+
+/* ---------- free-form grid: drop target, scaling, focus ---------- */
+.drop-ghost{ position:absolute; left:0; top:0; border:2px dashed rgba(255,255,255,.55); background:rgba(255,255,255,.1); border-radius:20px; pointer-events:none; z-index:1; transition:transform .12s ease-out; }
+html[data-theme=light] .drop-ghost{ border-color:rgba(60,42,20,.45); background:rgba(60,42,20,.08); }
+.item>.in>.app{ height:100%; justify-content:center; }
+.item:focus-within{ z-index:3; }
+:focus-visible{ outline:3px solid var(--tint,#5aaef5); outline-offset:2px; border-radius:8px; }
+.lbtn:focus-visible{ outline-offset:3px; border-radius:50%; }
+.app:focus-visible .tile{ box-shadow:0 0 0 3px #fff,0 0 0 6px var(--tint,#5aaef5); }
+.mbtn{ min-height:26px; } .mbtn:focus-visible{ background:rgba(255,255,255,.22); }
+@media (prefers-reduced-motion:reduce){ *{ animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; } }
+.reduce-motion *{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+@media (pointer:coarse){ .mbtn{ min-height:36px; padding:0 12px; } .rmbtn{ width:30px; height:30px; } .sz{ height:32px; line-height:32px; } }
 
 /* ---------- extra widget sizes: tiny 1×1, strip 2×1, tall 1×2, medium 3×2, banner 4×1 ---------- */
 .widget.xs .w,.widget.h .w,.widget.b .w{ padding:9px 12px; }
