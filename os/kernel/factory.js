@@ -33,10 +33,11 @@
   };
 
   /* ---- derived numbers for the UI ---- */
+  const proc = f => F.process(f, K.S.lab.found, CFG);                       // how this product is made right now (real multistep process, or direct from the elements)
   function view(l){
-    const comp = compOf(l.f) || {}, e = est(l.f), rg = F.shopRange(e, CFG), q = l.route === 'shop' ? FA.quote(l.id) : null, fl = F.flows(l, comp, elPrice, CFG), run = l.on && l.rate > 0;
+    const pr = proc(l.f), comp = compOf(l.f) || {}, e = est(l.f), rg = F.shopRange(e, CFG), q = l.route === 'shop' ? FA.quote(l.id) : null, fl = F.flows(l, comp, elPrice, CFG, pr.factor), run = l.on && l.rate > 0;
     return { id: l.id, f: l.f, name: nameOf(l.f), tier: l.tier, cap: F.rateCap(l.tier, CFG), rate: l.rate, on: l.on, route: l.route, price: l.price, auto: l.auto, stock: l.stock, storage: F.storage(l.tier, CFG), listed: l.listed,
-      comp, est: e, shopRange: rg, marketRange: F.marketRange(e, CFG), upgradeCost: F.upgradeCost(l.tier, CFG), unitCost: r2(Object.keys(comp).reduce((s, k) => s + comp[k] * elPrice(k), 0) * (1 + CFG.overhead)),
+      comp, est: e, shopRange: rg, marketRange: F.marketRange(e, CFG), upgradeCost: F.upgradeCost(l.tier, CFG), unitCost: r2(Object.keys(comp).reduce((s, k) => s + comp[k] * elPrice(k), 0) * pr.factor), process: { mode: pr.mode, steps: pr.steps.map(x => ({ eq: x.eq, name: x.name, y: x.y })), yield: pr.yield, missing: pr.missing },
       costPerMin: run ? fl.costPerMin : 0, els: run ? fl.els : {}, chance: q ? q.chance : null, sat: q ? q.sat : null, lockLeft: Math.max(0, Math.ceil((l.sellAt - K.now()) / 1000)), note: l.note, batch: F.batch(l.tier, CFG), full: l.stock >= F.storage(l.tier, CFG) - 1e-6 };
   }
   FA.state = function(){
@@ -48,7 +49,7 @@
     });
     return { lines, slots: s.slots, maxSlots: CFG.slotsMax, nextSlotCost: F.slotCost(s.slots, CFG), reserve: s.reserve, made: s.made, sold: s.sold, earned: s.earned, pos: Object.assign({}, s.pos), perMin: { mol: r2(mol), cost: r2(cost), rev: r2(rev), net: r2(rev - cost) }, cfg: { fee: CFG.marketFee, failLockMs: CFG.failLockMs, shopLo: CFG.shopLo, shopHi: CFG.shopHi, maxTier: CFG.maxTier }, online: C.signedIn() };
   };
-  FA.found = () => K.S.lab.found.filter(f => compOf(f)).map(f => ({ f, name: nameOf(f), est: est(f), comp: compOf(f), unitCost: r2(Object.keys(compOf(f)).reduce((s, k) => s + compOf(f)[k] * elPrice(k), 0) * (1 + CFG.overhead)) }));
+  FA.found = () => K.S.lab.found.filter(f => compOf(f)).map(f => ({ f, name: nameOf(f), est: est(f), comp: compOf(f), unitCost: r2(Object.keys(compOf(f)).reduce((s, k) => s + compOf(f)[k] * elPrice(k), 0) * proc(f).factor), process: proc(f).mode }));
   FA.quote = function(id){
     const l = line(id); if(!l) return null; const e = est(l.f), rg = F.shopRange(e, CFG), n = Math.max(1, Math.min(Math.floor(l.stock) || F.batch(l.tier, CFG), F.batch(l.tier, CFG)));
     const quote = K.sellQuote(l.f, n), sat = F.clamp(quote.avg / (0.7 * e || 1), 0.3, 1), price = F.clamp(l.price, rg.lo, rg.hi);
@@ -60,7 +61,7 @@
   function produce(l, minutes){
     if(!l.on || !(l.rate > 0)) return;
     const comp = compOf(l.f); if(!comp) return;
-    const plan = F.planProduction({ comp, price: elPrice, rate: l.rate, minutes, cash: K.S.cash, reserve: S().reserve, space: F.storage(l.tier, CFG) - l.stock, cfg: CFG });
+    const plan = F.planProduction({ comp, price: elPrice, rate: l.rate, minutes, factor: proc(l.f).factor, cash: K.S.cash, reserve: S().reserve, space: F.storage(l.tier, CFG) - l.stock, cfg: CFG });
     l.note = plan.made <= 0 ? (l.stock >= F.storage(l.tier, CFG) - 1e-6 ? 'Warehouse full' : (plan.unit > 0 ? 'Low on cash' : '')) : (plan.limited ? 'Low on cash' : '');
     if(plan.made <= 0) return;
     if(plan.cost > 0 && !K.spend(plan.cost, 'WestFactory: ' + l.f + ' inputs')) return;

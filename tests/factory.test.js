@@ -38,3 +38,9 @@ assert.strictEqual(pv(good, mk('bob')), true, 'honest payment record'); assert.s
 assert.strictEqual(pw(mk('bob'), good, 'alice'), true, 'buyer may record a payment'); assert.strictEqual(pw(mk('bob'), Object.assign({}, good, { b: 'carol' }), 'alice'), false, 'buyer id must be your own'); assert.strictEqual(pw(mk('alice'), Object.assign({}, good, { b: 'alice' }), 'alice'), false, 'cannot pay yourself');
 assert.strictEqual(pw(mk('alice'), null, 'alice', { market: { proceeds: { alice: { pid1: good } } } }), true, 'seller may collect (delete)'); assert.strictEqual(pw(mk('bob'), null, 'alice', { market: { proceeds: { alice: { pid1: good } } } }), false, 'others cannot delete payments');
 console.log('factory ok');
+// multistep processes: a route exists, falls back to 'direct' without the intermediates, and the maths of cost/yield holds
+{ const F2 = require('../os/lib/factory-sim.js'), full = F2.process('HNO3', ['NH3', 'NO', 'NO2', 'HNO3']), part = F2.process('HNO3', ['HNO3']), nh3 = F2.process('NH3', []), plain = F2.process('NaCl', []);
+  assert.strictEqual(full.mode, 'process'); assert.strictEqual(full.steps.length, 4); assert.strictEqual(part.mode, 'direct'); assert(part.missing.includes('NO') && part.factor > full.factor, 'direct is costlier than the real process');
+  assert.strictEqual(nh3.mode, 'process'); assert.strictEqual(plain.mode, 'plain'); assert(Math.abs(plain.factor - 1.05) < 1e-9, 'products without a route cost exactly what they did');
+  assert(full.factor > 1.05 && full.factor < 1.3, 'process costs a little more than the old flat 5 %'); assert(Math.abs(full.yield - 0.985 * 0.98 * 0.995 * 0.985) < 1e-9);
+  const pp = F2.planProduction({ comp: { H: 1, N: 1, O: 3 }, price: e => 1, rate: 5, minutes: 1, space: 100, cash: 1e6, reserve: 0, factor: full.factor }); assert(Math.abs(pp.unit - 5 * full.factor) < 1e-9 && pp.made === 5, 'mol output unchanged, cost scaled'); }
