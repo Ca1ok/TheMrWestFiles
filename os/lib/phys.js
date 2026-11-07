@@ -13,12 +13,12 @@
 const Phys = (function(){
   'use strict';
   const R = 8.314462618, FARADAY = 96485.332, KB = 1.380649e-23, HP = 6.62607015e-34, T0 = 298.15, LN10 = Math.LN10;
-  let VIOLENT = new Set(), up = false, DB = {}, KS = {}, memo = {}, MP = {}, BP = {}, EN = {}, PKAS = {}, STRONG = [], OXS = {};
+  let VIOLENT = new Set(), up = false, DB = {}, KS = {}, memo = {}, MP = {}, CMP = {}, BP = {}, EN = {}, PKAS = {}, STRONG = [], OXS = {};
   function init(){
     if(up) return; Chem.init(); up = true;
     // top-level `const` tables are global lexical bindings, so they are read by bare name (guarded, like chem.js does)
     const T = typeof THERMO !== 'undefined' ? THERMO : {}, K = typeof KSP !== 'undefined' ? KSP : {};
-    MP = typeof MELTING_POINTS !== 'undefined' ? MELTING_POINTS : {}; BP = typeof BOILING_POINTS !== 'undefined' ? BOILING_POINTS : {}; EN = typeof ELECTRONEG !== 'undefined' ? ELECTRONEG : {};
+    MP = typeof MELTING_POINTS !== 'undefined' ? MELTING_POINTS : {}; CMP = typeof COMPOUND_MP !== 'undefined' ? COMPOUND_MP : {}; BP = typeof BOILING_POINTS !== 'undefined' ? BOILING_POINTS : {}; EN = typeof ELECTRONEG !== 'undefined' ? ELECTRONEG : {};
     PKAS = typeof PKA !== 'undefined' ? PKA : {}; STRONG = typeof STRONG_ACIDS !== 'undefined' ? STRONG_ACIDS : []; OXS = typeof OXIDATION !== 'undefined' ? OXIDATION : {}; VIOLENT = typeof VIOLENT_WITH_WATER !== 'undefined' ? VIOLENT_WITH_WATER : new Set();
     Object.keys(T).forEach(f => { const c = Chem.parse(f); if(c) DB[Chem.compKey(c)] = T[f]; });
     Object.keys(K).forEach(f => { const c = Chem.parse(f); if(c) KS[Chem.compKey(c)] = K[f]; });
@@ -68,8 +68,11 @@ const Phys = (function(){
     init(); const key = ck(sp.comp); if(key in memo) return memo[key];
     const t = DB[key]; let o = t ? { ph: t[0], H: t[1], S: t[2], Cp: t[3], est: false, err: 0 } : estimate(sp.comp);
     if(!o){ memo[key] = null; return null; }
-    const n = nAt(sp.comp); let Tm = o.Tm || pick(MP, sp), Tb = o.Tb || pick(BP, sp);
+    const n = nAt(sp.comp); let Tm = o.Tm || pick(MP, sp) || (CMP[sp.f] || null), Tb = o.Tb || pick(BP, sp);
     if(sp.f === 'CO2'){ Tm = Tb = 194.7; }                                                    // sublimes at 1 atm
+    // Carbonates, hydrogencarbonates and hydroxides of non-alkali metals DECOMPOSE on heating (CaCO3 → CaO + CO2 near 1100 K, Ca(OH)2 near 850 K); the 'melting point' tables list
+    // that decomposition temperature. Treating it as fusion added a spurious +46 kJ/mol to every calcination ΔH, so they stay solid until the reaction itself takes them away.
+    { const d = sp.kind === 'compound' && Chem.ions(sp.comp); if(d && d.cation && !['Li', 'Na', 'K', 'Rb', 'Cs', 'NH4', 'H'].includes(d.cation.f) && ['CO3', 'HCO3', 'OH'].includes(d.anion.f)){ Tm = 4000; Tb = 5000; } }
     if(Tm == null) Tm = o.ph === 'g' ? 100 : o.ph === 'l' ? 250 : 1300;
     if(Tb == null) Tb = o.ph === 'g' ? 200 : o.ph === 'l' ? 380 : 2100;
     if(o.ph === 's') Tm = Math.max(Tm, T0 + 1); if(o.ph === 'l'){ Tm = Math.min(Tm, T0 - 1); Tb = Math.max(Tb, T0 + 1); } if(o.ph === 'g') Tb = Math.min(Tb, T0 - 1);
@@ -99,6 +102,9 @@ const Phys = (function(){
   // In an OPEN vessel (1 bar, vented) gases that are produced drift away, so their partial pressure stays near what the room air already holds. This is why
   // baking soda + vinegar fizzes to completion and why limestone calcines in air at ~1000 K — not at the temperature where K = 1 against pure CO2.
   const PATM = { CO2: 4.2e-4, O2: .21, N2: .78, H2O: .02, Ar: .0093 };
+  // A vessel at ≤ 1 bar is treated as VENTED only when the gas is evolved from something condensed (a solid or liquid reactant): CaCO3 → CaO + CO2, NaHCO3 + vinegar.
+  // A reaction among gases only (Contact process, water-gas shift, NO2/N2O4, Haber) is a gas mixture that reaches its true equilibrium; venting it would force every one to 100 %.
+  const ventsOf = (reactantProps, T, P) => P <= 1.0001 && reactantProps.some(p => phaseAt(p, T, P) !== 'g');
   function equilibrium(sps, n0, T, P, lnK, removal, open){
     // sps: [{p, nu}] with nu<0 reactants, >0 products;  n0: moles of each at the start (products 0)
     const xm = Math.min.apply(null, sps.map((s, i) => s.nu < 0 ? n0[i] / -s.nu : Infinity)); if(!(xm > 0)) return { xi: 0, xmax: 0, y: 0 };
@@ -128,7 +134,10 @@ const Phys = (function(){
   /* ------------------------------------------------------------ the cacheable "card": everything that depends on WHICH reaction, T, P and equipment (not on amounts) */
   const ALL = ['heat', 'spark', 'pressure', 'catalyst', 'cryo', 'distill', 'polymer'];
   const normKey = k => { const s = Chem.speciesOf(k); return s ? s.key : k; };
-  function cacheKey(a){ const body = a.target ? '>' + a.target : (a.keys || []).map(normKey).sort().join('+'); return body + '|' + Math.round(a.T) + '|' + (+a.P || 1) + '|' + (a.cat ? 1 : 0) + (a.elec ? 1 : 0) + (a.ign ? 1 : 0); }
+  // ENGINE_VERSION: bump this whenever ANY change can alter a card (data tables, rules, thermodynamics, kinetics). It is the first part of every cache key, so a new engine can
+  // never read an answer computed by an old one (browser memory, lab-cache/reactions/*.json). The export Action also deletes entries of other versions. 1 = original engine, 2 = standard-state fix + ethanol data fix.
+  const ENGINE_VERSION = 2;
+  function cacheKey(a){ const body = a.target ? '>' + a.target : (a.keys || []).map(normKey).sort().join('+'); return 'e' + ENGINE_VERSION + '|' + body + '|' + Math.round(a.T) + '|' + (+a.P || 1) + '|' + (a.cat ? 1 : 0) + (a.elec ? 1 : 0) + (a.ign ? 1 : 0); }
   function fnv(s){ let h = 0x811c9dc5; for(let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return ('00000000' + h.toString(16)).slice(-8); }
   const shardOf = key => fnv(key).slice(0, 2);
   const r3 = x => Math.round(x * 1000) / 1000;
@@ -140,6 +149,7 @@ const Phys = (function(){
       const es = sol.reactants.map(x => x.s.el), cs = Chem.candidates(es[0], es[1]).map(c => ({ c, f: Chem.formation(c.formula) })).filter(x => x.f && x.f.reactants && x.f.products).map(x => { const t = rxn(x.f.reactants, x.f.products, T, P), at = Chem.atoms(x.f.products[0].s.comp) * x.f.products[0].coeff; return { f: x.f, g: t.dG / at, tab: !t.est, ok: !t.miss.length }; }).filter(x => x.ok);
       const pool = cs.some(x => x.tab) ? cs.filter(x => x.tab) : cs; if(pool.length) sol = Object.assign({}, pool.sort((x, y) => x.g - y.g)[0].f, { type: sol.type });
     }
+    if(sol && sol.notModelled) return bad(sol.reason);                                                   // a deliberate refusal: never fall through to the Gibbs-search guesser
     if(!a.target && (!sol || !sol.reactants || sol.type === 'No reaction')){                    // no rule → search for the thermodynamically best reaction (but never invent reactions between plain dissolved salts)
       const sps = [...new Set(a.keys || [])].map(k => Chem.speciesOf(k)).filter(Boolean), salts = sps.length > 1 && sps.every(x => { const d = x.kind === 'compound' && Chem.ions(x.comp); return d && d.cation && Chem.isMetal(d.cation.f) && d.anion.f !== 'O' && d.anion.f !== 'OH'; });
       const isMetalEl = x => x.kind === 'element' && Chem.isMetal(x.el), isAcid = x => { const d = x.kind === 'compound' && Chem.ions(x.comp); return d && d.cation && d.cation.f === 'H' && !(x.f === 'H2O'); }, isSalt = x => { const d = x.kind === 'compound' && Chem.ions(x.comp); return d && d.cation && Chem.isMetal(d.cation.f) && d.anion.f !== 'O' && d.anion.f !== 'OH'; };
@@ -155,15 +165,17 @@ const Phys = (function(){
     const th = rxn(sol.reactants, sol.products, T, P);
     if(th.miss.length) return bad('No thermochemical data (and no safe estimate) for ' + th.miss.join(', ') + ' — WestLab won’t guess.');
     const nu = sol.reactants.map(x => ({ p: props(x.s), nu: -x.coeff })).concat(sol.products.map(x => ({ p: props(x.s), nu: x.coeff })));
-    const eq0 = equilibrium(nu, sol.reactants.map(x => x.coeff).concat(sol.products.map(() => 0)), T, P, th.lnK, false, P <= 1.0001);
-    const ne = electrons(sol), driven = !!a.elec && ne > 0 && th.dG > 0, ac = activation(sol, th, !!a.cat, T);
+    const eq0 = equilibrium(nu, sol.reactants.map(x => x.coeff).concat(sol.products.map(() => 0)), T, P, th.lnK, false, ventsOf(sol.reactants.map(x => props(x.s)), T, P));
+    const ne = electrons(sol), driven = !!a.elec && ne > 0 && th.dG > 0, ac = activation(sol, th, !!a.cat, T); if(sol.Ea){ ac.Ea = a.cat ? Math.max(0.3 * sol.Ea, sol.Ea - 200) : sol.Ea; }   // named reactions may carry a textbook Ea
     const hetero = sol.reactants.some(x => phaseAt(props(x.s), T, P) !== 'g') && ac.cls !== 'ion', kf = rateConst(ac.Ea, T, sol.reactants.length, hetero);
     let xeq = driven ? 1 : eq0.y, kfx = kf, t95 = driven ? 0 : 3 * Math.max(xeq, 1e-6) / kf, ign = 0;
     if(!driven && a.ign && t95 > 1e5 && th.dH < 0 && xeq >= 0.05 && ac.Ea <= 200){                              // a spark/flame heats a local hot-spot; if the heat released keeps the mixture above ~800 K the reaction sustains itself
       const Tf = flameT(sol.products.map(x => ({ p: props(x.s), n: x.coeff })), T, P, -th.dH, 0), Ti = Math.min(Tf, 1100);
-      if(Tf >= 800){ const k2 = rateConst(ac.Ea, Ti, sol.reactants.length, hetero); if(3 * Math.max(xeq, 1e-6) / k2 <= 1e5){ kfx = k2; t95 = 3 * Math.max(xeq, 1e-6) / k2; ign = 1; } }
+      // …but a flame only sustains itself if the reaction still goes substantially at the hot-spot temperature: N2 + 3 H2 releases 92 kJ yet NH3 is almost fully dissociated above ~900 K, so a spark cannot ignite it (even with a catalyst).
+      const thH = Tf >= 800 ? rxn(sol.reactants, sol.products, Ti, P) : null, eqH = thH ? equilibrium(nu, sol.reactants.map(x => x.coeff).concat(sol.products.map(() => 0)), Ti, P, thH.lnK, false, ventsOf(sol.reactants.map(x => props(x.s)), Ti, P)) : null;
+      if(Tf >= 800 && eqH.y >= 0.2){ const k2 = rateConst(ac.Ea, Ti, sol.reactants.length, hetero); if(3 * Math.max(xeq, 1e-6) / k2 <= 1e5){ kfx = k2; t95 = 3 * Math.max(xeq, 1e-6) / k2; ign = 1; } }
     }
-    const out = { v: 1, ok: true, key, type: sol.type, note: sol.note || '', T, P, cat: a.cat ? 1 : 0, elec: driven ? 1 : 0, cls: ac.cls, eq: sol.equation,
+    const out = { v: 1, ev: ENGINE_VERSION, ok: true, key, type: sol.type, note: sol.note || '', obs: sol.obs || '', T, P, cat: a.cat ? 1 : 0, elec: driven ? 1 : 0, cls: ac.cls, eq: sol.equation,
       R: sol.reactants.map(x => [x.s.key, x.coeff, x.s.apu, x.s.f, x.s.kind]), Pr: sol.products.map(x => [x.s.key, x.coeff, x.s.apu, x.s.f, x.s.kind]),
       dH: r3(th.dH), dS: r3(th.dS), dG: r3(th.dG), lnK: r3(th.lnK), Ea: r3(ac.Ea), lnkf: r3(Math.log(kfx)), ign, xeq: r3(xeq), t95: +t95.toPrecision(3), est: th.est ? 1 : 0, err: Math.round(th.err), ne, E: driven ? r3(th.dG * 1000 / (ne * FARADAY)) : 0, hetero: hetero ? 1 : 0 };
     if(!driven && xeq < 0.05 && !(th.est && th.dG < th.err * 0.5)){                                  // thermodynamically blocked: explain, and say what would fix it
@@ -180,7 +192,8 @@ const Phys = (function(){
   }
   /* ------------------------------------------------------------ Gibbs-energy search: when no rule knows the products, find the balanced reaction among KNOWN species that releases the most Gibbs energy at this T.
    * (Element budget is conserved exactly; products come from the tabulated table + registry + the elements themselves; tabulated products are preferred over estimated ones.) */
-  let POOL = null;
+  // Deterministic work budget for the Gibbs search (replaces a wall-clock time-box, which would make the answer depend on how fast the machine is — the browser and the GitHub Action must agree).
+  let POOL = null; const GS_BUDGET = 120000; let GS_MAX = 0;
   function pool(){ if(POOL) return POOL; init(); POOL = []; const seen = new Set(), add = f => { const sp = Chem.speciesOf(f); if(!sp) return; const k = ck(sp.comp); if(seen.has(k)) return; seen.add(k); POOL.push({ sp, tab: !!DB[k], els: Object.keys(sp.comp), k }); };
     Object.keys(typeof THERMO !== 'undefined' ? THERMO : {}).forEach(add); Chem.registryList().forEach(r => add(r.formula)); return POOL; }
   const subsets = (arr, max) => { const out = []; const rec = (i, cur) => { if(cur.length) out.push(cur.slice()); if(cur.length >= max) return; for(let j = i; j < arr.length; j++){ cur.push(arr[j]); rec(j + 1, cur); cur.pop(); } }; rec(0, []); return out; };
@@ -198,7 +211,7 @@ const Phys = (function(){
     return true;
   }
   function gibbsSearch(sps, T, P){
-    init(); const t0 = Date.now(), all = pool(); let best = null;
+    init(); const all = pool(); let best = null, work = 0;
     const trySet = S => {
       const E = [...new Set(S.flatMap(x => Object.keys(x.comp)))], have = new Set(S.map(x => ck(x.comp)));
       let cand = all.filter(x => x.els.every(e => E.includes(e)) && !have.has(x.k)); E.forEach(e => { const el = Chem.speciesOf(e); if(el && !have.has(ck(el.comp)) && !cand.some(x => x.k === ck(el.comp))) cand.push({ sp: el, tab: true, els: Object.keys(el.comp), k: ck(el.comp) }); });
@@ -206,12 +219,12 @@ const Phys = (function(){
       let hit = null;
       for(const tabOnly of [true, false]){
         for(const ps of subsets(cand, 3)){
-          if(Date.now() - t0 > 2500) break; if(tabOnly && ps.some(x => !x.tab)) continue; if(!tabOnly && ps.every(x => x.tab)) continue;
+          if(++work > GS_BUDGET) break; if(tabOnly && ps.some(x => !x.tab)) continue; if(!tabOnly && ps.every(x => x.tab)) continue;
           const cov = new Set(ps.flatMap(x => x.els)); if(!E.every(e => cov.has(e))) continue;
           if(!sane(S, ps, T)) continue;
           const co = Chem.balance(S.map(x => x.comp), ps.map(x => x.sp.comp)); if(!co || co.slice(0, S.length).some(v => v > 12)) continue;
           const re = S.map((s, i) => ({ s, coeff: co[i] })), pr = ps.map((x, i) => ({ s: x.sp, coeff: co[S.length + i] })), th = rxn(re, pr, T, P); if(th.miss.length || !isFinite(th.dG)) continue;
-          const total = co.reduce((a, b) => a + b, 0), openV = P <= 1.0001; let dGeff = th.dG; if(openV) pr.forEach(x => { if(phaseAt(props(x.s), T, P) === 'g') dGeff += R * T / 1000 * x.coeff * Math.log(PATM[x.s.f] || 1e-6); });
+          const total = co.reduce((a, b) => a + b, 0), openV = ventsOf(S.map(x => props(x)), T, P); let dGeff = th.dG; if(openV) pr.forEach(x => { if(phaseAt(props(x.s), T, P) === 'g') dGeff += R * T / 1000 * x.coeff * Math.log(PATM[x.s.f] || 1e-6); });
           const score = dGeff / co.slice(0, S.length).reduce((a, b) => a + b, 0) + (tabOnly ? 0 : 15) + (total > 10 ? 60 : 0) + 10 * Math.max(0, total - 2);   // sensible, small equations win; estimated products need a clear margin
           if(!hit || score < hit.score) hit = { re, pr, th, score, dGeff };
         }
@@ -219,7 +232,7 @@ const Phys = (function(){
       }
       return hit;
     };
-    best = trySet(sps);
+    best = trySet(sps); if(work > GS_MAX) GS_MAX = work;
     if(!best) return null;
     if(sps.length > 1 && best.dGeff > (best.re.some(x => isOrg(x.s)) ? 8 : -10)) return null;                                   // several reagents: only clearly spontaneous reactions are accepted (a lone substance is always shown, so the lab can say what temperature it needs)
     const hasO2 = best.re.some(x => x.s.f === 'O2'), type = best.re.length === 1 ? 'Thermal decomposition' : (hasO2 ? 'Combustion / oxidation' : (best.re.concat(best.pr).some(x => x.s.kind === 'element') ? 'Redox (lowest Gibbs energy)' : (best.re.some(x => isOrg(x.s)) ? 'Organic reaction (lowest Gibbs energy)' : 'Acid–base / hydration (lowest Gibbs energy)')));
@@ -230,7 +243,7 @@ const Phys = (function(){
   function run(c, amounts, o){
     init(); o = o || {}; const nu = c.R.map(x => ({ p: props(Chem.speciesOf(x[0])), nu: -x[1] })).concat(c.Pr.map(x => ({ p: props(Chem.speciesOf(x[0])), nu: x[1] })));
     const n0 = c.R.map(x => Math.max(0, +amounts[x[0]] || 0)).concat(c.Pr.map(() => 0)), T = c.T, P = c.P;
-    let eq = c.elec ? (() => { const xm = Math.min.apply(null, c.R.map((x, i) => n0[i] / x[1])); return { xi: xm, xmax: xm, y: xm > 0 ? 1 : 0 }; })() : equilibrium(nu, n0, T, P, c.lnK, !!o.removal, P <= 1.0001);
+    let eq = c.elec ? (() => { const xm = Math.min.apply(null, c.R.map((x, i) => n0[i] / x[1])); return { xi: xm, xmax: xm, y: xm > 0 ? 1 : 0 }; })() : equilibrium(nu, n0, T, P, c.lnK, !!o.removal, ventsOf(c.R.map(x => props(Chem.speciesOf(x[0]))), T, P));
     let xi = eq.xi; const lim = c.R.reduce((b, x, i) => (n0[i] / x[1] < b.r ? { i, r: n0[i] / x[1] } : b), { i: 0, r: Infinity }).i;
     const out = { xi, xmax: eq.xmax, y: eq.y, limiting: c.R[lim] ? c.R[lim][3] : null, excess: c.R.map((x, i) => ({ f: x[3], left: n0[i] - x[1] * xi })), notes: [] };
     // precipitation: a product with a known Ksp only forms beyond its solubility (idealised, pure water)
@@ -262,6 +275,6 @@ const Phys = (function(){
   }
   // what the player's bench can do (derived from owned equipment)
   function limits(owned){ return { Tmin: owned.cryo ? 75 : 275, Tmax: owned.burner ? 1500 : 375, Pmax: owned.pressure ? 500 : 1, cat: !!owned.catalysis, elec: !!owned.electrolysis, removal: !!owned.distillation }; }
-  return { init, props, HS, rxn, card, run, equilibrium, limits, cacheKey, shardOf, fnv, fmtTime, phaseAt, R, FARADAY };
+  return { init, gsMaxWork: () => GS_MAX, props, HS, rxn, card, run, equilibrium, limits, cacheKey, shardOf, fnv, fmtTime, phaseAt, R, FARADAY, ENGINE_VERSION };
 })();
 if(typeof module !== 'undefined' && module.exports) module.exports = Phys;

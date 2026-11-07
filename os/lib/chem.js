@@ -290,7 +290,21 @@ const Chem = (function(){
     cands.forEach((c, i) => { const r = Math.log((c.comp[B] || 0) / (c.comp[A] || 1e-9)); const d = Math.abs(r - target) + i * 0.05; if(d < bd){ bd = d; best = c; } });
     return best;
   }
+  // Named reactions (data/chem-data.js NAMED_REACTIONS): matched on the exact SET of reagents, X and X2 being the same element in its standard state.
+  function namedRule(sp){
+    const NR = typeof NAMED_REACTIONS !== 'undefined' ? NAMED_REACTIONS : []; if(!NR.length) return null;
+    const norm = s => s.kind === 'element' && I.DIA.has(s.el) ? compKey({ [s.el]: 2 }) : compKey(s.comp), have = sp.map(norm).sort().join('|');
+    for(const e of NR){
+      const want = e.r.map(f => { const c = parse(f); return c ? (Object.keys(c).length === 1 && c[Object.keys(c)[0]] === 1 && I.DIA.has(Object.keys(c)[0]) ? compKey({ [Object.keys(c)[0]]: 2 }) : compKey(c)) : f; }).sort().join('|');
+      if(want !== have) continue;
+      if(e.notModelled) return { type: 'Not modelled', note: 'Not modelled: ' + e.why, notModelled: true, reacts: sp, prods: [], needs: [], obs: e.obs || '' };
+      const prods = e.p.map(f => { const c = parse(f); return Object.keys(c).length === 1 ? el2(Object.keys(c)[0]) : speciesFromComp(c); });
+      const r = R(e.type, sp, prods, e.n || [], e.obs ? '' : ''); r.obs = e.obs || ''; r.id = e.id; if(e.Ea) r.Ea = e.Ea; return r;
+    }
+    return null;
+  }
   function rule(sp, amounts){
+    const nr = namedRule(sp); if(nr) return nr;
     const els = sp.filter(s => s.kind === 'element'), cps = sp.filter(s => s.kind === 'compound');
     // ---- one compound: decomposition
     if(sp.length === 1 && cps.length === 1){
@@ -415,15 +429,22 @@ const Chem = (function(){
     for(const k of uniq){ const s = speciesOf(k); if(!s) return { ok: false, reason: 'Unknown substance: ' + k }; sp.push(s); }
     if(!sp.length) return { ok: false, reason: 'Pick at least one substance.' };
     const amt = {}; if(amounts) sp.forEach(s => { if(amounts[s.key] > 0) amt[s.el || s.key] = amounts[s.key]; });
+    // 'N2' and 'N' both mean nitrogen in its standard state: give the rules one spelling (the element) when several reagents are mixed, so the same reagents always get the same chemistry.
+    const asEl = s => s.kind === 'compound' && Object.keys(s.comp).length === 1 && I.DIA.has(Object.keys(s.comp)[0]) && s.comp[Object.keys(s.comp)[0]] === 2;
+    const sp0 = sp.slice(); if(sp.length > 1) sp.forEach((s, i) => { if(asEl(s)){ const e = Object.keys(s.comp)[0]; sp[i] = { key: e, kind: 'element', el: e, f: e, comp: { [e]: 1 }, apu: 1 }; } });
     let r; try{ r = rule(sp, amt); }catch(e){ r = null; }
+    // An atom key of a diatomic element (N, H, O, F, Cl, Br, I) names the ELEMENT, whose standard state is X2. Rules may be written with the atom, but a reaction must
+    // never be balanced against free atoms (ΔHf(N) = +473 kJ/mol would turn Haber into a −1170 kJ "atomic" reaction and make CH4 + 4 O 'combustion' absurdly exothermic).
+    if(r && r.reacts) r.reacts = r.reacts.map(s => s.kind === 'element' && I.DIA.has(s.el) ? el2(s.el) : s);
     if(!r) return { ok: false, reason: sp.length === 1 ? 'This substance is stable on its own — try adding a second reagent, or heat/electrolysis if it decomposes.' : 'These substances don’t react under any conditions the engine knows.' };
     if(r.type === 'No reaction') return { ok: false, reason: r.note, type: r.type };
+    if(r.notModelled) return { ok: false, reason: r.note, type: r.type, notModelled: true, obs: r.obs };
     const missing = r.needs.filter(n => !conditions.has(n));
     const coeffs = balance(r.reacts.map(s => s.comp), r.prods.map(s => s.comp));
     if(!coeffs) return { ok: false, reason: 'The engine found products but couldn’t balance the equation.' };
     const reactants = r.reacts.map((s, i) => ({ s, coeff: coeffs[i] })), products = r.prods.map((s, i) => ({ s, coeff: coeffs[r.reacts.length + i] }));
     const eq = fmtEquation(reactants, products);
-    return { ok: missing.length === 0, type: r.type, note: r.note, needs: r.needs, missing, reactants, products, equation: eq, reason: missing.length ? 'Needs ' + missing.map(condLabel).join(' + ') + '.' : '', key: eqKey(reactants, products) };
+    return { ok: missing.length === 0, type: r.type, note: r.note, obs: r.obs || '', Ea: r.Ea || 0, id: r.id || '', needs: r.needs, missing, reactants, products, equation: eq, reason: missing.length ? 'Needs ' + missing.map(condLabel).join(' + ') + '.' : '', key: eqKey(reactants, products) };
   }
   const condLabel = c => ({ heat: 'heat', spark: 'electric current', pressure: 'high pressure', catalyst: 'a catalyst', cryo: 'cryogenic cooling', distill: 'distillation', polymer: 'polymerisation' })[c] || c;
   const sub = n => String(n).replace(/\d/g, d => '₀₁₂₃₄₅₆₇₈₉'[d]);
