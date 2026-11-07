@@ -99,3 +99,12 @@ Python Playwright + Chromium are preinstalled (`from playwright.sync_api import 
 - Timers in background tabs are throttled: catch up using elapsed wall time, flush saves on `visibilitychange`/`pagehide`.
 - Deterministic systems (market, news, property prices, world.js) must stay seed/clock-pure so every client and the Action agree.
 - Window iframes are `pointer-events:none` while dragging/resizing; apps must clean up subscriptions on `pagehide`.
+
+## 12. Future ideas (for later consideration — not started, owner hasn't approved)
+**Moving off plain JavaScript.** Browsers only run JS and WebAssembly (WASM), so "another language" means one of these:
+- **TypeScript + Vite (best next step):** types would catch whole classes of bugs here (missing `K.maint`, stale money fields, wrong facade names). Needs a build step; a GitHub Action can build and publish to Pages (still free). Would break the current "no build step, owner drag-drops files" workflow, so migrate only if the owner agrees; keep the `OS` facade / kernel-app split.
+- **Rust (or C++/Zig) → WASM, only for hot maths:** WestLab chem/force-field (`os/lib/chem.js, phys.js, ff.js`), market model, factory catch-up loop. Not for UI (WASM can't touch the DOM directly). Do it only if profiling shows these are slow.
+- **WebGL/WebGPU:** only if we add lots of moving graphics (particles, big animated flow diagrams). WebGPU support is still uneven.
+- **UI framework (Svelte/Solid/React):** only worth it if the apps grow much larger or update very often.
+- Note: the window-drag lag was rendering cost (backdrop blur, big shadows), not JS speed — fixed with the `.moving` / `perf-low` CSS and the Graphics setting, so a language rewrite would not have helped there.
+Suggested order if ever pursued: (1) TypeScript + Vite + Action deploy, (2) Rust/WASM for WestLab maths only if slow, (3) leave the rest alone.
