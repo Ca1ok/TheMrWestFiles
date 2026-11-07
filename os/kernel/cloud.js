@@ -5,7 +5,7 @@
  *   - guests never touch the player data nodes at all (nothing is saved or cached while signed out) */
 (window.__OSM = window.__OSM || []).push(function(K){
   const CFG = OS_CONFIG;
-  const FIELDS = ['cash', 'inv', 'lots', 'props', 'bank', 'mail', 'lab', 'games', 'shop', 'meta'];
+  const FIELDS = ['cash', 'inv', 'lots', 'props', 'bank', 'mail', 'lab', 'games', 'shop', 'meta', 'factory'];
   const C = K.cloud = { db: null, auth: null, user: null, ready: false, bytes: 0, reads: 0, writes: 0 };
   C.signedIn = () => !!C.user && !C.user.isAnonymous;
   C.isAdmin = () => C.signedIn() && C.user.email === CFG.adminEmail && C.user.emailVerified !== false;
@@ -117,12 +117,15 @@
     { id: 'disc',  field: 'disc',  name: 'Discoveries', unit: 'count', glyph: 'flask',  color: '#52b5b0', desc: 'Compounds discovered in WestLab' },
     { id: 'runs',  field: 'runs',  name: 'Reactions',   unit: 'count', glyph: 'bolt',   color: '#e8803d', desc: 'Reactions run in WestLab' },
     { id: 'props', field: 'props', name: 'Properties',  unit: 'count', glyph: 'key',    color: '#a08a6a', desc: 'Properties you own' },
+    { id: 'fac',   field: 'fac',   name: 'Factory',     unit: 'rate',  glyph: 'factory', color: '#c96a4a', desc: 'Molecules your factory makes per minute' },
+    { id: 'made',  field: 'made',  name: 'Produced',    unit: 'count', glyph: 'flask',  color: '#5a8fd6', desc: 'Molecules your factory has made in total' },
     { id: 'els',   field: 'els',   name: 'Elements',    unit: 'count', glyph: 'grid',   color: '#9b7bff', desc: 'Different elements collected' }
   ];
   C.boardEntry = function(){                                         // the live numbers for THIS player (also used by the app to show "you" without waiting on the server)
     const S = K.S, r2 = K.round2;
     return { name: S.meta.name || '', value: r2(S.cash), nw: r2(K.netWorth()), re: r2(K.propValue()), stk: r2(K.stockValue ? K.stockValue() : 0), inv: r2(K.inventoryValue()),
-      disc: S.lab.found.length, runs: S.lab.runs || 0, props: Object.keys(S.props).length, els: Object.keys(S.inv.e).length };
+      disc: S.lab.found.length, runs: S.lab.runs || 0, props: Object.keys(S.props).length, els: Object.keys(S.inv.e).length,
+      fac: r2(S.factory.lines.reduce((s, l) => s + (l.on ? l.rate : 0), 0)), made: Math.floor(S.factory.made || 0) };
   };
   function publishBoard(force){
     if(!C.signedIn() || !K.S.meta.name) return;

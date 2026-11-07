@@ -21,7 +21,7 @@ let tab = 'elements', q = '', cat = 'all';
 const pf = f => CH.prettyFormula(f);
 const mvTag = m => Math.abs(m - 1) < 0.02 ? null : h('span', { class: 'mv ' + (m > 1 ? 'u' : 'd') }, (m > 1 ? '▲ +' : '▼ −') + Math.abs(Math.round((m - 1) * 100)) + '%');
 const A = Kit.app({ title: 'WestShop', build: (body) => {
-  const tabs = Kit.seg([{ id: 'elements', label: 'Elements' }, { id: 'compounds', label: 'Compounds' }, { id: 'inventory', label: 'My items' }], tab, t => { tab = t; q = ''; cat = 'all'; draw(); });
+  const tabs = Kit.seg([{ id: 'elements', label: 'Elements' }, { id: 'compounds', label: 'Compounds' }, { id: 'market', label: 'Market' }, { id: 'inventory', label: 'My items' }], tab, t => { tab = t; q = ''; cat = 'all'; draw(); });
   const search = h('div', { class: 'search', style: { marginTop: '12px' } }, h('span', { html: Kit.icon('search', 17, 2) }), h('input', { class: 'field', placeholder: 'Search', oninput: e => { q = e.target.value.toLowerCase(); list(); } }));
   const chips = h('div', { class: 'chips', style: { marginTop: '10px' } }), main = h('div', { style: { marginTop: '12px' } }), top = h('div');
   body.append(tabs, top, search, chips, main);
@@ -32,12 +32,12 @@ const A = Kit.app({ title: 'WestShop', build: (body) => {
     top.appendChild(h('div', { class: 'movers' }, ...keys.map(k => { const e = CH.elements[k], el = h('button', { class: 'mover', style: { '--c': COLORS[e.cat] || 'var(--tint)' }, onclick: () => openItem('element', k) }, h('b', null, k), h('small', null, e.name), mvTag(mv[k])); return el; })));
   }
   function paintChips(){
-    chips.innerHTML = ''; if(tab === 'inventory') return;
+    chips.innerHTML = ''; if(tab === 'inventory' || tab === 'market') return;
     const cats = tab === 'elements' ? ['all', ...new Set(OS.data.ELEMENTS.map(e => e[4]))] : ['all', ...new Set(SH.compounds().map(c => c.category))];
     cats.forEach(c => chips.appendChild(h('button', { class: 'chip' + (c === cat ? ' on' : ''), onclick: () => { cat = c; paintChips(); list(); } }, c === 'all' ? 'All' : (CATL[c] || c[0].toUpperCase() + c.slice(1).replace(/-/g, ' ')))));
   }
   function list(){
-    main.innerHTML = '';
+    main.innerHTML = ''; if(tab === 'market') return marketList();
     if(tab === 'elements'){
       const rows = SH.elements().filter(e => (cat === 'all' || e.cat === cat) && (!q || (e.name + e.sym).toLowerCase().includes(q)));
       main.appendChild(h('div', { class: 'egrid' }, ...rows.map(e => h('button', { class: 'el', style: { '--c': COLORS[e.cat] || '#c9a876' }, onclick: () => openItem('element', e.sym) }, e.qty ? h('span', { class: 'own' }, Kit.num(e.qty)) : null, h('span', { class: 'n' }, e.num), h('span', { class: 's' }, e.sym), h('span', { class: 'nm' }, e.name), h('span', { class: 'p' }, money(e.price, { compact: true, dp: e.price < 100 ? 2 : 0 }), ' ', mvTag(e.mult))))));
@@ -52,6 +52,29 @@ const A = Kit.app({ title: 'WestShop', build: (body) => {
       main.appendChild(group(inv.map(i => row({ left: i.type === 'element' ? h('div', { class: 'formula', style: { width: '44px', fontSize: '24px', color: COLORS[CH.elements[i.key].cat] || 'var(--tint)' } }, i.key) : h('div', { class: 'formula', style: { width: '74px', fontSize: '15px', color: 'var(--tint)' }, html: pf(i.key) }), title: i.name, sub: Kit.num(i.qty) + ' owned · sells ' + money(i.sell, { dp: 2 }) + ' each', right: h('b', { class: 'num' }, money(i.sell * i.qty, { dp: 2 })), onClick: () => openItem(i.type, i.key) }))));
       main.appendChild(h('button', { class: 'btn block bad', style: { marginTop: '16px' }, onclick: async () => { if(await Kit.confirm({ title: 'Sell everything?', msg: 'Sell every item for about ' + money(tot, { dp: 2 }) + '. Selling lots of one thing lowers its price.', ok: 'Sell all', destructive: true })){ let got = 0; SH.inventory().forEach(i => { const r = SH.sell(i.key, i.qty); if(r.ok) got += r.total; }); Kit.toast('Sold for ' + money(got, { dp: 2 }), 'good'); list(); } } }, 'Sell everything'));
     }
+  }
+  /* ---------------- player Market: only things other players produced in WestFactory ---------------- */
+  let mkt = null, mktAt = 0, mktBusy = false;
+  async function marketList(force){
+    main.innerHTML = '';
+    if(!OS.auth.signedIn()) return main.appendChild(h('div', { class: 'empty', html: Kit.icon('cloudOff', 56, 1.4) + 'Sign in to browse the player Market.' }));
+    main.appendChild(h('div', { class: 'foot', style: { margin: '0 0 10px' } }, 'Molecules made by players in WestFactory, at the prices they chose. Sellers keep 95%. ', h('a', { onclick: () => OS.open('WestFactory') }, 'Open WestFactory'), ' · ', h('a', { onclick: () => marketList(true) }, 'Refresh')));
+    if(force || !mkt || Date.now() - mktAt > 20000){ if(mktBusy) return; mktBusy = true; main.appendChild(h('div', { class: 'empty', style: { padding: '24px' } }, 'Loading listings…')); try{ mkt = await OS.factory.market.listings(); mktAt = Date.now(); }catch(e){ mkt = []; } mktBusy = false; if(tab !== 'market') return; main.innerHTML = ''; main.appendChild(h('div', { class: 'foot', style: { margin: '0 0 10px' } }, 'Molecules made by players in WestFactory, at the prices they chose. Sellers keep 95%. ', h('a', { onclick: () => OS.open('WestFactory') }, 'Open WestFactory'), ' · ', h('a', { onclick: () => marketList(true) }, 'Refresh'))); }
+    const rows = (mkt || []).filter(l => !q || (l.name + l.f + l.sellerName).toLowerCase().includes(q));
+    if(!rows.length) return main.appendChild(h('div', { class: 'empty', html: Kit.icon('shop', 56, 1.4) + (mkt && mkt.length ? 'No listings match.' : 'Nothing for sale yet.<br>Players list molecules from WestFactory.') }));
+    main.appendChild(group(rows.map(l => { const d = l.est > 0 ? Math.round((l.price / l.est - 1) * 100) : 0; return row({ left: h('div', { class: 'formula', style: { width: '74px', fontSize: '15px', color: 'var(--tint)' }, html: pf(l.f) }), title: l.name, sub: (l.mine ? 'Your listing' : 'by ' + l.sellerName) + ' · ' + Kit.num(l.qty) + ' mol available',
+      right: h('div', { style: { textAlign: 'right' } }, h('b', { class: 'num' }, money(l.price, { dp: 2 })), h('div', { class: 'mv ' + (d <= 0 ? 'u' : 'd') }, (d > 0 ? '+' : d < 0 ? '−' : '') + Math.abs(d) + '% vs shop value')), chevron: false, onClick: () => openListing(l) }); })));
+  }
+  function openListing(l){
+    Kit.sheet({ title: l.name, build: (sb, api) => {
+      const nq = h('input', { class: 'field', type: 'number', min: '1', max: String(l.qty), step: '1', value: '1', inputmode: 'numeric' }), tot = h('div', { class: 'est', style: { display: 'flex', justifyContent: 'space-between', margin: '4px 4px 12px', color: 'var(--label2)', font: '500 15px var(--font)' } });
+      const n = () => Math.max(0, Math.min(l.qty, Math.floor(parseFloat(nq.value) || 0)));
+      const buy = h('button', { class: 'btn good block', onclick: async () => { buy.disabled = true; const r = await OS.factory.market.buy(l.id, n()); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); if(r.ok){ api.close(); mkt = null; marketList(true); } else buy.disabled = false; } }, 'Buy');
+      const paint = () => { tot.innerHTML = '<span>Buy ' + Kit.num(n()) + ' mol</span><b style="color:var(--label)">' + money(l.price * n(), { dp: 2 }) + '</b>'; buy.disabled = !n() || l.mine; };
+      nq.addEventListener('input', paint); paint();
+      sb.append(h('div', { class: 'hstack', style: { gap: '16px', margin: '4px 0 12px' } }, h('div', { class: 'formula', style: { fontSize: '30px', color: 'var(--tint)' }, html: pf(l.f) }), h('div', null, h('div', { class: 'fx' }, money(l.price, { dp: 2 }) + ' / mol'), h('small', { class: 'dim' }, 'Shop value ' + money(l.est, { dp: 2 })))),
+        group(row({ title: 'Seller', right: l.sellerName }), row({ title: 'Available', right: Kit.num(l.qty) + ' mol' })), h('div', { class: 'qrow' }, nq), tot, l.mine ? h('div', { class: 'foot' }, 'This is your own listing — manage it in WestFactory.') : buy);
+    } });
   }
   function openItem(type, key){
     const isEl = type === 'element', el = isEl ? CH.elements[key] : null, col = isEl ? (COLORS[el.cat] || 'var(--tint)') : 'var(--tint)', info = isEl ? null : CH.describe(key);

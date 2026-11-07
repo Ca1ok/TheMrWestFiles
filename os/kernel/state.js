@@ -23,7 +23,7 @@
     v: 3, cash: CFG.startCash, inv: { e: {}, c: {} }, lots: [], props: {},
     bank: { last: '', bills: [], hist: [] }, mail: [],
     lab: { found: [], tools: { basic: 1 }, runs: 0, tray: {} }, games: { day: '', plays: {}, earned: 0 },
-    shop: { demand: {} }, meta: { created: Date.now(), name: '', lastBroadcast: 0 }, arcade: { d: 0, net: 0, open: 0, t: 0 }
+    shop: { demand: {} }, meta: { created: Date.now(), name: '', lastBroadcast: 0 }, arcade: { d: 0, net: 0, open: 0, t: 0 }, factory: { lines: [], slots: 2, reserve: 50, made: 0, sold: 0, earned: 0, lastTick: 0, nid: 1, pos: {} }
   });
   K.S = K.defaults();
   K.dirty = new Set();
@@ -51,6 +51,7 @@
     S.shop = Object.assign({ demand: {} }, S.shop); S.shop.demand = S.shop.demand || {};
     S.meta = Object.assign({ created: Date.now(), name: '', lastBroadcast: 0 }, S.meta);
     { const c = Object.assign({ d: 0, net: 0, open: 0, t: 0 }, (S.arcade && typeof S.arcade === 'object') ? S.arcade : {}); S.arcade = { d: +c.d || 0, net: isFinite(+c.net) ? round2(+c.net) : 0, open: +c.open > 0 ? round2(+c.open) : 0, t: +c.t || 0 }; }   // arcade ledger: today's net winnings + any stake still at risk
+    if(K.factory) K.factory.sanitize();                                     // WestFactory: validated lines, sane numbers
     delete S.prefs;
     K.S = S; K.emit('cash'); K.emit('inv'); K.emit('mail'); K.emit('bank'); K.emit('props'); K.emit('stock'); K.emit('arcade');
   };

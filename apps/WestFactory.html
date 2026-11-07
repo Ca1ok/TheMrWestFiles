@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WestFactory</title>
+<link rel="stylesheet" href="../os/tokens.css"><link rel="stylesheet" href="../os/app/kit.css">
+<style>
+.sc-in{ max-width:1500px; }
+.kp{ display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; margin-bottom:12px; } .kp .kpi{ padding:10px 12px; } .kp b{ font-size:19px; } .kp .pos{ color:var(--good); } .kp .neg{ color:var(--bad); }
+.fbar{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; } .fbar .grow{ flex:1; }
+.wrap{ display:flex; gap:12px; align-items:stretch; } .net{ position:relative; flex:1; min-width:0; height:560px; overflow:auto; border-radius:var(--r-xl); background:var(--card); background-image:radial-gradient(var(--sep,rgba(255,255,255,.1)) 1px,transparent 1.2px); background-size:22px 22px; box-shadow:inset 0 0 0 1px var(--sep,rgba(255,255,255,.08)); }
+.net .stage{ position:relative; min-width:900px; } .net svg{ position:absolute; left:0; top:0; pointer-events:none; overflow:visible; }
+.nd{ position:absolute; width:176px; background:var(--bg2,#1b1d24); border-radius:14px; padding:9px 11px 10px; box-shadow:0 2px 10px rgba(0,0,0,.28),inset 0 0 0 1.5px var(--c,var(--sep)); cursor:grab; user-select:none; touch-action:none; transition:box-shadow .2s; } .nd:active{ cursor:grabbing; } .nd.sel{ box-shadow:0 4px 18px rgba(0,0,0,.4),0 0 0 2.5px var(--c); } .nd.off{ opacity:.55; }
+.nd .t{ font:700 12px var(--font); color:var(--label2); text-transform:uppercase; letter-spacing:.05em; display:flex; align-items:center; gap:6px; } .nd .t i{ width:8px; height:8px; border-radius:50%; background:var(--good); display:inline-block; } .nd .t i.warn{ background:#e6a93a; } .nd .t i.stop{ background:var(--label3,#777); }
+.nd .m{ font:800 19px/1.15 var(--font); color:var(--label); margin-top:3px; } .nd .s{ font:500 12.5px/1.3 var(--font); color:var(--label2); margin-top:2px; } .nd .formula{ color:var(--c); }
+.nd .pb{ height:6px; border-radius:3px; background:var(--fill2); margin-top:7px; overflow:hidden; } .nd .pb b{ display:block; height:100%; background:var(--c); border-radius:3px; }
+.nd.el{ width:120px; text-align:center; padding:7px 8px; } .nd.el .m{ font-size:24px; color:var(--c); } .nd.hub{ width:150px; } .nd.hub .m{ font-size:17px; }
+.ef{ fill:none; stroke-linecap:round; } .ef.flow{ stroke-dasharray:3 9; animation:flow var(--sp,1.4s) linear infinite; } .ef.paused{ animation:none; opacity:.35; } @keyframes flow{ to{ stroke-dashoffset:-12; } }
+.pill{ position:absolute; transform:translate(-50%,-50%); background:var(--bg,#14161b); color:var(--label); font:700 11px var(--font); padding:2px 7px; border-radius:9px; box-shadow:inset 0 0 0 1px var(--sep); white-space:nowrap; pointer-events:none; } .pill.warn{ color:#e6a93a; }
+.side{ width:310px; flex:none; background:var(--card); border-radius:var(--r-xl); padding:16px; height:560px; overflow-y:auto; box-shadow:inset 0 0 0 1px var(--sep,rgba(255,255,255,.08)); } .side .pb{ background:var(--fill2); border-radius:4px; overflow:hidden; } .side h3{ margin:0 0 2px; font:800 20px var(--font); } .side .sub{ margin:0 0 12px; }
+.ctl{ margin:12px 0; } .ctl label{ display:flex; justify-content:space-between; font:600 13px var(--font); color:var(--label2); margin-bottom:6px; } .ctl label b{ color:var(--label); font-variant-numeric:tabular-nums; } .ctl input[type=range]{ width:100%; accent-color:var(--tint); }
+.chance{ height:10px; border-radius:5px; background:var(--fill2); overflow:hidden; } .chance b{ display:block; height:100%; transition:width .2s,background .2s; }
+.row2{ display:flex; gap:8px; margin-top:8px; } .row2>*{ flex:1; }
+@media (max-width:900px){ .wrap{ flex-direction:column; } .side{ width:auto; height:auto; } }
+</style></head><body><div id="app"></div>
+<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
+<script>
+const { h, row, group, money, num } = Kit, FA = OS.factory, CH = OS.chem, COLORS = OS.data.CATEGORY_COLORS;
+const pf = f => CH.prettyFormula(f), fm = v => (+v).toFixed(v < 10 && v % 1 ? 1 : 0), m2 = v => money(v, { dp: 2 });
+let ST = null, sel = null, drag = null, panelBusy = false;
+const NW = { sx: 16, rx: 230, wh: 440, hub: 650, bank: 650 };
+const elColor = s => COLORS[(CH.elements[s] || {}).cat] || '#c9a876';
+function sellCap(l){ if(l.route !== 'shop') return l.rate; const c = Math.max(0.02, l.chance || 0); return Math.min(l.rate, l.batch * c / ((c * 5 + (1 - c) * 60) / 60)); }   // mol/min the shop will actually take at this price
+
+const A = Kit.app({ title: 'WestFactory', right: [{ icon: 'plus', label: 'Add line', onClick: () => addSheet() }], build: (body) => {
+  const kp = h('div', { class: 'kp' }), bar = h('div', { class: 'fbar' }), net = h('div', { class: 'net' }), stage = h('div', { class: 'stage' }), side = h('div', { class: 'side' });
+  net.appendChild(stage); body.append(kp, bar, h('div', { class: 'wrap' }, net, side), h('div', { class: 'foot' }, 'WestLab discovers molecules; WestFactory mass-produces them. Elements are bought automatically at WestShop prices (+5% running cost) and the products wait in the warehouse until they sell. Drag nodes to rearrange; click one to control it.'));
+
+  function pos(key, dx, dy){ const p = ST.pos[key]; return p ? { x: p.x, y: p.y } : { x: dx, y: dy }; }
+  function layout(){
+    const els = []; ST.lines.forEach(l => Object.keys(l.els).forEach(e => { if(!els.includes(e)) els.push(e); })); ST.lines.forEach(l => Object.keys(l.comp).forEach(e => { if(!els.includes(e)) els.push(e); }));
+    const N = {}; els.forEach((e, i) => { N['el:' + e] = Object.assign({ kind: 'el', e, w: 120, h: 72 }, pos('el:' + e, NW.sx, 16 + i * 88)); });
+    ST.lines.forEach((l, i) => { const y = 16 + i * 142; N['rx:' + l.id] = Object.assign({ kind: 'rx', l, w: 176, h: 112 }, pos('rx:' + l.id, NW.rx, y)); N['wh:' + l.id] = Object.assign({ kind: 'wh', l, w: 176, h: 112 }, pos('wh:' + l.id, NW.wh, y)); });
+    N['hub:shop'] = Object.assign({ kind: 'hub', r: 'shop', w: 150, h: 84 }, pos('hub:shop', NW.hub, 36)); N['hub:market'] = Object.assign({ kind: 'hub', r: 'market', w: 150, h: 84 }, pos('hub:market', NW.hub, 190)); N['bank'] = Object.assign({ kind: 'bank', w: 150, h: 84 }, pos('bank', NW.bank + 200, 112));
+    return N;
+  }
+  function nodeEl(k, n){
+    let c = 'var(--tint)', inner;
+    if(n.kind === 'el'){ c = elColor(n.e); const need = ST.lines.reduce((s, l) => s + (l.els[n.e] || 0), 0), cost = need * OS.shop.price(n.e); inner = [h('div', { class: 'm' }, n.e), h('div', { class: 's' }, fm(need) + ' mol/min'), h('div', { class: 's' }, need ? m2(cost) + '/min' : 'idle')]; }
+    else if(n.kind === 'rx'){ const l = n.l, st = !l.on ? 'stop' : (l.note === 'Low on cash' || l.note === 'Warehouse full' ? 'warn' : ''); c = 'var(--tint)';
+      inner = [h('div', { class: 't' }, h('i', { class: st }), 'Reactor · T' + l.tier), h('div', { class: 'm formula', html: pf(l.f) }), h('div', { class: 's' }, (l.on ? fm(l.rate) : '0') + ' / ' + l.cap + ' mol/min'), h('div', { class: 's' }, l.on ? (l.note || 'Running') : 'Paused')]; }
+    else if(n.kind === 'wh'){ const l = n.l; c = '#d9a441'; const pct = Math.min(100, l.stock / l.storage * 100);
+      inner = [h('div', { class: 't' }, 'Warehouse'), h('div', { class: 'm' }, fm(l.stock) + ' mol'), h('div', { class: 's' }, l.route === 'shop' ? 'WestShop · ' + m2(l.price) + (l.chance != null ? ' · ' + Math.round(l.chance * 100) + '%' : '') : 'Market · ' + m2(l.price) + (l.listed ? ' · ' + l.listed + ' listed' : '')), h('div', { class: 'pb' }, h('b', { style: { width: pct + '%' } }))]; }
+    else if(n.kind === 'hub'){ const sh = n.r === 'shop', ls = ST.lines.filter(l => l.route === n.r), mol = ls.reduce((s, l) => s + (l.on ? sellCap(l) : 0), 0); c = sh ? '#3fae78' : '#9b7bff';
+      inner = [h('div', { class: 't' }, sh ? 'WestShop' : 'Player Market'), h('div', { class: 'm' }, fm(mol) + ' mol/min'), h('div', { class: 's' }, ls.length ? ls.length + ' line' + (ls.length > 1 ? 's' : '') : 'no lines')]; }
+    else { c = '#4a6fa8'; inner = [h('div', { class: 't' }, 'Bank'), h('div', { class: 'm' }, (ST.perMin.net >= 0 ? '+' : '−') + m2(Math.abs(ST.perMin.net)) + '/min'), h('div', { class: 's' }, 'est. net of input costs')]; }
+    const el = h('div', { class: 'nd ' + n.kind + (sel === k ? ' sel' : '') + (n.l && !n.l.on ? ' off' : ''), style: { left: n.x + 'px', top: n.y + 'px', '--c': c }, 'data-k': k }, ...inner);
+    el.addEventListener('pointerdown', ev => startDrag(ev, k, el)); return el;
+  }
+  function edges(N){
+    const E = []; const add = (a, b, flow, color, label, warn) => { if(N[a] && N[b]) E.push({ a, b, flow, color, label, warn }); };
+    ST.lines.forEach(l => {
+      Object.keys(l.comp).forEach(e => add('el:' + e, 'rx:' + l.id, l.on ? (l.els[e] || 0) : 0, elColor(e), l.on && l.els[e] ? fm(l.els[e]) + ' mol/min' : ''));
+      add('rx:' + l.id, 'wh:' + l.id, l.on ? l.rate : 0, 'var(--tint)', l.on ? fm(l.rate) + ' mol/min' : '');
+      const out = l.on ? sellCap(l) : 0; add('wh:' + l.id, 'hub:' + l.route, out, l.route === 'shop' ? '#3fae78' : '#9b7bff', l.on ? fm(out) + ' mol/min' : '', l.on && out < l.rate - 0.05);
+    });
+    ['shop', 'market'].forEach(r => { const rev = ST.lines.filter(l => l.route === r && l.on).reduce((s, l) => s + sellCap(l) * l.price * (r === 'market' ? 1 - ST.cfg.fee : 1), 0); add('hub:' + r, 'bank', rev, r === 'shop' ? '#3fae78' : '#9b7bff', rev ? m2(rev) + '/min' : ''); });
+    return E;
+  }
+  let svg = null, pills = [];
+  function drawEdges(N){
+    if(svg) svg.remove(); pills.forEach(p => p.remove()); pills = []; const W = stage.offsetWidth, H = stage.offsetHeight;
+    svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('width', W); svg.setAttribute('height', H); stage.insertBefore(svg, stage.firstChild);
+    edges(N).forEach(e => {
+      const a = N[e.a], b = N[e.b], x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y + b.h / 2, dx = Math.max(40, Math.abs(x2 - x1) / 2);
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); path.setAttribute('d', 'M' + x1 + ',' + y1 + ' C' + (x1 + dx) + ',' + y1 + ' ' + (x2 - dx) + ',' + y2 + ' ' + x2 + ',' + y2);
+      const wdt = e.flow > 0 ? Math.min(11, 2.2 + Math.log2(1 + e.flow) * 1.5) : 2; path.setAttribute('class', 'ef flow' + (e.flow > 0 ? '' : ' paused')); path.setAttribute('stroke', e.warn ? '#e6a93a' : e.color); path.setAttribute('stroke-width', wdt); path.style.setProperty('--sp', Math.max(0.35, 1.8 / (1 + Math.log2(1 + e.flow))) + 's'); svg.appendChild(path);
+      if(e.label){ const pt = path.getPointAtLength(path.getTotalLength() / 2), p = h('div', { class: 'pill' + (e.warn ? ' warn' : ''), style: { left: pt.x + 'px', top: pt.y + 'px' } }, e.label + (e.warn ? ' ⚠' : '')); stage.appendChild(p); pills.push(p); }
+    });
+  }
+  let NODES = {};
+  function drawNet(){
+    NODES = layout(); stage.innerHTML = ''; let maxX = 0, maxY = 0; Object.keys(NODES).forEach(k => { const n = NODES[k]; stage.appendChild(nodeEl(k, n)); maxX = Math.max(maxX, n.x + n.w); maxY = Math.max(maxY, n.y + n.h); });
+    stage.style.width = Math.max(900, maxX + 30) + 'px'; stage.style.height = Math.max(520, maxY + 40) + 'px';
+    stage.querySelectorAll('.nd').forEach(el => { const n = NODES[el.dataset.k]; n.w = el.offsetWidth; n.h = el.offsetHeight; }); drawEdges(NODES);
+  }
+  /* ---- dragging ---- */
+  function startDrag(ev, k, el){
+    if(ev.button) return; const n = NODES[k], sx = ev.clientX, sy = ev.clientY, ox = n.x, oy = n.y; let moved = false; el.setPointerCapture(ev.pointerId);
+    const mv = e => { const dx = e.clientX - sx, dy = e.clientY - sy; if(!moved && Math.abs(dx) + Math.abs(dy) < 4) return; moved = true; n.x = Math.max(0, ox + dx); n.y = Math.max(0, oy + dy); el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; drawEdges(NODES); };
+    const up = () => { el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); if(moved){ FA.setPos(k, n.x, n.y); ST.pos[k] = { x: n.x, y: n.y }; } else { sel = k; drawNet(); drawPanel(); } };
+    el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up);
+  }
+
+  /* ---- header ---- */
+  function drawTop(){
+    const p = ST.perMin; kp.innerHTML = '';
+    [['Producing', fm(p.mol) + ' mol/min'], ['Input cost', m2(p.cost) + '/min'], ['Est. revenue', m2(p.rev) + '/min'], ['Est. profit', (p.net >= 0 ? '+' : '−') + m2(Math.abs(p.net)) + '/min', p.net >= 0 ? 'pos' : 'neg'], ['Lifetime', num(Math.floor(ST.made)) + ' mol · ' + money(ST.earned, { compact: true, dp: 2 })]]
+      .forEach(([t, v, c]) => kp.appendChild(h('div', { class: 'kpi' }, h('small', null, t), h('b', { class: c || '' }, v))));
+    bar.innerHTML = ''; bar.append(h('button', { class: 'btn', onclick: () => addSheet() }, 'Add line (' + ST.lines.length + '/' + ST.slots + ')'),
+      ST.nextSlotCost != null ? h('button', { class: 'btn gray', onclick: buySlot }, 'Unlock slot · ' + m2(ST.nextSlotCost)) : null, h('span', { class: 'grow' }),
+      h('label', { class: 'foot', style: { margin: 0 } }, 'Keep ', h('input', { class: 'field', type: 'number', min: '0', value: String(ST.reserve), style: { width: '90px', display: 'inline-block', height: '34px' }, onchange: e => { const r = FA.setReserve(e.target.value); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); } }), ' in the bank'));
+  }
+  async function buySlot(){ const r = FA.buySlot(); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); refresh(); }
+  /* ---- add line ---- */
+  function addSheet(){
+    const found = FA.found(); Kit.sheet({ title: 'Build a production line', build: (sb, api) => {
+      if(ST.lines.length >= ST.slots){ sb.appendChild(h('div', { class: 'empty' }, 'All ' + ST.slots + ' lines are in use.' + (ST.nextSlotCost != null ? ' Unlock another slot for ' + m2(ST.nextSlotCost) + '.' : ''))); return; }
+      const have = new Set(ST.lines.map(l => l.f)), rows = found.filter(c => !have.has(CH.speciesOf ? (CH.speciesOf(c.f) || {}).key || c.f : c.f));
+      if(!found.length) return sb.appendChild(h('div', { class: 'empty' }, 'Nothing to produce yet.', h('br'), 'Discover compounds in WestLab first.', h('br'), h('button', { class: 'btn', style: { marginTop: '12px' }, onclick: () => { api.close(); OS.open('WestLab'); } }, 'Open WestLab')));
+      sb.appendChild(h('div', { class: 'foot', style: { marginBottom: '8px' } }, 'Only compounds you have discovered in WestLab. Margin is the list value over the input cost per mol.'));
+      sb.appendChild(group(rows.map(c => { const mg = c.unitCost > 0 ? Math.round((c.est / c.unitCost - 1) * 100) : 0; return row({ left: h('div', { class: 'formula', style: { width: '74px', fontSize: '15px', color: 'var(--tint)' }, html: pf(c.f) }), title: c.name, sub: 'cost ' + m2(c.unitCost) + ' · value ' + m2(c.est), right: h('b', { style: { color: mg >= 0 ? 'var(--good)' : 'var(--bad)' } }, (mg >= 0 ? '+' : '') + mg + '%'), chevron: false, onClick: () => { const r = FA.addLine(c.f); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); if(r.ok){ sel = 'rx:' + r.id; api.close(); refresh(); } } }); })));
+      if(!rows.length) sb.appendChild(h('div', { class: 'empty' }, 'You already produce everything you have discovered.'));
+    } });
+  }
+
+  /* ---- side panel ---- */
+  const lineOf = k => { const id = (k || '').split(':')[1]; return ST.lines.find(l => l.id === id); };
+  function drawPanel(){
+    side.innerHTML = ''; if(panelBusy) return; const k = sel; if(!k || !NODES[k]) { sel = null; return side.append(h('h3', null, 'Your factory'), h('p', { class: 'sub' }, ST.lines.length ? 'Click a reactor, warehouse or element to control it. Drag to rearrange.' : 'Build a line to start producing.'), h('div', { class: 'foot' }, 'Flow lines show molecules per minute. A thin or amber ⚠ line means a bottleneck — usually the shop refusing your price.')); }
+    const n = NODES[k], l = n.l ? ST.lines.find(x => x.id === n.l.id) : null;
+    if(n.kind === 'el'){ const e = CH.elements[n.e], need = ST.lines.reduce((s, x) => s + (x.els[n.e] || 0), 0); side.append(h('h3', null, e.name), h('p', { class: 'sub' }, 'Bought automatically from WestShop'), group(row({ title: 'Shop price', right: m2(OS.shop.price(n.e)) + ' / mol' }), row({ title: 'Factory uses', right: fm(need) + ' mol/min' }), row({ title: 'In your bag', right: num(OS.shop.qty('element', n.e)) }))); return; }
+    if(n.kind === 'hub'){ const sh = n.r === 'shop'; side.append(h('h3', null, sh ? 'WestShop' : 'Player Market'), h('p', { class: 'sub' }, sh ? 'Buys at your price if it’s inside the allowed range — higher prices are accepted less often, and a refusal locks that line for a minute.' : 'Other players buy your molecules here at the price you set. The Market keeps a ' + Math.round(ST.cfg.fee * 100) + '% fee.'), h('button', { class: 'btn', onclick: () => OS.open('WestShop') }, 'Open WestShop')); return; }
+    if(n.kind === 'bank'){ side.append(h('h3', null, 'Bank'), h('p', { class: 'sub' }, 'Sales are paid straight into your bank balance.'), group(row({ title: 'Total sold', right: num(Math.floor(ST.sold)) + ' mol' }), row({ title: 'Total earned', right: m2(ST.earned) }))); return; }
+    if(!l) return;
+    const head = h('div', null, h('div', { class: 'formula', style: { fontSize: '26px', fontWeight: 800, color: 'var(--tint)' }, html: pf(l.f) }), h('p', { class: 'sub' }, l.name + ' · est. value ' + m2(l.est) + ' · input ' + m2(l.unitCost) + ' / mol'));
+    if(n.kind === 'rx'){
+      const rl = h('b'), rs = h('input', { type: 'range', min: 0, max: l.cap, step: 0.5, value: l.rate }); const upd = () => { rl.textContent = fm(+rs.value) + ' mol/min'; }; upd();
+      rs.oninput = upd; rs.onchange = () => { FA.setRate(l.id, +rs.value); refresh(true); };
+      side.append(head, h('div', { class: 'ctl' }, h('label', null, 'Production rate', rl), rs, h('div', { class: 'foot', style: { margin: '4px 0 0' } }, 'Cap ' + l.cap + ' mol/min at tier ' + l.tier + ' · input cost about ' + m2(l.unitCost * +rs.value) + '/min')),
+        h('div', { class: 'row2' }, h('button', { class: 'btn ' + (l.on ? 'gray' : 'good'), onclick: () => { FA.setOn(l.id, !l.on); refresh(); } }, l.on ? 'Pause' : 'Start'), l.upgradeCost != null ? h('button', { class: 'btn', onclick: () => { const r = FA.upgrade(l.id); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); refresh(); } }, 'Upgrade · ' + m2(l.upgradeCost)) : h('button', { class: 'btn gray', disabled: true }, 'Max tier')),
+        h('div', { class: 'foot' }, 'Warehouse holds ' + l.storage + ' mol (grows with tier). ' + (l.note ? 'Status: ' + l.note : '')), h('button', { class: 'btn bad block', style: { marginTop: '14px' }, onclick: async () => { if(await Kit.confirm({ title: 'Remove line?', msg: 'Stock in the warehouse moves to your bag.', ok: 'Remove', destructive: true })){ const r = await FA.remove(l.id); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); sel = null; refresh(); } } }, 'Remove line'));
+      return;
+    }
+    /* warehouse / selling */
+    const shop = l.route === 'shop', rg = shop ? l.shopRange : l.marketRange, pv = h('b'), ps = h('input', { type: 'range', min: rg.lo, max: rg.hi, step: 0.01, value: Math.min(rg.hi, Math.max(rg.lo, l.price)) }), ch = h('b', { style: { width: '0%' } }), cl = h('div', { class: 'foot', style: { margin: '6px 0 0' } });
+    const paint = () => { const p = +ps.value; pv.textContent = m2(p) + ' (' + Math.round(p / l.est * 100) + '% of est.)'; if(shop){ const c = FA.chanceAt(l.id, p); ch.style.width = Math.round(c * 100) + '%'; ch.style.background = c > 0.7 ? 'var(--good)' : c > 0.35 ? '#e6a93a' : 'var(--bad)'; cl.textContent = Math.round(c * 100) + '% chance WestShop buys each batch of ' + l.batch + ' mol · a refusal means waiting 1 min' + (l.sat < 0.95 ? ' · shop demand is saturated' : ''); } else cl.textContent = 'You receive ' + m2(p * (1 - ST.cfg.fee)) + ' per mol after the ' + Math.round(ST.cfg.fee * 100) + '% fee.'; };
+    paint(); ps.oninput = paint; ps.onchange = async () => { const r = await FA.setPrice(l.id, +ps.value); if(!r.ok) Kit.toast(r.msg, 'bad'); refresh(true); };
+    const seg = Kit.seg([{ id: 'shop', label: 'WestShop' }, { id: 'market', label: 'Market' }], l.route, async r => { const x = await FA.setRoute(l.id, r); Kit.toast(x.msg, x.ok ? 'good' : 'bad'); refresh(); });
+    const live = h('div', { class: 'foot', 'data-live': '1' });
+    side.append(head, h('div', { class: 'pb', style: { height: '8px' } }, h('b', { style: { width: Math.min(100, l.stock / l.storage * 100) + '%', background: 'var(--tint)', display: 'block', height: '100%', borderRadius: '4px' } })), h('div', { class: 'foot', style: { margin: '4px 0 12px' } }, fm(l.stock) + ' of ' + l.storage + ' mol in the warehouse' + (l.full ? ' — full, production stalls' : '')), seg,
+      h('div', { class: 'ctl' }, h('label', null, 'Your price per mol', pv), ps, shop ? h('div', { class: 'chance', style: { marginTop: '8px' } }, ch) : null, cl, h('div', { class: 'foot', style: { margin: '6px 0 0' } }, 'Allowed ' + m2(rg.lo) + ' – ' + m2(rg.hi) + (shop ? ' · sweet spot is usually just around the estimated value' : ''))),
+      h('div', { class: 'row2' }, ...[['×0.9', 0.9], ['×1.0', 1], ['×1.2', 1.2]].map(([t, f]) => h('button', { class: 'chip', style: { textAlign: 'center' }, onclick: () => { ps.value = Math.min(rg.hi, Math.max(rg.lo, l.est * f)); paint(); ps.onchange(); } }, t))),
+      shop ? h('div', { class: 'row2' }, h('button', { class: 'btn good', id: 'sellnow', onclick: async () => { const r = FA.sellNow(l.id); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); refresh(); } }, 'Sell now'), h('button', { class: 'btn gray', onclick: () => { const r = FA.setAuto(l.id, !l.auto); refresh(); } }, 'Auto-sell: ' + (l.auto ? 'on' : 'off')))
+             : h('div', { class: 'row2' }, h('button', { class: 'btn gray', onclick: async () => { const r = await FA.withdraw(l.id); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); refresh(); } }, 'Withdraw ' + (l.listed || 0) + ' listed'), h('button', { class: 'btn gray', onclick: () => OS.open('WestShop') }, 'View Market')),
+      h('div', { class: 'row2' }, h('button', { class: 'btn gray', onclick: () => { const r = FA.collect(l.id); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); refresh(); } }, 'Move stock to my bag')), live);
+    tickPanel();
+  }
+  function tickPanel(){
+    const n = sel && NODES[sel]; if(!n || n.kind !== 'wh') return; const l = ST.lines.find(x => x.id === n.l.id), live = side.querySelector('[data-live]'); if(!l || !live) return;
+    live.textContent = l.route === 'shop' ? (l.lockLeft > 0 ? 'WestShop sales locked for ' + l.lockLeft + ' s.' : 'Ready to sell.') + (l.note ? ' · ' + l.note : '') : (l.note || (OS.auth.signedIn() ? 'Listings update automatically.' : 'Sign in to sell on the Market.'));
+  }
+  function refresh(keepPanel){ ST = FA.state(); drawTop(); drawNet(); if(!keepPanel) drawPanel(); }
+  Kit.live('factory', Kit.debounce(() => { const was = ST; ST = FA.state(); drawTop(); drawNet(); tickPanel(); }, 120)); Kit.live('cash', Kit.debounce(drawTop.bind(null), 400));
+  setInterval(() => { if(document.hidden) return; ST = FA.state(); tickPanel(); drawTop(); }, 2000);
+  OS.on && OS.on('factory-sale', d => Kit.toast('Market sale: +' + m2(d.net) + ' (' + d.items + ' mol)', 'good'));
+  ST = FA.state(); drawTop(); drawNet(); drawPanel(); setTimeout(() => { ST = FA.state(); drawTop(); drawNet(); }, 300);
+  if(!ST.lines.length && !FA.found().length) Kit.toast('Discover compounds in WestLab to unlock production', 'info');
+} });
+</script></body></html>

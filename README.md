@@ -16,7 +16,7 @@ A desktop operating system in the browser, built for keyboard and mouse. The who
 │  └─ icons/              ← one PNG per app (Messages.png, Stocks.png …) + WestOS.png (favicon / logo)
 ├─ apps/                  ← one HTML file per app (this is what the OS opens in a window)
 │  ├─ Messages.html  Stocks.html  News.html  WestShop.html  WestLab.html  RealEstate.html
-│  ├─ Bank.html  Games.html  Arcade.html  Photos.html  Preview.html  Leaderboard.html  Notes.html  Files.html  Settings.html
+│  ├─ Bank.html  Games.html  Arcade.html  WestFactory.html  Photos.html  Preview.html  Leaderboard.html  Notes.html  Files.html  Settings.html
 │  └─ games/              ← every minigame is one file + a line in manifest.js
 │     ├─ manifest.js      ← list of games (id, name, icon, category)
 │     └─ titration.js  elementRecall.js  … (20 games)

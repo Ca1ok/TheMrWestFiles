@@ -143,6 +143,10 @@
     slots: frz({ spin: CG.slots.spin, paytable: CG.slots.paytable }), blackjack: frz({ deal: CG.blackjack.deal, hit: CG.blackjack.hit, stand: CG.blackjack.stand, double: CG.blackjack.double, view: CG.blackjack.view }),
     bus: frz({ start: CG.bus.start, pick: CG.bus.pick, cashOut: CG.bus.cashOut, view: CG.bus.view }), poker: frz({ start: CG.poker.start, act: CG.poker.act, next: CG.poker.next, fastForward: CG.poker.fastForward, view: CG.poker.view }) };
 
+  /* ---------------- factory (WestFactory: the kernel runs the lines and the market; the app only asks) ---------------- */
+  const FAC = K.factory, factory = { state: FAC.state, found: FAC.found, quote: FAC.quote, chanceAt: FAC.chanceAt, addLine: FAC.addLine, buySlot: FAC.buySlot, upgrade: FAC.upgrade, setRate: FAC.setRate, setOn: FAC.setOn, setAuto: FAC.setAuto, setReserve: FAC.setReserve, setPos: FAC.setPos,
+    setRoute: FAC.setRoute, setPrice: FAC.setPrice, sellNow: FAC.sellNow, remove: FAC.remove, collect: FAC.collect, withdraw: FAC.withdraw, claim: FAC.claim, market: Object.freeze({ listings: FAC.market.listings, buy: FAC.market.buy }) };
+
   /* ---------------- leaderboard (its own app; the Bank no longer ranks anyone) ---------------- */
   const LBC = new Map();                                              // one query per category, cached for 30 s, so opening and flipping tabs costs almost nothing
   const leaderboard = {
@@ -153,6 +157,11 @@
       if(hit && Date.now() - hit.at < 30000) return hit.rows;
       try{ await K.cloud.publishBoard(true); }catch(e){}
       const rows = await K.cloud.leaderboard(n, cat.field); LBC.set(key, { at: Date.now(), rows }); return rows;
+    },
+    async all(){                                                      // every player's full record (top 200 by net worth) in ONE query, cached 30 s
+      const hit = LBC.get('all'); if(hit && Date.now() - hit.at < 30000) return hit.rows;
+      try{ await K.cloud.publishBoard(true); }catch(e){}
+      const rows = await K.cloud.leaderboard(200, 'nw'); LBC.set('all', { at: Date.now(), rows }); return rows;
     },
     refresh: () => LBC.clear()
   };
@@ -193,7 +202,7 @@
     on: (e, f) => K.on(e, f), emit: undefined,
     now: K.now, today: K.today, cash: () => K.S.cash,
     prefs: { get: k => K.prefs[k], all: () => JSON.parse(JSON.stringify(K.prefs)), set: (k, v) => K.setPref(k, v) },
-    shop, lab, props, bank, mail, auth, stock, games, arcade, files, world, admin, gallery, leaderboard, econ: () => K.econ(),
+    shop, lab, props, bank, mail, auth, stock, games, arcade, factory, files, world, admin, gallery, leaderboard, econ: () => K.econ(),
     report: { submit: r => C.report.submit(r), list: () => C.report.list(), setStatus: (i, s) => C.report.setStatus(i, s), remove: i => C.report.remove(i) },
     chem: Chem, phys: Phys, mol: Mol, worldModel: World,
     data: { ELEMENTS, CATEGORY_COLORS, CATEGORY_LABELS, GAS_AT_25C, LIQUID_AT_25C, UNKNOWN_STATE, STATE_COLORS, STATE_LABELS, BLOCK_COLORS, BLOCK_LABELS, COMPOUND_LOOKUP, CATEGORY_LOOKUP_LABELS, POLYATOMIC_IONS, DATABOOK, WANTED_DATA, PROPERTIES, PROPERTY_SECTORS, TOOLS, MELTING_POINTS, BOILING_POINTS, OXIDATION, ELECTRONEG, RECIPES },

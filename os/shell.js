@@ -65,7 +65,7 @@
       .filter(([id]) => WIDGETS.find(w => w.id === id)).map(([id, size]) => ({ t: 'w', id, size, k: wk() }));
   }
   /* Apps added after a player saved their dock/desktop are appended once, so new apps (WestReport) show up for existing accounts. */
-  const NEW_APPS = ['WestReport', 'Leaderboard', 'Preview', 'Arcade'];
+  const NEW_APPS = ['WestReport', 'Leaderboard', 'Preview', 'Arcade', 'WestFactory'];
   function addNewApps(){
     const seen = K.prefs.seenApps || []; const fresh = NEW_APPS.filter(id => !seen.includes(id) && APP(id)); if(!fresh.length) return;
     K.setPref('seenApps', seen.concat(fresh)); const dock = K.prefs.dock;
@@ -261,7 +261,7 @@
   const hookErrs = (win, src) => { try{ win.addEventListener('error', e => logErr(src, (e.message || 'error') + (e.filename ? ' @' + String(e.filename).split('/').pop() + ':' + e.lineno : ''))); win.addEventListener('unhandledrejection', e => logErr(src, 'promise: ' + ((e.reason && e.reason.message) || e.reason))); }catch(_){} };
   hookErrs(window, 'desktop');
   const EASE = 'cubic-bezier(.22,.9,.28,1)', MIN_W = 380, MIN_H = 300;
-  const DEFAULT_SIZE = { Stocks: [1040, 720], WestLab: [1080, 740], WestShop: [1040, 720], Photos: [1040, 720], Notes: [1000, 720], WestReport: [820, 700], Files: [940, 660], Settings: [860, 660], Messages: [860, 640], Bank: [900, 720], News: [940, 740], RealEstate: [1000, 720], Games: [940, 700], Arcade: [940, 760], Leaderboard: [880, 720], Preview: [1000, 740] };
+  const DEFAULT_SIZE = { Stocks: [1040, 720], WestLab: [1080, 740], WestShop: [1040, 720], Photos: [1040, 720], Notes: [1000, 720], WestReport: [820, 700], Files: [940, 660], Settings: [860, 660], Messages: [860, 640], Bank: [900, 720], News: [940, 740], RealEstate: [1000, 720], Games: [940, 700], Arcade: [940, 760], WestFactory: [1200, 760], Leaderboard: [1000, 740], Preview: [1000, 740] };
   const small = () => S.w < 700;
   const winArea = () => ({ w: S.w, h: S.h - MB });
   const maxRect = () => ({ x: 0, y: 0, w: S.w, h: S.h - MB - (small() ? 0 : 92) });
