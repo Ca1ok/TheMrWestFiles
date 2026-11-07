@@ -5,9 +5,9 @@ assert.deepStrictEqual([1, 2, 3, 4, 5].map(t => F.rateCap(t)), [5, 10, 20, 40, 8
 assert.strictEqual(F.slotCost(2), 3000); assert(F.slotCost(3) > F.slotCost(2)); assert.strictEqual(F.slotCost(8), null); assert.strictEqual(F.storage(3), 360); assert.strictEqual(F.batch(2), 50);
 // shop range & chance: certain-ish when cheap, falls with price, zero outside the range, saturation hurts
 const est = 100, rg = F.shopRange(est); assert.deepStrictEqual(rg, { lo: 60, hi: 150 });
-assert.strictEqual(F.shopChance(0.5, 1), 0); assert.strictEqual(F.shopChance(1.6, 1), 0); assert.strictEqual(F.shopChance(0.6, 1), 0.97); assert.strictEqual(F.shopChance(0.85, 1), 0.97);
-let prev = 1; for(let r = 0.85; r <= 1.5001; r += 0.05){ const c = F.shopChance(r, 1); assert(c <= prev + 1e-12, 'chance never rises with price'); prev = c; } assert(Math.abs(F.shopChance(1.5, 1) - 0.08) < 1e-9);
-assert(F.shopChance(1, 0.3) < F.shopChance(1, 1) * 0.31 + 1e-9, 'saturation scales the chance down');
+assert.strictEqual(F.shopChance(1.6, 1), 0); for(const r of [0.6, 0.85, 1.0]) for(const sat of [1, 0.3]) assert.strictEqual(F.shopChance(r, sat), 1, 'at or below normal the shop always accepts'); assert(F.shopChance(1.01, 1) < 1 && F.shopChance(1.2, 1) < F.shopChance(1.1, 1));
+let prev = 1; for(let r = 1; r <= 1.5001; r += 0.05){ const c = F.shopChance(r, 1); assert(c <= prev + 1e-12, 'chance never rises with price'); prev = c; } assert(Math.abs(F.shopChance(1.5, 1) - 0.08) < 1e-9);
+assert(F.shopChance(1.2, 0.3) < F.shopChance(1.2, 1) * 0.31 + 1e-9, 'above normal, saturation scales the chance down');
 // production: limited by rate, warehouse space, and cash above the reserve
 const price = e => ({ H: 2, O: 4 })[e], comp = { H: 2, O: 1 };                                     // water: 8 × 1.05 = 8.40 per mol
 let p = F.planProduction({ comp, price, rate: 5, minutes: 1, cash: 1000, space: 100 }); assert.strictEqual(p.made, 5); assert.strictEqual(p.cost, 42); assert(!p.limited);

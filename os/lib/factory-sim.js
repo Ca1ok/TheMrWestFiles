@@ -20,7 +20,7 @@ const FactorySim = (function(){
     storagePerTier: 120,                                       // warehouse size in mol = 120 × tier
     offlineMaxMin: 480,                                        // catch-up while you were away: at most 8 hours
     shopLo: 0.6, shopHi: 1.5,                                  // shop price must be within 0.6× … 1.5× the estimated value
-    shopSure: 0.85, shopMaxChance: 0.97, shopMinChance: 0.08,  // ≤0.85× est: 97 % to sell; falls linearly to 8 % at 1.5×
+    shopSure: 0.85, shopMaxChance: 0.97, shopMinChance: 0.08,  // shopSure and shopMaxChance are no longer used: ≤ 1× est (normal) is always 100 %; falls linearly to shopMinChance (8 %) at shopHi (1.5×)
     shopBatch: 25,                                             // mol offered per attempt = 25 × tier
     failLockMs: 60000, okLockMs: 5000,                         // a refusal = wait one minute; after a sale a short breather
     marketLo: 0.1, marketHi: 10, marketFee: 0.05, listCap: 2000, // market: price 0.1×…10× est, 5 % fee on sales, ≤2000 mol listed per line
@@ -38,9 +38,10 @@ const FactorySim = (function(){
   /* Chance the shop accepts a batch at `price`. ratio = price ÷ estimated value; sat (0.3–1) is how saturated the shop's demand already is. */
   function shopChance(ratio, sat, c){
     c = cfgOf(c); const hiR = c.shopHi;
-    if(ratio > hiR + 1e-9 || ratio < c.shopLo - 1e-9) return 0;
-    const base = ratio <= c.shopSure ? c.shopMaxChance : c.shopMaxChance - (ratio - c.shopSure) / (hiR - c.shopSure) * (c.shopMaxChance - c.shopMinChance);
-    return clamp(base * clamp(sat == null ? 1 : sat, 0.3, 1), 0, 1);
+    if(ratio > hiR + 1e-9) return 0;                                                  // above the allowed range: never
+    if(ratio <= 1 + 1e-9) return 1;                                                   // at or below the NORMAL (estimated) value: the shop always accepts — saturation doesn't apply
+    const base = 1 - (ratio - 1) / (hiR - 1) * (1 - c.shopMinChance);                // above normal: falls linearly from 100 % to shopMinChance at the top of the range…
+    return clamp(base * clamp(sat == null ? 1 : sat, 0.3, 1), 0, 1);                  // …and a saturated shop demand lowers it further
   }
   const marketRange = (est, c) => { c = cfgOf(c); return { lo: r2(Math.max(0.01, est * c.marketLo)), hi: r2(Math.max(0.02, est * c.marketHi)) }; };
 
