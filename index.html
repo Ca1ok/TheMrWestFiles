@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="os/os.css?v=20261105b">
 </head>
 <body>
-<div id="screen">
+<div id="screen" class="locked">
   <div class="wall" id="wall0"></div><div class="wall" id="wall1"></div><div class="wall-dim"></div>
 
   <div id="menubar">
@@ -40,13 +40,20 @@
   <div id="sheetwrap"><div class="scrim"></div><div class="sheet" id="sheet"></div></div>
   <div id="banners"></div>
 
-  <div id="lock" style="display:none">
+  <!-- The lock screen is also the BOOT screen: it is on screen from the very first paint and stays until your account (and the maintenance state) is known,
+       so a reload never flashes a stock, default-layout desktop first. -->
+  <div id="lock">
     <div class="shade"></div>
     <div class="clock"><div class="date" id="lockDate"></div><div class="time" id="lockTime"></div></div>
     <div class="notifs" id="lockNotifs"></div>
+    <div class="bootmsg" id="lockMsg">Loading your desktop…</div>
     <div class="spin" id="lockSpin"></div>
     <div class="hint" id="lockHint" style="display:none">Click anywhere to open</div>
   </div>
+
+  <!-- maintenance mode (whole site) and "open in another window" -->
+  <div class="ov" id="maint" style="display:none"><div class="card"><div class="ico" id="maintIco"></div><b id="maintTitle">Maintenance mode</b><span id="maintNote"></span><div class="bs"><button id="maintRetry">Try again</button><button id="maintAdmin" class="plain">Admin sign-in</button></div></div></div>
+  <div class="ov" id="sessionLost" style="display:none"><div class="card"><div class="ico" id="sessionIco"></div><b>WestOS is open in another window</b><span>To keep your money safe, only one window can use your account at a time. Everything you did here has been saved.</span><div class="bs"><button id="sessionBtn">Use WestOS here</button></div></div></div>
 </div>
 
 <!-- config, icons and reference data -->
@@ -73,6 +80,7 @@
 <script src="os/lib/factory-sim.js?v=20261107a"></script>
 <!-- kernel: state, cloud, market, bank, gallery, api -->
 <script src="os/kernel/state.js?v=20261107a"></script>
+<script src="os/kernel/maint.js"></script>
 <script src="os/kernel/cloud.js?v=20261107a"></script>
 <script src="os/kernel/market.js?v=20261105b"></script>
 <script src="os/kernel/bank.js?v=20261105b"></script>

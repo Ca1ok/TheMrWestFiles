@@ -44,6 +44,7 @@
   async function begin(game, bet){
     if(busy) return no('One moment…'); busy = true;
     try{
+      { const mm = K.maint.appMsg('Arcade'); if(mm) return no(mm); }                 // maintenance mode: no new rounds (a round already in progress can still finish and pay out)
       await CS.loadConfig();
       if(R) return no('Finish your current round first.');
       const L = led();

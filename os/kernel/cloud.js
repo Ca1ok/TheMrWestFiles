@@ -24,8 +24,9 @@
   /* ---- init ---- */
   let flushTimer = null, mailRef = null, lbAt = 0, lbLast = '';
   C.init = function(){
-    if(typeof firebase === 'undefined'){ C.ready = true; K.emit('auth'); return; }
-    try{ firebase.initializeApp(CFG.firebase); C.db = firebase.database(); C.auth = firebase.auth(); }catch(e){ console.warn('[cloud] firebase unavailable', e); C.ready = true; K.emit('auth'); return; }
+    if(typeof firebase === 'undefined'){ C.ready = true; K.maint.attach(null); K.emit('auth'); return; }
+    try{ firebase.initializeApp(CFG.firebase); C.db = firebase.database(); C.auth = firebase.auth(); }catch(e){ console.warn('[cloud] firebase unavailable', e); C.ready = true; K.maint.attach(null); K.emit('auth'); return; }
+    K.maint.attach(C.db);                                                       // maintenance switches (one tiny node, public read)
     C.db.ref('.info/serverTimeOffset').on('value', s => { const v = s.val(); if(typeof v === 'number') K.offset = v; });   // local info, costs no bandwidth
     C.auth.onAuthStateChanged(async u => {
       const was = C.user; C.user = u;
@@ -42,6 +43,8 @@
   /* ---- load / save ---- */
   C.load = async function(){
     const uid = C.user.uid;
+    claimTab();                                                                  // this window now owns the account; an older one saves and locks itself
+    if(C.otherTabAtStart){ C.otherTabAtStart = false; await new Promise(r => setTimeout(r, 1200)); }   // …and we give it a moment to finish saving before we read
     try{
       const snap = await C.db.ref('players/' + uid).once('value'); count(snap);
       const remote = snap.val();
@@ -52,19 +55,52 @@
       startMail(); loadBroadcasts(); C.flushNow(); K.emit('ready');
     }catch(e){ console.warn('[cloud] load failed', e); K.emit('notify', { app: 'Settings', title: 'Sync problem', body: 'Couldn’t load your saved progress. Progress will not be saved until this works.' }); }
   };
+  /* flushNow resolves to TRUE when everything that was pending is safely on the server (or nothing was pending) and FALSE when it could not be saved.
+   * Anything that deletes or moves something on the server because of local money (Market payouts, listings) waits for TRUE before it does. */
+  let retryMs = 0, retryT = null, lastWarn = 0;
   C.flushNow = function(){
     clearTimeout(flushTimer); flushTimer = null;
-    if(!C.signedIn() || !K.loaded || !K.dirty.size || !C.db) return Promise.resolve();
+    if(!K.dirty.size) return Promise.resolve(true);
+    if(K.sessionLost || !C.signedIn() || !K.loaded || !C.db) return Promise.resolve(false);   // a window that lost the session never writes: its numbers are older than the other window's
     const out = {}; K.dirty.forEach(f => { if(f === 'prefs') out.prefs = K.prefs; else if(f === 'arcade'){ const L = K.S.arcade, t = K.now(), d = t - (t % 86400000); if(L.d !== d){ L.d = d; L.net = 0; } out.arcade = { d: L.d, net: L.net, open: L.open, t: firebase.database.ServerValue.TIMESTAMP }; } else if(FIELDS.includes(f)) out[f] = clean(K.S[f]); });
     if(K.dirty.has('cash') || K.dirty.has('inv') || K.dirty.has('lots') || K.dirty.has('props')) K.dirty.add('lb');
     out.updatedAt = firebase.database.ServerValue.TIMESTAMP; K.dirty.clear();
     C.writes++; K.emit('sync', 'saving');
-    return C.db.ref('players/' + C.user.uid).update(out).then(() => { K.emit('sync', 'saved'); publishBoard(); }).catch(e => { console.warn('[cloud] save failed', e); K.emit('sync', 'error'); Object.keys(out).forEach(f => K.dirty.add(f)); });
+    return C.db.ref('players/' + C.user.uid).update(out).then(() => { retryMs = 0; K.emit('sync', 'saved'); publishBoard(); return true; }).catch(e => {
+      console.warn('[cloud] save failed', e); K.emit('sync', 'error'); Object.keys(out).forEach(f => K.dirty.add(f));
+      retryMs = Math.min(30000, (retryMs || 2000) * 2); clearTimeout(retryT); retryT = setTimeout(C.flushNow, retryMs);          // keep trying (4 s, 8 s … 30 s) instead of silently giving up
+      if(Date.now() - lastWarn > 60000){ lastWarn = Date.now(); K.emit('notify', { app: 'Settings', title: 'Couldn’t save', body: 'Your latest progress isn’t saved yet — retrying. Keep this window open.' }); }
+      return false;
+    });
   };
   const clean = v => JSON.parse(JSON.stringify(v, (k, x) => (typeof x === 'number' && !isFinite(x)) ? 0 : x));    // drops undefined, fixes NaN
-  K.on('dirty', () => { if(C.signedIn() && K.loaded && !flushTimer) flushTimer = setTimeout(C.flushNow, CFG.syncDebounceMs); });
+  /* Money and items are saved quickly (cashSyncMs); cosmetic things (mail, prefs, meta) ride the slow 20 s batch. */
+  const URGENT = new Set(['cash', 'inv', 'lots', 'props', 'factory', 'lab', 'shop', 'bank']); let flushDue = 0;
+  K.on('dirty', () => {
+    if(!C.signedIn() || !K.loaded || K.sessionLost) return;
+    const urgent = [...K.dirty].some(f => URGENT.has(f)), delay = urgent ? (CFG.cashSyncMs || 3000) : CFG.syncDebounceMs, due = Date.now() + delay;
+    if(flushTimer && flushDue <= due) return;                                  // an earlier (or equal) save is already queued
+    clearTimeout(flushTimer); flushDue = due; flushTimer = setTimeout(C.flushNow, delay);
+  });
   document.addEventListener('visibilitychange', () => { if(document.hidden) C.flushNow(); });
-  window.addEventListener('pagehide', () => C.flushNow());
+  window.addEventListener('pagehide', () => C.flushNow()); window.addEventListener('beforeunload', () => C.flushNow());
+
+  /* ---- ONE active window per browser ----
+   * Each open copy of the site keeps its own copy of your money and saves the whole balance, so with two windows the one that saves last wins and
+   * the other's earnings vanish ("my money randomly changed"). The newest window takes over; any older one saves what it has, then locks itself. */
+  const TAB_KEY = 'westos_active', TAB_ID = Math.random().toString(36).slice(2); let beat = null;
+  const readTab = () => { try{ return JSON.parse(localStorage.getItem(TAB_KEY) || 'null'); }catch(e){ return null; } };
+  const claimTab = () => { try{ localStorage.setItem(TAB_KEY, JSON.stringify({ id: TAB_ID, t: Date.now() })); }catch(e){} };
+  { const o = readTab(); C.otherTabAtStart = !!(o && o.id !== TAB_ID && Date.now() - o.t < 6000); }
+  claimTab();
+  function lostSession(){
+    if(K.sessionLost || !C.signedIn()) return;                                 // guests have nothing saved, so nothing to protect
+    C.flushNow(); K.sessionLost = true; clearInterval(beat); clearTimeout(flushTimer); K.emit('session', 'lost');
+  }
+  function checkTab(){ const cur = readTab(); if(cur && cur.id !== TAB_ID) lostSession(); else if(!K.sessionLost) claimTab(); }
+  beat = setInterval(checkTab, 2500);
+  window.addEventListener('storage', e => { if(e.key === TAB_KEY) checkTab(); });      // re-reads the stored value instead of trusting the event, so two tabs opened together don't both lock
+  C.claimWindow = claimTab;
 
   /* ---- UI preferences (not progress, so they are kept in localStorage for everyone; signed-in users also sync them) ---- */
   const PREF_KEY = 'westos_ui';
@@ -197,5 +233,9 @@
   A.mail = async (uid, subj, body) => { need(); await C.db.ref('mailbox/' + uid).push({ from: 'Mr West', subj: String(subj).slice(0, 120), body: String(body).slice(0, 1000), t: firebase.database.ServerValue.TIMESTAMP }); };
   A.arcadeSet = async c => { need(); const n = (v, lo, hi, d) => { v = +v; return isFinite(v) && v >= lo && v <= hi ? v : d; }, g = c.games || {};
     await C.db.ref('arcadeConfig').set({ enabled: c.enabled !== false, games: { slots: g.slots !== false, bus: g.bus !== false, poker: g.poker !== false, blackjack: g.blackjack !== false }, betPct: n(c.betPct, 0.001, 1, 0.1), betCap: Math.round(n(c.betCap, 1, 1e9, 25000)), minBet: Math.round(n(c.minBet, 1, 1e6, 1)), dailyCap: Math.round(n(c.dailyCap, 0, 1e12, 100000)), cooldownMs: Math.round(n(c.cooldownMs, 0, 600000, 1500)), maxMult: n(c.maxMult, 1, 1000, 100) }); };
+  A.maintSet = async c => { need(); c = c || {};
+    const apps = {}, sys = {}; (Array.isArray(c.apps) ? c.apps : []).forEach(id => { if(/^[A-Za-z0-9]{1,24}$/.test(String(id))) apps[String(id)] = true; }); (Array.isArray(c.sys) ? c.sys : []).forEach(k => { if(/^[a-z]{1,16}$/.test(String(k))) sys[String(k)] = true; });
+    const o = { all: !!c.all, msg: clip(c.msg, 160), t: firebase.database.ServerValue.TIMESTAMP }; if(Object.keys(apps).length) o.apps = apps; if(Object.keys(sys).length) o.sys = sys;
+    await C.db.ref('maintenance').set(o); };
   A.broadcast = async (subj, body) => { need(); await C.db.ref('broadcast').push({ from: 'Mr West', subj: String(subj).slice(0, 120), body: String(body).slice(0, 1000), t: firebase.database.ServerValue.TIMESTAMP }); };
 });

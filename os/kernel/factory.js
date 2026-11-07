@@ -76,7 +76,8 @@
     l.sellAt = now + CFG.failLockMs; l.note = 'WestShop passed — retry in 1 min'; return { ok: false, n, price: q.price, chance: q.chance };
   }
   async function pushMarket(l, force){
-    if(!C.signedIn() || !C.db) return; const n = Math.floor(l.stock), now = Date.now();
+    if(!C.signedIn() || !C.db || K.sessionLost) return; const n = Math.floor(l.stock), now = Date.now();
+    if(K.maint.sysMsg('market')){ l.note = 'Market is in maintenance mode'; return; }
     if(n < 1 || (!force && (n < 10 && now - (pushAt.get(l.id) || 0) < 60000))) return;
     if(!K.S.meta.name) { l.note = 'Set a display name in Settings to list on the Market'; return; }
     if(l.listed + n > CFG.listCap){ l.note = 'Market listing is full'; return; }
@@ -85,7 +86,7 @@
       const snap = await ref.once('value');
       if(!snap.exists()) await ref.set({ u: uid, n: String(K.S.meta.name).slice(0, 20), f: l.f, nm: nameOf(l.f).slice(0, 60), p: l.price, q: take, t: firebase.database.ServerValue.TIMESTAMP });
       else { await ref.child('q').transaction(q => (q || 0) + take); await ref.update({ p: l.price, f: l.f, nm: nameOf(l.f).slice(0, 60), n: String(K.S.meta.name).slice(0, 20), t: firebase.database.ServerValue.TIMESTAMP }); }
-      l.stock -= take; l.note = 'Listed ' + take + ' on the Market'; K.touch('factory');
+      l.stock -= take; l.note = 'Listed ' + take + ' on the Market'; K.touch('factory'); await C.flushNow();      // the molecules left the warehouse: save that NOW, or a closed tab would bring them back while they're still listed
     }catch(e){ l.note = 'Market unreachable — will retry'; }
   }
   async function syncListed(l){                                                     // how much of this line is still waiting for a buyer
@@ -100,7 +101,9 @@
     return changed;
   };
   FA.tick = async function(){
-    if(ticking || !K.loaded) return; ticking = true;
+    if(ticking || !K.loaded || K.sessionLost) return;                          // a locked (older) window must not make or spend money
+    if(K.maint.appMsg('WestFactory')) return;                                   // in maintenance the lines stand still; the time is caught up (within the usual cap) when it ends
+    ticking = true;
     try{
       const s = S(), now = K.now(); if(!s.lines.length){ s.lastTick = now; return; }
       let from = s.lastTick > 0 ? s.lastTick : now; if(now - from > CFG.offlineMaxMin * 60000) from = now - CFG.offlineMaxMin * 60000;
@@ -187,19 +190,36 @@
     const l = line(id); if(!l || !C.signedIn() || !C.db) return no('Nothing to withdraw.');
     const ref = C.db.ref('market/listings/' + C.user.uid + '-' + l.id); let back = 0;
     try{ await ref.child('q').transaction(q => { back = Math.floor(q || 0); return 0; }); await ref.remove(); }catch(e){ return no('Couldn’t reach the Market.'); }
-    l.stock = Math.min(F.storage(l.tier, CFG), l.stock + back); l.listed = 0; touch(); return ok('Took ' + back + ' mol back from the Market.');
+    l.stock = Math.min(F.storage(l.tier, CFG), l.stock + back); l.listed = 0; touch(); await C.flushNow(); return ok('Took ' + back + ' mol back from the Market.');
   };
-  let claiming = false;
-  FA.claim = async function(quiet){                                                // collect other players' payments for what they bought from you
-    if(claiming || !C.signedIn() || !C.db) return null; claiming = true;
+  let claiming = false; const claimedMem = new Set();
+  /* Payments from other players. The order matters, because the old order could LOSE money: it deleted the payment record on the server and only
+   * credited your balance locally, to be saved up to 20 s later — close the tab in between and the money was gone for good.
+   * Now: credit → save to the server → only then delete the record. A device-local list of claimed record ids stops a crash between "saved" and
+   * "deleted" from paying twice. */
+  const CLAIM_KEY = () => 'westos_claimed_' + (C.user ? C.user.uid : '');
+  const claimedLocal = () => { try{ return new Set(JSON.parse(localStorage.getItem(CLAIM_KEY()) || '[]')); }catch(e){ return new Set(); } };
+  const persistClaimed = keys => { try{ localStorage.setItem(CLAIM_KEY(), JSON.stringify([...claimedLocal(), ...keys].slice(-150))); }catch(e){} };
+  FA.claim = async function(quiet){
+    if(claiming || K.sessionLost || !C.signedIn() || !C.db) return null;
+    if(K.maint.sysMsg('market')) return null;
+    claiming = true;
     try{
-      const s = await C.db.ref('market/proceeds/' + C.user.uid).once('value'); if(!s.exists()) { for(const l of S().lines) if(l.route === 'market') await syncListed(l); return null; }
-      let total = 0, items = 0; const del = {}; s.forEach(c => { const v = c.val(); if(v && v.amt > 0){ total += +v.amt; items += +v.k || 0; } del[c.key] = null; });
-      await C.db.ref('market/proceeds/' + C.user.uid).update(del);
-      const net = r2(total * (1 - CFG.marketFee)); if(net > 0){ K.earn(net, 'Market sales'); S().sold += items; S().earned = r2(S().earned + net); touch(); K.emit('factory-sale', { net, items }); }
+      const path = 'market/proceeds/' + C.user.uid, s = await C.db.ref(path).once('value');
+      if(!s.exists()){ for(const l of S().lines) if(l.route === 'market') await syncListed(l); return null; }
+      const known = claimedLocal(), del = {}, fresh = []; let total = 0, items = 0;
+      s.forEach(c => { del[c.key] = null; if(known.has(c.key) || claimedMem.has(c.key)) return; const v = c.val(); if(v && v.amt > 0){ total += +v.amt; items += +v.k || 0; fresh.push(c.key); } });
+      let net = 0;
+      if(fresh.length){
+        net = r2(total * (1 - CFG.marketFee)); fresh.forEach(k => claimedMem.add(k));        // never credit the same record twice in one session
+        if(net > 0){ K.earn(net, 'Market sales'); S().sold += items; S().earned = r2(S().earned + net); touch(); K.emit('factory-sale', { net, items }); }
+      }
+      const saved = await C.flushNow();                                                     // the money must be on the server before the proof of payment goes
+      if(!saved) return fresh.length ? { net, items, fee: r2(total - net) } : null;          // couldn't save: keep the records, try again on the next round
+      persistClaimed(Object.keys(del)); await C.db.ref(path).update(del);
       for(const l of S().lines) if(l.route === 'market') await syncListed(l);
-      return { net, items, fee: r2(total - net) };
+      return fresh.length ? { net, items, fee: r2(total - net) } : null;
     }catch(e){ return null; } finally { claiming = false; }
   };
-  setInterval(() => { if(K.loaded) FA.claim(true); }, 45000);
+  setInterval(() => { if(K.loaded && !K.sessionLost) FA.claim(true); }, 45000);
 });

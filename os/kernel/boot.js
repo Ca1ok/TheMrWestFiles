@@ -3,8 +3,8 @@
 (function(){
   const K = { Chem, World };
   (window.__OSM || []).forEach(m => m(K)); delete window.__OSM;
-  ['shop', 'lab', 'props', 'bank', 'mail', 'auth', 'stock', 'games', 'arcade', 'factory', 'files', 'world', 'admin', 'gallery', 'leaderboard', 'prefs'].forEach(k => { if(K.facade[k] && k !== 'admin') Object.freeze(K.facade[k]); });   // the API objects can't be swapped out from the console
-  Object.freeze(K.facade.admin.gallery); Object.freeze(K.facade.admin);
+  ['shop', 'lab', 'props', 'bank', 'mail', 'auth', 'stock', 'games', 'arcade', 'factory', 'files', 'world', 'admin', 'gallery', 'leaderboard', 'prefs', 'maintenance'].forEach(k => { if(K.facade[k] && k !== 'admin') Object.freeze(K.facade[k]); });   // the API objects can't be swapped out from the console
+  Object.freeze(K.facade.factory.market); Object.freeze(K.facade.admin.gallery); Object.freeze(K.facade.admin);
   window.OS = Object.freeze(K.facade);
   const SDK = ['https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js', 'https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js', 'https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js'];
   const load = src => new Promise(res => { const s = document.createElement('script'); s.src = src; s.onload = () => res(true); s.onerror = () => res(false); document.head.appendChild(s); });

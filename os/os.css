@@ -13,7 +13,7 @@ button{ font:inherit; color:inherit; border:0; background:none; cursor:pointer; 
 .wall.def-light{ background:radial-gradient(70% 60% at 15% 10%,#f6d9a0 0%,transparent 60%),radial-gradient(60% 55% at 90% 90%,#e7b894 0%,transparent 60%),linear-gradient(160deg,#f1e3c3,#dcc79d); }
 .wall-dim{ position:absolute; inset:0; pointer-events:none; background:linear-gradient(180deg,rgba(0,0,0,.2),rgba(0,0,0,0) 22%,rgba(0,0,0,0) 62%,rgba(0,0,0,.3)); }
 [data-theme=dark] .wall-dim{ background-color:rgba(0,0,0,.16); }
-#screen.locked #desk{ visibility:hidden; }
+#screen.locked #desk,#screen.locked #dock,#screen.locked #menubar,#screen.locked #windows{ visibility:hidden; }
 #screen.locked .wall{ filter:blur(22px) saturate(1.25); transform:scale(1.08); }
 
 /* ---------- menu bar ---------- */
@@ -199,3 +199,32 @@ html[data-theme=light] .drop-ghost{ border-color:rgba(60,42,20,.45); background:
 .widget.wanted{ cursor:alias; }
 .wp.flat::before,.wp.flat::after{ inset:4px; }
 .widget .w .grow.mini{ flex:0 0 4px; }
+
+/* ---------- boot screen (lock screen used as loader) ---------- */
+#lock .bootmsg{ position:absolute; bottom:100px; left:0; right:0; text-align:center; font:600 14px/1 var(--font); opacity:.8; letter-spacing:.01em; }
+#lock.ready .bootmsg{ display:none; }
+
+/* ---------- maintenance mode + "open in another window" overlays ---------- */
+.ov{ position:absolute; inset:0; z-index:200; display:grid; place-items:center; padding:24px; background:rgba(10,7,4,.78); backdrop-filter:blur(22px) saturate(1.3); -webkit-backdrop-filter:blur(22px) saturate(1.3); color:#fff; }
+.ov .card{ width:min(92vw,420px); text-align:center; padding:30px 26px 22px; border-radius:26px; background:rgba(34,26,18,.92); box-shadow:0 24px 70px rgba(0,0,0,.55),inset 0 0 0 1px rgba(255,255,255,.1); animation:ovIn .45s var(--spring) both; }
+@keyframes ovIn{ from{ transform:scale(.92) translateY(10px); opacity:0; } }
+.ov .ico{ width:64px; height:64px; margin:0 auto 14px; border-radius:18px; display:grid; place-items:center; background:linear-gradient(160deg,#efc062,#b9822a); color:#fff; box-shadow:0 8px 22px rgba(0,0,0,.4); }
+.ov b{ display:block; font:800 21px/1.25 var(--font); }
+.ov span{ display:block; margin-top:8px; font:500 15px/1.4 var(--font); opacity:.82; white-space:pre-line; }
+.ov .bs{ display:flex; gap:10px; justify-content:center; margin-top:20px; flex-wrap:wrap; }
+.ov button{ font:700 15px var(--font); color:#1d1307; background:#efc062; border:0; border-radius:14px; padding:11px 20px; cursor:pointer; }
+.ov button.plain{ background:rgba(255,255,255,.12); color:#fff; }
+.ov button:active{ transform:scale(.97); }
+/* one app switched off: a dialog on top of the desktop … */
+.mdlg{ position:absolute; inset:0; z-index:150; display:grid; place-items:center; padding:24px; background:rgba(0,0,0,.35); animation:ovFade .25s ease both; } @keyframes ovFade{ from{ opacity:0; } }
+.mdlg .card{ width:min(92vw,380px); text-align:center; padding:26px 22px 18px; border-radius:24px; background:var(--material); backdrop-filter:blur(30px) saturate(1.6); -webkit-backdrop-filter:blur(30px) saturate(1.6); color:var(--label); box-shadow:var(--shadow),inset 0 0 0 1px rgba(255,255,255,.1); animation:ovIn .4s var(--spring) both; }
+.mdlg .ico{ width:56px; height:56px; margin:0 auto 12px; border-radius:16px; display:grid; place-items:center; overflow:hidden; } .mdlg .ico.tint{ background:linear-gradient(160deg,#efc062,#b9822a); color:#fff; }
+.mdlg b{ display:block; font:800 18px/1.3 var(--font); } .mdlg span{ display:block; margin-top:6px; font:500 14.5px/1.4 var(--font); color:var(--label2); white-space:pre-line; }
+.mdlg button{ margin-top:16px; font:700 15px var(--font); color:#fff; background:var(--tint); border:0; border-radius:13px; padding:10px 26px; cursor:pointer; }
+/* … and an app that is already open gets covered where it stands */
+.win .mcover{ position:absolute; inset:0; z-index:5; display:grid; place-items:center; padding:20px; text-align:center; background:var(--bg); color:var(--label); }
+.win .mcover .ico{ width:64px; height:64px; margin:0 auto 12px; border-radius:18px; display:grid; place-items:center; background:linear-gradient(160deg,#efc062,#b9822a); color:#fff; }
+.win .mcover b{ display:block; font:800 19px/1.3 var(--font); } .win .mcover span{ display:block; margin-top:6px; font:500 14.5px/1.4 var(--font); color:var(--label2); white-space:pre-line; }
+/* dock / desktop icons of switched-off apps */
+.app.in-maint .tile{ position:relative; } .app.in-maint .tile>*{ filter:grayscale(.85) brightness(.82); }
+.app.in-maint .tile::after{ content:''; position:absolute; right:-5px; bottom:-5px; width:20px; height:20px; border-radius:50%; background:#e6a93a url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z'/%3E%3C/svg%3E") center/12px no-repeat; box-shadow:0 0 0 2px rgba(0,0,0,.35); }

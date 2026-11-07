@@ -75,12 +75,12 @@ const A = Kit.app({ title: 'Settings', build: (body) => {
     // Data
     rest.appendChild(h('div', { class: 'cap' }, 'Data & storage'));
     const u = OS.usage(), kb = n => n > 1e6 ? (n / 1e6).toFixed(2) + ' MB' : Math.max(0, Math.round(n / 1e3)) + ' KB';
-    rest.appendChild(group(row({ title: 'Downloaded this session', right: kb(u.bytes) }), row({ title: 'Database reads / saves', right: u.reads + ' / ' + u.writes }), row({ glyph: 'trash', color: '#7b7468', title: 'Clear saved photos', sub: 'Frees the space photos use on this device', onClick: async () => { const n = await OS.gallery.cacheSize(); if(await Kit.confirm({ title: 'Clear saved photos?', msg: (n / 1e6).toFixed(1) + ' MB will be removed. Photos download again when you next open them.', ok: 'Clear', destructive: true })){ await OS.gallery.clearCache(); Kit.toast('Cleared', 'good'); } } }), row({ title: 'Saving', sub: OS.auth.signedIn() ? 'Changes are batched and saved every ~20 seconds.' : 'Off — sign in to save progress.', wrap: true })));
+    rest.appendChild(group(row({ title: 'Downloaded this session', right: kb(u.bytes) }), row({ title: 'Database reads / saves', right: u.reads + ' / ' + u.writes }), row({ glyph: 'trash', color: '#7b7468', title: 'Clear saved photos', sub: 'Frees the space photos use on this device', onClick: async () => { const n = await OS.gallery.cacheSize(); if(await Kit.confirm({ title: 'Clear saved photos?', msg: (n / 1e6).toFixed(1) + ' MB will be removed. Photos download again when you next open them.', ok: 'Clear', destructive: true })){ await OS.gallery.clearCache(); Kit.toast('Cleared', 'good'); } } }), row({ title: 'Saving', sub: OS.auth.signedIn() ? 'Money and items are saved within a few seconds; everything else in small batches.' : 'Off — sign in to save progress.', wrap: true })));
     rest.appendChild(h('div', { class: 'foot' }, 'WestOS is built to stay inside Firebase’s free limits: prices are computed on your device, photos are cached after the first view, and only changed data is saved.'));
     // About
     rest.appendChild(h('div', { class: 'cap' }, 'About'));
     rest.appendChild(group(row({ title: 'WestOS', right: 'Version ' + OS.version })));
-    if(OS.auth.isAdmin()) rest.appendChild(h('div', null, h('div', { class: 'cap' }, 'Administrator'), group(row({ glyph: 'bolt', color: '#c23b3b', title: 'Admin tools', sub: 'Market, messages, photos, players', chev: true, onClick: openAdmin }), row({ title: 'Administrator account', sub: 'Only this verified account has admin rights. To change it, edit os/config.js and database.rules.json.', wrap: true, right: OS.cfg.adminEmail }))));
+    if(OS.auth.isAdmin()) rest.appendChild(h('div', null, h('div', { class: 'cap' }, 'Administrator'), group(row({ glyph: 'hammer', color: '#e6a93a', title: 'Maintenance mode', sub: maintSummary(), chev: true, onClick: openMaintenance }), row({ glyph: 'bolt', color: '#c23b3b', title: 'Admin tools', sub: 'Market, messages, photos, players', chev: true, onClick: openAdmin }), row({ title: 'Administrator account', sub: 'Only this verified account has admin rights. To change it, edit os/config.js and database.rules.json.', wrap: true, right: OS.cfg.adminEmail }))));
   }
   function wallPicker(mode){
     A.push({ title: mode === 'dark' ? 'Dark wallpaper' : 'Light wallpaper', backLabel: 'Wallpapers', build: async (b) => {
@@ -103,6 +103,33 @@ const A = Kit.app({ title: 'Settings', build: (body) => {
       const apps = OS.apps(), sel = new Set(P_.get('dock').length ? P_.get('dock') : apps.map(a => a.id)); const list = h('div');
       const draw = () => { list.innerHTML = ''; list.appendChild(group(apps.map(a => row({ left: h('span', { html: Kit.tile(a.id, 34).replace('class="tile"', 'class="tile" style="border-radius:8px"') || '' }), title: a.name, right: h('span', { style: { color: 'var(--tint)', opacity: sel.has(a.id) ? 1 : 0 }, html: Kit.icon('check', 20, 3) }), onClick: () => { if(sel.has(a.id)){ if(sel.size <= 2) return Kit.toast('Keep at least two apps'); sel.delete(a.id); } else sel.add(a.id); P_.set('dock', apps.map(x => x.id).filter(id => sel.has(id))); draw(); } })))); };
       b.append(h('p', { class: 'sub' }, 'Choose which apps live in the dock. Apps you remove can be added back as desktop shortcuts.'), list); draw();
+    } });
+  }
+  /* ---------- maintenance mode (admin) ---------- */
+  function maintSummary(){
+    try{ const c = OS.admin.maintenanceGet(), n = Object.keys(c.apps).length + Object.keys(c.sys).length; return c.all ? 'The whole website is switched OFF for players' : (n ? n + ' thing' + (n === 1 ? ' is' : 's are') + ' switched off' : 'Everything is on'); }catch(e){ return 'Close the site, apps or systems for players'; }
+  }
+  function openMaintenance(){
+    A.push({ title: 'Maintenance mode', backLabel: 'Settings', build: (b) => {
+      const c = OS.admin.maintenanceGet(), M = OS.maintenance, msg = h('div', { class: 'foot', style: { minHeight: '20px' } });
+      const say = (m, ok) => { msg.style.color = ok ? 'var(--good)' : 'var(--bad)'; msg.textContent = m; };
+      const all = toggle(!!c.all), sys = {}, apps = {}, locked = new Set(M.lockedApps()), systems = M.systems();
+      Object.keys(systems).forEach(k => { sys[k] = toggle(!!c.sys[k]); });
+      OS.apps().filter(a => !locked.has(a.id)).forEach(a => { apps[a.id] = toggle(!!c.apps[a.id]); });
+      const note = h('input', { class: 'field', placeholder: 'Optional note for players, e.g. Back at 6pm', maxlength: 160, value: c.msg || '' });
+      const on = t => t.classList.contains('on'), read = () => ({ all: on(all), apps: Object.keys(apps).filter(k => on(apps[k])), sys: Object.keys(sys).filter(k => on(sys[k])), msg: note.value.trim() });
+      const save = async (payload, done) => { try{ await OS.admin.maintenanceSet(payload); say(done, true); paintRest(); }catch(e){ say(e.message || 'Couldn’t save — has the maintenance rule been added to the database rules?'); } };
+      b.append(h('p', { class: 'sub' }, 'Players get a notice saying the app is in maintenance mode instead of it opening. You (the admin) are never blocked, so you can keep testing. Changes reach everyone who is online within a couple of seconds.'),
+        h('div', { class: 'cap' }, 'Whole website'),
+        group(row({ title: 'Close the entire website', sub: 'Everyone except you gets a full-screen maintenance notice and nothing runs for them.', wrap: true, right: all })),
+        h('div', { class: 'cap' }, 'Systems'),
+        group(Object.keys(systems).map(k => row({ title: systems[k], sub: k === 'trading' ? 'Buying and selling $WEST shares' : 'Listing, buying and collecting on the player Market', right: sys[k] }))),
+        h('div', { class: 'cap' }, 'Apps'),
+        group(OS.apps().filter(a => !locked.has(a.id)).map(a => row({ left: h('span', { html: Kit.tile(a.id, 34) }), title: a.name, right: apps[a.id] }))),
+        h('div', { class: 'foot' }, 'Settings and Bank can’t be switched off on their own: Settings is your switchboard, and tax bills must always stay payable. Closing the whole website does cover them.'),
+        h('div', { class: 'cap' }, 'Message'), note,
+        h('div', { class: 'stack', style: { marginTop: '14px' } }, h('button', { class: 'btn', onclick: () => { const p = read(); save(p, p.all ? 'Website closed for players.' : (p.apps.length || p.sys.length ? 'Saved — the selected items are in maintenance mode.' : 'Saved — everything is on.')); } }, 'Save'),
+          h('button', { class: 'btn gray', onclick: () => { Object.keys(apps).forEach(k => apps[k].set(false)); Object.keys(sys).forEach(k => sys[k].set(false)); all.set(false); save({ all: false, apps: [], sys: [], msg: '' }, 'Everything is back on.'); note.value = ''; } }, 'Turn everything back on')), msg);
     } });
   }
   function openAdmin(){

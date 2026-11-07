@@ -145,7 +145,7 @@
 
   /* ---------------- factory (WestFactory: the kernel runs the lines and the market; the app only asks) ---------------- */
   const FAC = K.factory, factory = { state: FAC.state, found: FAC.found, quote: FAC.quote, chanceAt: FAC.chanceAt, addLine: FAC.addLine, buySlot: FAC.buySlot, upgrade: FAC.upgrade, setRate: FAC.setRate, setOn: FAC.setOn, setAuto: FAC.setAuto, setReserve: FAC.setReserve, setPos: FAC.setPos,
-    setRoute: FAC.setRoute, setPrice: FAC.setPrice, sellNow: FAC.sellNow, remove: FAC.remove, collect: FAC.collect, withdraw: FAC.withdraw, claim: FAC.claim, market: Object.freeze({ listings: FAC.market.listings, buy: FAC.market.buy }) };
+    setRoute: FAC.setRoute, setPrice: FAC.setPrice, sellNow: FAC.sellNow, remove: FAC.remove, collect: FAC.collect, withdraw: FAC.withdraw, claim: FAC.claim, market: { listings: FAC.market.listings, buy: FAC.market.buy } };
 
   /* ---------------- leaderboard (its own app; the Bank no longer ranks anyone) ---------------- */
   const LBC = new Map();                                              // one query per category, cached for 30 s, so opening and flipping tabs costs almost nothing
@@ -191,18 +191,32 @@
   const admin = {
     ok: C.isAdmin, players: () => C.admin.players(), read: uid => C.admin.read(uid), setField: (u, p, v) => C.admin.setField(u, p, v), reset: u => C.admin.reset(u), rename: (u, n) => C.admin.rename(u, n),
     mail: (u, s, b) => C.admin.mail(u, s, b), broadcast: (s, b) => C.admin.broadcast(s, b),
+    maintenanceGet: () => { need_(); return K.maint.config(); }, maintenanceSet: c => { need_(); return C.admin.maintSet(c); },
     arcadeGet: () => { need_(); return CSN.loadConfig(true).then(() => CSN.config()); }, arcadeSet: c => { need_(); return C.admin.arcadeSet(c).then(() => CSN.loadConfig(true)); },
     setVolatility: l => K.market.admin.setVolatility(l), adjustPrice: (d, f) => K.market.admin.adjust(d, f), volatility: () => C.isAdmin() ? K.market.volLevel() : null, volLevels: () => C.isAdmin() ? K.market.admin.levels() : [], volLedger: () => C.isAdmin() ? K.market.volLedger() : [],
     gallery: { upload: (f, p) => K.gallery.upload(f, p), rename: (i, t) => K.gallery.rename(i, t), remove: i => K.gallery.remove(i), usage: () => K.gallery.loadUsage() }
   };
   const gallery = { list: f => K.gallery.list(f), thumb: m => K.gallery.thumb(m), view: (m, p) => K.gallery.view(m, p), full: (m, p) => K.gallery.full(m, p), stats: () => K.gallery.stats(), countView: id => K.gallery.countView(id), countDownload: id => K.gallery.countDownload(id), isCached: k => K.gallery.isCached(k), budgetOk: () => K.gallery.budgetOk(), wallpaper: id => K.gallery.wallpaper(id), errText: e => K.gallery.errText(e), item: id => K.gallery.item(id), canOpen: () => K.gallery.canOpen(), cacheSize: () => K.gallery.cacheSize(), clearCache: () => K.gallery.clearCache() };
 
+  /* ---------------- maintenance mode: the actions behind a switched-off app / system refuse with the maintenance message ----------------
+   * (the admin is exempt — see kernel/maint.js). Paying tax is deliberately NOT guarded, so a bill can never be seized because the Bank was "closed". */
+  const mguard = (check, obj, names) => names.forEach(n => { const f = obj[n]; if(typeof f !== 'function') return; obj[n] = function(){ const m = check(); return m ? no(m) : f.apply(this, arguments); }; });
+  const appG = id => () => K.maint.appMsg(id), sysG = k => () => K.maint.sysMsg(k);
+  mguard(appG('WestShop'), shop, ['buy', 'sell']);
+  mguard(appG('WestLab'), lab, ['buyTool', 'run', 'collect', 'collectAll']);
+  mguard(appG('RealEstate'), props, ['buy', 'sell', 'collectRent']);
+  mguard(appG('Stocks'), stock, ['buy', 'sell', 'sellQty', 'sellFraction', 'buyFraction', 'sellAll']); mguard(sysG('trading'), stock, ['buy', 'sell', 'sellQty', 'sellFraction', 'buyFraction', 'sellAll']);
+  mguard(appG('WestFactory'), factory, ['addLine', 'buySlot', 'upgrade', 'setRate', 'setOn', 'setAuto', 'setReserve', 'setRoute', 'setPrice', 'sellNow', 'remove', 'collect', 'withdraw']);
+  mguard(sysG('market'), factory.market, ['buy']); mguard(appG('WestShop'), factory.market, ['buy']);
+  { const sr = factory.setRoute; factory.setRoute = function(id, route){ const m = route === 'market' ? K.maint.sysMsg('market') : ''; return m ? no(m) : sr.apply(this, arguments); }; }
+  const maintenance = { app: id => K.maint.appMsg(id), sys: k => K.maint.sysMsg(k), site: () => K.maint.siteMsg(), note: () => K.maint.note(), config: () => K.maint.config(), systems: () => Object.assign({}, K.maint.SYS), lockedApps: () => K.maint.LOCKED_APPS.slice(), ready: () => K.maint.ready() };
+
   K.facade = {
     version: '1.0', cfg: { adminEmail: CFG.adminEmail, tax: CFG.tax },
     on: (e, f) => K.on(e, f), emit: undefined,
     now: K.now, today: K.today, cash: () => K.S.cash,
     prefs: { get: k => K.prefs[k], all: () => JSON.parse(JSON.stringify(K.prefs)), set: (k, v) => K.setPref(k, v) },
-    shop, lab, props, bank, mail, auth, stock, games, arcade, factory, files, world, admin, gallery, leaderboard, econ: () => K.econ(),
+    shop, lab, props, bank, mail, auth, stock, games, arcade, factory, files, world, admin, gallery, leaderboard, maintenance, econ: () => K.econ(),
     report: { submit: r => C.report.submit(r), list: () => C.report.list(), setStatus: (i, s) => C.report.setStatus(i, s), remove: i => C.report.remove(i) },
     chem: Chem, phys: Phys, mol: Mol, worldModel: World,
     data: { ELEMENTS, CATEGORY_COLORS, CATEGORY_LABELS, GAS_AT_25C, LIQUID_AT_25C, UNKNOWN_STATE, STATE_COLORS, STATE_LABELS, BLOCK_COLORS, BLOCK_LABELS, COMPOUND_LOOKUP, CATEGORY_LOOKUP_LABELS, POLYATOMIC_IONS, DATABOOK, WANTED_DATA, PROPERTIES, PROPERTY_SECTORS, TOOLS, MELTING_POINTS, BOILING_POINTS, OXIDATION, ELECTRONEG, RECIPES },

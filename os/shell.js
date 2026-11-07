@@ -310,6 +310,7 @@
   function openApp(id, originEl){
     const app = APP(id); if(!app) return;
     if(wins.has(id)){ const w = wins.get(id); if(w.el.classList.contains('hidden')) restoreWin(id); setFocus(id); return; }
+    { const mm = (K.maint.ready() && OS.auth.ready()) ? K.maint.appMsg(id) : ''; if(mm){ maintDialog(app, mm); return; } }          // maintenance mode: "'X' is in maintenance mode"
     const g = initialGeom(id), el = document.createElement('div'); el.className = 'win';
     const dir = ['n', 's', 'e', 'w', 'nw', 'ne', 'sw', 'se'].map(d => '<i class="rz ' + d + '" data-d="' + d + '"></i>').join('');
     el.innerHTML = '<div class="tb"><div class="lights"><button class="lbtn c" aria-label="Close" title="Close"><svg viewBox="0 0 8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 1.5l5 5M6.5 1.5l-5 5"/></svg></button><button class="lbtn m" aria-label="Minimize" title="Minimize"><svg viewBox="0 0 8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 4h5"/></svg></button><button class="lbtn z" aria-label="Maximize" title="Maximize"><svg viewBox="0 0 8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 6.2V3M1.8 6.2H5M6.2 1.8V5M6.2 1.8H3"/></svg></button></div><div class="ttl">' + osAppTile(app, 16) + '<span>' + esc(app.name) + '</span></div></div>' +
@@ -419,20 +420,60 @@
     const dock = $('[data-app="' + app.id + '"]', dockEl); if(dock && !reduceMotion()){ const tl = $('.tile', dock); tl.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(-18px)' }, { transform: 'translateY(0)' }, { transform: 'translateY(-7px)' }, { transform: 'translateY(0)' }], { duration: 800 }); }
   });
 
-  /* ================= lock screen (optional) ================= */
-  const lock = $('#lock'); let lockOn = false;
+  /* ================= boot screen / lock screen =================
+   * index.html ships with this screen already up (class "locked" + a spinner), so a reload never flashes a stock default desktop first.
+   * It stays until the account and the maintenance switches are known, then opens by itself — or waits for a click when "lock screen on start" is on. */
+  const lock = $('#lock'), bootAt = performance.now(); let lockOn = true; const clickToEnter = K.prefs.lock === true;
   function clockTick(){ const lt = $('#lockTime'); if(lt && lockOn){ const d = new Date(); lt.textContent = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).replace(/\s?[AP]M/i, ''); $('#lockDate').textContent = d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }); } }
-  setInterval(clockTick, 5000);
+  setInterval(clockTick, 5000); clockTick();
   function renderLockNotifs(){ const un = OS.mail.list().filter(m => !m.read).slice(0, 3); $('#lockNotifs').innerHTML = un.map(m => '<div class="banner"><span class="tx"><b>' + esc(m.from) + '</b><span class="t">' + esc(m.subj) + '</span></span></div>').join(''); }
-  function showLock(){ lockOn = true; screen.classList.add('locked'); lock.style.display = ''; lock.style.transform = ''; lock.style.opacity = ''; clockTick(); renderLockNotifs();
-    const hint = $('#lockHint'), spin = $('#lockSpin'), go = () => { hint.style.display = ''; spin.style.display = 'none'; lock.dataset.ready = '1'; };
-    if(OS.auth.ready()) go(); else { hint.style.display = 'none'; spin.style.display = ''; const off = K.on('auth', () => { off(); go(); }); setTimeout(() => { if(!lock.dataset.ready) go(); }, 4000); } }
+  function bootReady(){
+    if(lock.dataset.ready) return; lock.dataset.ready = '1'; lock.classList.add('ready'); $('#lockSpin').style.display = 'none';
+    if(clickToEnter){ $('#lockHint').style.display = ''; renderLockNotifs(); } else unlock();
+  }
+  function bootCheck(){ if(lock.dataset.ready || lock.dataset.waiting || !(OS.auth.ready() && K.maint.ready())) return; lock.dataset.waiting = '1'; setTimeout(bootReady, Math.max(0, 650 - (performance.now() - bootAt))); }       // at least a moment on screen, so it never just flickers
+  K.on('auth', bootCheck); K.on('maint', bootCheck); setTimeout(bootReady, 12000);                       // never trap anyone behind a slow connection
+  setTimeout(() => { if(!lock.dataset.ready) $('#lockMsg').textContent = 'Still connecting…'; }, 6000);
   function unlock(){
     if(!lockOn || !lock.dataset.ready) return; lockOn = false; screen.classList.remove('locked'); const done = () => { lock.style.display = 'none'; afterUnlock(); };
     if(reduceMotion()) return done(); lock.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(1.06)' }], { duration: 420, easing: EASE, fill: 'forwards' }).onfinish = done;
   }
   lock.addEventListener('click', unlock); document.addEventListener('keydown', e => { if(lockOn && (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowUp')) unlock(); });
   function afterUnlock(){ const m = /#open=(\w+)/.exec(location.hash); if(m && APP(m[1])) openApp(m[1], null); }
+
+  /* ================= maintenance mode + "open in another window" =================
+   * Whole site off → a full-screen notice (the admin is exempt and can sign in from it). One app off → a dialog when you try to open it, a cover over it
+   * if it is already open, and a wrench on its dock / desktop icon. The kernel refuses the actions behind it too (see kernel/api.js). */
+  const maintEl = $('#maint'), sessEl = $('#sessionLost');
+  $('#maintIco').innerHTML = osIcon('hammer', 34, 2); $('#sessionIco').innerHTML = osIcon('layers', 32, 2);
+  $('#maintRetry').addEventListener('click', () => location.reload());
+  $('#maintAdmin').addEventListener('click', async () => { try{ await OS.auth.google(); }catch(e){} });
+  $('#sessionBtn').addEventListener('click', () => location.reload());                              // a reload makes THIS window the active one and loads your latest saved progress
+  K.on('session', st => { if(st === 'lost') sessEl.style.display = ''; });
+  const maintOn = () => K.maint.ready() && OS.auth.ready();
+  function maintDialog(app, msg){
+    $$('.mdlg', screen).forEach(x => x.remove());
+    const d = document.createElement('div'), note = K.maint.note(); d.className = 'mdlg';
+    d.innerHTML = '<div class="card"><div class="ico">' + osAppTile(app, 56) + '</div><b>' + esc(msg) + '</b><span>' + esc(note || 'Please try again later.') + '</span><button>OK</button></div>';
+    screen.appendChild(d); const close = () => d.remove(); $('button', d).addEventListener('click', close); d.addEventListener('click', e => { if(e.target === d) close(); });
+  }
+  function coverWin(w, id){
+    const msg = maintOn() ? K.maint.appMsg(id) : '', c = $('.mcover', w.el);
+    if(!msg){ if(c) c.remove(); return; }
+    const el = c || document.createElement('div'); el.className = 'mcover'; if(!c) $('.body', w.el).appendChild(el);
+    el.innerHTML = '<div><div class="ico">' + osIcon('hammer', 32, 2) + '</div><b>' + esc(msg) + '</b>' + (K.maint.note() ? '<span>' + esc(K.maint.note()) + '</span>' : '') + '</div>';
+  }
+  let badgeQ = false;
+  function paintBadges(){ badgeQ = false; const on = maintOn(); $$('[data-app]').forEach(el => el.classList.toggle('in-maint', on && !!K.maint.appMsg(el.dataset.app))); }
+  const queueBadges = () => { if(!badgeQ){ badgeQ = true; requestAnimationFrame(paintBadges); } };
+  new MutationObserver(queueBadges).observe(screen, { childList: true, subtree: true });             // icons are re-rendered by the layout code; re-mark them after each render
+  function paintMaint(){
+    const site = maintOn() ? K.maint.siteMsg() : '';
+    maintEl.style.display = site ? '' : 'none';
+    if(site){ $('#maintTitle').textContent = site; $('#maintNote').textContent = K.maint.note() || 'We’ll be back shortly.'; }
+    wins.forEach((w, id) => coverWin(w, id)); queueBadges();
+  }
+  K.on('maint', paintMaint); K.on('auth', paintMaint); K.on('loaded', paintMaint); paintMaint();
 
   /* ================= facade additions + boot ================= */
   OS.open = id => { if(APP(id)){ if(editing) setEditing(false); openApp(id, null); } };
@@ -451,5 +492,5 @@
     if(k === 'dock' || k === '*'){ dockEl.dataset.sig = ''; loadLayout(); relayoutHome(true); } });
   K.on('loaded', () => { applyTheme(); loadLayout(); relayoutHome(false); });
   setEditing(false); measure(); applyTheme(); loadLayout(); relayoutHome(false); K.emit('screen', { w: S.w, h: S.h });
-  if(K.prefs.lock === true) showLock(); else setTimeout(afterUnlock, 80);
+  bootCheck();
 });
