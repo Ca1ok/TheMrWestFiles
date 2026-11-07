@@ -7,7 +7,8 @@ c = card(['CaCO3'], 300, 1);          near('CaCO3 → CaO + CO2: ΔH(298)=178.3 
 c = card(['CaCO3'], 1300, 1);         near('CaCO3 @1300 K proceeds', c.ok ? 1 : 0, 1, 0);
 const hb = Chem.solve(['N', 'H'], ['heat', 'pressure', 'catalyst']); const th = Phys.rxn(hb.reactants, hb.products, 700, 1);
 near('Haber ΔG(700 K) ≈ +56 kJ per 2 NH3', th.dG, 56, 6); near('Haber log10 K(700 K) ≈ −4.2', th.lnK / Math.LN10, -4.2, 0.6);
-c = card(['N', 'H'], 700, 200, true); const r = Phys.run(c, { N: 2, H: 6 }, { tools: { pressure: 1 } }); near('Haber equilibrium NH3 yield at 700 K, 200 bar (≈ 35–45 %)', r.y * 100, 40, 8);
+c = card(['N', 'H'], 700, 200, true); const feed = {}; c.R.forEach(x => { feed[x[0]] = 2 * x[1]; });   // stoichiometric 1:3 feed, keyed by the card's own reagents (N₂, H₂ — an 'N' key means nitrogen in its standard state)
+const r = Phys.run(c, feed, { tools: { pressure: 1 } }); near('Haber equilibrium NH3 yield at 700 K, 200 bar (≈ 35–45 %)', r.y * 100, 40, 8);
 c = card(['H2O'], 300, 1, false, true); near('water electrolysis cell voltage 1.23 V', c.E, 1.23, 0.02);
 c = card(['Na', 'Cl'], 300, 1);       near('NaCl ΔH formation ×2 = −822 kJ', c.dH, -822.3, 3);
 c = card(['H', 'O'], 300, 1);         console.log(c.ok ? 'FAIL H2+O2 should be kinetically blocked at room T' : 'H2 + O2 blocked at 300 K ✓', c.ok ? '' : c.why.slice(0, 70)); if(c.ok) bad++; n++;

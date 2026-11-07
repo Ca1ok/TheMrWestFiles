@@ -83,6 +83,15 @@ Current: titration, balance (educational) · mazePaint, sandfall, colourBlocks, 
 - GitHub Action `update-market.yml` (cron 10 min): `tick-market.js` advances `market/market-data.json` + `market/history/{recent,hourly}.json`, reading admin ledgers from Firebase; retry-by-recompute on push race. Price = seeded noise × trend (base + growth) + admin ledger; browser recomputes identically. `export-lab-cache.yml` writes `lab-cache/`.
 - WestLab: engine in `os/lib/chem.js` (+phys/mol/ff); results cached to GitHub `lab-cache/` so repeat combos aren't recomputed.
 
+## 8b. WestLab engine (ENGINE_VERSION 2)
+- **ENGINE_VERSION** (`os/lib/phys.js`) is the first part of every cache key (`e2|…`). Bump it whenever ANY change can alter a card (data tables, rules, thermo, kinetics). The export Action then purges other-version entries and replays all Firebase submissions; `tools/preseed-lab-cache.js` (workflow "Pre-seed WestLab cache", manual button) refills the common reactions. Never hand-edit `lab-cache/`.
+- **To regenerate after an engine change:** bump ENGINE_VERSION → push → Actions → "Pre-seed WestLab cache" → Run, then "Export WestLab discoveries" → Run. Or locally: `node tools/preseed-lab-cache.js`.
+- Atom keys of diatomic elements (`N`,`H`,`O`,`F`,`Cl`,`Br`,`I`) mean the element in its standard state X2 in every rule (`Chem.solve`). `N` and `N2` give identical chemistry.
+- **Named reactions** live in `data/chem-data.js` (`NAMED_REACTIONS`, consulted first; `notModelled:true` makes the engine refuse instead of guessing). **Spec/tests:** `data/reaction-catalogue.js` (not loaded by the browser) + `node tests/catalogue.test.js`; also `tests/thermo-audit.test.js` (ΔGf vs CRC, isomer-collision guard) and `tests/cache.test.js`.
+- Determinism: no Math.random/Date in the engine; the Gibbs search has a work budget (`GS_BUDGET`), not a clock.
+- Venting (open vessel at ≤1 bar) only applies when a reactant is a solid/liquid. Decomposing carbonates/hydroxides never "melt". Compound melting points: `COMPOUND_MP` in thermo-data.js.
+- Known gaps: aqueous standard states (neutralisation/electrolysis voltages), constant Cp (no Shomate yet), no worker (api.js getCard is synchronous), compound×compound pre-seed left to the Action.
+
 ## 9. Test & verify recipe (works in this sandbox)
 ```bash
 cd <repo>; (python3 -m http.server 8123 >/dev/null 2>&1 &); sleep 1.5; python3 test.py   # server dies between tool calls: start it in the SAME command

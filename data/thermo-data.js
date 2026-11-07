@@ -1,6 +1,8 @@
 // Thermochemistry reference data for the WestLab physics engine (WestPhys).
 // Format:  'formula': [phase at 298 K ('s'|'l'|'g'), ΔHf° kJ/mol, S° J/(mol·K), Cp J/(mol·K)]
 // Values are standard-state (298.15 K, 1 bar) figures from the NBS/CRC/NIST tables (rounded). Elements have ΔHf° = 0.
+// The engine keys species by COMPOSITION (one species per formula), so isomers must not both be listed: dimethyl ether '(CH3)2O' was removed because it shared C2H6O with ethanol
+// and silently overwrote ethanol's data (ΔGf came out −112.6 kJ/mol instead of the published −174.8). tests/thermo-audit.test.js fails if a collision comes back.
 // Anything NOT listed here is *estimated* by WestPhys (and flagged "estimated" in the lab) — it never pretends to be tabulated.
 const THERMO = {
   // ---- elements (standard states) ----
@@ -43,7 +45,9 @@ const THERMO = {
   // ---- more compounds (NBS / CRC) so common reactions have real numbers ----
   'Ca(OH)2':['s',-986.09,83.39,87.49], 'Ba(OH)2':['s',-944.7,94.0,101.0], 'Al(OH)3':['s',-1293.1,68.4,91.7], 'Fe(OH)3':['s',-823.0,106.7,101.7], 'Fe(OH)2':['s',-569.0,88.0,79.5], 'Cu(OH)2':['s',-449.8,108.4,100.0], 'Zn(OH)2':['s',-641.9,81.2,72.0], 'Ni(OH)2':['s',-529.7,88.0,85.0], LiOH:['s',-484.9,42.8,49.7],
   C2H5Cl:['g',-112.1,276.0,62.8], CHCl3:['l',-134.5,201.7,114.2], CH2Cl2:['l',-124.2,177.8,100.0], CH3Br:['g',-35.4,246.4,42.4], C6H5CH3:['l',12.4,220.96,157.3], C6H12:['l',-156.4,204.4,154.9], C6H5OH:['s',-165.1,144.0,127.4], C6H5Cl:['l',11.0,209.2,150.1], C4H8O2:['l',-479.3,259.4,170.1],
-  C2H4Cl2:['l',-167.2,208.5,129.3], C12H22O11:['s',-2226.1,360.2,425.5], CH4N2O:['s',-333.1,104.6,93.1], '(CH3)2O':['g',-184.1,266.4,64.4], C3H8O:['l',-302.6,193.6,143.9], C2H6O2:['l',-454.8,166.9,149.5], C3H8O3:['l',-668.5,206.3,221.9],
+  // CRC Handbook (NBS tables), added with the named-reaction table; ΔHf°, S°, Cp° for the solids. Cu(NO3)2 and Pb(NO3)2: verify against NIST/CRC if you touch them.
+  'Pb(NO3)2':['s',-451.9,217.9,150.5], 'Cu(NO3)2':['s',-302.9,193.3,142.0],
+  C2H4Cl2:['l',-167.2,208.5,129.3], C12H22O11:['s',-2226.1,360.2,425.5], CH4N2O:['s',-333.1,104.6,93.1], C3H8O:['l',-302.6,193.6,143.9], C2H6O2:['l',-454.8,166.9,149.5], C3H8O3:['l',-668.5,206.3,221.9],
   N2O5:['s',-43.1,178.2,143.1], MnCl2:['s',-481.3,118.2,72.9], MnO:['s',-385.2,59.7,45.4], Mn2O3:['s',-959.0,110.5,107.7], Mn3O4:['s',-1387.8,155.6,139.7], PbBr2:['s',-278.7,161.5,80.1], ZnBr2:['s',-328.7,138.5,65.0], NaClO3:['s',-365.8,123.4,100.0], KClO4:['s',-432.8,151.0,112.4], CuBr:['s',-104.6,96.1,54.7],
   Na2SiO3:['s',-1554.9,113.8,111.8], NH4HCO3:['s',-849.4,120.9,129.7], NaHSO4:['s',-1125.5,113.0,119.0], KHCO3:['s',-963.2,115.5,100.0], Na2SO3:['s',-1100.8,145.9,120.0], Cl2O:['g',80.3,266.2,45.4], HClO4:['l',-40.6,188.3,120.0], NaC2H3O2:['s',-708.8,123.0,79.9], KC2H3O2:['s',-723.0,150.0,109.0], CaC2H3O2:['s',-1479.0,190.0,160.0]
 };
@@ -57,3 +61,9 @@ const STRONG_ACIDS = ['HCl', 'HBr', 'HI', 'HNO3', 'H2SO4', 'HClO4'];
 
 // ---- free gaseous ATOMS of the diatomic elements: dHf = +1/2 bond energy (kJ/mol per atom). Unstable; they recombine into X2 ----
 Object.assign(THERMO, { H:['g',218.0,114.7,20.79], N:['g',472.7,153.3,20.79], O:['g',249.2,161.1,21.9], F:['g',79.4,158.8,22.7], Cl:['g',121.3,165.2,21.8], Br:['g',111.9,175.0,20.79], I:['g',106.8,180.8,20.79] });
+
+// ---- melting points (K) of common compounds, CRC Handbook. Without an entry the engine guesses 1300 K for an ionic solid, which put a fake fusion step inside the 1300–1500 K burner range
+// (CaO "melted" at 1300 K; it really melts at 2886 K). Only compounds that melt cleanly are listed — ones that decompose first (carbonates, hydroxides, Fe2O3, CuO…) are NOT fusion events.
+const COMPOUND_MP = { CaO: 2886, MgO: 3125, Al2O3: 2345, SiO2: 1996, TiO2: 2116, ZnO: 2247, BaO: 2286, SrO: 2804, Li2O: 1711, Cr2O3: 2708, NiO: 2228, CoO: 2208, SnO2: 1903, PbO: 1161, FeO: 1650, Fe3O4: 1870,
+  NaCl: 1074, KCl: 1044, LiCl: 883, CaCl2: 1045, MgCl2: 987, BaCl2: 1235, NaF: 1266, KF: 1131, LiF: 1118, MgF2: 1536, CaF2: 1691, NaBr: 1020, KBr: 1007, NaI: 934, KI: 954,
+  Na2CO3: 1124, K2CO3: 1164, Na2SO4: 1157, K2SO4: 1342, NaOH: 596, KOH: 633, LiOH: 744, NaNO3: 580, KNO3: 607, KClO3: 629, B2O3: 723, SiC: 3003, AlN: 2470 };
