@@ -36,6 +36,12 @@ const OS_GLYPHS = {
   dice:'<rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1" fill="currentColor"/><circle cx="15" cy="9" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="9" cy="15" r="1" fill="currentColor"/><circle cx="15" cy="15" r="1" fill="currentColor"/>',
   bus:'<rect x="4" y="4" width="16" height="13" rx="3"/><path d="M4 11h16M7 20v-3M17 20v-3"/><circle cx="8" cy="14.2" r=".7" fill="currentColor"/><circle cx="16" cy="14.2" r=".7" fill="currentColor"/>',
   coin:'<circle cx="12" cy="12" r="9"/><path d="M12 7v10M14.8 9.3C14.2 8.5 13.2 8.2 12 8.2c-1.7 0-2.7.8-2.7 1.9s1 1.6 2.7 1.9 2.7.8 2.7 1.9-1 1.9-2.7 1.9c-1.2 0-2.2-.3-2.8-1.1"/>',
+  brush:'<path d="M18.5 3.5l2 2-9 9-3-1-1-3z"/><path d="M7.5 13.5c-2 .3-3 1.7-3 3.5 0 1.5-.7 2.4-1.5 3 3 .8 7-.2 7.5-3.2"/>',
+  hourglass:'<path d="M6 3h12M6 21h12M7 3c0 5 5 6 5 9s-5 4-5 9M17 3c0 5-5 6-5 9s5 4 5 9"/>',
+  blocks:'<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><path d="M14 17h6M17 14v6"/>',
+  tubes:'<path d="M5 3h4v13a2 2 0 0 1-4 0zM15 3h4v13a2 2 0 0 1-4 0zM5 11h4M15 8h4"/>',
+  merge:'<circle cx="8" cy="9" r="4.5"/><circle cx="16" cy="9" r="4.5"/><path d="M12 15v6M9 18l3 3 3-3"/>',
+  feather:'<path d="M20 4c-8 0-13 4-13 11v3l3-3c6 0 9-4 10-11zM7 18L3 22M10 15h5"/>',
   dot:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2" fill="currentColor"/>',
   // UI glyphs
   plus:'<path d="M12 5v14M5 12h14"/>', minus:'<path d="M5 12h14"/>', check:'<path d="M5 12.5l4.5 4.5L19 7"/>', x:'<path d="M6 6l12 12M18 6L6 18"/>',
@@ -85,7 +91,7 @@ const OS_EMOJI = { '🧪':'flask', '⚛️':'atom', '⚛':'atom', '☢️':'radi
 function osIcon(name, size, sw){   // an unknown name draws a neutral dot instead of an empty box
   return '<svg class="gl" viewBox="0 0 24 24" width="' + (size || 24) + '" height="' + (size || 24) + '" fill="none" stroke="currentColor" stroke-width="' + (sw || 1.8) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (OS_GLYPHS[name] || OS_GLYPHS.dot) + '</svg>';
 }
-function osEmoji(e, size, sw){ return osIcon(OS_EMOJI[e] || 'dot', size || 34, sw || 1.7); }
+function osEmoji(e, size, sw){ return osIcon(OS_EMOJI[e] || (OS_GLYPHS[e] ? e : 'dot'), size || 34, sw || 1.7); }
 function osAppTile(app, size){   // the app icon: a PNG from /assets/icons (used on the desktop, dock, window title bars, notifications…)
   const a = typeof app === 'string' ? OS_APPS.find(x => x.id === app) : app; if(!a) return '';
   return '<span class="tile" style="width:' + size + 'px;height:' + size + 'px"><img src="' + OS_ICON_BASE + a.id + '.png" width="' + size + '" height="' + size + '" alt="" draggable="false" decoding="async"></span>';

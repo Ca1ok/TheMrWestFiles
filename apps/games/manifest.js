@@ -8,67 +8,11 @@ const GAME_MANIFEST = [
   "desc": "Find the endpoint"
  },
  {
-  "id": "elementRecall",
-  "category": "educational",
-  "icon": "⚛️",
-  "name": "Element Recall",
-  "desc": "Symbol → name"
- },
- {
-  "id": "halfLife",
-  "category": "educational",
-  "icon": "☢️",
-  "name": "Half-Life Guess",
-  "desc": "Decay math"
- },
- {
   "id": "balance",
   "category": "educational",
   "icon": "⚖️",
   "name": "Balance the Equation",
   "desc": "Stoichiometry"
- },
- {
-  "id": "phMatch",
-  "category": "educational",
-  "icon": "🧫",
-  "name": "pH Match",
-  "desc": "Acid or base?"
- },
- {
-  "id": "ohms",
-  "category": "educational",
-  "icon": "🔌",
-  "name": "Ohm's Law",
-  "desc": "Quick circuit math"
- },
- {
-  "id": "moleculeMatch",
-  "category": "educational",
-  "icon": "🧬",
-  "name": "Molecule Speed Match",
-  "desc": "Name → formula"
- },
- {
-  "id": "waveMatch",
-  "category": "educational",
-  "icon": "🌊",
-  "name": "Wave Match",
-  "desc": "Wavelength → frequency"
- },
- {
-  "id": "gasLaw",
-  "category": "educational",
-  "icon": "💨",
-  "name": "Ideal Gas Law Solver",
-  "desc": "PV = nRT"
- },
- {
-  "id": "isotope",
-  "category": "educational",
-  "icon": "🔬",
-  "name": "Isotope ID",
-  "desc": "Protons + neutrons"
  },
  {
   "id": "reaction",
@@ -113,32 +57,53 @@ const GAME_MANIFEST = [
   "desc": "Quick reflexes"
  },
  {
-  "id": "trivia",
-  "category": "other",
-  "icon": "📜",
-  "name": "Wanted Poster Trivia",
-  "desc": "Site lore quiz"
- },
- {
   "id": "luckyAssay",
-  "category": "other",
+  "category": "fun",
   "icon": "🍀",
   "name": "Lucky Assay",
   "desc": "Pick a vial"
  },
  {
-  "id": "wordScramble",
-  "category": "other",
-  "icon": "🔤",
-  "name": "Word Scramble",
-  "desc": "Unscramble the term"
+  "id": "mazePaint",
+  "category": "puzzle",
+  "icon": "brush",
+  "name": "Reagent Trail",
+  "desc": "Slide, stain every tile"
  },
  {
-  "id": "boilingPoint",
-  "category": "other",
-  "icon": "🌡️",
-  "name": "Guess the Boiling Point",
-  "desc": "Thermal trivia"
+  "id": "sandfall",
+  "category": "puzzle",
+  "icon": "hourglass",
+  "name": "Sand Cascade",
+  "desc": "Draw glass, fill the beaker"
+ },
+ {
+  "id": "colourBlocks",
+  "category": "puzzle",
+  "icon": "blocks",
+  "name": "Colour Blocks",
+  "desc": "Pop matching metals"
+ },
+ {
+  "id": "tubeSort",
+  "category": "puzzle",
+  "icon": "tubes",
+  "name": "Test Tube Sort",
+  "desc": "Pour until each is one colour"
+ },
+ {
+  "id": "elementMerge",
+  "category": "fun",
+  "icon": "merge",
+  "name": "Element Merge",
+  "desc": "Fuse H into heavier atoms"
+ },
+ {
+  "id": "flappyElectron",
+  "category": "fun",
+  "icon": "feather",
+  "name": "Flappy Electron",
+  "desc": "Hop between charged plates"
  }
 ];
-const GAME_CATEGORIES = { educational:'Chemistry & Physics', fun:'Arcade', other:'Other' };
+const GAME_CATEGORIES = { educational:'Chemistry & Physics', puzzle:'Puzzles', fun:'Arcade' };
