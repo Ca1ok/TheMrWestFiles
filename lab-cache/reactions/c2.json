@@ -1,1 +1,1 @@
-{"H+S|750|500|00":{"v":1,"ok":true,"key":"H+S|750|500|00","type":"Synthesis (covalent)","note":"","T":750,"P":500,"cat":0,"elec":0,"cls":"syn","eq":"H₂ + S → H₂S","R":[["H",1,2,"H2","element"],["S",1,1,"S","element"]],"Pr":[["H2S",1,1,"H2S","compound"]],"dH":-31.409,"dS":20.418,"dG":-46.723,"lnK":7.493,"Ea":147.889,"lnkf":-3.852,"xeq":0.999,"t95":141,"est":0,"err":0,"ne":2,"E":0,"hetero":1}}
+{}

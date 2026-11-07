@@ -1,1 +1,1 @@
-{"F+S|300|1|00":{"v":1,"ok":true,"key":"F+S|300|1|00","type":"Synthesis (covalent)","note":"","T":300,"P":1,"cat":0,"elec":0,"cls":"syn","eq":"3 F₂ + S → F₆S","R":[["F",3,2,"F2","element"],["S",1,1,"S","element"]],"Pr":[["F6S",1,1,"F6S","compound"]],"dH":-1209.036,"dS":-348.692,"dG":-1104.429,"lnK":442.774,"Ea":60,"lnkf":-5.107,"xeq":1,"t95":495,"est":0,"err":0,"ne":2,"E":0,"hetero":1}}
+{}
