@@ -43,11 +43,18 @@
     return { keys: a.target ? [] : (a.keys || []).map(String).slice(0, 4), target: a.target ? String(a.target).trim().slice(0, 60) : '', T, P, cat: !!a.cat && b.cat, elec: !!a.elec && b.elec, ign: !!a.ign };
   }
   async function shard(id){ if(SEEN.shards[id]) return SEEN.shards[id]; try{ const r = await fetch('lab-cache/reactions/' + id + '.json', { cache: 'no-cache' }); SEEN.shards[id] = r.ok ? await r.json() : {}; }catch(e){ SEEN.shards[id] = {}; } return SEEN.shards[id]; }
+  // cache miss → calculate in a Web Worker (the page never freezes); no Worker / any failure / 15 s → the same calculation on the main thread
+  let WK = null, WKID = 0; const WKP = new Map();
+  function computeCard(a){
+    if(typeof Worker === 'undefined' || WK === false) return Promise.resolve(Phys.card(a));
+    try{ if(!WK){ WK = new Worker('os/lib/westlab-worker.js'); WK.onmessage = e => { const p = WKP.get(e.data.id); if(p){ WKP.delete(e.data.id); e.data.card ? p.res(e.data.card) : p.rej(); } }; WK.onerror = () => { WK = false; WKP.forEach(p => p.rej()); WKP.clear(); }; } }catch(e){ WK = false; return Promise.resolve(Phys.card(a)); }
+    return new Promise((res, rej) => { const id = ++WKID; WKP.set(id, { res, rej }); setTimeout(() => { if(WKP.delete(id)) rej(); }, 15000); WK.postMessage({ id, a }); }).catch(() => Phys.card(a));
+  }
   async function getCard(a){                              // 1) this session  2) the verified library on GitHub  3) calculate it here (and offer it to the library)
     const key = Phys.cacheKey(a), hit0 = SEEN.cards.get(key); if(hit0){ SEEN.hits.session++; return hit0; }
     const sh = await shard(Phys.shardOf(key)), hit = sh && sh[key];
     if(hit && hit.ok && hit.key === key && Array.isArray(hit.R) && Array.isArray(hit.Pr)){ const r = { card: hit, src: 'github' }; SEEN.cards.set(key, r); SEEN.hits.github++; return r; }
-    const card = Phys.card(a), r = { card, src: 'local' }; SEEN.cards.set(key, r); SEEN.hits.local++;
+    const card = await computeCard(a), r = { card, src: 'local' }; SEEN.cards.set(key, r); SEEN.hits.local++;
     if(card.ok && !SEEN.sent.has(key)){ SEEN.sent.add(key); K.cloud.submitReaction(Phys.fnv(key), a); }
     return r;
   }

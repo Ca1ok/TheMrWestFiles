@@ -90,7 +90,7 @@ Current: titration, balance (educational) · mazePaint, sandfall, colourBlocks, 
 - **Named reactions** live in `data/chem-data.js` (`NAMED_REACTIONS`, consulted first; `notModelled:true` makes the engine refuse instead of guessing). **Spec/tests:** `data/reaction-catalogue.js` (not loaded by the browser) + `node tests/catalogue.test.js`; also `tests/thermo-audit.test.js` (ΔGf vs CRC, isomer-collision guard) and `tests/cache.test.js`.
 - Determinism: no Math.random/Date in the engine; the Gibbs search has a work budget (`GS_BUDGET`), not a clock.
 - Venting (open vessel at ≤1 bar) only applies when a reactant is a solid/liquid. Decomposing carbonates/hydroxides never "melt". Compound melting points: `COMPOUND_MP` in thermo-data.js.
-- Known gaps: aqueous standard states (neutralisation/electrolysis voltages), constant Cp (no Shomate yet), no worker (api.js getCard is synchronous), compound×compound pre-seed left to the Action.
+- Cache misses are computed in `os/lib/westlab-worker.js` (api.js `computeCard`, falls back to the main thread). Known gaps: aqueous standard states (neutralisation/electrolysis voltages), constant Cp (no Shomate yet), compound×compound pre-seed left to the Action.
 
 ## 9. Test & verify recipe (works in this sandbox)
 ```bash
