@@ -100,5 +100,9 @@
 <script src="os/widgets/games.js?v=20261105b"></script>
 <script src="os/shell.js?v=20261107a"></script>
 <script src="os/kernel/boot.js?v=20261107a"></script>
+<script>
+/* last-resort boot failsafe, independent of every other script: if the boot screen is still up after 15 s, let the person in */
+setTimeout(function(){ var l = document.getElementById('lock'), sc = document.getElementById('screen'); if(l && sc && sc.classList.contains('locked') && !l.dataset.ready){ sc.classList.remove('locked'); l.style.display = 'none'; } }, 15000);
+</script>
 </body>
 </html>
