@@ -17,10 +17,12 @@ async function discoveries(){
   console.log(write(path.join(OUTD, 'discoveries.json'), clean) ? 'Wrote ' + Object.keys(clean).length + ' discoveries.' : 'Discoveries: no change.');
 }
 async function reactions(){
-  const { Phys } = load(ROOT); Phys.init(); const fresh = [];
+  const { Phys } = load(ROOT); Phys.init(); const fresh = [], EV = Phys.ENGINE_VERSION, PFX = 'e' + EV + '|';
   const stateF = path.join(RX, '_state.json'), state = fs.existsSync(stateF) ? JSON.parse(fs.readFileSync(stateF, 'utf8')) : { t: 0 };
+  // New engine version → cards computed by an older engine are dropped and every submission still in Firebase is recomputed from t = 0 (the Action is the only writer; the inputs are all we trust).
+  const stale = state.ev !== EV; if(stale){ state.t = 0; console.log('ENGINE_VERSION changed (' + (state.ev || 1) + ' → ' + EV + '): old entries will be purged and all submissions recomputed.'); }
   let sub; try{ sub = (await getJSON('/labSubmit.json?orderBy="t"&startAt=' + (state.t + 1))) || {}; }catch(e){ sub = (await getJSON('/labSubmit.json')) || {}; }   // (needs ".indexOn": ["t"] in the rules; falls back to a full read)
-  const shards = {}, getShard = id => shards[id] || (shards[id] = (() => { const f = path.join(RX, id + '.json'); return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : {}; })());
+  const shards = {}, getShard = id => shards[id] || (shards[id] = (() => { const f = path.join(RX, id + '.json'); if(!fs.existsSync(f)) return {}; const o = JSON.parse(fs.readFileSync(f, 'utf8')); Object.keys(o).forEach(k => { if(k.indexOf(PFX) !== 0) delete o[k]; }); return o; })());
   let added = 0, rejected = 0, maxT = state.t;
   Object.keys(sub).sort((a, b) => (sub[a].t || 0) - (sub[b].t || 0)).forEach(id => {
     const s = sub[id]; if(!s || typeof s !== 'object') return; maxT = Math.max(maxT, +s.t || 0);
@@ -33,8 +35,9 @@ async function reactions(){
     if(Phys.fnv(card.key) !== id){ rejected++; return; }                                   // the id must be the hash of the recomputed key
     sh[card.key] = card; fresh.push(card); added++;
   });
+  if(stale) fs.readdirSync(RX).filter(f => /^[0-9a-f]{2}\.json$/.test(f)).forEach(f => { getShard(f.slice(0, 2)); });   // load every shard so stale entries are purged even when nothing new lands in it
   let changed = 0; Object.keys(shards).forEach(id => { if(write(path.join(RX, id + '.json'), shards[id])) changed++; });
-  if(maxT !== state.t) write(stateF, { t: maxT });
+  if(maxT !== state.t || stale) write(stateF, { t: maxT, ev: EV });
   console.log('Reaction library: ' + added + ' added, ' + rejected + ' rejected, ' + changed + ' shard file(s) written.');
   return fresh;
 }
