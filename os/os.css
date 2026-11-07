@@ -228,3 +228,15 @@ html[data-theme=light] .drop-ghost{ border-color:rgba(60,42,20,.45); background:
 /* dock / desktop icons of switched-off apps */
 .app.in-maint .tile{ position:relative; } .app.in-maint .tile>*{ filter:grayscale(.85) brightness(.82); }
 .app.in-maint .tile::after{ content:''; position:absolute; right:-5px; bottom:-5px; width:20px; height:20px; border-radius:50%; background:#e6a93a url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z'/%3E%3C/svg%3E") center/12px no-repeat; box-shadow:0 0 0 2px rgba(0,0,0,.35); }
+
+/* ---------- performance: lighter rendering while moving windows, and permanently in Performance mode ---------- */
+.win{ contain:layout style; }
+#screen.moving .widget,#screen.moving .dock,#screen.moving #menubar,#screen.moving .sz,#screen.moving .banner,#screen.moving .win .tb{ backdrop-filter:none !important; -webkit-backdrop-filter:none !important; }
+#screen.moving .win{ box-shadow:0 0 0 1px rgba(0,0,0,.45),0 6px 16px rgba(0,0,0,.3) !important; }
+#screen.moving .widget,#screen.moving .dock,#screen.moving .wall,#screen.moving .item{ transition:none !important; animation-play-state:paused !important; }
+html.perf-low .widget,html.perf-low .dock,html.perf-low #menubar,html.perf-low .sz,html.perf-low .banner,html.perf-low .toast,html.perf-low .mdlg .card,html.perf-low .ov,html.perf-low .dock .app[data-tip]:hover::before{ backdrop-filter:none !important; -webkit-backdrop-filter:none !important; }
+html.perf-low .widget{ background:var(--card,var(--material)); box-shadow:inset 0 0 0 1px rgba(255,255,255,.07); }
+html.perf-low .dock{ background:rgba(60,48,36,.8); } html.perf-low #menubar{ background:rgba(22,16,10,.82); }
+html.perf-low .win,html.perf-low .win.focus{ box-shadow:0 0 0 1px rgba(0,0,0,.5),0 6px 18px rgba(0,0,0,.35); }
+html.perf-low #screen.locked .wall{ filter:none; transform:none; }
+html.perf-low .wall{ transition:none; }

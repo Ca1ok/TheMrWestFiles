@@ -14,8 +14,18 @@
   /* ================= theme ================= */
   const mq = window.matchMedia('(prefers-color-scheme: dark)');
   const theme = () => { const t = K.prefs.theme; return t === 'light' || t === 'dark' ? t : (mq.matches ? 'dark' : 'light'); };
+  /* ---- graphics mode: Auto (switches itself to Performance if windows lag) / Quality / Performance ----
+   * Performance = no backdrop blur, light shadows, no wallpaper blur/animations; the heavy effects are also switched off for the length of any drag or resize. */
+  const perfLow = () => { const m = K.prefs.perfMode || 'auto'; return m === 'performance' || (m === 'auto' && K.prefs.perfAuto === true); };
+  let jank = 0;
+  function meter(){                                                   // measures how long frames take while a window is being moved
+    const f = []; let last = performance.now(), raf = 0, on = true; const tick = t => { if(!on) return; f.push(t - last); last = t; raf = requestAnimationFrame(tick); }; raf = requestAnimationFrame(tick);
+    return () => { on = false; cancelAnimationFrame(raf); const a = f.slice(2); if(a.length < 20) return; const avg = a.reduce((x, y) => x + y, 0) / a.length;
+      jank = avg > 24 ? jank + 1 : Math.max(0, jank - 1);
+      if(jank >= 2 && (K.prefs.perfMode || 'auto') === 'auto' && !K.prefs.perfAuto){ K.setPref('perfAuto', true); toast('Windows were lagging, so WestOS switched to Performance mode. You can change this in Settings → Performance.'); } };
+  }
   function applyTheme(){
-    const root = document.documentElement; root.dataset.theme = theme();
+    const root = document.documentElement; root.dataset.theme = theme(); root.classList.toggle('perf-low', perfLow());
     root.classList.toggle('reduce-motion', !!K.prefs.reduceMotion || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)); root.classList.toggle('reduce-transparency', !!K.prefs.reduceTransparency);
     paintWall(); K.emit('theme', theme());
   }
@@ -373,11 +383,12 @@
     tb.addEventListener('pointerdown', e => { if(e.button > 0 || e.target.closest('.lights') || small()) return; d = { sx: e.clientX, sy: e.clientY, gx: w.g.x, gy: w.g.y, moved: false }; tb.setPointerCapture(e.pointerId); });
     tb.addEventListener('pointermove', e => {
       if(!d) return; const dx = e.clientX - d.sx, dy = e.clientY - d.sy; if(!d.moved && Math.abs(dx) + Math.abs(dy) < 4) return;
-      if(!d.moved){ d.moved = true; w.el.classList.add('dragging');
+      if(!d.moved){ d.moved = true; w.el.classList.add('dragging'); screen.classList.add('moving'); d.stop = meter();
         if(w.g.max){ const p = w.g.prev || { w: 900, h: 640 }, fx = (e.clientX - 0) / S.w; w.g.max = false; w.g.w = p.w; w.g.h = p.h; w.g.x = Math.round(e.clientX - p.w * fx); w.g.y = 0; d.gx = w.g.x; d.gy = 0; d.sx = e.clientX; d.sy = e.clientY; w.el.style.width = w.g.w + 'px'; w.el.style.height = w.g.h + 'px'; w.el.classList.remove('max'); } }
-      w.g.x = d.gx + (e.clientX - d.sx); w.g.y = d.gy + (e.clientY - d.sy); clampGeom(w.g); w.el.style.transform = 'translate3d(' + w.g.x + 'px,' + w.g.y + 'px,0)';
+      w.g.x = d.gx + (e.clientX - d.sx); w.g.y = d.gy + (e.clientY - d.sy); clampGeom(w.g);
+      if(!d.raf) d.raf = requestAnimationFrame(() => { d.raf = 0; w.el.style.transform = 'translate3d(' + w.g.x + 'px,' + w.g.y + 'px,0)'; });          // one paint per frame, however many pointer events arrive
     });
-    const end = e => { if(!d) return; const m = d.moved; d = null; w.el.classList.remove('dragging'); try{ tb.releasePointerCapture(e.pointerId); }catch(_){} if(m){
+    const end = e => { if(!d) return; const m = d.moved; if(m){ cancelAnimationFrame(d.raf); w.el.style.transform = 'translate3d(' + w.g.x + 'px,' + w.g.y + 'px,0)'; screen.classList.remove('moving'); d.stop && d.stop(); } d = null; w.el.classList.remove('dragging'); try{ tb.releasePointerCapture(e.pointerId); }catch(_){} if(m){
       if(w.g.y <= 0 && e.clientY <= MB + 4 && !small()){ const old = { x: w.g.x, y: w.g.y, w: w.g.w, h: w.g.h }; w.g.prev = old; Object.assign(w.g, maxRect(), { max: true }); applyGeom(w); flipTo(w, old); }     // fling to the top edge to maximize
       saveGeom(); } };
     tb.addEventListener('pointerup', end); tb.addEventListener('pointercancel', end);
@@ -385,15 +396,15 @@
   function wireResize(id, w){
     let r = null;
     $$('.rz', w.el).forEach(h => {
-      h.addEventListener('pointerdown', e => { if(small() || w.g.max || e.button > 0) return; e.stopPropagation(); r = { d: h.dataset.d, sx: e.clientX, sy: e.clientY, g: Object.assign({}, w.g) }; w.el.classList.add('resizing'); h.setPointerCapture(e.pointerId); });
+      h.addEventListener('pointerdown', e => { if(small() || w.g.max || e.button > 0) return; e.stopPropagation(); r = { d: h.dataset.d, sx: e.clientX, sy: e.clientY, g: Object.assign({}, w.g) }; w.el.classList.add('resizing'); screen.classList.add('moving'); r.stop = meter(); h.setPointerCapture(e.pointerId); });
       h.addEventListener('pointermove', e => {
         if(!r) return; const dx = e.clientX - r.sx, dy = e.clientY - r.sy, d = r.d, g = w.g, o = r.g, A = winArea();
         let x = o.x, y = o.y, wd = o.w, ht = o.h;
         if(d.includes('e')) wd = Math.max(MIN_W, Math.min(o.w + dx, A.w - o.x)); if(d.includes('s')) ht = Math.max(MIN_H, Math.min(o.h + dy, A.h - o.y));
         if(d.includes('w')){ const nw = Math.max(MIN_W, o.w - dx); x = o.x + (o.w - nw); wd = nw; } if(d.includes('n')){ const nh = Math.max(MIN_H, o.h - dy); y = Math.max(0, o.y + (o.h - nh)); ht = o.h - (y - o.y); }
-        Object.assign(g, { x, y, w: wd, h: ht }); applyGeom(w);
+        Object.assign(g, { x, y, w: wd, h: ht }); if(!r.raf) r.raf = requestAnimationFrame(() => { if(r) r.raf = 0; applyGeom(w); });
       });
-      const end = e => { if(!r) return; r = null; w.el.classList.remove('resizing'); try{ h.releasePointerCapture(e.pointerId); }catch(_){} saveGeom(); };
+      const end = e => { if(!r) return; cancelAnimationFrame(r.raf); applyGeom(w); screen.classList.remove('moving'); r.stop && r.stop(); r = null; w.el.classList.remove('resizing'); try{ h.releasePointerCapture(e.pointerId); }catch(_){} saveGeom(); };
       h.addEventListener('pointerup', end); h.addEventListener('pointercancel', end);
     });
   }
@@ -488,7 +499,7 @@
   OS.previewTake = () => { const p = previewItem; previewItem = null; return p; };
   OS.toast = toast; OS.openPage = url => window.open(url, '_blank', 'noopener'); OS.apps = () => OS_APPS.map(a => ({ id: a.id, name: a.name, g: a.g, glyph: a.glyph }));
   OS.shell = { resetLayout(){ K.setPref('layout', null); K.setPref('winGeom', {}); loadLayout(); relayoutHome(true); }, relayout: () => { loadLayout(); relayoutHome(true); } };
-  K.on('prefs', k => { if(k === 'theme' || k === 'reduceMotion' || k === 'reduceTransparency' || k === '*') applyTheme(); if(k === 'wall' || k === '*'){ wallKey = ''; paintWall(); } if(k === 'iconSize' || k === '*'){ dockEl.dataset.sig = ''; items.forEach(r => { r.cols = -1; }); relayoutHome(true); }
+  K.on('prefs', k => { if(k === 'theme' || k === 'reduceMotion' || k === 'reduceTransparency' || k === 'perfMode' || k === 'perfAuto' || k === '*') applyTheme(); if(k === 'wall' || k === '*'){ wallKey = ''; paintWall(); } if(k === 'iconSize' || k === '*'){ dockEl.dataset.sig = ''; items.forEach(r => { r.cols = -1; }); relayoutHome(true); }
     if(k === 'dock' || k === '*'){ dockEl.dataset.sig = ''; loadLayout(); relayoutHome(true); } });
   K.on('loaded', () => { applyTheme(); loadLayout(); relayoutHome(false); });
   setEditing(false); measure(); applyTheme(); loadLayout(); relayoutHome(false); K.emit('screen', { w: S.w, h: S.h });
