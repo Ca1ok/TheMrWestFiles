@@ -1,4 +1,6 @@
 /* KERNEL · factory — WestFactory's engine: reactor lines, the production loop, selling to WestShop and the player Market.
+ *   - A line is a FLOWSHEET (FactorySim.flowsheet): a tree of reactor nodes (e.g. Haber → NH₃ oxidation → NO oxidation → absorption for HNO₃) with by-product recycle. l.opt = { species: 'buy' | 'make' }
+ *     lets the player buy an intermediate ready-made, or make a raw compound in-house; the solver prices and sizes every node from that.
  *   - Everything that moves money or items happens here; the app only asks (setRate, setPrice, sellNow …) and every call is re-validated.
  *   - Production buys the elements at today's WestShop price (+ overhead) and only uses compounds you have DISCOVERED in WestLab.
  *   - It runs while the page is open and catches up when you come back (at most 8 h), in 10-second steps.
@@ -19,6 +21,8 @@
   const line = id => S().lines.find(l => l.id === id);
   let ticking = false, lastSave = 0, uiSig = ''; const pushAt = new Map();
 
+  const cleanOpt = o => { const out = {}; if(o && typeof o === 'object') Object.keys(o).slice(0, 16).forEach(k => { if(/^[A-Za-z0-9()]{1,16}$/.test(k) && (o[k] === 'buy' || o[k] === 'make')) out[k] = o[k]; }); return out; };
+
   /* ---- state hygiene (called after every load / adopt) ---- */
   FA.sanitize = function(){
     const raw = K.S.factory && typeof K.S.factory === 'object' ? K.S.factory : {}, lines = K.toArr(raw.lines).slice(0, CFG.slotsMax);
@@ -26,19 +30,22 @@
     lines.forEach(l => {
       if(!l || typeof l.f !== 'string' || !compOf(l.f)) return; const tier = F.clamp(Math.floor(num(l.tier, 1)), 1, CFG.maxTier);
       out.lines.push({ id: String(l.id || ('l' + out.nid++)).replace(/[^a-z0-9_-]/gi, '').slice(0, 12) || ('l' + out.nid++), f: keyOf(l.f), tier, rate: F.clamp(num(l.rate, 0), 0, F.rateCap(tier, CFG)), on: l.on !== false, route: l.route === 'market' ? 'market' : 'shop',
-        price: Math.max(0.01, r2(num(l.price, est(l.f)))), auto: l.auto !== false, stock: F.clamp(num(l.stock, 0), 0, F.storage(tier, CFG)), sellAt: num(l.sellAt, 0), listed: Math.max(0, Math.floor(num(l.listed, 0))), note: String(l.note || '').slice(0, 80) });
+        price: Math.max(0.01, r2(num(l.price, est(l.f)))), auto: l.auto !== false, stock: F.clamp(num(l.stock, 0), 0, F.storage(tier, CFG)), sellAt: num(l.sellAt, 0), listed: Math.max(0, Math.floor(num(l.listed, 0))), note: String(l.note || '').slice(0, 80), opt: cleanOpt(l.opt) });
     });
-    if(raw.pos && typeof raw.pos === 'object') Object.keys(raw.pos).slice(0, 60).forEach(k => { const p = raw.pos[k]; if(p && isFinite(+p.x) && isFinite(+p.y)) out.pos[String(k).slice(0, 24)] = { x: Math.round(+p.x), y: Math.round(+p.y) }; });
+    if(raw.pos && typeof raw.pos === 'object') Object.keys(raw.pos).filter(k => /^(rx|fd):[^:]+:.+|^(wh):[^:]+$|^hub:|^bank$/.test(k)).slice(0, 200).forEach(k => { const p = raw.pos[k]; if(p && isFinite(+p.x) && isFinite(+p.y)) out.pos[String(k).slice(0, 40)] = { x: Math.round(+p.x), y: Math.round(+p.y) }; });
     K.S.factory = out;
   };
 
   /* ---- derived numbers for the UI ---- */
   const proc = f => F.process(f, K.S.lab.found, CFG);                       // how this product is made right now (real multistep process, or direct from the elements)
+  const sheetOf = (f, opt, rate) => F.flowsheet(f, { found: K.S.lab.found, opt, rate, atomPrice: elPrice, compOf, cfg: CFG });   // the reactor tree of a line (rate 0 = structure + unit cost only)
+  let memo = null;                                                              // per-tick cache of unit costs (prices don't move inside one tick)
+  const unitFor = l => { if(memo && memo.has(l.id)) return memo.get(l.id); const u = sheetOf(l.f, l.opt, 0).unit; if(memo) memo.set(l.id, u); return u; };
   function view(l){
-    const pr = proc(l.f), comp = compOf(l.f) || {}, e = est(l.f), rg = F.shopRange(e, CFG), q = l.route === 'shop' ? FA.quote(l.id) : null, fl = F.flows(l, comp, elPrice, CFG, pr.factor), run = l.on && l.rate > 0;
+    const pr = proc(l.f), comp = compOf(l.f) || {}, e = est(l.f), rg = F.shopRange(e, CFG), q = l.route === 'shop' ? FA.quote(l.id) : null, run = l.on && l.rate > 0, sh = sheetOf(l.f, l.opt, run ? l.rate : 0);
     return { id: l.id, f: l.f, name: nameOf(l.f), tier: l.tier, cap: F.rateCap(l.tier, CFG), rate: l.rate, on: l.on, route: l.route, price: l.price, auto: l.auto, stock: l.stock, storage: F.storage(l.tier, CFG), listed: l.listed,
-      comp, est: e, shopRange: rg, marketRange: F.marketRange(e, CFG), upgradeCost: F.upgradeCost(l.tier, CFG), unitCost: r2(Object.keys(comp).reduce((s, k) => s + comp[k] * elPrice(k), 0) * pr.factor), process: { mode: pr.mode, steps: pr.steps.map(x => ({ eq: x.eq, name: x.name, y: x.y })), yield: pr.yield, missing: pr.missing },
-      costPerMin: run ? fl.costPerMin : 0, els: run ? fl.els : {}, chance: q ? q.chance : null, sat: q ? q.sat : null, lockLeft: Math.max(0, Math.ceil((l.sellAt - K.now()) / 1000)), note: l.note, batch: F.batch(l.tier, CFG), full: l.stock >= F.storage(l.tier, CFG) - 1e-6 };
+      comp, est: e, shopRange: rg, marketRange: F.marketRange(e, CFG), upgradeCost: F.upgradeCost(l.tier, CFG), unitCost: r2(sh.unit), sheet: sh, process: { mode: pr.mode, steps: pr.steps.map(x => ({ eq: x.eq, name: x.name, y: x.y })), yield: pr.yield, missing: pr.missing },
+      costPerMin: run ? r2(sh.costPerMin) : 0, chance: q ? q.chance : null, sat: q ? q.sat : null, lockLeft: Math.max(0, Math.ceil((l.sellAt - K.now()) / 1000)), note: l.note, batch: F.batch(l.tier, CFG), full: l.stock >= F.storage(l.tier, CFG) - 1e-6 };
   }
   FA.state = function(){
     const s = S(), lines = s.lines.map(view); let cost = 0, rev = 0, mol = 0;
@@ -49,7 +56,7 @@
     });
     return { lines, slots: s.slots, maxSlots: CFG.slotsMax, nextSlotCost: F.slotCost(s.slots, CFG), reserve: s.reserve, made: s.made, sold: s.sold, earned: s.earned, pos: Object.assign({}, s.pos), perMin: { mol: r2(mol), cost: r2(cost), rev: r2(rev), net: r2(rev - cost) }, cfg: { fee: CFG.marketFee, failLockMs: CFG.failLockMs, shopLo: CFG.shopLo, shopHi: CFG.shopHi, maxTier: CFG.maxTier }, online: C.signedIn() };
   };
-  FA.found = () => K.S.lab.found.filter(f => compOf(f)).map(f => ({ f, name: nameOf(f), est: est(f), comp: compOf(f), unitCost: r2(Object.keys(compOf(f)).reduce((s, k) => s + compOf(f)[k] * elPrice(k), 0) * proc(f).factor), process: proc(f).mode }));
+  FA.found = () => K.S.lab.found.filter(f => compOf(f)).map(f => ({ f, name: nameOf(f), est: est(f), comp: compOf(f), unitCost: r2(sheetOf(f, {}, 0).unit), process: proc(f).mode }));
   FA.quote = function(id){
     const l = line(id); if(!l) return null; const e = est(l.f), rg = F.shopRange(e, CFG), n = Math.max(1, Math.min(Math.floor(l.stock) || F.batch(l.tier, CFG), F.batch(l.tier, CFG)));
     const quote = K.sellQuote(l.f, n), sat = F.clamp(quote.avg / (0.7 * e || 1), 0.3, 1), price = F.clamp(l.price, rg.lo, rg.hi);
@@ -61,7 +68,7 @@
   function produce(l, minutes){
     if(!l.on || !(l.rate > 0)) return;
     const comp = compOf(l.f); if(!comp) return;
-    const plan = F.planProduction({ comp, price: elPrice, rate: l.rate, minutes, factor: proc(l.f).factor, cash: K.S.cash, reserve: S().reserve, space: F.storage(l.tier, CFG) - l.stock, cfg: CFG });
+    const plan = F.planProduction({ comp, price: elPrice, rate: l.rate, minutes, unit: unitFor(l), cash: K.S.cash, reserve: S().reserve, space: F.storage(l.tier, CFG) - l.stock, cfg: CFG });
     l.note = plan.made <= 0 ? (l.stock >= F.storage(l.tier, CFG) - 1e-6 ? 'Warehouse full' : (plan.unit > 0 ? 'Low on cash' : '')) : (plan.limited ? 'Low on cash' : '');
     if(plan.made <= 0) return;
     if(plan.cost > 0 && !K.spend(plan.cost, 'WestFactory: ' + l.f + ' inputs')) return;
@@ -104,7 +111,7 @@
   FA.tick = async function(){
     if(ticking || !K.loaded || K.sessionLost) return;                          // a locked (older) window must not make or spend money
     if(K.maint.appMsg('WestFactory')) return;                                   // in maintenance the lines stand still; the time is caught up (within the usual cap) when it ends
-    ticking = true;
+    ticking = true; memo = new Map();
     try{
       const s = S(), now = K.now(); if(!s.lines.length){ s.lastTick = now; return; }
       let from = s.lastTick > 0 ? s.lastTick : now; if(now - from > CFG.offlineMaxMin * 60000) from = now - CFG.offlineMaxMin * 60000;
@@ -113,7 +120,7 @@
       s.lastTick = t; if(changed || Date.now() - lastSave > 60000){ K.touch('factory'); lastSave = Date.now(); }
       for(const l of s.lines){ if(l.route === 'market') await pushMarket(l); }
       const sig = JSON.stringify(s.lines.map(l => [l.stock | 0, l.note, l.listed])); if(sig !== uiSig || changed){ uiSig = sig; K.emit('factory'); }
-    } finally { ticking = false; }
+    } finally { ticking = false; memo = null; }
   };
   setInterval(() => { try{ FA.tick(); }catch(e){ console.error(e); } }, STEP_MS);
   K.on('loaded', () => { K.S.factory.lastTick = K.S.factory.lastTick || K.now(); setTimeout(async () => { try{ await FA.tick(); await FA.claim(true); }catch(e){} }, 800); });
@@ -125,15 +132,21 @@
     if(!K.S.lab.found.some(x => keyOf(x) === key)) return no('Discover it in WestLab first.');
     if(s.lines.length >= s.slots) return no('No free line — buy another slot.');
     if(s.lines.some(l => l.f === key)) return no('You already produce that.');
-    const id = 'l' + (s.nid++); s.lines.push({ id, f: key, tier: 1, rate: 1, on: true, route: 'shop', price: r2(est(key) * 0.9), auto: true, stock: 0, sellAt: 0, listed: 0, note: '' }); touch(); return ok('Line built for ' + nameOf(key) + '.', { id });
+    const id = 'l' + (s.nid++); s.lines.push({ id, f: key, tier: 1, rate: 1, on: true, route: 'shop', price: r2(est(key) * 0.9), auto: true, stock: 0, sellAt: 0, listed: 0, note: '', opt: {} }); touch(); return ok('Line built for ' + nameOf(key) + '.', { id });
   };
   FA.buySlot = function(){ const s = S(), c = F.slotCost(s.slots, CFG); if(c == null) return no('You already have every slot.'); if(!K.spend(c, 'WestFactory: new line slot')) return no('You need ' + fmt(c) + '.'); s.slots++; touch(); return ok('Slot unlocked for ' + fmt(c) + '.'); };
   FA.upgrade = function(id){ const l = line(id); if(!l) return no('No such line.'); const c = F.upgradeCost(l.tier, CFG); if(c == null) return no('Already at the top tier.'); if(!K.spend(c, 'WestFactory: upgrade ' + l.f)) return no('You need ' + fmt(c) + '.'); l.tier++; touch(); return ok('Upgraded to tier ' + l.tier + ' (max ' + F.rateCap(l.tier, CFG) + ' mol/min).'); };
   FA.setRate = function(id, r){ const l = line(id); if(!l) return no('No such line.'); l.rate = F.clamp(r2(num(r, 0)), 0, F.rateCap(l.tier, CFG)); touch(); return ok('Rate set.'); };
   FA.setOn = function(id, on){ const l = line(id); if(!l) return no('No such line.'); l.on = !!on; touch(); return ok(on ? 'Line running.' : 'Line paused.'); };
   FA.setAuto = function(id, a){ const l = line(id); if(!l) return no('No such line.'); l.auto = !!a; touch(); return ok('Saved.'); };
+  FA.setOpt = function(id, sp, val){                                              // flowsheet choice: buy an intermediate ready-made, make a raw compound here, or back to default
+    const l = line(id); if(!l) return no('No such line.'); sp = String(sp); const t = sheetOf(l.f, l.opt, 0).toggles.find(x => x.sp === sp); if(!t) return no('That input can’t be changed.');
+    if(val === 'buy' && !t.canBuy) return no('That compound isn’t on sale.');
+    const def = t.role === 'made' ? 'make' : 'buy'; if(val === def || val === 'default') delete l.opt[sp]; else if(val === 'buy' || val === 'make') l.opt[sp] = val; else return no('Unknown choice.');
+    touch(); return ok(val === 'buy' || (t.role === 'raw' && val !== 'make') ? 'Buying ' + F.sub(sp) + ' ready-made.' : 'Making ' + F.sub(sp) + ' in this plant.');
+  };
   FA.setReserve = function(v){ S().reserve = F.clamp(r2(num(v, 0)), 0, 1e9); touch(); return ok('Cash reserve saved.'); };
-  FA.setPos = function(key, x, y){ const p = S().pos; key = String(key).slice(0, 24); if(isFinite(+x) && isFinite(+y)){ p[key] = { x: Math.round(+x), y: Math.round(+y) }; K.touch('factory'); } };
+  FA.setPos = function(key, x, y){ const p = S().pos; key = String(key).slice(0, 40); if(isFinite(+x) && isFinite(+y)){ p[key] = { x: Math.round(+x), y: Math.round(+y) }; K.touch('factory'); } };
   FA.setRoute = async function(id, route){
     const l = line(id); if(!l) return no('No such line.'); route = route === 'market' ? 'market' : 'shop';
     if(route === 'market' && !C.signedIn()) return no('Sign in to sell on the Market.');

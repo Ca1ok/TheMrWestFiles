@@ -151,7 +151,7 @@
     bus: frz({ start: CG.bus.start, pick: CG.bus.pick, cashOut: CG.bus.cashOut, view: CG.bus.view }), poker: frz({ start: CG.poker.start, act: CG.poker.act, next: CG.poker.next, fastForward: CG.poker.fastForward, view: CG.poker.view }) };
 
   /* ---------------- factory (WestFactory: the kernel runs the lines and the market; the app only asks) ---------------- */
-  const FAC = K.factory, factory = { state: FAC.state, found: FAC.found, quote: FAC.quote, chanceAt: FAC.chanceAt, addLine: FAC.addLine, buySlot: FAC.buySlot, upgrade: FAC.upgrade, setRate: FAC.setRate, setOn: FAC.setOn, setAuto: FAC.setAuto, setReserve: FAC.setReserve, setPos: FAC.setPos,
+  const FAC = K.factory, factory = { state: FAC.state, found: FAC.found, quote: FAC.quote, chanceAt: FAC.chanceAt, addLine: FAC.addLine, buySlot: FAC.buySlot, upgrade: FAC.upgrade, setRate: FAC.setRate, setOn: FAC.setOn, setAuto: FAC.setAuto, setReserve: FAC.setReserve, setPos: FAC.setPos, setOpt: FAC.setOpt,
     setRoute: FAC.setRoute, setPrice: FAC.setPrice, sellNow: FAC.sellNow, remove: FAC.remove, collect: FAC.collect, withdraw: FAC.withdraw, claim: FAC.claim, market: { listings: FAC.market.listings, buy: FAC.market.buy } };
 
   /* ---------------- leaderboard (its own app; the Bank no longer ranks anyone) ---------------- */
@@ -213,7 +213,7 @@
   mguard(appG('WestLab'), lab, ['buyTool', 'run', 'collect', 'collectAll']);
   mguard(appG('RealEstate'), props, ['buy', 'sell', 'collectRent']);
   mguard(appG('Stocks'), stock, ['buy', 'sell', 'sellQty', 'sellFraction', 'buyFraction', 'sellAll']); mguard(sysG('trading'), stock, ['buy', 'sell', 'sellQty', 'sellFraction', 'buyFraction', 'sellAll']);
-  mguard(appG('WestFactory'), factory, ['addLine', 'buySlot', 'upgrade', 'setRate', 'setOn', 'setAuto', 'setReserve', 'setRoute', 'setPrice', 'sellNow', 'remove', 'collect', 'withdraw']);
+  mguard(appG('WestFactory'), factory, ['addLine', 'buySlot', 'upgrade', 'setRate', 'setOn', 'setAuto', 'setReserve', 'setOpt', 'setRoute', 'setPrice', 'sellNow', 'remove', 'collect', 'withdraw']);
   mguard(sysG('market'), factory.market, ['buy']); mguard(appG('WestShop'), factory.market, ['buy']);
   { const sr = factory.setRoute; factory.setRoute = function(id, route){ const m = route === 'market' ? K.maint.sysMsg('market') : ''; return m ? no(m) : sr.apply(this, arguments); }; }
   const maintenance = { app: id => K.maint.appMsg(id), sys: k => K.maint.sysMsg(k), site: () => K.maint.siteMsg(), note: () => K.maint.note(), config: () => K.maint.config(), systems: () => Object.assign({}, K.maint.SYS), lockedApps: () => K.maint.LOCKED_APPS.slice(), ready: () => K.maint.ready() };

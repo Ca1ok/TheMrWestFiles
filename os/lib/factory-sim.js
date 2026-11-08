@@ -25,6 +25,8 @@ const FactorySim = (function(){
     shopBatch: 25,                                             // mol offered per attempt = 25 × tier
     failLockMs: 60000, okLockMs: 5000,                         // a refusal = wait one minute; after a sale a short breather
     marketLo: 0.1, marketHi: 10, marketFee: 0.05, listCap: 2000, // market: price 0.1×…10× est, 5 % fee on sales, ≤2000 mol listed per line
+    salvage: 1.0,                                              // flowsheets: surplus by-products (vented water, H₂, Cl₂ …) are sold on automatically at their atom value, netted off the input cost
+    readyMarkup: 1.10,                                         // flowsheets: a manufactured intermediate bought ready-made costs its atoms × 1.10 (wholesale premium); commodity compounds cost their atoms
     reserve: 50                                                // the factory never spends the last $50 of your bank unless you change it
   };
   const cfgOf = o => Object.assign({}, DEFAULTS, o || {});
@@ -49,23 +51,29 @@ const FactorySim = (function(){
    *   need: the compounds (intermediates / feedstocks) you must have DISCOVERED in WestLab to run the real process; without them the line falls back to 'direct' combination of the elements
    *   (costlier: cfg.directPenalty). y = per-step yield (a GAMEPLAY simplification: real plants recycle unreacted gas, so per-pass losses are small). Steps are descriptive; the maths is
    *   cost = element cost × (1 + overhead + stepOverhead·(steps−1)) ÷ Π yield — the atoms balance, so the mol output is unchanged. Reaction conditions: see the WestLab catalogue. */
-  const S = (eq, name, y) => ({ eq, name, y });
-  const HABER = S('N₂ + 3 H₂ → 2 NH₃', 'Haber–Bosch (iron catalyst, ~700 K, 200 bar)', 0.985);
-  const OSTWALD = [S('4 NH₃ + 5 O₂ → 4 NO + 6 H₂O', 'Ostwald: ammonia oxidation (platinum gauze, ~1100 K)', 0.98), S('2 NO + O₂ → 2 NO₂', 'Oxidise NO to NO₂ (cooling)', 0.995), S('3 NO₂ + H₂O → 2 HNO₃ + NO', 'Absorb NO₂ in water (NO is recycled)', 0.985)];
-  const CONTACT = [S('S + O₂ → SO₂', 'Burn sulfur', 0.995), S('2 SO₂ + O₂ ⇌ 2 SO₃', 'Contact process (V₂O₅, ~700 K)', 0.985), S('SO₃ + H₂O → H₂SO₄', 'Absorb SO₃ (via oleum)', 0.99)];
+  const SUBD = '₀₁₂₃₄₅₆₇₈₉', DISP = { N2H8SO4: '(NH₄)₂SO₄' };
+  const sub = sp => DISP[sp] || String(sp).replace(/\d+/g, m => m.split('').map(d => SUBD[+d]).join(''));
+  const side = o => Object.keys(o).map(k => (o[k] !== 1 ? o[k] + ' ' : '') + sub(k)).join(' + ');
+  /* A step = a balanced reaction. in/out are { species: coefficient }; the FIRST key of out is the step's main product; the others are by-products (they can feed other steps = recycle). */
+  const S = (inn, out, name, y, rev) => ({ in: inn, out: out, main: Object.keys(out)[0], name, y, eq: side(inn) + (rev ? ' ⇌ ' : ' → ') + side(out) });
+  const HABER = S({ N2: 1, H2: 3 }, { NH3: 2 }, 'Haber–Bosch (iron catalyst, ~700 K, 200 bar)', 0.985);
+  const OSTWALD = [S({ NH3: 4, O2: 5 }, { NO: 4, H2O: 6 }, 'Ostwald: ammonia oxidation (platinum gauze, ~1100 K)', 0.98), S({ NO: 2, O2: 1 }, { NO2: 2 }, 'Oxidise NO to NO₂ (cooling)', 0.995), S({ NO2: 3, H2O: 1 }, { HNO3: 2, NO: 1 }, 'Absorb NO₂ in water (the NO goes back to the oxidiser)', 0.985)];
+  const CONTACT = [S({ S: 1, O2: 1 }, { SO2: 1 }, 'Burn sulfur', 0.995), S({ SO2: 2, O2: 1 }, { SO3: 2 }, 'Contact process (V₂O₅, ~700 K)', 0.985, true), S({ SO3: 1, H2O: 1 }, { H2SO4: 1 }, 'Absorb SO₃ (via oleum)', 0.99)];
+  const SOLVAY = S({ NaCl: 1, NH3: 1, CO2: 1, H2O: 1 }, { NaHCO3: 1, NH4Cl: 1 }, 'Solvay carbonation (cold ammoniacal brine)', 0.99);
+  const RECOVER = S({ NH4Cl: 2, CaO: 1 }, { NH3: 2, CaCl2: 1, H2O: 1 }, 'Ammonia recovery: lime frees the NH₃ from NH₄Cl (CaCl₂ is the waste)', 0.995);
   const ROUTES = {
     NH3: { need: [], steps: [HABER] },
     HNO3: { need: ['NH3', 'NO', 'NO2'], steps: [HABER].concat(OSTWALD) },
     H2SO4: { need: ['SO2', 'SO3'], steps: CONTACT },
-    NH4NO3: { need: ['NH3', 'NO', 'NO2', 'HNO3'], steps: [HABER].concat(OSTWALD, [S('NH₃ + HNO₃ → NH₄NO₃', 'Neutralise nitric acid with ammonia', 0.995)]) },
-    N2H8SO4: { need: ['NH3', 'SO2', 'SO3', 'H2SO4'], steps: [HABER].concat(CONTACT, [S('2 NH₃ + H₂SO₄ → (NH₄)₂SO₄', 'Neutralise sulfuric acid with ammonia', 0.995)]) },
-    CH4N2O: { need: ['NH3', 'CO2'], steps: [HABER, S('2 NH₃ + CO₂ → CH₄N₂O + H₂O', 'Bosch–Meiser urea synthesis (via ammonium carbamate)', 0.96)] },
-    CH3OH: { need: ['CH4', 'CO'], steps: [S('CH₄ + H₂O → CO + 3 H₂', 'Steam reforming (nickel, ~1100 K)', 0.96), S('CO + 2 H₂ → CH₃OH', 'Methanol synthesis (Cu/ZnO, 50–100 bar)', 0.97)] },
-    'Ca(OH)2': { need: ['CaCO3', 'CaO'], steps: [S('CaCO₃ → CaO + CO₂', 'Lime kiln (~1200 K)', 0.98), S('CaO + H₂O → Ca(OH)₂', 'Slake the quicklime', 0.99)] },
-    NaHCO3: { need: ['NaCl', 'NH3', 'CO2'], steps: [S('NaCl + NH₃ + CO₂ + H₂O → NaHCO₃ + NH₄Cl', 'Solvay carbonation (cold ammoniacal brine; NH₃ recycled)', 0.96)] },
-    Na2CO3: { need: ['NaCl', 'NH3', 'CO2', 'NaHCO3'], steps: [S('NaCl + NH₃ + CO₂ + H₂O → NaHCO₃ + NH₄Cl', 'Solvay carbonation (cold ammoniacal brine; NH₃ recycled)', 0.96), S('2 NaHCO₃ → Na₂CO₃ + H₂O + CO₂', 'Calcine the bicarbonate (CO₂ recycled)', 0.98)] },
-    NaOH: { need: ['NaCl'], steps: [S('2 NaCl + 2 H₂O → 2 NaOH + H₂ + Cl₂', 'Chlor-alkali electrolysis (membrane cell)', 0.97)] },
-    C2H5OH: { need: ['C2H4'], steps: [S('C₂H₄ + H₂O → C₂H₅OH', 'Catalytic hydration of ethene (H₃PO₄, ~570 K, 70 bar)', 0.95)] }
+    NH4NO3: { need: ['NH3', 'NO', 'NO2', 'HNO3'], steps: [HABER].concat(OSTWALD, [S({ NH3: 1, HNO3: 1 }, { NH4NO3: 1 }, 'Neutralise nitric acid with ammonia', 0.995)]) },
+    N2H8SO4: { need: ['NH3', 'SO2', 'SO3', 'H2SO4'], steps: [HABER].concat(CONTACT, [S({ NH3: 2, H2SO4: 1 }, { N2H8SO4: 1 }, 'Neutralise sulfuric acid with ammonia', 0.995)]) },
+    CH4N2O: { need: ['NH3', 'CO2'], steps: [HABER, S({ NH3: 2, CO2: 1 }, { CH4N2O: 1, H2O: 1 }, 'Bosch–Meiser urea synthesis (via ammonium carbamate)', 0.96)] },
+    CH3OH: { need: ['CH4', 'CO'], steps: [S({ CH4: 1, H2O: 1 }, { CO: 1, H2: 3 }, 'Steam reforming (nickel, ~1100 K)', 0.96), S({ CO: 1, H2: 2 }, { CH3OH: 1 }, 'Methanol synthesis (Cu/ZnO, 50–100 bar)', 0.97)] },
+    'Ca(OH)2': { need: ['CaCO3', 'CaO'], steps: [S({ CaCO3: 1 }, { CaO: 1, CO2: 1 }, 'Lime kiln (~1200 K)', 0.98), S({ CaO: 1, H2O: 1 }, { 'Ca(OH)2': 1 }, 'Slake the quicklime', 0.99)] },
+    NaHCO3: { need: ['NaCl', 'NH3', 'CO2'], steps: [SOLVAY, RECOVER] },
+    Na2CO3: { need: ['NaCl', 'NH3', 'CO2', 'NaHCO3'], steps: [SOLVAY, RECOVER, S({ NaHCO3: 2 }, { Na2CO3: 1, H2O: 1, CO2: 1 }, 'Calcine the bicarbonate (the CO₂ goes back to the carbonator)', 0.99)] },
+    NaOH: { need: ['NaCl'], steps: [S({ NaCl: 2, H2O: 2 }, { NaOH: 2, H2: 1, Cl2: 1 }, 'Chlor-alkali electrolysis (membrane cell)', 0.97)] },
+    C2H5OH: { need: ['C2H4'], steps: [S({ C2H4: 1, H2O: 1 }, { C2H5OH: 1 }, 'Catalytic hydration of ethene (H₃PO₄, ~570 K, 70 bar)', 0.95)] }
   };
   /* How a line for `f` is made right now. found = formulas you have discovered. → { mode: 'plain' | 'process' | 'direct', steps, factor (multiplies the element cost), yield, missing } */
   function process(f, found, c){
@@ -74,11 +82,76 @@ const FactorySim = (function(){
     if(r.steps.length > 1 && missing.length) return { mode: 'direct', steps: [], factor: (1 + c.overhead) * (1 + c.directPenalty), yield: 1, missing, route: r.steps };
     return { mode: 'process', steps: r.steps, factor: (1 + c.overhead + c.stepOverhead * (r.steps.length - 1)) / y, yield: y, missing: [] };
   }
+
+  /* ---- FLOWSHEETS. A line is a small plant: a TREE of reactor nodes. Each reactor is one balanced step; its inputs are bought (an element, or a finished compound at atoms × readyMarkup)
+   * or made by an upstream reactor; by-products (NO in the nitric-acid plant, CO₂ in the soda plant) flow back to wherever they are needed, so the recycle cuts the purchases. The solver is
+   * demand driven: it sizes every reactor so that exactly `rate` mol/min of the product leaves, iterating until the recycle loops settle.
+   * o = { found, opt, rate, atomPrice(sym), compOf(species) → atoms | null, cfg }.  opt[species] = 'buy' (an intermediate bought ready-made instead of made here) or 'make' (a raw compound made here).
+   * Everything is computed per 1 mol/min of product, then scaled by `rate` (0 = a paused line still gets its structure and unit cost). */
+  const DIA = new Set(['H', 'N', 'O', 'F', 'Cl', 'Br', 'I']);
+  const elemOf = sp => { const m = /^(H|N|O|F|Cl|Br|I)2$/.exec(sp); if(m) return { sym: m[1], n: 2 }; return /^[A-Z][a-z]?$/.test(sp) ? { sym: sp, n: 1 } : null; };
+  const nodeId = (pre, i) => pre + i;
+  function flowsheet(f, o){
+    o = o || {}; const c = cfgOf(o.cfg), pr = process(f, o.found, c), r = ROUTES[f], opt = o.opt || {}, scale = o.rate == null ? 1 : Math.max(0, +o.rate || 0);
+    const atomPrice = o.atomPrice || (() => 1), compOf = o.compOf || (() => null), have = new Set(o.found || []);
+    const mfd = new Set(); Object.keys(ROUTES).forEach(k => ROUTES[k].steps.forEach(st => mfd.add(st.main)));       // manufactured intermediates carry the wholesale premium; commodities (NaCl, CO₂, CaCO₃, water …) cost their atoms
+    const mk = sp => mfd.has(sp) ? c.readyMarkup : 1;
+    const price = sp => { const e = elemOf(sp); if(e) return e.n * atomPrice(e.sym); const cp = compOf(sp); if(!cp) return Infinity; return Object.keys(cp).reduce((t, k) => t + cp[k] * atomPrice(k), 0) * mk(sp); };
+    const formation = (sp, y, id) => {                                            // elements → compound, no catalyst: the fallback and the 'make it from scratch' option
+      const cp = compOf(sp); if(!cp) return null; const inn = {}; let half = false;
+      Object.keys(cp).forEach(k => { if(DIA.has(k)){ inn[k + '2'] = cp[k] / 2; if(cp[k] % 2) half = true; } else inn[k] = cp[k]; });
+      const m = half ? 2 : 1; Object.keys(inn).forEach(k => inn[k] *= m);
+      return Object.assign(S(inn, { [sp]: m }, 'Combine the elements directly (no catalyst, no process)', y), { id, kind: 'formation' });
+    };
+    let defs = [], toggles = [];
+    if(pr.mode === 'process'){
+      const mains = new Set(r.steps.map(st => st.main)), raw = [];
+      r.steps.forEach(st => Object.keys(st.in).forEach(sp => { if(!mains.has(sp) && !elemOf(sp) && !raw.includes(sp)) raw.push(sp); }));
+      r.steps.forEach((st, i) => { const sp = st.main; if(sp !== f && !toggles.some(t => t.sp === sp)) toggles.push({ sp, role: 'made', opt: opt[sp] === 'buy' ? 'buy' : 'make', via: st.name }); });
+      raw.forEach(sp => toggles.push({ sp, role: 'raw', opt: opt[sp] === 'make' ? 'make' : 'buy', via: null }));
+      defs = r.steps.map((st, i) => Object.assign({}, st, { id: nodeId('s', i), kind: 'real' })).filter(d => d.main === f || opt[d.main] !== 'buy');
+      raw.forEach((sp, n) => {                                                     // a raw compound switched to 'make' is built from its elements (a bought one is the default)
+        if(opt[sp] !== 'make') return; const fm = formation(sp, 1 / (1 + c.directPenalty), 'g' + n), t = toggles.find(x => x.sp === sp); if(fm){ defs.push(fm); t.via = fm.name; }
+      });
+      toggles.forEach(t => { t.price = price(t.sp); t.canBuy = isFinite(t.price); });
+    } else { const fm = formation(f, pr.mode === 'direct' ? 1 / (1 + c.directPenalty) : 1, 'f0'); if(fm) defs = [fm]; }
+
+    const xi = defs.map(() => 0); let stable = false;
+    for(let it = 0; it < 600; it++){                                               // demand-driven sizing; by-products reduce the demand of whoever consumes them
+      const net = { [f]: 1 };
+      defs.forEach((d, i) => { Object.keys(d.in).forEach(k => { net[k] = (net[k] || 0) + d.in[k] * xi[i]; }); Object.keys(d.out).forEach(k => { if(k !== d.main) net[k] = (net[k] || 0) - d.out[k] * d.y * xi[i]; }); });
+      let diff = 0; defs.forEach((d, i) => { const nx = Math.max(0, net[d.main] || 0) / (d.out[d.main] * d.y); diff = Math.max(diff, Math.abs(nx - xi[i])); xi[i] = nx; });
+      if(diff < 1e-13){ stable = true; break; }
+    }
+    const act = defs.map((d, i) => ({ d, x: xi[i] })).filter(a => a.x > 1e-9), R = act.length;
+    const dep = {}; act.forEach(a => { dep[a.d.id] = 0; });                         // depth in the tree = longest chain of main products feeding this step
+    for(let pass = 0; pass < act.length + 1; pass++) act.forEach(a => Object.keys(a.d.in).forEach(sp => { const pa = act.find(b => b.d.main === sp && b !== a); if(pa && dep[pa.d.id] + 1 > dep[a.d.id] && dep[pa.d.id] < act.length) dep[a.d.id] = dep[pa.d.id] + 1; }));
+    const species = new Set([f]); act.forEach(a => { Object.keys(a.d.in).forEach(k => species.add(k)); Object.keys(a.d.out).forEach(k => species.add(k)); });
+    const edges = [], feeds = [], surplus = [], EPS = 1e-12; let feedCost = 0;
+    species.forEach(sp => {
+      const sup = act.filter(a => a.d.out[sp]).map(a => ({ id: a.d.id, amt: a.d.out[sp] * a.d.y * a.x })), con = act.filter(a => a.d.in[sp]).map(a => ({ id: a.d.id, amt: a.d.in[sp] * a.x }));
+      if(sp === f) con.push({ id: 'out', amt: 1 });
+      const D = con.reduce((t, x) => t + x.amt, 0), Sup = sup.reduce((t, x) => t + x.amt, 0); if(D < EPS && Sup < EPS) return;
+      const feed = Math.max(0, D - Sup), den = Math.max(D, Sup), pc = price(sp), tg = toggles.find(t => t.sp === sp);
+      con.forEach(cn => {
+        if(cn.amt < EPS) return;
+        if(feed > EPS && !(sup.length && sp === f)){ const mol = feed * cn.amt / D; feedCost += mol * pc; feeds.push({ id: 'f:' + cn.id + ':' + sp, sp, spl: sub(sp), to: cn.id, mol: mol * scale, price: pc, cost: mol * pc * scale, el: !!elemOf(sp), role: tg ? tg.role : (elemOf(sp) ? 'element' : 'raw'), opt: tg ? tg.opt : null }); }
+        sup.forEach(sx => { const m = sx.amt * cn.amt / den; if(m > EPS) edges.push({ from: sx.id, to: cn.id, sp, spl: sub(sp), mol: m * scale, recycle: cn.id !== 'out' && dep[sx.id] >= dep[cn.id], byprod: act.find(a => a.d.id === sx.id).d.main !== sp }); });
+      });
+      if(Sup - D > 1e-9 && sp !== f) surplus.push({ sp, spl: sub(sp), mol: (Sup - D) * scale, u: Sup - D, from: sup.map(x => x.id) });
+    });
+    const mult = 1 + c.overhead + c.stepOverhead * Math.max(0, R - 1), credit = surplus.reduce((t, x) => t + x.u * (price(x.sp) / mk(x.sp)) * c.salvage, 0) * (isFinite(price(f)) ? 1 : 0);
+    const gross = feedCost, unit = defs.length ? Math.max(gross * 0.05, (gross - credit) * mult) : Infinity;
+    const reactors = act.map(a => { const d = a.d, ins = {}, loss = {}; Object.keys(d.in).forEach(k => { ins[k] = d.in[k] * a.x * scale; }); Object.keys(d.out).forEach(k => { loss[k] = d.out[k] * (1 - d.y) * a.x * scale; });
+      return { id: d.id, kind: d.kind, eq: d.eq, name: d.name, y: d.y, main: d.main, mainl: sub(d.main), depth: dep[d.id], extent: a.x * scale, out: d.out[d.main] * d.y * a.x * scale, ins, loss, final: d.main === f }; });
+    const recycle = edges.filter(e => e.recycle).reduce((t, e) => t + e.mol, 0);
+    return { mode: pr.mode, missing: pr.missing, reactors, feeds, edges, surplus, toggles, unit, gross, credit: Math.min(credit, gross * 0.95) * mult, mult, costPerMin: unit * scale, recycle, stable, steps: R };
+  }
   const marketRange = (est, c) => { c = cfgOf(c); return { lo: r2(Math.max(0.01, est * c.marketLo)), hi: r2(Math.max(0.02, est * c.marketHi)) }; };
 
   /* One production step: how much comes out and what it costs. comp = { element: atoms per molecule }, price(sym) = today's shop price per mol of that element. */
   function planProduction(o){
-    const c = cfgOf(o.cfg), unit = Object.keys(o.comp).reduce((s, e) => s + o.comp[e] * o.price(e), 0) * (o.factor != null ? o.factor : 1 + c.overhead);
+    const c = cfgOf(o.cfg), unit = o.unit != null ? o.unit : Object.keys(o.comp || {}).reduce((s, e) => s + o.comp[e] * o.price(e), 0) * (o.factor != null ? o.factor : 1 + c.overhead);
     const want = Math.max(0, Math.min(o.rate * o.minutes, o.space));
     if(!(unit > 0) || want <= 0) return { made: 0, cost: 0, unit, limited: false };
     const afford = Math.max(0, o.cash - (o.reserve == null ? c.reserve : o.reserve)), made = Math.min(want, afford / unit);
@@ -89,6 +162,6 @@ const FactorySim = (function(){
     c = cfgOf(c); const els = {}; let cost = 0; Object.keys(comp).forEach(e => { els[e] = comp[e] * line.rate; cost += comp[e] * line.rate * price(e); });
     return { els, costPerMin: r2(cost * (factor != null ? factor : 1 + c.overhead)) };
   }
-  return { DEFAULTS, cfgOf, r2, clamp, rateCap, upgradeCost, slotCost, storage, batch, shopRange, shopChance, marketRange, planProduction, flows, process, ROUTES };
+  return { DEFAULTS, cfgOf, r2, clamp, rateCap, upgradeCost, slotCost, storage, batch, shopRange, shopChance, marketRange, planProduction, flows, process, flowsheet, sub, ROUTES };
 })();
 if(typeof module !== 'undefined' && module.exports) module.exports = FactorySim;
