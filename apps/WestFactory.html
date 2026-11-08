@@ -5,208 +5,232 @@
 .sc-in{ max-width:1500px; }
 .kp{ display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; margin-bottom:12px; } .kp .kpi{ padding:10px 12px; } .kp b{ font-size:19px; } .kp .pos{ color:var(--good); } .kp .neg{ color:var(--bad); }
 .fbar{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; } .fbar .grow{ flex:1; }
-.wrap{ display:flex; gap:12px; align-items:stretch; } .net{ position:relative; flex:1; min-width:0; height:560px; overflow:auto; border-radius:var(--r-xl); background:var(--card); background-image:radial-gradient(var(--sep,rgba(255,255,255,.1)) 1px,transparent 1.2px); background-size:22px 22px; box-shadow:inset 0 0 0 1px var(--sep,rgba(255,255,255,.08)); }
-.net .stage{ position:relative; min-width:900px; } .net svg{ position:absolute; left:0; top:0; pointer-events:none; overflow:visible; }
-.nd{ position:absolute; width:176px; background:var(--bg2,#1b1d24); border-radius:14px; padding:9px 11px 10px; box-shadow:0 2px 10px rgba(0,0,0,.28),inset 0 0 0 1.5px var(--c,var(--sep)); cursor:grab; user-select:none; touch-action:none; transition:box-shadow .2s; } .nd:active{ cursor:grabbing; } .nd.sel{ box-shadow:0 4px 18px rgba(0,0,0,.4),0 0 0 2.5px var(--c); } .nd.off{ opacity:.55; }
-.nd .t{ font:700 12px var(--font); color:var(--label2); text-transform:uppercase; letter-spacing:.05em; display:flex; align-items:center; gap:6px; } .nd .t i{ width:8px; height:8px; border-radius:50%; background:var(--good); display:inline-block; } .nd .t i.warn{ background:#e6a93a; } .nd .t i.stop{ background:var(--label3,#777); }
-.nd .m{ font:800 19px/1.15 var(--font); color:var(--label); margin-top:3px; } .nd .s{ font:500 12.5px/1.3 var(--font); color:var(--label2); margin-top:2px; } .nd .formula{ color:var(--c); }
+.tabs{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; } .tabs .chip{ display:inline-flex; align-items:center; gap:6px; } .tabs .chip.on{ background:var(--tint); color:#fff; } .tabs i{ width:8px; height:8px; border-radius:50%; background:var(--good); display:inline-block; } .tabs i.bad{ background:#d96b5a; } .tabs i.stop{ background:var(--label3,#777); }
+.tools{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px; } .tools .grow{ flex:1; } .tools .hint{ font:500 12.5px var(--font); color:var(--label2); }
+.wrap{ display:flex; gap:12px; align-items:stretch; } .net{ position:relative; flex:1; min-width:0; height:620px; overflow:auto; border-radius:var(--r-xl); background:var(--card); background-image:radial-gradient(var(--sep,rgba(255,255,255,.1)) 1px,transparent 1.2px); background-size:22px 22px; box-shadow:inset 0 0 0 1px var(--sep,rgba(255,255,255,.08)); }
+.net .stage{ position:relative; min-width:1000px; } .net svg{ position:absolute; left:0; top:0; pointer-events:none; overflow:visible; } .net svg .hit{ pointer-events:stroke; cursor:pointer; fill:none; stroke:transparent; stroke-width:16; }
+.nd{ position:absolute; width:204px; background:var(--bg2,#1b1d24); border-radius:14px; padding:9px 11px 10px; box-shadow:0 2px 10px rgba(0,0,0,.28),inset 0 0 0 1.5px var(--c,var(--sep)); cursor:grab; user-select:none; touch-action:none; transition:box-shadow .2s; } .nd:active{ cursor:grabbing; } .nd.sel{ box-shadow:0 4px 18px rgba(0,0,0,.4),0 0 0 2.5px var(--c); } .nd.off{ opacity:.55; }
+.nd .t{ font:700 11px var(--font); color:var(--label2); text-transform:uppercase; letter-spacing:.05em; display:flex; align-items:center; gap:6px; } .nd .t i{ width:8px; height:8px; border-radius:50%; background:var(--good); display:inline-block; } .nd .t i.warn{ background:#e6a93a; } .nd .t i.stop{ background:var(--label3,#777); } .nd .t i.bad{ background:#d96b5a; } .nd .t .x{ margin-left:auto; cursor:pointer; color:var(--label3,#888); font-size:14px; line-height:1; padding:0 2px; } .nd .t .x:hover{ color:var(--bad); }
+.nd .m{ font:800 19px/1.15 var(--font); color:var(--label); margin-top:3px; } .nd .s{ font:500 12px/1.3 var(--font); color:var(--label2); margin-top:2px; } .nd .formula{ color:var(--c); } .nd .s.nm{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:11.5px; color:var(--label3,var(--label2)); }
 .nd .pb{ height:6px; border-radius:3px; background:var(--fill2); margin-top:7px; overflow:hidden; } .nd .pb b{ display:block; height:100%; background:var(--c); border-radius:3px; }
-.nd.fd{ width:104px; padding:6px 8px 7px; text-align:center; cursor:grab; } .nd.fd .t{ justify-content:center; font-size:10.5px; } .nd.fd .m{ font-size:17px; color:var(--c); } .nd.fd .s{ font-size:11.5px; margin-top:1px; } .nd.rx .s.nm{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:11.5px; color:var(--label3,var(--label2)); }
-.nd.el{ width:120px; text-align:center; padding:7px 8px; } .nd.el .m{ font-size:24px; color:var(--c); } .nd.hub{ width:150px; } .nd.hub .m{ font-size:17px; }
-.ef{ fill:none; stroke-linecap:round; } .ef.rec{ stroke-dasharray:2 7; } .tg{ margin:6px 0 2px; } .ef.flow{ stroke-dasharray:3 9; animation:flow var(--sp,1.4s) linear infinite; } .ef.paused{ animation:none; opacity:.35; } @keyframes flow{ to{ stroke-dashoffset:-12; } }
-.pill{ position:absolute; transform:translate(-50%,-50%); background:var(--bg,#14161b); color:var(--label); font:700 11px var(--font); padding:2px 7px; border-radius:9px; box-shadow:inset 0 0 0 1px var(--sep); white-space:nowrap; pointer-events:none; } .pill.warn{ color:#e6a93a; } .pill.rec{ color:#a98cff; }
-.side{ width:310px; flex:none; background:var(--card); border-radius:var(--r-xl); padding:16px; height:560px; overflow-y:auto; box-shadow:inset 0 0 0 1px var(--sep,rgba(255,255,255,.08)); } .side .pb{ background:var(--fill2); border-radius:4px; overflow:hidden; } .side h3{ margin:0 0 2px; font:800 20px var(--font); } .side .sub{ margin:0 0 12px; }
+.nd.hub{ width:150px; } .nd.hub .m{ font-size:17px; } .nd.bank{ width:150px; } .nd.wh{ width:176px; }
+.pts{ display:grid; grid-template-columns:1fr 1fr; gap:0 6px; margin-top:8px; } .pc{ display:flex; flex-direction:column; gap:4px; } .pc.out{ align-items:flex-end; }
+.pt{ display:flex; align-items:center; gap:5px; font:600 12px var(--font); color:var(--label); white-space:nowrap; } .pt small{ font:500 11px var(--font); color:var(--label2); } .pt.by{ opacity:.85; font-style:italic; } .pt.out{ flex-direction:row-reverse; }
+.dot{ width:11px; height:11px; border-radius:50%; background:var(--bg2,#1b1d24); box-shadow:inset 0 0 0 2px var(--pc,#6aa7ff); cursor:crosshair; flex:none; position:relative; } .pt.in .dot{ margin-left:-17px; } .pt.out .dot{ margin-right:-17px; }
+.dot::after{ content:''; position:absolute; inset:-7px; } .dot.full{ background:var(--pc,#6aa7ff); } .dot.miss{ box-shadow:inset 0 0 0 2px #d96b5a; background:#d96b5a33; } .dot.on{ background:#fff; box-shadow:0 0 0 3px var(--pc,#6aa7ff); } .dot.ok{ animation:pulse .9s ease-in-out infinite; } @keyframes pulse{ 50%{ box-shadow:0 0 0 5px #6aa7ff66, inset 0 0 0 2px var(--pc,#6aa7ff); } }
+.ef{ fill:none; stroke-linecap:round; } .ef.flow{ stroke-dasharray:3 9; animation:flow var(--sp,1.4s) linear infinite; } .ef.by{ stroke-dasharray:2 7; } .ef.paused{ animation:none; opacity:.35; } .ef.sel{ filter:drop-shadow(0 0 4px #fff); } @keyframes flow{ to{ stroke-dashoffset:-12; } }
+.pill{ position:absolute; transform:translate(-50%,-50%); background:var(--bg,#14161b); color:var(--label); font:700 11px var(--font); padding:2px 7px; border-radius:9px; box-shadow:inset 0 0 0 1px var(--sep); white-space:nowrap; pointer-events:none; } .pill.warn{ color:#e6a93a; } .pill.by{ color:#a98cff; }
+.empty-hint{ position:absolute; left:260px; top:150px; transform:translate(-50%,-50%); max-width:420px; text-align:center; color:var(--label2); font:500 14px/1.5 var(--font); pointer-events:none; } .empty-hint b{ color:var(--label); display:block; font-size:18px; margin-bottom:6px; }
+.side{ width:320px; flex:none; background:var(--card); border-radius:var(--r-xl); padding:16px; height:620px; overflow-y:auto; box-shadow:inset 0 0 0 1px var(--sep,rgba(255,255,255,.08)); } .side .pb{ background:var(--fill2); border-radius:4px; overflow:hidden; } .side h3{ margin:0 0 2px; font:800 20px var(--font); } .side .sub{ margin:0 0 12px; }
 .ctl{ margin:12px 0; } .ctl label{ display:flex; justify-content:space-between; font:600 13px var(--font); color:var(--label2); margin-bottom:6px; } .ctl label b{ color:var(--label); font-variant-numeric:tabular-nums; } .ctl input[type=range]{ width:100%; accent-color:var(--tint); }
 .chance{ height:10px; border-radius:5px; background:var(--fill2); overflow:hidden; } .chance b{ display:block; height:100%; transition:width .2s,background .2s; }
-.row2{ display:flex; gap:8px; margin-top:8px; } .row2>*{ flex:1; }
+.row2{ display:flex; gap:8px; margin-top:8px; } .row2>*{ flex:1; } .iss{ margin:8px 0; padding:8px 10px; border-radius:10px; background:#d96b5a1f; color:var(--label); font:500 12.5px/1.35 var(--font); } .iss.good{ background:#3fae781f; }
 @media (max-width:900px){ .wrap{ flex-direction:column; } .side{ width:auto; height:auto; } }
 </style></head><body><div id="app"></div>
 <script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
 <script>
 const { h, row, group, money, num } = Kit, FA = OS.factory, CH = OS.chem, COLORS = OS.data.CATEGORY_COLORS;
 const pf = f => CH.prettyFormula(f), fm = v => (+v).toFixed(v < 10 && v % 1 ? 1 : 0), m2 = v => money(v, { dp: 2 });
-let ST = null, sel = null, drag = null, panelBusy = false;
-const RXW = 236, FW = 104, FH = 76, RH = 112, X0 = 20, FG = 30, GROUND = '#c9a876';
-const elSym = sp => (sp || '').replace(/2$/, '');
-const elColor = s => COLORS[(CH.elements[s] || {}).cat] || '#c9a876';
-function sellCap(l){ if(l.route !== 'shop') return l.rate; const c = Math.max(0.02, l.chance || 0); return Math.min(l.rate, l.batch * c / ((c * 5 + (1 - c) * 60) / 60)); }   // mol/min the shop will actually take at this price
+let ST = null, selLine = null, sel = null, wiring = null, dragging = false, panelBusy = false;
+const GROUND = '#c9a876', elSym = sp => (sp || '').replace(/2$/, ''), isEl = sp => !!CH.elements[elSym(sp)] && /^([A-Z][a-z]?|(H|N|O|F|Cl|Br|I)2)$/.test(sp);
+const elColor = s => COLORS[(CH.elements[s] || {}).cat] || GROUND;
+const spColor = sp => isEl(sp) ? elColor(elSym(sp)) : '#6aa7ff';
+function sellCap(l){ const e = l.rateEff || 0; if(l.route !== 'shop') return e; const c = Math.max(0.02, l.chance || 0); return Math.min(e, l.batch * c / ((c * 5 + (1 - c) * 60) / 60)); }   // mol/min the shop will actually take at this price
 
 const A = Kit.app({ title: 'WestFactory', right: [{ icon: 'plus', label: 'Add line', onClick: () => addSheet() }], build: (body) => {
-  const kp = h('div', { class: 'kp' }), bar = h('div', { class: 'fbar' }), net = h('div', { class: 'net' }), stage = h('div', { class: 'stage' }), side = h('div', { class: 'side' });
-  net.appendChild(stage); body.append(kp, bar, h('div', { class: 'wrap' }, net, side), h('div', { class: 'foot' }, 'WestLab discovers molecules; WestFactory mass-produces them. Each line is a small plant: a tree of reactors, with purchased inputs on top and by-products recycled (dashed purple). Inputs are bought automatically at WestShop prices — as elements, or as finished compounds you switch to ‘Buy’ — and the product waits in the warehouse until it sells. Drag nodes to rearrange; click one to control it.'));
+  const kp = h('div', { class: 'kp' }), bar = h('div', { class: 'fbar' }), tabs = h('div', { class: 'tabs' }), tools = h('div', { class: 'tools' }), net = h('div', { class: 'net' }), stage = h('div', { class: 'stage' }), side = h('div', { class: 'side' });
+  net.appendChild(stage); body.append(kp, bar, tabs, tools, h('div', { class: 'wrap' }, net, side), h('div', { class: 'foot' }, 'Build each plant like a factory floor: add Sources (elements or compounds you discovered) and Reactors (recipes), then wire output dots (right) to input dots (left) and finish at the warehouse. Strange loops are fine — a by-product can be wired back as a recycle, but every loop needs a make-up feed. Drag nodes to arrange; click a node or wire to inspect it.'));
+  const curLine = () => ST.lines.find(l => l.id === selLine) || null;
+  const addAll = (el, ...a) => el.append(...a.flat().filter(Boolean));
+  const put = (...a) => side.append(...a.flat().filter(Boolean));
+  const say = r => { Kit.toast(r.msg, r.ok ? 'good' : 'bad'); return r; };
 
-
-  function pos(key, dx, dy){ const p = ST.pos[key]; return p ? { x: p.x, y: p.y } : { x: dx, y: dy }; }
-  /* Each line is a tree: reactors are laid out left → right by depth, their purchased inputs sit above them, the warehouse is the last column. */
-  function layout(){
-    const N = {}; let y0 = 16, maxD = 0;
-    ST.lines.forEach(l => l.sheet.reactors.forEach(r => { maxD = Math.max(maxD, r.depth); }));
-    const whX = X0 + (maxD + 1) * RXW, hubX = whX + 214, bankX = hubX + 190;
-    ST.lines.forEach(l => {
-      const sh = l.sheet, byRx = {}; sh.feeds.forEach(f => (byRx[f.to] = byRx[f.to] || []).push(f));
-      const maxRows = Math.max(0, ...sh.reactors.map(r => Math.ceil((byRx[r.id] || []).length / 2))), stackH = maxRows ? FG + maxRows * (FH + 14) - 14 : 0, rowH = stackH + RH + 24, used = {}; let rows = 1, finalY = y0 + stackH + 6;
-      sh.reactors.forEach(r => {
-        const row = used[r.depth] = (used[r.depth] == null ? 0 : used[r.depth] + 1); rows = Math.max(rows, row + 1);
-        const dx = X0 + r.depth * RXW, dy = y0 + row * rowH + stackH + 6, k = 'rx:' + l.id + ':' + r.id;
-        N[k] = Object.assign({ kind: 'rx', l, r, w: 176, h: RH }, pos(k, dx, dy)); if(r.final) finalY = N[k].y;
-        const fs = byRx[r.id] || [], single = fs.length === 1;
-        fs.forEach((f, j) => { const fk = 'fd:' + l.id + ':' + r.id + ':' + f.sp, fx = dx + (single ? (176 - FW) / 2 : (j % 2) * (FW + 8)), fy = dy - FG - FH - Math.floor(single ? 0 : j / 2) * (FH + 14);
-          N[fk] = Object.assign({ kind: 'fd', l, f, w: FW, h: FH }, pos(fk, fx, fy)); });
-      });
-      const wk = 'wh:' + l.id; N[wk] = Object.assign({ kind: 'wh', l, w: 176, h: 112 }, pos(wk, whX, finalY));
-      y0 += rows * rowH + 92;
-    });
-    N['hub:shop'] = Object.assign({ kind: 'hub', r: 'shop', w: 150, h: 84 }, pos('hub:shop', hubX, 36)); N['hub:market'] = Object.assign({ kind: 'hub', r: 'market', w: 150, h: 84 }, pos('hub:market', hubX, 190)); N['bank'] = Object.assign({ kind: 'bank', w: 150, h: 84 }, pos('bank', bankX, 112));
-    return N;
+  /* ---------------- canvas ---------------- */
+  let NODES = {}, PORTS = {};
+  const pos = (key, dx, dy) => { const p = ST.pos[key]; return p ? { x: p.x, y: p.y } : { x: dx, y: dy }; };
+  function portDot(l, n, dir, sp, full, miss){
+    const dot = h('span', { class: 'dot' + (full ? ' full' : '') + (miss ? ' miss' : ''), 'data-n': n, 'data-d': dir, 'data-s': sp, style: { '--pc': spColor(sp) } });
+    dot.addEventListener('pointerdown', e => e.stopPropagation());
+    dot.addEventListener('click', e => { e.stopPropagation(); clickPort(l, n, dir, sp); }); return dot;
   }
-  function nodeEl(k, n){
-    let c = 'var(--tint)', inner;
-    if(n.kind === 'fd'){ const f = n.f; c = f.el ? elColor(elSym(f.sp)) : GROUND;
-      inner = [h('div', { class: 't' }, f.el ? 'Element' : (f.role === 'made' ? 'Ready-made' : 'Compound')), h('div', { class: 'm', html: pf(f.sp) }), h('div', { class: 's' }, fm(f.mol) + ' mol/min'), h('div', { class: 's' }, f.mol ? m2(f.cost) + '/min' : 'idle')]; }
-    else if(n.kind === 'rx'){ const r = n.r, l = n.l, st = !l.on ? 'stop' : (l.note === 'Low on cash' || l.note === 'Warehouse full' ? 'warn' : ''); c = r.final ? 'var(--tint)' : '#6aa7ff';
-      inner = [h('div', { class: 't' }, h('i', { class: st }), r.final ? 'Reactor · T' + l.tier : 'Reactor'), h('div', { class: 'm formula', html: '→ ' + pf(r.main) }),
-        h('div', { class: 's' }, r.final ? (l.on ? fm(l.rate) : '0') + ' / ' + l.cap + ' mol/min' : fm(r.out) + ' mol/min · ' + Math.round(r.y * 100) + '%'), h('div', { class: 's nm', title: r.name }, l.on ? (r.final && l.note ? l.note : r.name) : 'Paused')]; }
-    else if(n.kind === 'wh'){ const l = n.l; c = '#d9a441'; const pct = Math.min(100, l.stock / l.storage * 100);
-      inner = [h('div', { class: 't' }, 'Warehouse'), h('div', { class: 'm' }, fm(l.stock) + ' mol'), h('div', { class: 's' }, l.route === 'shop' ? 'WestShop · ' + m2(l.price) + (l.chance != null ? ' · ' + Math.round(l.chance * 100) + '%' : '') : 'Market · ' + m2(l.price) + (l.listed ? ' · ' + l.listed + ' listed' : '')), h('div', { class: 'pb' }, h('b', { style: { width: pct + '%' } }))]; }
-    else if(n.kind === 'hub'){ const sh = n.r === 'shop', ls = ST.lines.filter(l => l.route === n.r), mol = ls.reduce((s, l) => s + (l.on ? sellCap(l) : 0), 0); c = sh ? '#3fae78' : '#9b7bff';
-      inner = [h('div', { class: 't' }, sh ? 'WestShop' : 'Player Market'), h('div', { class: 'm' }, fm(mol) + ' mol/min'), h('div', { class: 's' }, ls.length ? ls.length + ' line' + (ls.length > 1 ? 's' : '') : 'no lines')]; }
-    else { c = '#4a6fa8'; inner = [h('div', { class: 't' }, 'Bank'), h('div', { class: 'm' }, (ST.perMin.net >= 0 ? '+' : '−') + m2(Math.abs(ST.perMin.net)) + '/min'), h('div', { class: 's' }, 'est. net of input costs')]; }
-    const el = h('div', { class: 'nd ' + n.kind + (sel === k ? ' sel' : '') + (n.l && !n.l.on ? ' off' : ''), style: { left: n.x + 'px', top: n.y + 'px', '--c': c }, 'data-k': k }, ...inner);
-    el.addEventListener('pointerdown', ev => startDrag(ev, k, el)); return el;
+  function clickPort(l, n, dir, sp){
+    if(!wiring){ wiring = { id: n, d: dir, s: sp }; Kit.toast(dir === 'out' ? 'Now click an input dot that takes ' + sp + '.' : 'Now click an output dot that makes ' + sp + '.', 'info'); return drawNet(); }
+    if(wiring.d === dir){ wiring = wiring.id === n && wiring.s === sp ? null : { id: n, d: dir, s: sp }; return drawNet(); }
+    if(wiring.s !== sp){ Kit.toast('Those two carry different molecules (' + wiring.s + ' vs ' + sp + ').', 'bad'); return; }
+    const out = dir === 'out' ? n : wiring.id, inn = dir === 'out' ? wiring.id : n; wiring = null; say(FA.gWire(l.id, out, inn, sp)); refresh(true);
   }
-  function edges(N){
-    const E = []; const add = (a, b, flow, color, label, warn, recycle, arc) => { if(N[a] && N[b]) E.push({ a, b, flow, color, label, warn, recycle, arc }); };
-    ST.lines.forEach(l => {
-      let arcs = 0;
-      const sh = l.sheet, tgt = x => x === 'out' ? 'wh:' + l.id : 'rx:' + l.id + ':' + x, on = l.on && l.rate > 0;
-      sh.feeds.forEach(f => add('fd:' + l.id + ':' + f.to + ':' + f.sp, tgt(f.to), on ? f.mol : 0, f.el ? elColor(elSym(f.sp)) : GROUND, on && f.mol ? f.spl + ' ' + fm(f.mol) : ''));
-      sh.edges.forEach(e => { const ra = sh.reactors.find(q => q.id === e.from), rb = sh.reactors.find(q => q.id === e.to), skip = !e.recycle && ra && rb && rb.depth - ra.depth > 1;   // streams that jump over a reactor (or loop back) arc underneath instead of running behind the cards
-        add('rx:' + l.id + ':' + e.from, tgt(e.to), on ? e.mol : 0, e.recycle ? '#a98cff' : (e.to === 'out' ? 'var(--tint)' : '#6aa7ff'), on && e.mol ? (e.recycle ? '↺ ' : '') + e.spl + ' ' + fm(e.mol) : '', false, e.recycle, e.recycle || skip ? arcs++ : null); });
-      const out = on ? sellCap(l) : 0; add('wh:' + l.id, 'hub:' + l.route, out, l.route === 'shop' ? '#3fae78' : '#9b7bff', on ? fm(out) + ' mol/min' : '', on && out < l.rate - 0.05);
-    });
-    ['shop', 'market'].forEach(r => { const rev = ST.lines.filter(l => l.route === r && l.on).reduce((s, l) => s + sellCap(l) * l.price * (r === 'market' ? 1 - ST.cfg.fee : 1), 0); add('hub:' + r, 'bank', rev, r === 'shop' ? '#3fae78' : '#9b7bff', rev ? m2(rev) + '/min' : ''); });
-    return E;
+  function card(l, n, gp){
+    const src = n.t === 'src', el = src && isEl(n.sp), c = src ? spColor(n.sp) : (n.ok ? '#6aa7ff' : '#d96b5a');
+    const st = !l.on ? 'stop' : (!n.ok ? 'bad' : (n.active ? '' : 'stop')), x = h('span', { class: 'x', title: 'Remove', onclick: e => { e.stopPropagation(); if(sel === 'n:' + n.id) sel = null; say(FA.gDel(l.id, n.id)); refresh(); } }, '✕'); x.addEventListener('pointerdown', e => e.stopPropagation());
+    const kids = [h('div', { class: 't' }, h('i', { class: st }), src ? (el ? 'Element source' : 'Compound source') : 'Reactor', x), h('div', { class: 'm' + (src ? '' : ' formula'), html: src ? pf(n.sp) : '→ ' + pf(n.main) })];
+    if(src){ const f = l.sheet.feeds.find(q => q.id === n.id); kids.push(h('div', { class: 's' }, f ? fm(f.mol) + ' mol/min · ' + m2(f.price) + '/mol' : '')); kids.push(h('div', { class: 'pts' }, h('div', { class: 'pc' }), h('div', { class: 'pc out' }, h('div', { class: 'pt out' }, portDot(l, n.id, 'out', n.sp, n.outs[n.sp].wired > 0, false), h('span', { html: pf(n.sp) }), h('small', null, f ? fm(f.mol) : '0'))))); }
+    else {
+      kids.push(h('div', { class: 's nm', title: n.eq + ' — ' + n.name }, n.name), h('div', { class: 's' }, (n.active ? fm(n.extent) + ' × · ' : '') + Math.round(n.y * 100) + '% yield' + (n.load > 0.9 ? ' · ⚠ near cap' : '')));
+      const ins = Object.keys(n.ins).map(s => h('div', { class: 'pt in' }, portDot(l, n.id, 'in', s, n.ins[s].wired > 0, !n.ins[s].supplied), h('span', { html: pf(s) }), h('small', null, fm(n.ins[s].mol))));
+      const outs = Object.keys(n.outs).map(s => h('div', { class: 'pt out' + (s !== n.main ? ' by' : '') }, portDot(l, n.id, 'out', s, n.outs[s].wired > 0, false), h('span', { html: pf(s) }), h('small', null, fm(n.outs[s].mol) + (n.outs[s].left > 0.05 ? ' · ' + fm(n.outs[s].left) + ' spare' : ''))));
+      kids.push(h('div', { class: 'pts' }, h('div', { class: 'pc' }, ...ins), h('div', { class: 'pc out' }, ...outs)));
+    }
+    const e = h('div', { class: 'nd ' + (src ? 'src' : 'rx') + (sel === 'n:' + n.id ? ' sel' : '') + (!l.on ? ' off' : ''), style: { left: gp.x + 'px', top: gp.y + 'px', '--c': c }, 'data-k': 'n:' + n.id }, ...kids);
+    e.addEventListener('pointerdown', ev => startDrag(ev, 'n:' + n.id, e)); return e;
   }
-  function geom(a, b, e){
-    const acx = a.x + a.w / 2, bcx = b.x + b.w / 2;
-    if(e.arc != null){ const yb = Math.max(a.y + a.h, b.y + b.h) + 40 + e.arc * 24; return 'M' + acx + ',' + (a.y + a.h) + ' C' + acx + ',' + yb + ' ' + bcx + ',' + yb + ' ' + bcx + ',' + (b.y + b.h); }
-    if(b.y >= a.y + a.h - 8 && Math.abs(acx - bcx) < 150){ const y1 = a.y + a.h, y2 = b.y, dy = Math.max(20, (y2 - y1) / 2); return 'M' + acx + ',' + y1 + ' C' + acx + ',' + (y1 + dy) + ' ' + bcx + ',' + (y2 - dy) + ' ' + bcx + ',' + y2; }
-    const x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y + b.h / 2, dx = Math.max(40, Math.abs(x2 - x1) / 2);
-    return 'M' + x1 + ',' + y1 + ' C' + (x1 + dx) + ',' + y1 + ' ' + (x2 - dx) + ',' + y2 + ' ' + x2 + ',' + y2;
+  function otherCard(k, kind, l){
+    let c, inner;
+    if(kind === 'wh'){ c = '#d9a441'; const pct = Math.min(100, l.stock / l.storage * 100), miss = !l.sheet.outWired;
+      inner = [h('div', { class: 't' }, 'Warehouse'), h('div', { class: 'm' }, fm(l.stock) + ' mol'), h('div', { class: 's' }, l.route === 'shop' ? 'WestShop · ' + m2(l.price) + (l.chance != null ? ' · ' + Math.round(l.chance * 100) + '%' : '') : 'Market · ' + m2(l.price) + (l.listed ? ' · ' + l.listed + ' listed' : '')), h('div', { class: 'pb' }, h('b', { style: { width: pct + '%' } })),
+        h('div', { class: 'pts' }, h('div', { class: 'pc' }, h('div', { class: 'pt in' }, portDot(l, 'o', 'in', l.f, l.sheet.wires.some(w => w.b === 'o'), miss), h('span', { html: pf(l.f) }), h('small', null, fm(l.sheet.effRate)))), h('div', { class: 'pc out' }))]; }
+    else if(kind === 'hub'){ const sh = l.route === 'shop'; c = sh ? '#3fae78' : '#9b7bff'; inner = [h('div', { class: 't' }, sh ? 'WestShop' : 'Player Market'), h('div', { class: 'm' }, fm(l.on ? sellCap(l) : 0) + ' mol/min'), h('div', { class: 's' }, 'this plant')]; }
+    else { c = '#4a6fa8'; inner = [h('div', { class: 't' }, 'Bank'), h('div', { class: 'm' }, (ST.perMin.net >= 0 ? '+' : '−') + m2(Math.abs(ST.perMin.net)) + '/min'), h('div', { class: 's' }, 'all plants, est. net')]; }
+    const e = h('div', { class: 'nd ' + kind + (sel === kind ? ' sel' : '') + (!l.on ? ' off' : ''), style: { '--c': c }, 'data-k': k }, ...inner); e.addEventListener('pointerdown', ev => startDrag(ev, k, e)); return e;
   }
   let svg = null, pills = [];
-  function drawEdges(N){
-    if(svg) svg.remove(); pills.forEach(p => p.remove()); pills = []; const W = stage.offsetWidth, H = stage.offsetHeight;
-    svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('width', W); svg.setAttribute('height', H); stage.insertBefore(svg, stage.firstChild);
-    edges(N).forEach(e => {
-      const a = N[e.a], b = N[e.b], path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); path.setAttribute('d', geom(a, b, e));
-      const wdt = e.flow > 0 ? Math.min(11, 2.2 + Math.log2(1 + e.flow) * 1.5) : 2; path.setAttribute('class', 'ef flow' + (e.recycle ? ' rec' : '') + (e.flow > 0 ? '' : ' paused')); path.setAttribute('stroke', e.warn ? '#e6a93a' : e.color); path.setAttribute('stroke-width', wdt); path.style.setProperty('--sp', Math.max(0.35, 1.8 / (1 + Math.log2(1 + e.flow))) + 's'); svg.appendChild(path);
-      if(e.label){ const pt = path.getPointAtLength(path.getTotalLength() / 2), p = h('div', { class: 'pill' + (e.warn ? ' warn' : '') + (e.recycle ? ' rec' : ''), style: { left: pt.x + 'px', top: pt.y + 'px' } }, e.label + (e.warn ? ' ⚠' : '')); stage.appendChild(p); pills.push(p); }
-    });
-  }
-  let NODES = {};
   function drawNet(){
-    NODES = layout(); stage.innerHTML = ''; let maxX = 0, maxY = 0; Object.keys(NODES).forEach(k => { const n = NODES[k]; stage.appendChild(nodeEl(k, n)); maxX = Math.max(maxX, n.x + n.w); maxY = Math.max(maxY, n.y + n.h); });
-    stage.style.width = Math.max(900, maxX + 30) + 'px'; stage.style.height = Math.max(520, maxY + 96) + 'px';
-    stage.querySelectorAll('.nd').forEach(el => { const n = NODES[el.dataset.k]; n.w = el.offsetWidth; n.h = el.offsetHeight; }); drawEdges(NODES);
+    const l = curLine(); stage.innerHTML = ''; NODES = {}; PORTS = {}; pills = []; svg = null; if(!l){ stage.style.height = '520px'; return; }
+    const sh = l.sheet, gmap = {}; l.g.nodes.forEach(q => { gmap[q.id] = q; });
+    let maxX = 0, maxY = 0;
+    sh.nodes.forEach(n => { const gp = gmap[n.id]; if(!gp) return; const k = 'n:' + n.id, e = card(l, n, gp); stage.appendChild(e); NODES[k] = { kind: n.t, x: gp.x, y: gp.y, el: e, n, gp }; });
+    const rightmost = Math.max(560, ...l.g.nodes.map(q => q.x + 260)), wk = 'wh:' + l.id, hk = 'hub:' + l.route, bk = 'bank';
+    [['wh', wk, rightmost, 250, 'wh'], ['hub', hk, rightmost + 210, 250, 'hub'], ['bank', bk, rightmost + 400, 250, 'bank']].forEach(([kind, key, dx, dy]) => { const p = pos(key, dx, dy), e = otherCard(key, kind, l); e.style.left = p.x + 'px'; e.style.top = p.y + 'px'; stage.appendChild(e); NODES[key] = { kind, x: p.x, y: p.y, el: e }; });
+    Object.keys(NODES).forEach(k => { const o = NODES[k]; o.w = o.el.offsetWidth; o.h = o.el.offsetHeight; maxX = Math.max(maxX, o.x + o.w); maxY = Math.max(maxY, o.y + o.h); });
+    stage.style.width = Math.max(1000, maxX + 40) + 'px'; stage.style.height = Math.max(580, maxY + 80) + 'px';
+    if(!l.g.nodes.length) stage.appendChild(h('div', { class: 'empty-hint' }, h('b', null, 'Build the ' + l.name + ' plant'), 'Add a Source to buy inputs and a Reactor for each step, wire them together, and end in the warehouse. Or press Auto-build route to start from the real industrial process.'));
+    drawEdges(l);
+  }
+  function portXY(n, d, s){ const dot = stage.querySelector('.dot[data-n="' + n + '"][data-d="' + d + '"][data-s="' + CSS.escape(s) + '"]'); if(!dot) return null; const r = dot.getBoundingClientRect(), sr = stage.getBoundingClientRect(); return { x: r.left - sr.left + r.width / 2, y: r.top - sr.top + r.height / 2 }; }
+  function curve(a, b){ const ax = Math.abs(b.x - a.x), dx = b.x >= a.x ? Math.min(140, Math.max(40, ax / 2)) : 60 + Math.min(ax / 3, 70); return 'M' + a.x + ',' + a.y + ' C' + (a.x + dx) + ',' + a.y + ' ' + (b.x - dx) + ',' + b.y + ' ' + b.x + ',' + b.y; }
+  function drawEdges(l){
+    if(svg) svg.remove(); pills.forEach(p => p.remove()); pills = []; const W = stage.offsetWidth, H = stage.offsetHeight, NS = 'http://www.w3.org/2000/svg';
+    svg = document.createElementNS(NS, 'svg'); svg.setAttribute('width', W); svg.setAttribute('height', H); stage.insertBefore(svg, stage.firstChild);
+    const on = l.on && l.rate > 0 && l.sheet.producing;
+    const line = (d, flow, color, cls, label, key, warn) => {
+      const path = document.createElementNS(NS, 'path'); path.setAttribute('d', d); const wdt = flow > 0 ? Math.min(10, 2.2 + Math.log2(1 + flow) * 1.4) : 2; path.setAttribute('class', 'ef flow ' + (cls || '') + (flow > 0 ? '' : ' paused') + (sel === key ? ' sel' : '')); path.setAttribute('stroke', warn ? '#e6a93a' : color); path.setAttribute('stroke-width', wdt); path.style.setProperty('--sp', Math.max(0.35, 1.8 / (1 + Math.log2(1 + flow))) + 's'); svg.appendChild(path);
+      if(key){ const hit = document.createElementNS(NS, 'path'); hit.setAttribute('d', d); hit.setAttribute('class', 'hit'); hit.addEventListener('click', () => { sel = key; drawNet(); drawPanel(); }); svg.appendChild(hit); }
+      if(label){ const pt = path.getPointAtLength(path.getTotalLength() / 2), p = h('div', { class: 'pill' + (warn ? ' warn' : '') + (cls === 'by' ? ' by' : ''), style: { left: pt.x + 'px', top: pt.y + 'px' } }, label + (warn ? ' ⚠' : '')); stage.appendChild(p); pills.push(p); }
+    };
+    l.sheet.wires.forEach(w => { const a = portXY(w.a, 'out', w.s), b = portXY(w.b, 'in', w.s); if(!a || !b) return; line(curve(a, b), on ? w.mol : 0, w.by ? '#a98cff' : spColor(w.s), w.by ? 'by' : '', on && w.mol ? (w.by ? '↺ ' : '') + w.spl + ' ' + fm(w.mol) : '', 'w:' + w.a + '|' + w.b + '|' + w.s); });
+    const box = (k, side) => { const o = NODES[k]; return o ? { x: side === 'r' ? o.x + o.w : o.x, y: o.y + o.h / 2 } : null; };
+    const wk = 'wh:' + l.id, hk = 'hub:' + l.route, out = on ? sellCap(l) : 0, rev = on ? sellCap(l) * l.price * (l.route === 'market' ? 1 - ST.cfg.fee : 1) : 0;
+    if(NODES[wk] && NODES[hk]) line(curve(box(wk, 'r'), box(hk, 'l')), out, l.route === 'shop' ? '#3fae78' : '#9b7bff', '', on ? fm(out) + ' mol/min' : '', null, on && out < l.rateEff - 0.05);
+    if(NODES[hk] && NODES.bank) line(curve(box(hk, 'r'), box('bank', 'l')), rev, l.route === 'shop' ? '#3fae78' : '#9b7bff', '', rev ? m2(rev) + '/min' : '', null);
+    const hot = wiring; stage.querySelectorAll('.dot').forEach(d => { if(!hot) return; const same = d.dataset.n === hot.id && d.dataset.d === hot.d && d.dataset.s === hot.s; if(same) d.classList.add('on'); else if(d.dataset.d !== hot.d && d.dataset.s === hot.s && d.dataset.n !== hot.id) d.classList.add('ok'); });
   }
   /* ---- dragging ---- */
   function startDrag(ev, k, el){
-    if(ev.button) return; const n = NODES[k], sx = ev.clientX, sy = ev.clientY, ox = n.x, oy = n.y; let moved = false; el.setPointerCapture(ev.pointerId);
-    const mv = e => { const dx = e.clientX - sx, dy = e.clientY - sy; if(!moved && Math.abs(dx) + Math.abs(dy) < 4) return; moved = true; n.x = Math.max(0, ox + dx); n.y = Math.max(0, oy + dy); el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; drawEdges(NODES); };
-    const up = () => { el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); if(moved){ FA.setPos(k, n.x, n.y); ST.pos[k] = { x: n.x, y: n.y }; } else { sel = k; drawNet(); drawPanel(); } };
+    if(ev.button) return; const o = NODES[k], l = curLine(), sx = ev.clientX, sy = ev.clientY, ox = o.x, oy = o.y; let moved = false; el.setPointerCapture(ev.pointerId); dragging = true;
+    const mv = e => { const dx = e.clientX - sx, dy = e.clientY - sy; if(!moved && Math.abs(dx) + Math.abs(dy) < 4) return; moved = true; o.x = Math.max(0, ox + dx); o.y = Math.max(0, oy + dy); el.style.left = o.x + 'px'; el.style.top = o.y + 'px'; drawEdges(l); };
+    const up = () => { dragging = false; el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up);
+      if(moved){ if(k.startsWith('n:')) FA.gMove(l.id, k.slice(2), o.x, o.y); else { FA.setPos(k, o.x, o.y); ST.pos[k] = { x: o.x, y: o.y }; } drawNet(); }
+      else { sel = k.startsWith('wh:') ? 'wh' : k.startsWith('hub:') ? 'hub' : k; wiring = null; drawNet(); drawPanel(); } };
     el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up);
   }
+  document.addEventListener('keydown', e => { if(e.key === 'Escape'){ if(wiring){ wiring = null; drawNet(); } else { sel = null; drawNet(); drawPanel(); } }
+    if((e.key === 'Delete' || e.key === 'Backspace') && sel && !/INPUT|TEXTAREA/.test((e.target || {}).tagName || '')){ const l = curLine(); if(!l) return; if(sel.startsWith('n:')){ say(FA.gDel(l.id, sel.slice(2))); sel = null; refresh(); } else if(sel.startsWith('w:')){ const [a, b, s] = sel.slice(2).split('|'); say(FA.gUnwire(l.id, a, b, s)); sel = null; refresh(); } } });
 
-  /* ---- header ---- */
+  /* ---------------- header, tabs, tools ---------------- */
   function drawTop(){
     const p = ST.perMin; kp.innerHTML = '';
     [['Producing', fm(p.mol) + ' mol/min'], ['Input cost', m2(p.cost) + '/min'], ['Est. revenue', m2(p.rev) + '/min'], ['Est. profit', (p.net >= 0 ? '+' : '−') + m2(Math.abs(p.net)) + '/min', p.net >= 0 ? 'pos' : 'neg'], ['Lifetime', num(Math.floor(ST.made)) + ' mol · ' + money(ST.earned, { compact: true, dp: 2 })]]
       .forEach(([t, v, c]) => kp.appendChild(h('div', { class: 'kpi' }, h('small', null, t), h('b', { class: c || '' }, v))));
-    bar.innerHTML = ''; bar.append(h('button', { class: 'btn', onclick: () => addSheet() }, 'Add line (' + ST.lines.length + '/' + ST.slots + ')'),
+    bar.innerHTML = ''; addAll(bar, h('button', { class: 'btn', onclick: () => addSheet() }, 'Add line (' + ST.lines.length + '/' + ST.slots + ')'),
       ST.nextSlotCost != null ? h('button', { class: 'btn gray', onclick: buySlot }, 'Unlock slot · ' + m2(ST.nextSlotCost)) : null, h('span', { class: 'grow' }),
       h('label', { class: 'foot', style: { margin: 0 } }, 'Keep ', h('input', { class: 'field', type: 'number', min: '0', value: String(ST.reserve), style: { width: '90px', display: 'inline-block', height: '34px' }, onchange: e => { const r = FA.setReserve(e.target.value); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); } }), ' in the bank'));
+    tabs.innerHTML = ''; ST.lines.forEach(l => tabs.appendChild(h('button', { class: 'chip' + (l.id === selLine ? ' on' : ''), onclick: () => { selLine = l.id; sel = null; wiring = null; refresh(); } }, h('i', { class: !l.on ? 'stop' : (l.sheet.producing ? '' : 'bad') }), h('span', { html: pf(l.f) }))));
+    tools.innerHTML = ''; const l = curLine(); if(!l) return;
+    addAll(tools, h('button', { class: 'btn', onclick: () => pickSource(l) }, '+ Source'), h('button', { class: 'btn', onclick: () => pickReactor(l) }, '+ Reactor'),
+      h('button', { class: 'btn gray', onclick: async () => { if(l.g.nodes.length && !(await Kit.confirm({ title: 'Replace this plant?', msg: 'Auto-build replaces the nodes and wires with the real industrial route.', ok: 'Auto-build' }))) return; wiring = null; sel = null; say(FA.gAuto(l.id)); refresh(); } }, 'Auto-build route'),
+      l.g.nodes.length ? h('button', { class: 'btn gray', onclick: async () => { if(await Kit.confirm({ title: 'Clear the plant?', msg: 'Removes every node and wire.', ok: 'Clear', destructive: true })){ wiring = null; sel = null; say(FA.gClear(l.id)); refresh(); } } }, 'Clear') : null, h('span', { class: 'grow' }),
+      h('span', { class: 'hint' }, wiring ? 'Wiring ' + wiring.s + ' — click a matching ' + (wiring.d === 'out' ? 'input' : 'output') + ' dot (Esc cancels)' : 'Click an output dot, then an input dot, to wire.'));
   }
   async function buySlot(){ const r = FA.buySlot(); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); refresh(); }
-  /* ---- add line ---- */
+  const nextPos = () => { const l = curLine(), c = l ? l.g.nodes.length : 0; return { x: Math.round(net.scrollLeft + 50 + (c % 6) * 34), y: Math.round(net.scrollTop + 40 + (c % 6) * 34) }; };
+  function pickSource(l){
+    const all = FA.sources();
+    Kit.sheet({ title: 'Add a source', build: (sb, api) => {
+      const list = h('div'), q = h('input', { class: 'field', placeholder: 'Search elements and compounds', style: { marginBottom: '8px' }, oninput: paint });
+      function paint(){ const t = q.value.trim().toLowerCase(); list.innerHTML = ''; const rows = all.filter(s => !t || s.sp.toLowerCase().includes(t) || s.name.toLowerCase().includes(t)).slice(0, 60);
+        list.appendChild(rows.length ? group(rows.map(s => row({ left: h('div', { class: 'formula', style: { width: '64px', fontSize: '15px', color: 'var(--tint)' }, html: pf(s.sp) }), title: s.name, sub: (s.el ? 'element' : 'compound') + ' · ' + m2(s.price) + ' / mol', chevron: false, onClick: () => { const p = nextPos(), r = say(FA.gAdd(l.id, 'src', s.sp, p.x, p.y)); if(r.ok){ api.close(); refresh(); } } }))) : h('div', { class: 'empty' }, 'No match.')); }
+      sb.append(h('div', { class: 'foot', style: { marginBottom: '8px' } }, 'A source buys automatically at the WestShop price. Compounds must be discovered in WestLab first (water is always available).'), q, list); paint();
+    } });
+  }
+  function pickReactor(l){
+    const all = FA.recipes().sort((a, b) => a.locked - b.locked);
+    Kit.sheet({ title: 'Add a reactor', build: (sb, api) => {
+      const list = h('div'), q = h('input', { class: 'field', placeholder: 'Search a molecule, e.g. NO or ammonia', style: { marginBottom: '8px' }, oninput: paint });
+      function paint(){ const t = q.value.trim().toLowerCase(); list.innerHTML = ''; const rows = all.filter(r => !t || r.eq.toLowerCase().includes(t) || r.name.toLowerCase().includes(t) || r.id.toLowerCase().includes(t)).slice(0, 60);
+        list.appendChild(rows.length ? group(rows.map(r => row({ left: h('div', { class: 'formula', style: { width: '64px', fontSize: '15px', color: r.locked ? 'var(--label3)' : 'var(--tint)' }, html: '→ ' + pf(r.main) }), title: r.eq, sub: (r.locked ? '🔒 discover ' + r.missing.join(', ') + ' in WestLab · ' : '') + r.name + ' · ' + Math.round(r.y * 100) + '% yield', wrap: true, chevron: false, onClick: r.locked ? null : () => { const p = nextPos(), x = say(FA.gAdd(l.id, 'rx', r.id, p.x, p.y)); if(x.ok){ api.close(); refresh(); } } }))) : h('div', { class: 'empty' }, 'No match.')); }
+      sb.append(h('div', { class: 'foot', style: { marginBottom: '8px' } }, 'Real industrial steps unlock when you have discovered their molecules in WestLab. Every discovered compound can also be built directly from its elements (costlier, no catalyst).'), q, list); paint();
+    } });
+  }
   function addSheet(){
     const found = FA.found(); Kit.sheet({ title: 'Build a production line', build: (sb, api) => {
       if(ST.lines.length >= ST.slots){ sb.appendChild(h('div', { class: 'empty' }, 'All ' + ST.slots + ' lines are in use.' + (ST.nextSlotCost != null ? ' Unlock another slot for ' + m2(ST.nextSlotCost) + '.' : ''))); return; }
       const have = new Set(ST.lines.map(l => l.f)), rows = found.filter(c => !have.has(CH.speciesOf ? (CH.speciesOf(c.f) || {}).key || c.f : c.f));
       if(!found.length) return sb.appendChild(h('div', { class: 'empty' }, 'Nothing to produce yet.', h('br'), 'Discover compounds in WestLab first.', h('br'), h('button', { class: 'btn', style: { marginTop: '12px' }, onclick: () => { api.close(); OS.open('WestLab'); } }, 'Open WestLab')));
-      sb.appendChild(h('div', { class: 'foot', style: { marginBottom: '8px' } }, 'Only compounds you have discovered in WestLab. Margin is the list value over the input cost per mol.'));
-      sb.appendChild(group(rows.map(c => { const mg = c.unitCost > 0 ? Math.round((c.est / c.unitCost - 1) * 100) : 0; return row({ left: h('div', { class: 'formula', style: { width: '74px', fontSize: '15px', color: 'var(--tint)' }, html: pf(c.f) }), title: c.name, sub: 'cost ' + m2(c.unitCost) + ' · value ' + m2(c.est), right: h('b', { style: { color: mg >= 0 ? 'var(--good)' : 'var(--bad)' } }, (mg >= 0 ? '+' : '') + mg + '%'), chevron: false, onClick: () => { const r = FA.addLine(c.f); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); if(r.ok){ sel = 'rx:' + r.id; api.close(); refresh(); } } }); })));
+      sb.appendChild(h('div', { class: 'foot', style: { marginBottom: '8px' } }, 'Pick the molecule this plant makes; you then build its process yourself. Margin is the list value over the cost of the real industrial route.'));
+      sb.appendChild(group(rows.map(c => { const mg = c.unitCost > 0 ? Math.round((c.est / c.unitCost - 1) * 100) : 0; return row({ left: h('div', { class: 'formula', style: { width: '74px', fontSize: '15px', color: 'var(--tint)' }, html: pf(c.f) }), title: c.name, sub: 'route cost ' + m2(c.unitCost) + ' · value ' + m2(c.est), right: h('b', { style: { color: mg >= 0 ? 'var(--good)' : 'var(--bad)' } }, (mg >= 0 ? '+' : '') + mg + '%'), chevron: false, onClick: () => { const r = FA.addLine(c.f); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); if(r.ok){ selLine = r.id; sel = null; api.close(); refresh(); } } }); })));
       if(!rows.length) sb.appendChild(h('div', { class: 'empty' }, 'You already produce everything you have discovered.'));
     } });
   }
 
-  /* ---- side panel ---- */
-  const put = (...a) => side.append(...a.flat().filter(Boolean));
-  const lineOf = k => { const id = (k || '').split(':')[1]; return ST.lines.find(l => l.id === id); };
-  function drawPanel(){
-    side.innerHTML = ''; if(panelBusy) return; const k = sel; if(!k || !NODES[k]) { sel = null; return side.append(h('h3', null, 'Your factory'), h('p', { class: 'sub' }, ST.lines.length ? 'Click a reactor, warehouse or element to control it. Drag to rearrange.' : 'Build a line to start producing.'), h('div', { class: 'foot' }, 'Flow lines show molecules per minute. A thin or amber ⚠ line means a bottleneck — usually the shop refusing your price.')); }
-    const n = NODES[k], l = n.l ? ST.lines.find(x => x.id === n.l.id) : null;
-    if(n.kind === 'fd'){
-      const f = n.f, ln = ST.lines.find(x => x.id === n.l.id); if(!ln) return; const sh = ln.sheet, tg = sh.toggles.find(t => t.sp === f.sp), cur = sh.feeds.find(x => x.id === f.id) || f, to = sh.reactors.find(q => q.id === f.to);
-      side.append(h('h3', { html: pf(f.sp) }), h('p', { class: 'sub' }, cur.el ? 'Element — bought automatically from WestShop' : (tg && tg.role === 'made' ? 'Intermediate bought ready-made instead of being made here' : 'Finished compound bought ready-made')),
-        group(row({ title: 'Price', right: m2(cur.price) + ' / mol' }), row({ title: 'Goes into', right: to ? '→ ' + to.mainl + ' reactor' : 'warehouse' }), row({ title: 'Uses', right: fm(cur.mol) + ' mol/min' }), row({ title: 'Cost', right: m2(cur.cost) + '/min' })));
-      if(tg){
-        const seg = Kit.seg([{ id: 'buy', label: 'Buy ready-made' }, { id: 'make', label: 'Make here' }], tg.opt, v => { const x = FA.setOpt(ln.id, f.sp, v); Kit.toast(x.msg, x.ok ? 'good' : 'bad'); refresh(); });
-        side.append(h('div', { class: 'tg' }, seg), h('div', { class: 'foot' }, tg.via ? 'Making it here: ' + tg.via + '. Ready-made costs atoms + 6%; making it costs the process losses and a little running cost, but needs its own reactor' + (tg.role === 'raw' ? ' (or a direct combination of the elements, +25%).' : '.') : 'Ready-made costs atoms + 6%.'));
-      }
-      return;
-    }
-    if(n.kind === 'hub'){ const sh = n.r === 'shop'; side.append(h('h3', null, sh ? 'WestShop' : 'Player Market'), h('p', { class: 'sub' }, sh ? 'Buys at your price if it’s inside the allowed range — higher prices are accepted less often, and a refusal locks that line for a minute.' : 'Other players buy your molecules here at the price you set. The Market keeps a ' + Math.round(ST.cfg.fee * 100) + '% fee.'), h('button', { class: 'btn', onclick: () => OS.open('WestShop') }, 'Open WestShop')); return; }
-    if(n.kind === 'bank'){ side.append(h('h3', null, 'Bank'), h('p', { class: 'sub' }, 'Sales are paid straight into your bank balance.'), group(row({ title: 'Total sold', right: num(Math.floor(ST.sold)) + ' mol' }), row({ title: 'Total earned', right: m2(ST.earned) }))); return; }
-    if(!l) return;
+  /* ---------------- side panel ---------------- */
+  function plantPanel(l){
+    const sh = l.sheet, rl = h('b'), rs = h('input', { type: 'range', min: 0, max: l.cap, step: 0.5, value: l.rate }); const upd = () => { rl.textContent = fm(+rs.value) + ' mol/min'; }; upd(); rs.oninput = upd; rs.onchange = () => { FA.setRate(l.id, +rs.value); refresh(true); };
+    const mg = l.unitCost > 0 ? Math.round((l.est / l.unitCost - 1) * 100) : null;
+    put(h('div', null, h('div', { class: 'formula', style: { fontSize: '26px', fontWeight: 800, color: 'var(--tint)' }, html: pf(l.f) }), h('p', { class: 'sub' }, l.name + ' · est. value ' + m2(l.est) + (l.unitCost > 0 ? ' · inputs ' + m2(l.unitCost) + ' / mol' : ''))),
+      sh.producing ? h('div', { class: 'iss good' }, sh.steps + ' reactor' + (sh.steps === 1 ? '' : 's') + ' · ' + fm(sh.effRate) + ' mol/min' + (sh.maxRate < l.rate - 1e-6 ? ' (limited by a reactor — slow the rate or upgrade)' : '') + (mg != null ? ' · margin ' + (mg >= 0 ? '+' : '') + mg + '% at list value' : '') + (sh.recycle > 0.05 ? ' · ' + fm(sh.recycle) + ' mol/min of by-products reused' : '')) : null,
+      !sh.producing ? h('div', { class: 'iss' }, l.g.nodes.length ? [h('b', null, 'Not producing yet'), ...sh.issues.map(i => h('div', null, '• ', i.msg))] : 'Empty plant. Add a source and a reactor from the toolbar, wire them, and end in the warehouse — or press Auto-build route.') : null,
+      sh.surplus.length ? h('div', { class: 'foot' }, 'Spare by-products are sold on automatically at atom value: ' + sh.surplus.map(x => fm(x.mol) + ' ' + x.sp).join(', ') + '.') : null,
+      h('div', { class: 'ctl' }, h('label', null, 'Production rate', rl), rs, h('div', { class: 'foot', style: { margin: '4px 0 0' } }, 'Cap ' + l.cap + ' mol/min at tier ' + l.tier + (l.unitCost > 0 ? ' · input cost about ' + m2(l.unitCost * Math.min(+rs.value, sh.maxRate)) + '/min' : ''))),
+      h('div', { class: 'row2' }, h('button', { class: 'btn ' + (l.on ? 'gray' : 'good'), onclick: () => { FA.setOn(l.id, !l.on); refresh(); } }, l.on ? 'Pause' : 'Start'), l.upgradeCost != null ? h('button', { class: 'btn', onclick: () => { const r = FA.upgrade(l.id); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); refresh(); } }, 'Upgrade · ' + m2(l.upgradeCost)) : h('button', { class: 'btn gray', disabled: true }, 'Max tier')),
+      h('div', { class: 'foot' }, 'Each reactor can run up to ' + fm(l.cap * 3) + ' reactions/min at this tier. Warehouse holds ' + l.storage + ' mol. ' + (l.note ? 'Status: ' + l.note : '')),
+      h('button', { class: 'btn bad block', style: { marginTop: '14px' }, onclick: async () => { if(await Kit.confirm({ title: 'Remove line?', msg: 'Stock in the warehouse moves to your bag. The plant design is lost.', ok: 'Remove', destructive: true })){ const x = await FA.remove(l.id); Kit.toast(x.msg, x.ok ? 'good' : 'bad'); sel = null; selLine = null; refresh(); } } }, 'Remove line'));
+  }
+  function nodePanel(l, n){
+    const del = h('button', { class: 'btn bad block', style: { marginTop: '14px' }, onclick: () => { sel = null; say(FA.gDel(l.id, n.id)); refresh(); } }, 'Remove node');
+    if(n.t === 'src'){ const f = l.sheet.feeds.find(q => q.id === n.id) || { mol: 0, price: 0, cost: 0 };
+      return put(h('h3', { html: pf(n.sp) }), h('p', { class: 'sub' }, isEl(n.sp) ? 'Element — bought automatically from WestShop' : 'Finished compound — bought ready-made'), group(row({ title: 'Price', right: m2(f.price) + ' / mol' }), row({ title: 'Buying', right: fm(f.mol) + ' mol/min' }), row({ title: 'Cost', right: m2(f.cost) + '/min' })),
+        h('div', { class: 'foot' }, 'Drag from the right dot to a reactor input. Ready-made intermediates cost their atoms + 10%; commodities cost their atoms.'), del); }
+    const rows = Object.keys(n.ins).map(s => row({ title: h('span', { html: pf(s) }), sub: n.ins[s].wired ? (n.ins[s].supplied ? 'supplied' : 'wired, but nothing upstream runs') : 'not wired', right: fm(n.ins[s].mol) + ' mol/min' }));
+    const outs = Object.keys(n.outs).map(s => row({ title: h('span', { html: pf(s) }), sub: (s === n.main ? 'main product' : 'by-product') + (n.outs[s].wired ? '' : ' · not wired (vented)') + (n.outs[s].left > 0.05 ? ' · ' + fm(n.outs[s].left) + ' spare is sold at atom value' : ''), right: fm(n.outs[s].mol) + ' mol/min' }));
+    const why = l.sheet.issues.filter(i => i.id === n.id);
+    put(h('div', { class: 'formula', style: { fontSize: '16px', fontWeight: 800, color: 'var(--tint)', lineHeight: 1.35 } }, n.eq), h('p', { class: 'sub' }, n.name + ' · ' + Math.round(n.y * 100) + '% yield per pass'),
+      why.length ? h('div', { class: 'iss' }, why.map(i => h('div', null, i.msg))) : null, h('div', { class: 'section-label' }, 'Inputs'), group(...rows), h('div', { class: 'section-label', style: { marginTop: '12px' } }, 'Outputs'), group(...outs),
+      h('div', { class: 'foot' }, n.active ? 'Running ' + fm(n.extent) + ' reactions/min — ' + Math.round(n.load * 100) + '% of this tier’s capacity.' : 'Idle: nothing downstream asks for its product yet.'), del);
+  }
+  function whPanel(l){
     const head = h('div', null, h('div', { class: 'formula', style: { fontSize: '26px', fontWeight: 800, color: 'var(--tint)' }, html: pf(l.f) }), h('p', { class: 'sub' }, l.name + ' · est. value ' + m2(l.est) + ' · input ' + m2(l.unitCost) + ' / mol'));
-    if(n.kind === 'rx'){
-      const r = n.r, sh = l.sheet, tgt = id => { const x = sh.reactors.find(q => q.id === id); return x ? x.mainl + ' reactor' : 'the warehouse'; };
-      const stepHead = h('div', null, h('div', { class: 'formula', style: { fontSize: '16px', fontWeight: 800, color: 'var(--tint)', lineHeight: 1.35 } }, r.eq), h('p', { class: 'sub' }, r.name));
-      const inRows = Object.keys(r.ins).map(sp => {
-        const tg = sh.toggles.find(t => t.sp === sp), fed = sh.feeds.find(x => x.to === r.id && x.sp === sp), made = sh.edges.some(e => e.to === r.id && e.sp === sp);
-        const src = fed && made ? 'bought at ' + m2(fed.price) + ' + recycled' : fed ? 'bought at ' + m2(fed.price) + '/mol' : 'made in this plant';
-        const seg = tg ? Kit.seg([{ id: 'buy', label: 'Buy' }, { id: 'make', label: 'Make' }], tg.opt, v => { const x = FA.setOpt(l.id, sp, v); Kit.toast(x.msg, x.ok ? 'good' : 'bad'); refresh(); }) : null;
-        return row({ title: h('span', { html: pf(sp) }), sub: fm(r.ins[sp]) + ' mol/min · ' + src, right: seg });
-      });
-      const outRows = Object.keys(r.loss).filter(k => k !== r.main && sh.edges.concat([]).length >= 0).map(k => {
-        const to = sh.edges.filter(e => e.from === r.id && e.sp === k), vent = sh.surplus.find(x => x.sp === k && x.from.includes(r.id));
-        return row({ title: h('span', { html: pf(k) }), sub: (to.length ? to.map(e => (e.recycle ? 'recycled to the ' : 'to the ') + tgt(e.to) + ' (' + fm(e.mol) + ')').join(', ') : '') + (vent ? (to.length ? ' · ' : '') + 'surplus vented (' + fm(vent.mol) + ')' : (to.length ? '' : 'vented')), right: 'by-product' });
-      });
-      const info = [group(row({ title: 'Makes', right: fm(r.out) + ' mol/min of ' + r.mainl }), row({ title: 'Yield per pass', right: Math.round(r.y * 100) + '%' })), inRows.length ? h('div', { class: 'section-label', style: { marginTop: '12px' } }, 'Inputs') : null, inRows.length ? group(...inRows) : null, outRows.length ? h('div', { class: 'section-label', style: { marginTop: '12px' } }, 'By-products') : null, outRows.length ? group(...outRows) : null];
-      if(!r.final){ put(stepHead, ...info, h('div', { class: 'foot' }, 'Buy/Make switches an input between buying it ready-made and building it in this plant. Select the last reactor (→ ' + pf(l.f).replace(/<[^>]+>/g, '') + ') to set the plant’s rate.')); return; }
-      const rl = h('b'), rs = h('input', { type: 'range', min: 0, max: l.cap, step: 0.5, value: l.rate }); const upd = () => { rl.textContent = fm(+rs.value) + ' mol/min'; }; upd();
-      rs.oninput = upd; rs.onchange = () => { FA.setRate(l.id, +rs.value); refresh(true); };
-      const pc = l.process, pb = !pc || pc.mode !== 'direct' ? null : h('div', { class: 'foot', style: { margin: '8px 0' } }, h('b', null, 'Direct from the elements (+25% cost)'), h('div', null, 'The real industrial route needs these discovered in WestLab: ' + pc.missing.join(', ') + '.'));
-      put(head, pb, stepHead.cloneNode(true), h('div', { class: 'foot', style: { margin: '4px 0 0' } }, sh.steps > 1 ? sh.steps + ' reactors · ' + (sh.recycle > 0 ? fm(sh.recycle) + ' mol/min recycled' : 'no recycle') + ' · ' + m2(l.unitCost) + ' of inputs per mol' : m2(l.unitCost) + ' of inputs per mol'), ...info,
-        h('div', { class: 'ctl' }, h('label', null, 'Production rate', rl), rs, h('div', { class: 'foot', style: { margin: '4px 0 0' } }, 'Cap ' + l.cap + ' mol/min at tier ' + l.tier + ' · input cost about ' + m2(l.unitCost * +rs.value) + '/min')),
-        h('div', { class: 'row2' }, h('button', { class: 'btn ' + (l.on ? 'gray' : 'good'), onclick: () => { FA.setOn(l.id, !l.on); refresh(); } }, l.on ? 'Pause' : 'Start'), l.upgradeCost != null ? h('button', { class: 'btn', onclick: () => { const r2_ = FA.upgrade(l.id); Kit.toast(r2_.msg, r2_.ok ? 'good' : 'bad'); refresh(); } }, 'Upgrade · ' + m2(l.upgradeCost)) : h('button', { class: 'btn gray', disabled: true }, 'Max tier')),
-        h('div', { class: 'foot' }, 'Warehouse holds ' + l.storage + ' mol (grows with tier). ' + (l.note ? 'Status: ' + l.note : '')), h('button', { class: 'btn bad block', style: { marginTop: '14px' }, onclick: async () => { if(await Kit.confirm({ title: 'Remove line?', msg: 'Stock in the warehouse moves to your bag.', ok: 'Remove', destructive: true })){ const x = await FA.remove(l.id); Kit.toast(x.msg, x.ok ? 'good' : 'bad'); sel = null; refresh(); } } }, 'Remove line'));
-      return;
-    }
-    /* warehouse / selling */
     const shop = l.route === 'shop', rg = shop ? l.shopRange : l.marketRange, pv = h('b'), ps = h('input', { type: 'range', min: rg.lo, max: rg.hi, step: 0.01, value: Math.min(rg.hi, Math.max(rg.lo, l.price)) }), ch = h('b', { style: { width: '0%' } }), cl = h('div', { class: 'foot', style: { margin: '6px 0 0' } });
     const paint = () => { const p = +ps.value; pv.textContent = m2(p) + ' (' + Math.round(p / l.est * 100) + '% of est.)'; if(shop){ const c = FA.chanceAt(l.id, p); ch.style.width = Math.round(c * 100) + '%'; ch.style.background = c > 0.7 ? 'var(--good)' : c > 0.35 ? '#e6a93a' : 'var(--bad)'; cl.textContent = Math.round(c * 100) + '% chance WestShop buys each batch of ' + l.batch + ' mol · a refusal means waiting 1 min' + (l.sat < 0.95 ? ' · shop demand is saturated' : ''); } else cl.textContent = 'You receive ' + m2(p * (1 - ST.cfg.fee)) + ' per mol after the ' + Math.round(ST.cfg.fee * 100) + '% fee.'; };
     paint(); ps.oninput = paint; ps.onchange = async () => { const r = await FA.setPrice(l.id, +ps.value); if(!r.ok) Kit.toast(r.msg, 'bad'); refresh(true); };
     const seg = Kit.seg([{ id: 'shop', label: 'WestShop' }, { id: 'market', label: 'Market' }], l.route, async r => { const x = await FA.setRoute(l.id, r); Kit.toast(x.msg, x.ok ? 'good' : 'bad'); refresh(); });
-    const live = h('div', { class: 'foot', 'data-live': '1' });
-    side.append(head, h('div', { class: 'pb', style: { height: '8px' } }, h('b', { style: { width: Math.min(100, l.stock / l.storage * 100) + '%', background: 'var(--tint)', display: 'block', height: '100%', borderRadius: '4px' } })), h('div', { class: 'foot', style: { margin: '4px 0 12px' } }, fm(l.stock) + ' of ' + l.storage + ' mol in the warehouse' + (l.full ? ' — full, production stalls' : '')), seg,
+    put(head, h('div', { class: 'pb', style: { height: '8px' } }, h('b', { style: { width: Math.min(100, l.stock / l.storage * 100) + '%', background: 'var(--tint)', display: 'block', height: '100%', borderRadius: '4px' } })), h('div', { class: 'foot', style: { margin: '4px 0 12px' } }, fm(l.stock) + ' of ' + l.storage + ' mol in the warehouse' + (l.full ? ' — full, production stalls' : '')), seg,
       h('div', { class: 'ctl' }, h('label', null, 'Your price per mol', pv), ps, shop ? h('div', { class: 'chance', style: { marginTop: '8px' } }, ch) : null, cl, h('div', { class: 'foot', style: { margin: '6px 0 0' } }, 'Allowed ' + m2(rg.lo) + ' – ' + m2(rg.hi) + (shop ? ' · sweet spot is usually just around the estimated value' : ''))),
       h('div', { class: 'row2' }, ...[['×0.9', 0.9], ['×1.0', 1], ['×1.2', 1.2]].map(([t, f]) => h('button', { class: 'chip', style: { textAlign: 'center' }, onclick: () => { ps.value = Math.min(rg.hi, Math.max(rg.lo, l.est * f)); paint(); ps.onchange(); } }, t))),
-      shop ? h('div', { class: 'row2' }, h('button', { class: 'btn good', id: 'sellnow', onclick: async () => { const r = FA.sellNow(l.id); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); refresh(); } }, 'Sell now'), h('button', { class: 'btn gray', onclick: () => { const r = FA.setAuto(l.id, !l.auto); refresh(); } }, 'Auto-sell: ' + (l.auto ? 'on' : 'off')))
-             : h('div', { class: 'row2' }, h('button', { class: 'btn gray', onclick: async () => { const r = await FA.withdraw(l.id); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); refresh(); } }, 'Withdraw ' + (l.listed || 0) + ' listed'), h('button', { class: 'btn gray', onclick: () => OS.open('WestShop') }, 'View Market')),
-      h('div', { class: 'row2' }, h('button', { class: 'btn gray', onclick: () => { const r = FA.collect(l.id); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); refresh(); } }, 'Move stock to my bag')), live);
+      shop ? h('div', { class: 'row2' }, h('button', { class: 'btn good', id: 'sellnow', onclick: async () => { const r = FA.sellNow(l.id); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); refresh(); } }, 'Sell now'), h('button', { class: 'btn gray', onclick: () => { FA.setAuto(l.id, !l.auto); refresh(); } }, 'Auto-sell: ' + (l.auto ? 'on' : 'off')))
+           : h('div', { class: 'row2' }, h('button', { class: 'btn gray', onclick: async () => { const r = await FA.withdraw(l.id); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); refresh(); } }, 'Withdraw ' + (l.listed || 0) + ' listed'), h('button', { class: 'btn gray', onclick: () => OS.open('WestShop') }, 'View Market')),
+      h('div', { class: 'row2' }, h('button', { class: 'btn gray', onclick: () => { const r = FA.collect(l.id); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); refresh(); } }, 'Move stock to my bag')), h('div', { class: 'foot', 'data-live': '1' }));
     tickPanel();
   }
+  function drawPanel(){
+    side.innerHTML = ''; if(panelBusy) return; const l = curLine();
+    if(!l) return put(h('h3', null, 'Your factory'), h('p', { class: 'sub' }, ST.lines.length ? 'Pick a plant above.' : 'Build a line to start producing.'), h('div', { class: 'foot' }, 'Each line is a plant you design: Sources → Reactors → Warehouse. Flow lines show molecules per minute; dashed purple lines are by-products reused elsewhere.'));
+    if(sel === 'wh') return whPanel(l);
+    if(sel === 'hub'){ const sh = l.route === 'shop'; return put(h('h3', null, sh ? 'WestShop' : 'Player Market'), h('p', { class: 'sub' }, sh ? 'Buys at your price if it’s inside the allowed range — higher prices are accepted less often, and a refusal locks that line for a minute.' : 'Other players buy your molecules here at the price you set. The Market keeps a ' + Math.round(ST.cfg.fee * 100) + '% fee.'), h('button', { class: 'btn', onclick: () => OS.open('WestShop') }, 'Open WestShop')); }
+    if(sel === 'bank') return put(h('h3', null, 'Bank'), h('p', { class: 'sub' }, 'Sales are paid straight into your bank balance.'), group(row({ title: 'Total sold', right: num(Math.floor(ST.sold)) + ' mol' }), row({ title: 'Total earned', right: m2(ST.earned) })));
+    if(sel && sel.startsWith('n:')){ const n = l.sheet.nodes.find(q => q.id === sel.slice(2)); if(n) return nodePanel(l, n); }
+    if(sel && sel.startsWith('w:')){ const [a, b, s] = sel.slice(2).split('|'), w = l.sheet.wires.find(q => q.a === a && q.b === b && q.s === s);
+      if(w) return put(h('h3', { html: pf(s) }), h('p', { class: 'sub' }, w.by ? 'By-product stream (used first, ahead of main supplies)' : 'Main stream'), group(row({ title: 'Flow', right: fm(w.mol) + ' mol/min' })), h('button', { class: 'btn bad block', style: { marginTop: '14px' }, onclick: () => { sel = null; say(FA.gUnwire(l.id, a, b, s)); refresh(); } }, 'Remove wire')); }
+    plantPanel(l);
+  }
   function tickPanel(){
-    const n = sel && NODES[sel]; if(!n || n.kind !== 'wh') return; const l = ST.lines.find(x => x.id === n.l.id), live = side.querySelector('[data-live]'); if(!l || !live) return;
+    const l = curLine(), live = side.querySelector('[data-live]'); if(!l || !live || sel !== 'wh') return;
     live.textContent = l.route === 'shop' ? (l.lockLeft > 0 ? 'WestShop sales locked for ' + l.lockLeft + ' s.' : 'Ready to sell.') + (l.note ? ' · ' + l.note : '') : (l.note || (OS.auth.signedIn() ? 'Listings update automatically.' : 'Sign in to sell on the Market.'));
   }
-  function refresh(keepPanel){ ST = FA.state(); drawTop(); drawNet(); if(!keepPanel) drawPanel(); }
-  Kit.live('factory', Kit.debounce(() => { const was = ST; ST = FA.state(); drawTop(); drawNet(); tickPanel(); }, 120)); Kit.live('cash', Kit.debounce(drawTop.bind(null), 400));
-  setInterval(() => { if(document.hidden) return; ST = FA.state(); tickPanel(); drawTop(); }, 2000);
+  function fix(){ if(!ST.lines.some(l => l.id === selLine)) selLine = ST.lines.length ? ST.lines[0].id : null; }
+  function refresh(keepPanel){ ST = FA.state(); fix(); drawTop(); drawNet(); if(!keepPanel) drawPanel(); }
+  Kit.live('factory', Kit.debounce(() => { if(dragging) return; ST = FA.state(); fix(); drawTop(); drawNet(); if(!side.contains(document.activeElement)) drawPanel(); else tickPanel(); }, 120)); Kit.live('cash', Kit.debounce(drawTop.bind(null), 400));
+  setInterval(() => { if(document.hidden || dragging) return; ST = FA.state(); tickPanel(); drawTop(); }, 2000);
   OS.on && OS.on('factory-sale', d => Kit.toast('Market sale: +' + m2(d.net) + ' (' + d.items + ' mol)', 'good'));
-  ST = FA.state(); drawTop(); drawNet(); drawPanel(); setTimeout(() => { ST = FA.state(); drawTop(); drawNet(); }, 300);
+  ST = FA.state(); fix(); drawTop(); drawNet(); drawPanel(); setTimeout(() => { ST = FA.state(); fix(); drawTop(); drawNet(); }, 300);
   if(!ST.lines.length && !FA.found().length) Kit.toast('Discover compounds in WestLab to unlock production', 'info');
 } });
 </script></body></html>

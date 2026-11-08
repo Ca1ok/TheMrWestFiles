@@ -91,18 +91,19 @@ const FactorySim = (function(){
   const DIA = new Set(['H', 'N', 'O', 'F', 'Cl', 'Br', 'I']);
   const elemOf = sp => { const m = /^(H|N|O|F|Cl|Br|I)2$/.exec(sp); if(m) return { sym: m[1], n: 2 }; return /^[A-Z][a-z]?$/.test(sp) ? { sym: sp, n: 1 } : null; };
   const nodeId = (pre, i) => pre + i;
+  const makeFormation = (sp, cp, y, id) => {                                       // elements → compound, no catalyst: the fallback and the 'make it from scratch' option
+    const inn = {}; let half = false;
+    Object.keys(cp).forEach(k => { if(DIA.has(k)){ inn[k + '2'] = cp[k] / 2; if(cp[k] % 2) half = true; } else inn[k] = cp[k]; });
+    const m = half ? 2 : 1; Object.keys(inn).forEach(k => inn[k] *= m);
+    return Object.assign(S(inn, { [sp]: m }, 'Combine the elements directly (no catalyst, no process)', y), { id, kind: 'formation' });
+  };
   function flowsheet(f, o){
     o = o || {}; const c = cfgOf(o.cfg), pr = process(f, o.found, c), r = ROUTES[f], opt = o.opt || {}, scale = o.rate == null ? 1 : Math.max(0, +o.rate || 0);
     const atomPrice = o.atomPrice || (() => 1), compOf = o.compOf || (() => null), have = new Set(o.found || []);
     const mfd = new Set(); Object.keys(ROUTES).forEach(k => ROUTES[k].steps.forEach(st => mfd.add(st.main)));       // manufactured intermediates carry the wholesale premium; commodities (NaCl, CO₂, CaCO₃, water …) cost their atoms
     const mk = sp => mfd.has(sp) ? c.readyMarkup : 1;
     const price = sp => { const e = elemOf(sp); if(e) return e.n * atomPrice(e.sym); const cp = compOf(sp); if(!cp) return Infinity; return Object.keys(cp).reduce((t, k) => t + cp[k] * atomPrice(k), 0) * mk(sp); };
-    const formation = (sp, y, id) => {                                            // elements → compound, no catalyst: the fallback and the 'make it from scratch' option
-      const cp = compOf(sp); if(!cp) return null; const inn = {}; let half = false;
-      Object.keys(cp).forEach(k => { if(DIA.has(k)){ inn[k + '2'] = cp[k] / 2; if(cp[k] % 2) half = true; } else inn[k] = cp[k]; });
-      const m = half ? 2 : 1; Object.keys(inn).forEach(k => inn[k] *= m);
-      return Object.assign(S(inn, { [sp]: m }, 'Combine the elements directly (no catalyst, no process)', y), { id, kind: 'formation' });
-    };
+    const formation = (sp, y, id) => { const cp = compOf(sp); return cp ? makeFormation(sp, cp, y, id) : null; };
     let defs = [], toggles = [];
     if(pr.mode === 'process'){
       const mains = new Set(r.steps.map(st => st.main)), raw = [];
@@ -143,9 +144,73 @@ const FactorySim = (function(){
     const mult = 1 + c.overhead + c.stepOverhead * Math.max(0, R - 1), credit = surplus.reduce((t, x) => t + x.u * (price(x.sp) / mk(x.sp)) * c.salvage, 0) * (isFinite(price(f)) ? 1 : 0);
     const gross = feedCost, unit = defs.length ? Math.max(gross * 0.05, (gross - credit) * mult) : Infinity;
     const reactors = act.map(a => { const d = a.d, ins = {}, loss = {}; Object.keys(d.in).forEach(k => { ins[k] = d.in[k] * a.x * scale; }); Object.keys(d.out).forEach(k => { loss[k] = d.out[k] * (1 - d.y) * a.x * scale; });
-      return { id: d.id, kind: d.kind, eq: d.eq, name: d.name, y: d.y, main: d.main, mainl: sub(d.main), depth: dep[d.id], extent: a.x * scale, out: d.out[d.main] * d.y * a.x * scale, ins, loss, final: d.main === f }; });
+      return { id: d.id, rc: d.kind === 'formation' ? 'F:' + d.main : recipeKey(d), kind: d.kind, eq: d.eq, name: d.name, y: d.y, main: d.main, mainl: sub(d.main), depth: dep[d.id], extent: a.x * scale, out: d.out[d.main] * d.y * a.x * scale, ins, loss, final: d.main === f }; });
     const recycle = edges.filter(e => e.recycle).reduce((t, e) => t + e.mol, 0);
     return { mode: pr.mode, missing: pr.missing, reactors, feeds, edges, surplus, toggles, unit, gross, credit: Math.min(credit, gross * 0.95) * mult, mult, costPerMin: unit * scale, recycle, stable, steps: R };
+  }
+  /* ---- THE RECIPE BOOK + PLAYER-BUILT FLOWSHEETS (Satisfactory style). The player places Source nodes (buy an element or a discovered compound), Reactor nodes (one recipe each) and wires
+   * them; the warehouse is the last node ('o'). graphSheet() solves that graph: demand-driven from the warehouse, by-product wires are used first, an input needs a PRIMARY supply
+   * (a Source or a main product) — by-products only top it up — so every recycle loop needs a make-up feed, like a real plant. */
+  const recipeKey = st => st.main + '<' + Object.keys(st.in).join('+');
+  const RECIPES = {}; Object.keys(ROUTES).forEach(k => ROUTES[k].steps.forEach(st => { const id = recipeKey(st); if(!RECIPES[id]) RECIPES[id] = Object.assign({ id, kind: 'real' }, st); }));
+  function recipeOf(id, compOf, c){ if(RECIPES[id]) return RECIPES[id]; if(/^F:/.test(id || '')){ const sp = id.slice(2), cp = compOf && compOf(sp); return cp ? makeFormation(sp, cp, 1 / (1 + cfgOf(c).directPenalty), id) : null; } return null; }
+  const FREE = new Set(['H2O']);                                                    // water needs no discovery
+  /* Every recipe the player can see: real industrial steps (unlocked when their main product and compound inputs are discovered) + 'combine the elements' for each discovered compound. */
+  function recipes(found, compOf, c){
+    const have = new Set(found || []), known = sp => elemOf(sp) || FREE.has(sp) || have.has(sp), out = [];
+    Object.keys(RECIPES).forEach(id => { const r = RECIPES[id], miss = [r.main].concat(Object.keys(r.in)).filter(sp => !known(sp)); out.push({ id, kind: 'real', eq: r.eq, name: r.name, y: r.y, main: r.main, in: r.in, out: r.out, locked: miss.length > 0, missing: miss }); });
+    (found || []).forEach(sp => { const cp = compOf && compOf(sp); if(!cp || RECIPES[sp]) return; const fr = recipeOf('F:' + sp, compOf, c); if(fr) out.push({ id: 'F:' + sp, kind: 'formation', eq: fr.eq, name: fr.name, y: fr.y, main: sp, in: fr.in, out: fr.out, locked: false, missing: [] }); });
+    return out;
+  }
+  const priceFn = (c, o) => { const atomPrice = o.atomPrice || (() => 1), compOf = o.compOf || (() => null), mfd = new Set(); Object.keys(ROUTES).forEach(k => ROUTES[k].steps.forEach(st => mfd.add(st.main)));
+    const mk = sp => mfd.has(sp) ? c.readyMarkup : 1, atoms = sp => { const e = elemOf(sp); if(e) return e.n * atomPrice(e.sym); const cp = compOf(sp); return cp ? Object.keys(cp).reduce((t, k) => t + cp[k] * atomPrice(k), 0) : Infinity; };
+    return { price: sp => atoms(sp) * (elemOf(sp) ? 1 : mk(sp)), atoms }; };
+  function graphSheet(g, o){
+    o = o || {}; const c = cfgOf(o.cfg), f = o.f, compOf = o.compOf || (() => null), P = priceFn(c, o), scale = Math.max(0, +o.rate || 0), cap = o.cap == null ? 3 * rateCap(1, c) : o.cap, EPS = 1e-12;
+    const X = {}, order = [], nodes = (g && g.nodes) || [];
+    nodes.forEach(n => {
+      if(!n || !n.id || X[n.id]) return;
+      if(n.t === 'src'){ if(!n.sp || !(elemOf(n.sp) || compOf(n.sp))) return; X[n.id] = { id: n.id, t: 'src', sp: n.sp, in: {}, out: { [n.sp]: 1 }, main: n.sp, y: 1, name: 'Buy ' + sub(n.sp) }; order.push(X[n.id]); }
+      else if(n.t === 'rx'){ const rc = recipeOf(n.rc, compOf, c); if(!rc) return; X[n.id] = { id: n.id, t: 'rx', rc: rc.id, in: rc.in, out: rc.out, main: rc.main, y: rc.y, name: rc.name, eq: rc.eq, kind: rc.kind }; order.push(X[n.id]); }
+    });
+    const seen = new Set(), W = [];
+    ((g && g.wires) || []).forEach(w => { if(!w || !X[w.a] || !X[w.a].out[w.s]) return; if(w.b === 'o' ? w.s !== f : !(X[w.b] && X[w.b].t === 'rx' && X[w.b].in[w.s])) return; const k = w.a + '>' + w.b + ':' + w.s; if(seen.has(k)) return; seen.add(k); W.push({ a: w.a, b: w.b, s: w.s, i: W.length }); });
+    const isBy = w => X[w.a].t === 'rx' && w.s !== X[w.a].main, inW = {}; W.forEach(w => { (inW[w.b + '|' + w.s] = inW[w.b + '|' + w.s] || []).push(w); });
+    const rx = order.filter(n => n.t === 'rx'), ok = {}; rx.forEach(n => { ok[n.id] = false; });
+    for(let ch = true, k = 0; ch && k < 60; k++){ ch = false; rx.forEach(n => { if(ok[n.id]) return; if(Object.keys(n.in).every(s => (inW[n.id + '|' + s] || []).some(w => X[w.a].t === 'src' || ok[w.a]))){ ok[n.id] = true; ch = true; } }); }   // least fixed point: supplied from outside, transitively
+    const outOk = (inW['o|' + f] || []).some(w => X[w.a].t === 'src' || ok[w.a]);
+    const xi = {}; rx.forEach(n => { xi[n.id] = 0; });
+    const pass = () => {
+      const rem = {}, dm = {}, fl = W.map(() => 0), short = []; rx.forEach(n => Object.keys(n.out).forEach(s => { rem[n.id + '|' + s] = n.out[s] * n.y * xi[n.id]; })); order.forEach(n => { dm[n.id] = {}; });
+      const take = (port, d) => { let r = d; const ws = inW[port] || []; ws.filter(isBy).forEach(w => { const k = w.a + '|' + w.s, t = Math.max(0, Math.min(r, rem[k])); rem[k] -= t; r -= t; fl[w.i] += t; });
+        const mw = ws.filter(w => !isBy(w) && (X[w.a].t === 'src' || ok[w.a])); if(r > EPS && mw.length) mw.forEach(w => { const q = r / mw.length; dm[w.a][w.s] = (dm[w.a][w.s] || 0) + q; fl[w.i] += q; }); else if(r > 1e-9) short.push({ port, r }); };
+      if(outOk) take('o|' + f, 1); rx.forEach(n => { if(ok[n.id]) Object.keys(n.in).forEach(s => take(n.id + '|' + s, n.in[s] * xi[n.id])); });
+      return { dm, fl, short };
+    };
+    let stable = false;
+    for(let it = 0; it < 600; it++){ const r = pass(); let diff = 0; rx.forEach(n => { const nx = ok[n.id] ? Math.min(1e6, (r.dm[n.id][n.main] || 0) / (n.out[n.main] * n.y)) : 0; diff = Math.max(diff, Math.abs(nx - xi[n.id])); xi[n.id] = nx; }); if(diff < 1e-13){ stable = true; break; } }
+    const res = pass(), maxXi = rx.reduce((m, n) => Math.max(m, xi[n.id]), 0), maxRate = maxXi > EPS ? cap / maxXi : Infinity, producing = outOk && stable && !res.short.length && res.fl.some((v, i) => W[i].b === 'o' && v > EPS), eff = producing && scale > 0 ? Math.min(scale, maxRate) : 0;
+    const issues = []; rx.forEach(n => { if(ok[n.id]) return; const miss = Object.keys(n.in).filter(s => !(inW[n.id + '|' + s] || []).some(w => X[w.a].t === 'src' || ok[w.a])); issues.push({ id: n.id, msg: sub(n.main) + ' reactor has no supply for ' + miss.map(sub).join(', ') + (miss.some(s => (inW[n.id + '|' + s] || []).length) ? ' (a loop needs a make-up source to start)' : '') }); });
+    res.short.forEach(sh => { const [b, sp] = sh.port.split('|'); issues.push({ id: b === 'o' ? 'o' : b, msg: (b === 'o' ? 'Warehouse' : sub(X[b].main) + ' reactor') + ' is short of ' + sub(sp) + ' — a by-product can’t cover it; add a Source or a main-product wire' }); });
+    if(!outOk) issues.push({ id: 'o', msg: 'Wire ' + sub(f) + ' into the warehouse from a reactor that makes it' }); if(!stable) issues.push({ id: null, msg: 'A loop doesn’t settle — it needs a bigger make-up supply or a lossier route' });
+    const feeds = [], leftU = {}; let feedCost = 0;
+    order.forEach(n => { if(n.t === 'src'){ const d = res.dm[n.id][n.sp] || 0, pc = P.price(n.sp); feedCost += d * pc; feeds.push({ id: n.id, sp: n.sp, spl: sub(n.sp), mol: d * eff, price: pc, cost: d * pc * eff, el: !!elemOf(n.sp) }); } });
+    const surplus = []; let credit = 0;
+    rx.forEach(n => { Object.keys(n.out).forEach(s => { const prod = n.out[s] * n.y * xi[n.id], used = W.reduce((t, w) => t + (w.a === n.id && w.s === s ? res.fl[w.i] : 0), 0), left = prod - used; if(left > 1e-9){ credit += left * (P.atoms(s) || 0) * c.salvage; surplus.push({ id: n.id, sp: s, spl: sub(s), mol: left * eff }); } }); });
+    const R = rx.filter(n => xi[n.id] > 1e-9).length, mult = 1 + c.overhead + c.stepOverhead * Math.max(0, R - 1), gross = feedCost, unit = producing ? Math.max(gross * 0.05, (gross - credit) * mult) : Infinity;
+    const wiresOut = W.map(w => ({ a: w.a, b: w.b, s: w.s, spl: sub(w.s), mol: res.fl[w.i] * eff, by: isBy(w), i: w.i }));
+    const nodesOut = order.map(n => { const ins = {}, outs = {}; Object.keys(n.in).forEach(s => { const ws = inW[n.id + '|' + s] || []; ins[s] = { wired: ws.length, supplied: ws.some(w => X[w.a].t === 'src' || ok[w.a]), mol: n.in[s] * (xi[n.id] || 0) * eff }; });
+      Object.keys(n.out).forEach(s => { const prod = n.out[s] * (n.t === 'src' ? 1 : n.y) * (n.t === 'src' ? (res.dm[n.id][n.sp] || 0) : xi[n.id]), used = W.reduce((t, w) => t + (w.a === n.id && w.s === s ? res.fl[w.i] : 0), 0); outs[s] = { wired: W.filter(w => w.a === n.id && w.s === s).length, mol: prod * eff, left: Math.max(0, prod - used) * eff }; });
+      return { id: n.id, t: n.t, sp: n.sp || null, rc: n.rc || null, main: n.main, mainl: sub(n.main), y: n.y, name: n.name, eq: n.eq || null, kind: n.kind || null, ok: n.t === 'src' ? true : ok[n.id], active: n.t === 'src' ? (res.dm[n.id][n.sp] || 0) > EPS : xi[n.id] > EPS, extent: (xi[n.id] || 0) * eff, load: cap > 0 ? (xi[n.id] || 0) * eff / cap : 0, ins, outs }; });
+    return { f, nodes: nodesOut, wires: wiresOut, feeds, surplus, issues, unit, gross, credit: credit * mult, mult, costPerMin: isFinite(unit) ? unit * eff : 0, maxRate, effRate: eff, producing, stable, steps: R, recycle: wiresOut.filter(w => w.by).reduce((t, w) => t + w.mol, 0), outWired: outOk };
+  }
+  /* A starter graph from the real industrial route (what 'Auto-build' and old saved lines use): flowsheet() output laid out as nodes + wires. */
+  function graphFromSheet(sh){
+    const nodes = [], wires = [], id = {}, byDepth = {}, W = 270; let n = 1;
+    sh.reactors.forEach(r => { const row = byDepth[r.depth] = (byDepth[r.depth] == null ? 0 : byDepth[r.depth] + 1), nid = 'n' + n++; id[r.id] = nid; nodes.push({ id: nid, t: 'rx', rc: r.rc, x: 40 + r.depth * W, y: 250 + row * 230 }); });
+    const cnt = {}; sh.feeds.forEach(f => { const cn = nodes.find(q => q.id === id[f.to]), j = cnt[f.to] = (cnt[f.to] == null ? 0 : cnt[f.to] + 1), nid = 'n' + n++; id[f.id] = nid; nodes.push({ id: nid, t: 'src', sp: f.sp, x: cn.x + j * 100, y: 20 + (j % 2) * 110 }); wires.push({ a: nid, b: id[f.to], s: f.sp }); });
+    sh.edges.forEach(e => wires.push({ a: id[e.from], b: e.to === 'out' ? 'o' : id[e.to], s: e.sp }));
+    return { nodes, wires, next: n };
   }
   const marketRange = (est, c) => { c = cfgOf(c); return { lo: r2(Math.max(0.01, est * c.marketLo)), hi: r2(Math.max(0.02, est * c.marketHi)) }; };
 
@@ -162,6 +227,6 @@ const FactorySim = (function(){
     c = cfgOf(c); const els = {}; let cost = 0; Object.keys(comp).forEach(e => { els[e] = comp[e] * line.rate; cost += comp[e] * line.rate * price(e); });
     return { els, costPerMin: r2(cost * (factor != null ? factor : 1 + c.overhead)) };
   }
-  return { DEFAULTS, cfgOf, r2, clamp, rateCap, upgradeCost, slotCost, storage, batch, shopRange, shopChance, marketRange, planProduction, flows, process, flowsheet, sub, ROUTES };
+  return { DEFAULTS, cfgOf, r2, clamp, rateCap, upgradeCost, slotCost, storage, batch, shopRange, shopChance, marketRange, planProduction, flows, process, flowsheet, graphSheet, graphFromSheet, recipes, recipeOf, RECIPES, elemOf, priceFn, sub, ROUTES };
 })();
 if(typeof module !== 'undefined' && module.exports) module.exports = FactorySim;

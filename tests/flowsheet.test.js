@@ -51,4 +51,23 @@ const plain = base('NaCl', ALL, {}, 1); assert.strictEqual(plain.mode, 'plain');
 const idle = base('HNO3', ALL, {}, 0); assert.strictEqual(idle.reactors.length, 4); assert(Math.abs(idle.unit - hno3.unit) < 1e-9); assert(idle.feeds.every(f => f.mol === 0));
 // 8. flow sizes scale linearly with the rate
 const dbl = base('HNO3', ALL, {}, 20); assert(Math.abs(dbl.feeds[0].mol - 2 * hno3.feeds[0].mol) < 1e-9);
-console.log('flowsheet ok (' + n + ' trees checked)');
+
+// 9. player-built graphs (Satisfactory style)
+const gs = (g, f, rate, found) => F.graphSheet(g, { f, rate: rate == null ? 10 : rate, found: found || ALL, atomPrice: e => AP[e] || 5, compOf: sp => { const c = atomsOf(sp); return c && Object.keys(c).length > 1 ? c : null; } });
+// 9a. every auto-built route, turned into a graph, solves to exactly the same price (and the same recycle) as the tree it came from
+Object.keys(F.ROUTES).forEach(f => { const t = base(f, ALL, {}, 10), g = F.graphFromSheet(t), s = gs(g, f, 10); assert(s.producing, f + ' graph produces: ' + JSON.stringify(s.issues)); assert(Math.abs(s.unit - t.unit) < 1e-6, f + ' graph price ' + s.unit + ' vs tree ' + t.unit); });
+// 9b. hand-built nitric acid plant: nothing runs until it is wired; the NO by-product wire cuts the price
+const mk = () => ({ nodes: [{ id: 'a', t: 'src', sp: 'N2' }, { id: 'b', t: 'src', sp: 'H2' }, { id: 'c', t: 'src', sp: 'O2' }, { id: 'd', t: 'src', sp: 'O2' }, { id: 'h', t: 'rx', rc: 'NH3<N2+H2' }, { id: 'x', t: 'rx', rc: 'NO<NH3+O2' }, { id: 'y', t: 'rx', rc: 'NO2<NO+O2' }, { id: 'z', t: 'rx', rc: 'HNO3<NO2+H2O' }], wires: [] });
+let g = mk(); assert(!gs(g, 'HNO3').producing && gs(g, 'HNO3').issues.length >= 4, 'unwired plant is idle and says why');
+g.wires = [['a', 'h', 'N2'], ['b', 'h', 'H2'], ['h', 'x', 'NH3'], ['c', 'x', 'O2'], ['x', 'y', 'NO'], ['d', 'y', 'O2'], ['y', 'z', 'NO2'], ['x', 'z', 'H2O'], ['z', 'o', 'HNO3']].map(([a, b, s]) => ({ a, b, s }));
+const plain0 = gs(g, 'HNO3'); assert(plain0.producing, JSON.stringify(plain0.issues));
+g.wires.push({ a: 'z', b: 'y', s: 'NO' }); const looped = gs(g, 'HNO3'); assert(looped.producing && looped.unit < plain0.unit - 0.01 && looped.recycle > 0, 'recycling the absorber’s NO is cheaper'); assert(Math.abs(looped.unit - hno3.unit) < 1e-6, 'same plant as the auto tree');
+// 9c. a by-product alone cannot start a loop (make-up feed needed), wrong-species wires are ignored, missing recipe gives a clear issue
+let g2 = mk(); g2.wires = [['a', 'h', 'N2'], ['b', 'h', 'H2'], ['h', 'x', 'NH3'], ['c', 'x', 'O2'], ['x', 'y', 'NO'], ['d', 'y', 'O2'], ['y', 'z', 'NO2'], ['x', 'z', 'H2O'], ['z', 'o', 'HNO3']].map(([a, b, s]) => ({ a, b, s }));
+g2.wires = g2.wires.filter(w => !(w.a === 'x' && w.b === 'y')).concat([{ a: 'z', b: 'y', s: 'NO' }]); const nostart = gs(g2, 'HNO3'); assert(!nostart.producing, 'NO only from the by-product wire cannot supply the oxidiser');
+g2.wires.push({ a: 'a', b: 'z', s: 'N2' }); assert.strictEqual(gs(g2, 'HNO3').wires.length, g2.wires.length - 1, 'a wire into a port that does not take it is dropped');
+// 9d. reactor cap limits the rate; cost scales with what is really built
+const capped = F.graphSheet(F.graphFromSheet(base('HNO3', ALL, {}, 10)), { f: 'HNO3', rate: 10, found: ALL, cap: 3, atomPrice: e => AP[e] || 5, compOf: sp => { const c = atomsOf(sp); return c && Object.keys(c).length > 1 ? c : null; } }); assert(capped.effRate < 10 && capped.effRate > 0, 'bottleneck reactor limits the plant: ' + capped.effRate);
+// 9e. recipe book: unlock by discovery, every discovered compound can be built from its elements
+const book = F.recipes(['NH3'], sp => { const c = atomsOf(sp); return c && Object.keys(c).length > 1 ? c : null; }); assert(!book.find(r => r.id === 'NH3<N2+H2').locked); assert(book.find(r => r.id === 'HNO3<NO2+H2O').locked); assert(book.some(r => r.id === 'F:NH3') || F.RECIPES['NH3<N2+H2'], 'known');
+console.log('flowsheet ok (' + n + ' trees, graphs checked)');

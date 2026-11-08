@@ -1,5 +1,6 @@
 /* KERNEL · factory — WestFactory's engine: reactor lines, the production loop, selling to WestShop and the player Market.
- *   - A line is a FLOWSHEET (FactorySim.flowsheet): a tree of reactor nodes (e.g. Haber → NH₃ oxidation → NO oxidation → absorption for HNO₃) with by-product recycle. l.opt = { species: 'buy' | 'make' }
+ *   - A line is a PLAYER-BUILT FLOWSHEET (FactorySim.graphSheet): l.g = { nodes:[{id,t:'src',sp,x,y} | {id,t:'rx',rc,x,y}], wires:[{a,b,s}], next } — Source nodes buy an element or a discovered compound, Reactor nodes
+ *     run one recipe, wires carry one species; the warehouse is the virtual node 'o'. Old single-reactor lines are migrated to the equivalent graph (FactorySim.graphFromSheet) on load.
  *     lets the player buy an intermediate ready-made, or make a raw compound in-house; the solver prices and sizes every node from that.
  *   - Everything that moves money or items happens here; the app only asks (setRate, setPrice, sellNow …) and every call is re-validated.
  *   - Production buys the elements at today's WestShop price (+ overhead) and only uses compounds you have DISCOVERED in WestLab.
@@ -21,6 +22,17 @@
   const line = id => S().lines.find(l => l.id === id);
   let ticking = false, lastSave = 0, uiSig = ''; const pushAt = new Map();
 
+  const cleanGraph = g => {
+    const nodes = [], wires = [], ids = new Set(), clampN = v => F.clamp(Math.round(num(v, 0)), 0, 6000);
+    K.toArr(g && g.nodes).slice(0, 24).forEach(n => {
+      if(!n || !/^[a-z0-9]{1,8}$/.test(String(n.id)) || n.id === 'o' || ids.has(n.id)) return;
+      if(n.t === 'src' && typeof n.sp === 'string' && /^[A-Za-z0-9()]{1,16}$/.test(n.sp)){ ids.add(n.id); nodes.push({ id: n.id, t: 'src', sp: n.sp, x: clampN(n.x), y: clampN(n.y) }); }
+      else if(n.t === 'rx' && typeof n.rc === 'string' && /^[A-Za-z0-9()<+:]{1,60}$/.test(n.rc)){ ids.add(n.id); nodes.push({ id: n.id, t: 'rx', rc: n.rc, x: clampN(n.x), y: clampN(n.y) }); }
+    });
+    K.toArr(g && g.wires).slice(0, 48).forEach(w => { if(w && ids.has(w.a) && (w.b === 'o' || ids.has(w.b)) && typeof w.s === 'string' && /^[A-Za-z0-9()]{1,16}$/.test(w.s)) wires.push({ a: w.a, b: w.b, s: w.s }); });
+    return { nodes, wires, next: Math.max(1, Math.floor(num(g && g.next, nodes.length + 1))) };
+  };
+  const migrate = l => { try{ return cleanGraph(F.graphFromSheet(F.flowsheet(l.f, { found: K.S.lab.found, opt: cleanOpt(l._o), rate: 1, atomPrice: elPrice, compOf, cfg: CFG }))); }catch(e){ return { nodes: [], wires: [], next: 1 }; } };   // old lines become the equivalent graph
   const cleanOpt = o => { const out = {}; if(o && typeof o === 'object') Object.keys(o).slice(0, 16).forEach(k => { if(/^[A-Za-z0-9()]{1,16}$/.test(k) && (o[k] === 'buy' || o[k] === 'make')) out[k] = o[k]; }); return out; };
 
   /* ---- state hygiene (called after every load / adopt) ---- */
@@ -30,33 +42,35 @@
     lines.forEach(l => {
       if(!l || typeof l.f !== 'string' || !compOf(l.f)) return; const tier = F.clamp(Math.floor(num(l.tier, 1)), 1, CFG.maxTier);
       out.lines.push({ id: String(l.id || ('l' + out.nid++)).replace(/[^a-z0-9_-]/gi, '').slice(0, 12) || ('l' + out.nid++), f: keyOf(l.f), tier, rate: F.clamp(num(l.rate, 0), 0, F.rateCap(tier, CFG)), on: l.on !== false, route: l.route === 'market' ? 'market' : 'shop',
-        price: Math.max(0.01, r2(num(l.price, est(l.f)))), auto: l.auto !== false, stock: F.clamp(num(l.stock, 0), 0, F.storage(tier, CFG)), sellAt: num(l.sellAt, 0), listed: Math.max(0, Math.floor(num(l.listed, 0))), note: String(l.note || '').slice(0, 80), opt: cleanOpt(l.opt) });
+        price: Math.max(0.01, r2(num(l.price, est(l.f)))), auto: l.auto !== false, stock: F.clamp(num(l.stock, 0), 0, F.storage(tier, CFG)), sellAt: num(l.sellAt, 0), listed: Math.max(0, Math.floor(num(l.listed, 0))), note: String(l.note || '').slice(0, 80), g: null, _o: l.opt, _g: l.g });
     });
-    if(raw.pos && typeof raw.pos === 'object') Object.keys(raw.pos).filter(k => /^(rx|fd):[^:]+:.+|^(wh):[^:]+$|^hub:|^bank$/.test(k)).slice(0, 200).forEach(k => { const p = raw.pos[k]; if(p && isFinite(+p.x) && isFinite(+p.y)) out.pos[String(k).slice(0, 40)] = { x: Math.round(+p.x), y: Math.round(+p.y) }; });
+    out.lines.forEach(l => { l.g = l._g ? cleanGraph(l._g) : migrate(l); delete l._g; delete l._o; });
+    if(raw.pos && typeof raw.pos === 'object') Object.keys(raw.pos).filter(k => /^wh:[^:]+$|^hub:|^bank$/.test(k)).slice(0, 40).forEach(k => { const p = raw.pos[k]; if(p && isFinite(+p.x) && isFinite(+p.y)) out.pos[String(k).slice(0, 40)] = { x: Math.round(+p.x), y: Math.round(+p.y) }; });
     K.S.factory = out;
   };
 
   /* ---- derived numbers for the UI ---- */
   const proc = f => F.process(f, K.S.lab.found, CFG);                       // how this product is made right now (real multistep process, or direct from the elements)
-  const sheetOf = (f, opt, rate) => F.flowsheet(f, { found: K.S.lab.found, opt, rate, atomPrice: elPrice, compOf, cfg: CFG });   // the reactor tree of a line (rate 0 = structure + unit cost only)
+  const autoOf = (f, opt, rate) => F.flowsheet(f, { found: K.S.lab.found, opt, rate, atomPrice: elPrice, compOf, cfg: CFG });   // the real industrial route as a tree (used by 'Auto-build' and the add-line margins)
+  const sheetOf = (l, rate) => F.graphSheet(l.g, { f: l.f, found: K.S.lab.found, rate, atomPrice: elPrice, compOf, cfg: CFG, cap: 3 * F.rateCap(l.tier, CFG) });   // the player's graph, solved (rate 0 = structure + unit cost only)
   let memo = null;                                                              // per-tick cache of unit costs (prices don't move inside one tick)
-  const unitFor = l => { if(memo && memo.has(l.id)) return memo.get(l.id); const u = sheetOf(l.f, l.opt, 0).unit; if(memo) memo.set(l.id, u); return u; };
+  const sheetFor = l => { if(memo && memo.has(l.id)) return memo.get(l.id); const sh = sheetOf(l, 0); if(memo) memo.set(l.id, sh); return sh; };
   function view(l){
-    const pr = proc(l.f), comp = compOf(l.f) || {}, e = est(l.f), rg = F.shopRange(e, CFG), q = l.route === 'shop' ? FA.quote(l.id) : null, run = l.on && l.rate > 0, sh = sheetOf(l.f, l.opt, run ? l.rate : 0);
+    const pr = proc(l.f), comp = compOf(l.f) || {}, e = est(l.f), rg = F.shopRange(e, CFG), q = l.route === 'shop' ? FA.quote(l.id) : null, run = l.on && l.rate > 0, sh = sheetOf(l, run ? l.rate : 0);
     return { id: l.id, f: l.f, name: nameOf(l.f), tier: l.tier, cap: F.rateCap(l.tier, CFG), rate: l.rate, on: l.on, route: l.route, price: l.price, auto: l.auto, stock: l.stock, storage: F.storage(l.tier, CFG), listed: l.listed,
-      comp, est: e, shopRange: rg, marketRange: F.marketRange(e, CFG), upgradeCost: F.upgradeCost(l.tier, CFG), unitCost: r2(sh.unit), sheet: sh, process: { mode: pr.mode, steps: pr.steps.map(x => ({ eq: x.eq, name: x.name, y: x.y })), yield: pr.yield, missing: pr.missing },
+      comp, est: e, shopRange: rg, marketRange: F.marketRange(e, CFG), upgradeCost: F.upgradeCost(l.tier, CFG), unitCost: isFinite(sh.unit) ? r2(sh.unit) : 0, sheet: sh, g: l.g, rateEff: sh.effRate, process: { mode: pr.mode, steps: pr.steps.map(x => ({ eq: x.eq, name: x.name, y: x.y })), yield: pr.yield, missing: pr.missing },
       costPerMin: run ? r2(sh.costPerMin) : 0, chance: q ? q.chance : null, sat: q ? q.sat : null, lockLeft: Math.max(0, Math.ceil((l.sellAt - K.now()) / 1000)), note: l.note, batch: F.batch(l.tier, CFG), full: l.stock >= F.storage(l.tier, CFG) - 1e-6 };
   }
   FA.state = function(){
     const s = S(), lines = s.lines.map(view); let cost = 0, rev = 0, mol = 0;
     lines.forEach(l => {                                                              // long-run flow: a refused price slows SELLING, the warehouse fills and production follows it
-      if(!(l.on && l.rate > 0)) return; let eff = l.rate;
-      if(l.route === 'shop' && l.chance != null){ const c = Math.max(0.02, l.chance); eff = Math.min(l.rate, l.batch * c / ((c * 5 + (1 - c) * 60) / 60)); }
-      cost += l.costPerMin * eff / l.rate; mol += eff; rev += eff * l.price * (l.route === 'shop' ? 1 : 1 - CFG.marketFee);
+      if(!(l.on && l.rate > 0 && l.rateEff > 0)) return; let eff = l.rateEff;
+      if(l.route === 'shop' && l.chance != null){ const c = Math.max(0.02, l.chance); eff = Math.min(l.rateEff, l.batch * c / ((c * 5 + (1 - c) * 60) / 60)); }
+      cost += l.costPerMin * eff / l.rateEff; mol += eff; rev += eff * l.price * (l.route === 'shop' ? 1 : 1 - CFG.marketFee);
     });
     return { lines, slots: s.slots, maxSlots: CFG.slotsMax, nextSlotCost: F.slotCost(s.slots, CFG), reserve: s.reserve, made: s.made, sold: s.sold, earned: s.earned, pos: Object.assign({}, s.pos), perMin: { mol: r2(mol), cost: r2(cost), rev: r2(rev), net: r2(rev - cost) }, cfg: { fee: CFG.marketFee, failLockMs: CFG.failLockMs, shopLo: CFG.shopLo, shopHi: CFG.shopHi, maxTier: CFG.maxTier }, online: C.signedIn() };
   };
-  FA.found = () => K.S.lab.found.filter(f => compOf(f)).map(f => ({ f, name: nameOf(f), est: est(f), comp: compOf(f), unitCost: r2(sheetOf(f, {}, 0).unit), process: proc(f).mode }));
+  FA.found = () => K.S.lab.found.filter(f => compOf(f)).map(f => ({ f, name: nameOf(f), est: est(f), comp: compOf(f), unitCost: r2(autoOf(f, {}, 0).unit), process: proc(f).mode }));
   FA.quote = function(id){
     const l = line(id); if(!l) return null; const e = est(l.f), rg = F.shopRange(e, CFG), n = Math.max(1, Math.min(Math.floor(l.stock) || F.batch(l.tier, CFG), F.batch(l.tier, CFG)));
     const quote = K.sellQuote(l.f, n), sat = F.clamp(quote.avg / (0.7 * e || 1), 0.3, 1), price = F.clamp(l.price, rg.lo, rg.hi);
@@ -67,9 +81,10 @@
   /* ---- the loop ---- */
   function produce(l, minutes){
     if(!l.on || !(l.rate > 0)) return;
-    const comp = compOf(l.f); if(!comp) return;
-    const plan = F.planProduction({ comp, price: elPrice, rate: l.rate, minutes, unit: unitFor(l), cash: K.S.cash, reserve: S().reserve, space: F.storage(l.tier, CFG) - l.stock, cfg: CFG });
-    l.note = plan.made <= 0 ? (l.stock >= F.storage(l.tier, CFG) - 1e-6 ? 'Warehouse full' : (plan.unit > 0 ? 'Low on cash' : '')) : (plan.limited ? 'Low on cash' : '');
+    const comp = compOf(l.f); if(!comp) return; const sh = sheetFor(l);
+    if(!isFinite(sh.unit)){ l.note = (sh.issues.length ? 'Incomplete: ' + sh.issues[0].msg : l.g.nodes.length ? 'Not producing — check the wiring' : 'Build the process: add sources and reactors').slice(0, 80); return; }
+    const plan = F.planProduction({ comp, price: elPrice, rate: Math.min(l.rate, sh.maxRate), minutes, unit: sh.unit, cash: K.S.cash, reserve: S().reserve, space: F.storage(l.tier, CFG) - l.stock, cfg: CFG });
+    l.note = plan.made <= 0 ? (l.stock >= F.storage(l.tier, CFG) - 1e-6 ? 'Warehouse full' : (plan.unit > 0 ? 'Low on cash' : '')) : (plan.limited ? 'Low on cash' : (sh.maxRate < l.rate - 1e-6 ? 'A reactor is the bottleneck' : ''));
     if(plan.made <= 0) return;
     if(plan.cost > 0 && !K.spend(plan.cost, 'WestFactory: ' + l.f + ' inputs')) return;
     l.stock = Math.min(F.storage(l.tier, CFG), l.stock + plan.made); S().made += plan.made;
@@ -132,19 +147,43 @@
     if(!K.S.lab.found.some(x => keyOf(x) === key)) return no('Discover it in WestLab first.');
     if(s.lines.length >= s.slots) return no('No free line — buy another slot.');
     if(s.lines.some(l => l.f === key)) return no('You already produce that.');
-    const id = 'l' + (s.nid++); s.lines.push({ id, f: key, tier: 1, rate: 1, on: true, route: 'shop', price: r2(est(key) * 0.9), auto: true, stock: 0, sellAt: 0, listed: 0, note: '', opt: {} }); touch(); return ok('Line built for ' + nameOf(key) + '.', { id });
+    const id = 'l' + (s.nid++); s.lines.push({ id, f: key, tier: 1, rate: 1, on: true, route: 'shop', price: r2(est(key) * 0.9), auto: true, stock: 0, sellAt: 0, listed: 0, note: '', g: { nodes: [], wires: [], next: 1 } }); touch(); return ok('Line built for ' + nameOf(key) + '.', { id });
   };
   FA.buySlot = function(){ const s = S(), c = F.slotCost(s.slots, CFG); if(c == null) return no('You already have every slot.'); if(!K.spend(c, 'WestFactory: new line slot')) return no('You need ' + fmt(c) + '.'); s.slots++; touch(); return ok('Slot unlocked for ' + fmt(c) + '.'); };
   FA.upgrade = function(id){ const l = line(id); if(!l) return no('No such line.'); const c = F.upgradeCost(l.tier, CFG); if(c == null) return no('Already at the top tier.'); if(!K.spend(c, 'WestFactory: upgrade ' + l.f)) return no('You need ' + fmt(c) + '.'); l.tier++; touch(); return ok('Upgraded to tier ' + l.tier + ' (max ' + F.rateCap(l.tier, CFG) + ' mol/min).'); };
   FA.setRate = function(id, r){ const l = line(id); if(!l) return no('No such line.'); l.rate = F.clamp(r2(num(r, 0)), 0, F.rateCap(l.tier, CFG)); touch(); return ok('Rate set.'); };
   FA.setOn = function(id, on){ const l = line(id); if(!l) return no('No such line.'); l.on = !!on; touch(); return ok(on ? 'Line running.' : 'Line paused.'); };
   FA.setAuto = function(id, a){ const l = line(id); if(!l) return no('No such line.'); l.auto = !!a; touch(); return ok('Saved.'); };
-  FA.setOpt = function(id, sp, val){                                              // flowsheet choice: buy an intermediate ready-made, make a raw compound here, or back to default
-    const l = line(id); if(!l) return no('No such line.'); sp = String(sp); const t = sheetOf(l.f, l.opt, 0).toggles.find(x => x.sp === sp); if(!t) return no('That input can’t be changed.');
-    if(val === 'buy' && !t.canBuy) return no('That compound isn’t on sale.');
-    const def = t.role === 'made' ? 'make' : 'buy'; if(val === def || val === 'default') delete l.opt[sp]; else if(val === 'buy' || val === 'make') l.opt[sp] = val; else return no('Unknown choice.');
-    touch(); return ok(val === 'buy' || (t.role === 'raw' && val !== 'make') ? 'Buying ' + F.sub(sp) + ' ready-made.' : 'Making ' + F.sub(sp) + ' in this plant.');
+  /* ---- flowsheet editing: every call is re-validated here; the app only asks ---- */
+  const gOf = l => l.g || (l.g = { nodes: [], wires: [], next: 1 });
+  const gSp = /^[A-Za-z0-9()]{1,16}$/;
+  FA.sources = function(){                                                          // what a Source node can buy: every element, plus the compounds you have discovered (and water)
+    const P = F.priceFn(F.cfgOf(CFG), { atomPrice: elPrice, compOf }), found = new Set(K.S.lab.found.map(keyOf).filter(Boolean)), out = [];
+    ELEMENTS.forEach(e => { const sym = e[1], sp = ['H', 'N', 'O', 'F', 'Cl', 'Br', 'I'].includes(sym) ? sym + '2' : sym; out.push({ sp, name: e[2] + (sp !== sym ? ' (' + sp.replace(/\d/g, d => '₀₁₂₃₄₅₆₇₈₉'[d]) + ')' : ''), price: r2(P.price(sp)), el: true }); });
+    K.S.lab.found.filter(f => compOf(f)).concat(found.has('H2O') ? [] : ['H2O']).forEach(f => { out.push({ sp: f, name: nameOf(f), price: r2(P.price(f)), el: false }); });
+    return out;
   };
+  FA.recipes = () => F.recipes(K.S.lab.found, compOf, CFG);
+  FA.gAdd = function(id, kind, ref, x, y){
+    const l = line(id); if(!l) return no('No such line.'); const g = gOf(l); if(g.nodes.length >= 24) return no('A plant can have at most 24 nodes.'); ref = String(ref);
+    const n = { id: 'n' + (g.next++), t: kind === 'src' ? 'src' : 'rx', x: F.clamp(Math.round(num(x, 40)), 0, 6000), y: F.clamp(Math.round(num(y, 40)), 0, 6000) };
+    if(kind === 'src'){ if(!gSp.test(ref)) return no('Unknown source.'); if(!FA.sources().some(s => s.sp === ref)) return no('You can’t buy that yet.'); n.sp = ref; }
+    else { const rc = FA.recipes().find(r => r.id === ref); if(!rc) return no('Unknown recipe.'); if(rc.locked) return no('Discover ' + rc.missing.map(F.sub).join(', ') + ' in WestLab to unlock this recipe.'); n.rc = ref; }
+    g.nodes.push(n); touch(); return ok('Added.', { nid: n.id });
+  };
+  FA.gMove = function(id, nid, x, y){ const l = line(id), n = l && gOf(l).nodes.find(q => q.id === nid); if(!n) return; n.x = F.clamp(Math.round(num(x, n.x)), 0, 6000); n.y = F.clamp(Math.round(num(y, n.y)), 0, 6000); K.touch('factory'); };
+  FA.gDel = function(id, nid){ const l = line(id); if(!l) return no('No such line.'); const g = gOf(l); if(!g.nodes.some(q => q.id === nid)) return no('No such node.'); g.nodes = g.nodes.filter(q => q.id !== nid); g.wires = g.wires.filter(w => w.a !== nid && w.b !== nid); touch(); return ok('Removed.'); };
+  FA.gWire = function(id, a, b, sp){
+    const l = line(id); if(!l) return no('No such line.'); const g = gOf(l), sh = sheetOf(l, 0); sp = String(sp); if(g.wires.length >= 48) return no('Too many wires (48 max).');
+    const A = sh.nodes.find(q => q.id === a); if(!A || !A.outs[sp]) return no('That node doesn’t output ' + F.sub(sp) + '.');
+    if(b === 'o'){ if(sp !== l.f) return no('The warehouse only takes ' + F.sub(l.f) + '.'); }
+    else { const B = sh.nodes.find(q => q.id === b); if(!B || B.t !== 'rx' || !B.ins[sp]) return no('That reactor doesn’t take ' + F.sub(sp) + '.'); if(a === b) return no('A reactor can’t feed itself directly.'); }
+    if(g.wires.some(w => w.a === a && w.b === b && w.s === sp)) return no('Already connected.');
+    g.wires.push({ a, b, s: sp }); touch(); return ok('Connected.');
+  };
+  FA.gUnwire = function(id, a, b, sp){ const l = line(id); if(!l) return no('No such line.'); const g = gOf(l), n = g.wires.length; g.wires = g.wires.filter(w => !(w.a === a && w.b === b && w.s === sp)); if(g.wires.length === n) return no('No such wire.'); touch(); return ok('Wire removed.'); };
+  FA.gAuto = function(id){ const l = line(id); if(!l) return no('No such line.'); const sh = autoOf(l.f, {}, 1); if(!sh.reactors.length) return no('No route for that.'); l.g = cleanGraph(F.graphFromSheet(sh)); touch(); return ok(sh.mode === 'process' ? 'Built the industrial route — rearrange or edit it.' : 'Built a direct-combination reactor (discover the intermediates in WestLab for the real process).'); };
+  FA.gClear = function(id){ const l = line(id); if(!l) return no('No such line.'); l.g = { nodes: [], wires: [], next: 1 }; touch(); return ok('Cleared.'); };
   FA.setReserve = function(v){ S().reserve = F.clamp(r2(num(v, 0)), 0, 1e9); touch(); return ok('Cash reserve saved.'); };
   FA.setPos = function(key, x, y){ const p = S().pos; key = String(key).slice(0, 40); if(isFinite(+x) && isFinite(+y)){ p[key] = { x: Math.round(+x), y: Math.round(+y) }; K.touch('factory'); } };
   FA.setRoute = async function(id, route){
