@@ -51,9 +51,10 @@
     S.shop = Object.assign({ demand: {} }, S.shop); S.shop.demand = S.shop.demand || {};
     S.meta = Object.assign({ created: Date.now(), name: '', lastBroadcast: 0 }, S.meta);
     { const c = Object.assign({ d: 0, net: 0, open: 0, t: 0 }, (S.arcade && typeof S.arcade === 'object') ? S.arcade : {}); S.arcade = { d: +c.d || 0, net: isFinite(+c.net) ? round2(+c.net) : 0, open: +c.open > 0 ? round2(+c.open) : 0, t: +c.t || 0 }; }   // arcade ledger: today's net winnings + any stake still at risk
-    if(K.factory) K.factory.sanitize();                                     // WestFactory: validated lines, sane numbers
     delete S.prefs;
-    K.S = S; K.emit('cash'); K.emit('inv'); K.emit('mail'); K.emit('bank'); K.emit('props'); K.emit('stock'); K.emit('arcade');
+    K.S = S;                                                                // (must be set BEFORE sanitize: it reads and rewrites K.S.factory)
+    if(K.factory) K.factory.sanitize();                                     // WestFactory: validated lines, sane numbers
+    K.emit('cash'); K.emit('inv'); K.emit('mail'); K.emit('bank'); K.emit('props'); K.emit('stock'); K.emit('arcade');
   };
   K.reset = () => { K.S = K.defaults(); K.dirty.clear(); ['cash', 'inv', 'mail', 'bank', 'props', 'stock'].forEach(e => K.emit(e)); };
 

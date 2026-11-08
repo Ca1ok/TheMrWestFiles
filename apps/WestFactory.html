@@ -40,7 +40,7 @@ function sellCap(l){ const e = l.rateEff || 0; if(l.route !== 'shop') return e; 
 const A = Kit.app({ title: 'WestFactory', right: [{ icon: 'plus', label: 'Add line', onClick: () => addSheet() }], build: (body) => {
   const kp = h('div', { class: 'kp' }), bar = h('div', { class: 'fbar' }), tabs = h('div', { class: 'tabs' }), tools = h('div', { class: 'tools' }), net = h('div', { class: 'net' }), stage = h('div', { class: 'stage' }), side = h('div', { class: 'side' });
   net.appendChild(stage); body.append(kp, bar, tabs, tools, h('div', { class: 'wrap' }, net, side), h('div', { class: 'foot' }, 'Build each plant like a factory floor: add Sources (elements or compounds you discovered) and Reactors (recipes), then wire output dots (right) to input dots (left) and finish at the warehouse. Strange loops are fine — a by-product can be wired back as a recycle, but every loop needs a make-up feed. Drag nodes to arrange; click a node or wire to inspect it.'));
-  const curLine = () => ST.lines.find(l => l.id === selLine) || null;
+  const curLine = () => { const l = ST.lines.find(l => l.id === selLine) || null; if(l && (!l.g || !Array.isArray(l.g.nodes))) l.g = { nodes: [], wires: [], next: 1, ...(l.g || {}), nodes: (l.g && l.g.nodes) || [], wires: (l.g && l.g.wires) || [] }; return l; };
   const addAll = (el, ...a) => el.append(...a.flat().filter(Boolean));
   const put = (...a) => side.append(...a.flat().filter(Boolean));
   const say = r => { Kit.toast(r.msg, r.ok ? 'good' : 'bad'); return r; };
