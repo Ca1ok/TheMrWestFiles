@@ -58,15 +58,16 @@ const FactorySim = (function(){
   const S = (inn, out, name, y, rev) => ({ in: inn, out: out, main: Object.keys(out)[0], name, y, eq: side(inn) + (rev ? ' ⇌ ' : ' → ') + side(out) });
   const HABER = S({ N2: 1, H2: 3 }, { NH3: 2 }, 'Haber–Bosch (iron catalyst, ~700 K, 200 bar)', 0.985);
   const OSTWALD = [S({ NH3: 4, O2: 5 }, { NO: 4, H2O: 6 }, 'Ostwald: ammonia oxidation (platinum gauze, ~1100 K)', 0.98), S({ NO: 2, O2: 1 }, { NO2: 2 }, 'Oxidise NO to NO₂ (cooling)', 0.995), S({ NO2: 3, H2O: 1 }, { HNO3: 2, NO: 1 }, 'Absorb NO₂ in water (the NO goes back to the oxidiser)', 0.985)];
-  const CONTACT = [S({ S: 1, O2: 1 }, { SO2: 1 }, 'Burn sulfur', 0.995), S({ SO2: 2, O2: 1 }, { SO3: 2 }, 'Contact process (V₂O₅, ~700 K)', 0.985, true), S({ SO3: 1, H2O: 1 }, { H2SO4: 1 }, 'Absorb SO₃ (via oleum)', 0.99)];
+  const CONTACT = [S({ S: 2, O2: 3 }, { SO3: 2 }, 'Burn sulfur (WestLab burns it straight to SO₃)', 0.99), S({ SO3: 1, H2O: 1 }, { H2SO4: 1 }, 'Absorb SO₃ (via oleum)', 0.99)];
+  const EXTRA = [S({ SO2: 2, O2: 1 }, { SO3: 2 }, 'Contact process (V₂O₅, ~700 K)', 0.985, true)];   // recipes that no auto-route uses but the recipe book keeps
   const SOLVAY = S({ NaCl: 1, NH3: 1, CO2: 1, H2O: 1 }, { NaHCO3: 1, NH4Cl: 1 }, 'Solvay carbonation (cold ammoniacal brine)', 0.99);
   const RECOVER = S({ NH4Cl: 2, CaO: 1 }, { NH3: 2, CaCl2: 1, H2O: 1 }, 'Ammonia recovery: lime frees the NH₃ from NH₄Cl (CaCl₂ is the waste)', 0.995);
   const ROUTES = {
     NH3: { need: [], steps: [HABER] },
     HNO3: { need: ['NH3', 'NO', 'NO2'], steps: [HABER].concat(OSTWALD) },
-    H2SO4: { need: ['SO2', 'SO3'], steps: CONTACT },
+    H2SO4: { need: ['SO3'], steps: CONTACT },
     NH4NO3: { need: ['NH3', 'NO', 'NO2', 'HNO3'], steps: [HABER].concat(OSTWALD, [S({ NH3: 1, HNO3: 1 }, { NH4NO3: 1 }, 'Neutralise nitric acid with ammonia', 0.995)]) },
-    N2H8SO4: { need: ['NH3', 'SO2', 'SO3', 'H2SO4'], steps: [HABER].concat(CONTACT, [S({ NH3: 2, H2SO4: 1 }, { N2H8SO4: 1 }, 'Neutralise sulfuric acid with ammonia', 0.995)]) },
+    N2H8SO4: { need: ['NH3', 'SO3', 'H2SO4'], steps: [HABER].concat(CONTACT, [S({ NH3: 2, H2SO4: 1 }, { N2H8SO4: 1 }, 'Neutralise sulfuric acid with ammonia', 0.995)]) },
     CH4N2O: { need: ['NH3', 'CO2'], steps: [HABER, S({ NH3: 2, CO2: 1 }, { CH4N2O: 1, H2O: 1 }, 'Bosch–Meiser urea synthesis (via ammonium carbamate)', 0.96)] },
     CH3OH: { need: ['CH4', 'CO'], steps: [S({ CH4: 1, H2O: 1 }, { CO: 1, H2: 3 }, 'Steam reforming (nickel, ~1100 K)', 0.96), S({ CO: 1, H2: 2 }, { CH3OH: 1 }, 'Methanol synthesis (Cu/ZnO, 50–100 bar)', 0.97)] },
     'Ca(OH)2': { need: ['CaCO3', 'CaO'], steps: [S({ CaCO3: 1 }, { CaO: 1, CO2: 1 }, 'Lime kiln (~1200 K)', 0.98), S({ CaO: 1, H2O: 1 }, { 'Ca(OH)2': 1 }, 'Slake the quicklime', 0.99)] },
@@ -153,6 +154,7 @@ const FactorySim = (function(){
    * (a Source or a main product) — by-products only top it up — so every recycle loop needs a make-up feed, like a real plant. */
   const recipeKey = st => st.main + '<' + Object.keys(st.in).join('+');
   const RECIPES = {}; Object.keys(ROUTES).forEach(k => ROUTES[k].steps.forEach(st => { const id = recipeKey(st); if(!RECIPES[id]) RECIPES[id] = Object.assign({ id, kind: 'real' }, st); }));
+  EXTRA.forEach(st => { const id = recipeKey(st); if(!RECIPES[id]) RECIPES[id] = Object.assign({ id, kind: 'real' }, st); });
   function recipeOf(id, compOf, c){ if(RECIPES[id]) return RECIPES[id]; if(/^F:/.test(id || '')){ const sp = id.slice(2), cp = compOf && compOf(sp); return cp ? makeFormation(sp, cp, 1 / (1 + cfgOf(c).directPenalty), id) : null; } return null; }
   const FREE = new Set(['H2O']);                                                    // water needs no discovery
   /* Every recipe the player can see: real industrial steps (unlocked when their main product and compound inputs are discovered) + 'combine the elements' for each discovered compound. */

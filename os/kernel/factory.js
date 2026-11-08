@@ -163,12 +163,19 @@
     K.S.lab.found.filter(f => compOf(f)).concat(found.has('H2O') ? [] : ['H2O']).forEach(f => { out.push({ sp: f, name: nameOf(f), price: r2(P.price(f)), el: false }); });
     return out;
   };
-  FA.recipes = () => F.recipes(K.S.lab.found, compOf, CFG);
+  /* The factory's recipe book is checked against WestLab's own engine: a recipe is usable only if Chem.solve gives exactly its products from its reagents (the conditions it asks for are shown). */
+  const LAB_CONDS = [[], ['heat'], ['heat', 'catalyst'], ['heat', 'pressure'], ['heat', 'catalyst', 'pressure'], ['spark']], labMemo = {};
+  const labOf = rc => {
+    if(labMemo[rc.id]) return labMemo[rc.id]; const want = Object.keys(rc.out).map(keyOf).sort().join(); let res = { ok: false, needs: [] };
+    for(const c of LAB_CONDS){ try{ const x = Chem.solve(Object.keys(rc.in), c); if(x && x.ok && x.products.map(q => q.s.key).sort().join() === want){ res = { ok: true, needs: x.needs || [] }; break; } }catch(e){} }
+    return (labMemo[rc.id] = res);
+  };
+  FA.recipes = () => F.recipes(K.S.lab.found, compOf, CFG).map(r => { if(r.kind !== 'real') return Object.assign(r, { needs: [], lab: true }); const lb = labOf(r); return Object.assign(r, { needs: lb.needs, lab: lb.ok, locked: r.locked || !lb.ok, reason: lb.ok ? '' : 'not a reaction WestLab can run' }); });
   FA.gAdd = function(id, kind, ref, x, y){
     const l = line(id); if(!l) return no('No such line.'); const g = gOf(l); if(g.nodes.length >= 24) return no('A plant can have at most 24 nodes.'); ref = String(ref);
     const n = { id: 'n' + (g.next++), t: kind === 'src' ? 'src' : 'rx', x: F.clamp(Math.round(num(x, 40)), 0, 6000), y: F.clamp(Math.round(num(y, 40)), 0, 6000) };
     if(kind === 'src'){ if(!gSp.test(ref)) return no('Unknown source.'); if(!FA.sources().some(s => s.sp === ref)) return no('You can’t buy that yet.'); n.sp = ref; }
-    else { const rc = FA.recipes().find(r => r.id === ref); if(!rc) return no('Unknown recipe.'); if(rc.locked) return no('Discover ' + rc.missing.map(F.sub).join(', ') + ' in WestLab to unlock this recipe.'); n.rc = ref; }
+    else { const rc = FA.recipes().find(r => r.id === ref); if(!rc) return no('Unknown recipe.'); if(!rc.lab) return no('WestLab can’t run that reaction, so neither can the factory.'); if(rc.locked) return no('Discover ' + rc.missing.map(F.sub).join(', ') + ' in WestLab to unlock this recipe.'); n.rc = ref; }
     g.nodes.push(n); touch(); return ok('Added.', { nid: n.id });
   };
   FA.gMove = function(id, nid, x, y){ const l = line(id), n = l && gOf(l).nodes.find(q => q.id === nid); if(!n) return; n.x = F.clamp(Math.round(num(x, n.x)), 0, 6000); n.y = F.clamp(Math.round(num(y, n.y)), 0, 6000); K.touch('factory'); };

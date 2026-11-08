@@ -70,4 +70,7 @@ g2.wires.push({ a: 'a', b: 'z', s: 'N2' }); assert.strictEqual(gs(g2, 'HNO3').wi
 const capped = F.graphSheet(F.graphFromSheet(base('HNO3', ALL, {}, 10)), { f: 'HNO3', rate: 10, found: ALL, cap: 3, atomPrice: e => AP[e] || 5, compOf: sp => { const c = atomsOf(sp); return c && Object.keys(c).length > 1 ? c : null; } }); assert(capped.effRate < 10 && capped.effRate > 0, 'bottleneck reactor limits the plant: ' + capped.effRate);
 // 9e. recipe book: unlock by discovery, every discovered compound can be built from its elements
 const book = F.recipes(['NH3'], sp => { const c = atomsOf(sp); return c && Object.keys(c).length > 1 ? c : null; }); assert(!book.find(r => r.id === 'NH3<N2+H2').locked); assert(book.find(r => r.id === 'HNO3<NO2+H2O').locked); assert(book.some(r => r.id === 'F:NH3') || F.RECIPES['NH3<N2+H2'], 'known');
+// 10. the factory recipe book agrees with WestLab: every industrial recipe is a reaction Chem.solve actually runs, with the same products
+const CONDS = [[], ['heat'], ['heat', 'catalyst'], ['heat', 'pressure'], ['heat', 'catalyst', 'pressure'], ['spark']];
+Object.keys(F.RECIPES).forEach(id => { const r = F.RECIPES[id], want = Object.keys(r.out).map(sp => Chem.speciesOf(sp).key).sort().join(); const ok = CONDS.some(c => { const x = Chem.solve(Object.keys(r.in), c); return x && x.ok && x.products.map(q => q.s.key).sort().join() === want; }); assert(ok, 'WestLab does not run ' + r.eq); });
 console.log('flowsheet ok (' + n + ' trees, graphs checked)');
