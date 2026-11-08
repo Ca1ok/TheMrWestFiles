@@ -80,8 +80,8 @@ const FactorySim = (function(){
   function process(f, found, c){
     c = cfgOf(c); const r = ROUTES[f]; if(!r) return { mode: 'plain', steps: [], factor: 1 + c.overhead, yield: 1, missing: [] };
     const have = new Set(found || []), missing = r.need.filter(x => !have.has(x)), y = r.steps.reduce((p, st) => p * st.y, 1);
-    if(r.steps.length > 1 && missing.length) return { mode: 'direct', steps: [], factor: (1 + c.overhead) * (1 + c.directPenalty), yield: 1, missing, route: r.steps };
-    return { mode: 'process', steps: r.steps, factor: (1 + c.overhead + c.stepOverhead * (r.steps.length - 1)) / y, yield: y, missing: [] };
+    const pen = r.steps.length > 1 && missing.length ? 1 + c.directPenalty : 1;                    // intermediates not studied in WestLab yet: the SAME staged plant, +25 % running cost (never a one-reactor shortcut)
+    return { mode: 'process', steps: r.steps, factor: pen * (1 + c.overhead + c.stepOverhead * (r.steps.length - 1)) / y, yield: y, missing: pen > 1 ? missing : [], unstudied: pen > 1 ? missing : [] };
   }
 
   /* ---- FLOWSHEETS. A line is a small plant: a TREE of reactor nodes. Each reactor is one balanced step; its inputs are bought (an element, or a finished compound at atoms × readyMarkup)
@@ -143,11 +143,11 @@ const FactorySim = (function(){
       if(Sup - D > 1e-9 && sp !== f) surplus.push({ sp, spl: sub(sp), mol: (Sup - D) * scale, u: Sup - D, from: sup.map(x => x.id) });
     });
     const mult = 1 + c.overhead + c.stepOverhead * Math.max(0, R - 1), credit = surplus.reduce((t, x) => t + x.u * (price(x.sp) / mk(x.sp)) * c.salvage, 0) * (isFinite(price(f)) ? 1 : 0);
-    const gross = feedCost, unit = defs.length ? Math.max(gross * 0.05, (gross - credit) * mult) : Infinity;
+    const unst = pr.mode === 'process' && pr.unstudied && pr.unstudied.length ? 1 + c.directPenalty : 1, gross = feedCost, unit = defs.length ? Math.max(gross * 0.05, (gross - credit) * mult * unst) : Infinity;
     const reactors = act.map(a => { const d = a.d, ins = {}, loss = {}; Object.keys(d.in).forEach(k => { ins[k] = d.in[k] * a.x * scale; }); Object.keys(d.out).forEach(k => { loss[k] = d.out[k] * (1 - d.y) * a.x * scale; });
       return { id: d.id, rc: d.kind === 'formation' ? 'F:' + d.main : recipeKey(d), kind: d.kind, eq: d.eq, name: d.name, y: d.y, main: d.main, mainl: sub(d.main), depth: dep[d.id], extent: a.x * scale, out: d.out[d.main] * d.y * a.x * scale, ins, loss, final: d.main === f }; });
     const recycle = edges.filter(e => e.recycle).reduce((t, e) => t + e.mol, 0);
-    return { mode: pr.mode, missing: pr.missing, reactors, feeds, edges, surplus, toggles, unit, gross, credit: Math.min(credit, gross * 0.95) * mult, mult, costPerMin: unit * scale, recycle, stable, steps: R };
+    return { mode: pr.mode, missing: pr.unstudied || pr.missing, reactors, feeds, edges, surplus, toggles, unit, gross, credit: Math.min(credit, gross * 0.95) * mult, mult, unstudied: pr.unstudied || [], costPerMin: unit * scale, recycle, stable, steps: R };
   }
   /* ---- THE RECIPE BOOK + PLAYER-BUILT FLOWSHEETS (Satisfactory style). The player places Source nodes (buy an element or a discovered compound), Reactor nodes (one recipe each) and wires
    * them; the warehouse is the last node ('o'). graphSheet() solves that graph: demand-driven from the warehouse, by-product wires are used first, an input needs a PRIMARY supply
@@ -199,7 +199,8 @@ const FactorySim = (function(){
     order.forEach(n => { if(n.t === 'src'){ const d = res.dm[n.id][n.sp] || 0, pc = P.price(n.sp); feedCost += d * pc; feeds.push({ id: n.id, sp: n.sp, spl: sub(n.sp), mol: d * eff, price: pc, cost: d * pc * eff, el: !!elemOf(n.sp) }); } });
     const surplus = []; let credit = 0;
     rx.forEach(n => { Object.keys(n.out).forEach(s => { const prod = n.out[s] * n.y * xi[n.id], used = W.reduce((t, w) => t + (w.a === n.id && w.s === s ? res.fl[w.i] : 0), 0), left = prod - used; if(left > 1e-9){ credit += left * (P.atoms(s) || 0) * c.salvage; surplus.push({ id: n.id, sp: s, spl: sub(s), mol: left * eff }); } }); });
-    const R = rx.filter(n => xi[n.id] > 1e-9).length, mult = 1 + c.overhead + c.stepOverhead * Math.max(0, R - 1), gross = feedCost, unit = producing ? Math.max(gross * 0.05, (gross - credit) * mult) : Infinity;
+    const act = rx.filter(n => xi[n.id] > 1e-9), R = act.length, unst = (Array.isArray(o.found) && ROUTES[f] && act.some(n => n.kind === 'real') && process(f, o.found, c).unstudied.length) ? 1 + c.directPenalty : 1;
+    const mult = (1 + c.overhead + c.stepOverhead * Math.max(0, R - 1)) * unst, gross = feedCost, unit = producing ? Math.max(gross * 0.05, (gross - credit) * mult) : Infinity;
     const wiresOut = W.map(w => ({ a: w.a, b: w.b, s: w.s, spl: sub(w.s), mol: res.fl[w.i] * eff, by: isBy(w), i: w.i }));
     const nodesOut = order.map(n => { const ins = {}, outs = {}; Object.keys(n.in).forEach(s => { const ws = inW[n.id + '|' + s] || []; ins[s] = { wired: ws.length, supplied: ws.some(w => X[w.a].t === 'src' || ok[w.a]), mol: n.in[s] * (xi[n.id] || 0) * eff }; });
       Object.keys(n.out).forEach(s => { const prod = n.out[s] * (n.t === 'src' ? 1 : n.y) * (n.t === 'src' ? (res.dm[n.id][n.sp] || 0) : xi[n.id]), used = W.reduce((t, w) => t + (w.a === n.id && w.s === s ? res.fl[w.i] : 0), 0); outs[s] = { wired: W.filter(w => w.a === n.id && w.s === s).length, mol: prod * eff, left: Math.max(0, prod - used) * eff }; });
