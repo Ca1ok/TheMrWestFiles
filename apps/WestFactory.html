@@ -84,7 +84,7 @@ const A = Kit.app({ title: 'WestFactory', right: [{ icon: 'plus', label: 'Add li
   }
   let svg = null, pills = [];
   function drawNet(){
-    const l = curLine(); stage.innerHTML = ''; NODES = {}; PORTS = {}; pills = []; svg = null; if(!l){ stage.style.height = '520px'; return; }
+    const l = curLine(); stage.innerHTML = ''; NODES = {}; PORTS = {}; pills = []; svg = null; if(!l){ stage.style.height = '520px'; stage.style.width = '1000px'; stage.appendChild(h('div', { class: 'empty-hint' }, h('b', null, 'No production lines yet'), 'Press Add line, pick a molecule you have discovered, then build its plant here.', h('div', { class: 'row2', style: { marginTop: '12px', pointerEvents: 'auto' } }, h('button', { class: 'btn', onclick: () => addSheet() }, 'Add line')))); return; }
     const sh = l.sheet, gmap = {}; l.g.nodes.forEach(q => { gmap[q.id] = q; });
     let maxX = 0, maxY = 0;
     sh.nodes.forEach(n => { const gp = gmap[n.id]; if(!gp) return; const k = 'n:' + n.id, e = card(l, n, gp); stage.appendChild(e); NODES[k] = { kind: n.t, x: gp.x, y: gp.y, el: e, n, gp }; });
@@ -227,11 +227,13 @@ const A = Kit.app({ title: 'WestFactory', right: [{ icon: 'plus', label: 'Add li
     live.textContent = l.route === 'shop' ? (l.lockLeft > 0 ? 'WestShop sales locked for ' + l.lockLeft + ' s.' : 'Ready to sell.') + (l.note ? ' · ' + l.note : '') : (l.note || (OS.auth.signedIn() ? 'Listings update automatically.' : 'Sign in to sell on the Market.'));
   }
   function fix(){ if(!ST.lines.some(l => l.id === selLine)) selLine = ST.lines.length ? ST.lines[0].id : null; }
-  function refresh(keepPanel){ ST = FA.state(); fix(); drawTop(); drawNet(); if(!keepPanel) drawPanel(); }
-  Kit.live('factory', Kit.debounce(() => { if(dragging) return; ST = FA.state(); fix(); drawTop(); drawNet(); if(!side.contains(document.activeElement)) drawPanel(); else tickPanel(); }, 120)); Kit.live('cash', Kit.debounce(drawTop.bind(null), 400));
+  const safe = (name, fn) => { try{ fn(); }catch(e){ console.error('WestFactory ' + name, e); stage.appendChild(h('div', { style: { position: 'absolute', left: '20px', top: '20px', right: '20px', padding: '12px', borderRadius: '10px', background: '#d96b5a33', color: 'var(--label)', font: '600 13px var(--font)', whiteSpace: 'pre-wrap' } }, 'WestFactory could not draw the ' + name + ': ' + (e && e.message ? e.message : e) + '\n' + String((e && e.stack) || '').split('\n').slice(1, 4).join('\n'))); } };
+  const redraw = keepPanel => { safe('header', drawTop); safe('canvas', drawNet); if(!keepPanel) safe('panel', drawPanel); };
+  function refresh(keepPanel){ ST = FA.state(); fix(); redraw(keepPanel); }
+  Kit.live('factory', Kit.debounce(() => { if(dragging) return; ST = FA.state(); fix(); redraw(side.contains(document.activeElement)); }, 120)); Kit.live('cash', Kit.debounce(drawTop.bind(null), 400));
   setInterval(() => { if(document.hidden || dragging) return; ST = FA.state(); tickPanel(); drawTop(); }, 2000);
   OS.on && OS.on('factory-sale', d => Kit.toast('Market sale: +' + m2(d.net) + ' (' + d.items + ' mol)', 'good'));
-  ST = FA.state(); fix(); drawTop(); drawNet(); drawPanel(); setTimeout(() => { ST = FA.state(); fix(); drawTop(); drawNet(); }, 300);
+  ST = FA.state(); fix(); redraw(false); setTimeout(() => { ST = FA.state(); fix(); redraw(true); }, 300);
   if(!ST.lines.length && !FA.found().length) Kit.toast('Discover compounds in WestLab to unlock production', 'info');
 } });
 </script></body></html>
