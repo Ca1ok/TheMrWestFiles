@@ -12,9 +12,20 @@ const getJSON = async u => { const r = await fetch(DB + u); if(!r.ok) throw new 
 const write = (f, o) => { const next = JSON.stringify(o); if(fs.existsSync(f) && fs.readFileSync(f, 'utf8') === next) return false; fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, next); return true; };
 
 async function discoveries(){
-  const data = (await getJSON('/labCache.json')) || {}, clean = {};
-  Object.keys(data).filter(k => data[k] && typeof data[k].by === 'string').sort((a, b) => (data[b].t || 0) - (data[a].t || 0)).slice(0, 300).forEach(k => { const d = data[k]; clean[k] = { by: String(d.by).slice(0, 20), t: +d.t || 0, eq: String(d.eq || '').slice(0, 240), n: String(d.n || '').slice(0, 240) }; });
-  console.log(write(path.join(OUTD, 'discoveries.json'), clean) ? 'Wrote ' + Object.keys(clean).length + ' discoveries.' : 'Discoveries: no change.');
+  // The registry only keeps what the CURRENT engine can still reproduce. Each kept entry is stamped with the engine version it was verified under; entries recorded by an older engine
+  // (e.g. reactions between free F/H/N/O atoms) are re-derived once per version and dropped if the engine no longer makes them. Firebase keeps the raw record; this file is the checked view.
+  const { Phys } = load(ROOT); Phys.init(); const { verifyDiscovery } = require('./lab-verify.js'), EV = Phys.ENGINE_VERSION;
+  const outF = path.join(OUTD, 'discoveries.json'), rejF = path.join(OUTD, 'discoveries-rejected.json');
+  let prev = {}, rej = { ev: EV, keys: {} }; try{ prev = JSON.parse(fs.readFileSync(outF, 'utf8')); }catch(e){} try{ const r = JSON.parse(fs.readFileSync(rejF, 'utf8')); if(r && r.ev === EV) rej = r; }catch(e){}
+  const data = (await getJSON('/labCache.json')) || {}, clean = {}; let checked = 0, dropped = 0;
+  Object.keys(data).filter(k => data[k] && typeof data[k].by === 'string').sort((a, b) => (data[b].t || 0) - (data[a].t || 0)).slice(0, 300).forEach(k => {
+    const d = data[k]; if(rej.keys[k]) { dropped++; return; }
+    let eq = prev[k] && prev[k].ev === EV ? prev[k].eq : null;
+    if(!eq){ checked++; eq = verifyDiscovery(Phys, k); if(!eq){ rej.keys[k] = 1; dropped++; console.log('Dropped (current engine does not make it): ' + k + '  [' + String(d.eq || '').slice(0, 80) + ']'); return; } }
+    clean[k] = { by: String(d.by).slice(0, 20), t: +d.t || 0, eq: eq.slice(0, 240), n: String(d.n || '').slice(0, 240), ev: EV };
+  });
+  console.log(write(outF, clean) ? 'Wrote ' + Object.keys(clean).length + ' discoveries (' + checked + ' verified, ' + dropped + ' dropped).' : 'Discoveries: no change.');
+  if(Object.keys(rej.keys).length || fs.existsSync(rejF)) write(rejF, rej);
 }
 async function reactions(){
   const { Phys } = load(ROOT); Phys.init(); const fresh = [], EV = Phys.ENGINE_VERSION, PFX = 'e' + EV + '|';
