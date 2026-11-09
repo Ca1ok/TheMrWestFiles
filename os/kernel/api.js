@@ -156,20 +156,19 @@
 
   /* ---------------- leaderboard (its own app; the Bank no longer ranks anyone) ---------------- */
   const LBC = new Map();                                              // one query per category, cached for 30 s, so opening and flipping tabs costs almost nothing
+  async function lbRaw(){                                           // ONE read of every player's record, cached 30 s; every category and the table are ranked from it
+    const hit = LBC.get('raw'); if(hit && Date.now() - hit.at < 30000) return hit.rows;
+    try{ await K.cloud.publishBoard(true); }catch(e){}
+    const rows = await K.cloud.leaderboardRaw(); LBC.set('raw', { at: Date.now(), rows }); return rows;
+  }
   const leaderboard = {
     categories: () => K.cloud.LB.map(c => Object.assign({}, c)),
     mine: () => K.cloud.boardEntry(),
     async list(id, n){
-      const cat = K.cloud.LB.find(c => c.id === id) || K.cloud.LB[0]; n = Math.max(5, Math.min(50, n || 25)); const key = cat.id + ':' + n, hit = LBC.get(key);
-      if(hit && Date.now() - hit.at < 30000) return hit.rows;
-      try{ await K.cloud.publishBoard(true); }catch(e){}
-      const rows = await K.cloud.leaderboard(n, cat.field); LBC.set(key, { at: Date.now(), rows }); return rows;
+      const cat = K.cloud.LB.find(c => c.id === id) || K.cloud.LB[0]; n = Math.max(5, Math.min(50, n || 25));
+      return (await lbRaw()).slice().sort((a, b) => b[cat.field] - a[cat.field]).slice(0, n);
     },
-    async all(){                                                      // every player's full record (top 200 by net worth) in ONE query, cached 30 s
-      const hit = LBC.get('all'); if(hit && Date.now() - hit.at < 30000) return hit.rows;
-      try{ await K.cloud.publishBoard(true); }catch(e){}
-      const rows = await K.cloud.leaderboard(200, 'nw'); LBC.set('all', { at: Date.now(), rows }); return rows;
-    },
+    async all(){ return (await lbRaw()).slice().sort((a, b) => b.nw - a.nw); },   // every player's full record
     refresh: () => LBC.clear()
   };
 

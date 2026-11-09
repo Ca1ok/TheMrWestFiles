@@ -234,11 +234,23 @@
     const err = K.nameOk(name); if(err) throw new Error(err);
     K.S.meta.name = name.trim(); K.touch('meta'); await C.flushNow(); publishBoard(true);
   };
+  /* Every player's record in ONE read (no per-field index, so nobody is skipped). Records saved by older versions may lack newer stats
+   * (fac, made, els, ...), so every missing/invalid number counts as 0 instead of dropping that player from the board. */
+  C.leaderboardRaw = async function(){
+    if(!C.db) return [];
+    const s = await C.db.ref('leaderboard').limitToLast(1000).once('value'); count(s); const out = [];
+    s.forEach(c => {
+      const v = c.val(); if(!v || typeof v !== 'object' || typeof v.name !== 'string' || !v.name) return;
+      const r = Object.assign({ uid: c.key }, v);
+      LB.forEach(cat => { const x = +r[cat.field]; r[cat.field] = isFinite(x) ? x : 0; });
+      out.push(r);
+    });
+    return out;
+  };
   C.leaderboard = async function(n, field){                           // top n by one field (default: bank cash, which the admin tools use)
-    if(!C.db) return []; field = field || 'value';
-    const s = await C.db.ref('leaderboard').orderByChild(field).limitToLast(n || 20).once('value'); count(s); const out = [];
-    s.forEach(c => { const v = c.val(); if(v && typeof v[field] === 'number') out.push(Object.assign({ uid: c.key }, v)); });
-    return out.sort((a, b) => b[field] - a[field]);
+    field = field || 'value'; const rows = await C.leaderboardRaw();
+    rows.forEach(r => { const x = +r[field]; r[field] = isFinite(x) ? x : 0; });
+    return rows.sort((a, b) => b[field] - a[field]).slice(0, n || 20);
   };
 
   /* ---- Files app: a read-only view of exactly what the server stores for you ---- */
