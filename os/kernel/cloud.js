@@ -24,10 +24,11 @@
   /* ---- init ---- */
   let flushTimer = null, mailRef = null, lbAt = 0, lbLast = '';
   C.init = function(){
-    if(typeof firebase === 'undefined'){ C.ready = true; K.maint.attach(null); K.emit('auth'); return; }
-    try{ firebase.initializeApp(CFG.firebase); C.db = firebase.database(); C.auth = firebase.auth(); }catch(e){ console.warn('[cloud] firebase unavailable', e); C.ready = true; K.maint.attach(null); K.emit('auth'); return; }
+    if(typeof firebase === 'undefined'){ D.error('cloud.init', 'Firebase SDK did not load (blocked network / ad-blocker?) — sign-in and saving are unavailable'); C.ready = true; K.maint.attach(null); K.emit('auth'); return; }
+    try{ firebase.initializeApp(CFG.firebase); C.db = firebase.database(); C.auth = firebase.auth(); }catch(e){ D.error('cloud.init', e); C.ready = true; K.maint.attach(null); K.emit('auth'); return; }
     K.maint.attach(C.db);                                                       // maintenance switches (one tiny node, public read)
     C.db.ref('.info/serverTimeOffset').on('value', s => { const v = s.val(); if(typeof v === 'number') K.offset = v; });   // local info, costs no bandwidth
+    C.db.ref('.info/connected').on('value', s => { const v = !!s.val(); if(C.connected !== v) D.info('net', 'database connected=' + v); C.connected = v; });   // local info, costs no bandwidth
     C.auth.onAuthStateChanged(async u => {
       const was = C.user; C.user = u;
       if(u && !u.isAnonymous){ await C.load(); }
@@ -53,26 +54,70 @@
       K.loaded = true;
       loadPrefsFromCloud(remote && remote.prefs);
       startMail(); loadBroadcasts(); C.flushNow(); K.emit('ready');
-    }catch(e){ console.warn('[cloud] load failed', e); K.emit('notify', { app: 'Settings', title: 'Sync problem', body: 'Couldn’t load your saved progress. Progress will not be saved until this works.' }); }
+    }catch(e){ D.error('cloud.load', e, { code: e && e.code, uid: C.user && C.user.uid ? String(C.user.uid).slice(0, 6) + '…' : null }); K.emit('notify', { app: 'WestReport', title: 'Sync problem', body: 'Couldn’t load your saved progress' + (e && e.code ? ' (' + e.code + ')' : '') + '. Progress will not be saved until this works — please send a bug report.' }); }
   };
   /* flushNow resolves to TRUE when everything that was pending is safely on the server (or nothing was pending) and FALSE when it could not be saved.
-   * Anything that deletes or moves something on the server because of local money (Market payouts, listings) waits for TRUE before it does. */
-  let retryMs = 0, retryT = null, lastWarn = 0;
+   * Anything that deletes or moves something on the server because of local money (Market payouts, listings) waits for TRUE before it does.
+   * Failure handling (all of it loud — see os/diag.js — and visible in a bug report via C.lastErr / C.badFields):
+   *   - the save is ONE atomic update, so a single field the server rejects used to block every other field forever ("still saving").
+   *     On a rejection we now re-send field by field (cash+arcade together, because the arcade rule checks the cash movement), so everything the
+   *     server accepts is saved, and only the rejected field(s) stay pending — named in the error, retried slowly instead of hammered.
+   *   - the SDK throws SYNCHRONOUSLY for undefined/NaN values; that is caught here (it used to leave "saving…" on and drop the dirty flags).
+   *   - an error while publishing the leaderboard record is no longer mistaken for a failed save. */
+  const D = K.diag || { error(){}, warn(){}, info(){}, summarize: x => x };
+  let retryMs = 0, retryT = null, lastWarn = 0, lastSkip = 0; C.lastErr = null; C.badFields = {}; C.connected = null;
+  const GROUPS = [['cash', 'arcade']];                                                // fields whose server rules read each other: saved together or not at all
+  const sizesOf = o => { const r = {}; Object.keys(o).forEach(k => { try{ r[k] = JSON.stringify(o[k]).length; }catch(_){ r[k] = -1; } }); return r; };
   C.flushNow = function(){
     clearTimeout(flushTimer); flushTimer = null;
     if(!K.dirty.size) return Promise.resolve(true);
-    if(K.sessionLost || !C.signedIn() || !K.loaded || !C.db) return Promise.resolve(false);   // a window that lost the session never writes: its numbers are older than the other window's
-    const out = {}; K.dirty.forEach(f => { if(f === 'prefs') out.prefs = K.prefs; else if(f === 'arcade'){ const L = K.S.arcade, t = K.now(), d = t - (t % 86400000); if(L.d !== d){ L.d = d; L.net = 0; } out.arcade = { d: L.d, net: L.net, open: L.open, t: firebase.database.ServerValue.TIMESTAMP }; } else if(FIELDS.includes(f)) out[f] = clean(K.S[f]); });
+    if(K.sessionLost || !C.signedIn() || !K.loaded || !C.db){
+      if(C.signedIn() && Date.now() - lastSkip > 30000){ lastSkip = Date.now(); D.warn('cloud.flush', 'save skipped — ' + (K.sessionLost ? 'another window owns the account' : !K.loaded ? 'your saved progress never finished loading' : 'no database connection') + ' · pending: ' + [...K.dirty].join(',')); }
+      return Promise.resolve(false);                                                  // a window that lost the session never writes: its numbers are older than the other window's
+    }
+    let out; try{
+      out = {}; K.dirty.forEach(f => { if(f === 'prefs') out.prefs = clean(K.prefs); else if(f === 'arcade'){ const L = K.S.arcade, t = K.now(), d = t - (t % 86400000); if(L.d !== d){ L.d = d; L.net = 0; } out.arcade = { d: L.d, net: L.net, open: L.open, t: firebase.database.ServerValue.TIMESTAMP }; } else if(FIELDS.includes(f)) out[f] = clean(K.S[f]); });
+    }catch(e){ D.error('cloud.flush.build', e, { dirty: [...K.dirty], probe: D.probe ? D.probe() : null }); return Promise.resolve(false); }     // nothing was cleared: it stays pending
     if(K.dirty.has('cash') || K.dirty.has('inv') || K.dirty.has('lots') || K.dirty.has('props')) K.dirty.add('lb');
-    out.updatedAt = firebase.database.ServerValue.TIMESTAMP; K.dirty.clear();
-    C.writes++; K.emit('sync', 'saving');
-    return C.db.ref('players/' + C.user.uid).update(out).then(() => { retryMs = 0; K.emit('sync', 'saved'); publishBoard(); return true; }).catch(e => {
-      console.warn('[cloud] save failed', e); K.emit('sync', 'error'); Object.keys(out).forEach(f => K.dirty.add(f));
-      retryMs = Math.min(30000, (retryMs || 2000) * 2); clearTimeout(retryT); retryT = setTimeout(C.flushNow, retryMs);          // keep trying (4 s, 8 s … 30 s) instead of silently giving up
-      if(Date.now() - lastWarn > 60000){ lastWarn = Date.now(); K.emit('notify', { app: 'Settings', title: 'Couldn’t save', body: 'Your latest progress isn’t saved yet — retrying. Keep this window open.' }); }
-      return false;
-    });
+    const fields = Object.keys(out); out.updatedAt = firebase.database.ServerValue.TIMESTAMP; K.dirty.clear();
+    C.writes++; K.emit('sync', 'saving'); return send(out, fields);
   };
+  function send(out, fields){
+    let p; const wd = setTimeout(() => { D.warn('cloud.save', 'save still pending after 15 s · online=' + navigator.onLine + ' · connected=' + C.connected + ' · fields: ' + fields.join(',')); K.emit('sync', 'slow'); }, 15000);
+    try{ p = C.db.ref('players/' + C.user.uid).update(out); }catch(e){ clearTimeout(wd); return failed(e, out, fields); }   // the SDK throws synchronously for undefined / NaN
+    return p.then(() => { clearTimeout(wd); saved(); return true; }, e => { clearTimeout(wd); return failed(e, out, fields); });
+  }
+  function saved(){ retryMs = 0; C.lastErr = null; C.badFields = {}; K.emit('sync', 'saved'); try{ publishBoard(); }catch(e){ D.error('cloud.publishBoard', e); } }
+  function failed(e, out, fields){
+    const code = (e && e.code) || '', msg = (e && e.message) || String(e);
+    D.error('cloud.save', e, { code, fields, bytes: sizesOf(out), online: navigator.onLine, connected: C.connected });
+    if(fields.length > 1 && (!code || /permission|denied|validation|invalid/i.test(code + ' ' + msg))) return isolate(out, fields);
+    return giveUp(fields, code, msg);
+  }
+  function giveUp(fields, code, msg){
+    fields.forEach(f => K.dirty.add(f)); C.lastErr = { t: Date.now(), code, msg: String(msg).slice(0, 160), fields: fields.slice() }; K.emit('sync', 'error');
+    retryMs = Math.min(30000, (retryMs || 2000) * 2); clearTimeout(retryT); retryT = setTimeout(C.flushNow, retryMs);          // keep trying (4 s, 8 s … 30 s) instead of silently giving up
+    if(Date.now() - lastWarn > 60000){ lastWarn = Date.now(); K.emit('notify', { app: 'Settings', title: 'Couldn’t save', body: 'Your latest progress isn’t saved yet — retrying. Keep this window open. If this keeps happening, use “Report a bug” (the details are attached automatically).' }); }
+    return Promise.resolve(false);
+  }
+  async function isolate(out, fields){
+    const ref = C.db.ref('players/' + C.user.uid), groups = [], used = new Set(), bad = {}; let ok = 0;
+    GROUPS.forEach(g => { const m = g.filter(f => fields.includes(f)); if(m.length > 1){ groups.push(m); m.forEach(f => used.add(f)); } }); fields.filter(f => !used.has(f)).forEach(f => groups.push([f]));
+    for(const g of groups){
+      const part = {}; g.forEach(f => { part[f] = out[f]; });
+      try{ await ref.update(part); ok += g.length; }
+      catch(e){ const info = { code: (e && e.code) || '', msg: String((e && e.message) || e).slice(0, 120) }; g.forEach(f => { bad[f] = info; }); D.error('cloud.save.field', e, { fields: g, code: info.code, bytes: sizesOf(part), shape: D.summarize ? D.summarize(part) : undefined }); }
+    }
+    const badF = Object.keys(bad);
+    if(ok){ try{ await ref.child('updatedAt').set(firebase.database.ServerValue.TIMESTAMP); }catch(_){} }
+    if(!badF.length){ D.warn('cloud.save', 'the combined save was rejected but every field saved on its own'); saved(); return true; }
+    C.badFields = bad; const first = bad[badF[0]];
+    D.error('cloud.save', 'REJECTED by the server: ' + badF.join(', ') + ' (' + (first.code || first.msg) + ') — everything else (' + ok + ' field' + (ok === 1 ? '' : 's') + ') was saved', { rejected: badF, saved: fields.filter(f => !bad[f]) });
+    badF.forEach(f => K.dirty.add(f)); C.lastErr = { t: Date.now(), code: first.code, msg: 'server rejected ' + badF.join(', ') + (first.code ? ' (' + first.code + ')' : ''), fields: badF }; K.emit('sync', 'error');
+    retryMs = Math.min(120000, Math.max(15000, (retryMs || 7500) * 2)); clearTimeout(retryT); retryT = setTimeout(C.flushNow, retryMs);        // a field the server keeps refusing is retried slowly, not hammered
+    if(Date.now() - lastWarn > 120000){ lastWarn = Date.now(); K.emit('notify', { app: 'WestReport', title: 'Part of your progress isn’t saving', body: 'The server refused: ' + badF.join(', ') + '. Everything else is saved. Please send a bug report — the details are attached automatically.' }); }
+    return false;
+  }
   const clean = v => JSON.parse(JSON.stringify(v, (k, x) => (typeof x === 'number' && !isFinite(x)) ? 0 : x));    // drops undefined, fixes NaN
   /* Money and items are saved quickly (cashSyncMs); cosmetic things (mail, prefs, meta) ride the slow 20 s batch. */
   const URGENT = new Set(['cash', 'inv', 'lots', 'props', 'factory', 'lab', 'shop', 'bank']); let flushDue = 0;
@@ -104,18 +149,29 @@
 
   /* ---- UI preferences (not progress, so they are kept in localStorage for everyone; signed-in users also sync them) ---- */
   const PREF_KEY = 'westos_ui';
-  const PREF_DEFAULT = { theme: 'auto', wall: { light: null, dark: null }, lock: false, banners: true, reduceMotion: false, reduceTransparency: false, layout: null, dock: [], winGeom: {}, iconSize: 'medium', clock24: false, clockSeconds: false, updateSpeed: 'balanced' };
+  const PREF_DEFAULT = { dockMode: 'float', theme: 'auto', wall: { light: null, dark: null }, lock: false, banners: true, reduceMotion: false, reduceTransparency: false, layout: null, dock: [], winGeom: {}, iconSize: 'medium', clock24: false, clockSeconds: false, updateSpeed: 'balanced' };
+  /* Firebase turns arrays into objects (and drops empty ones), so anything read back must be coerced into the shape the shell expects — otherwise
+     `prefs.dock.length` / `seenApps.includes` throw ("Cannot read properties of undefined (reading 'length')"). */
+  const asArr = v => Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.keys(v).sort((a, b) => a - b).map(k => v[k]) : []);
+  const normPrefs = P => {
+    P.dock = asArr(P.dock).filter(x => typeof x === 'string'); P.seenApps = asArr(P.seenApps).filter(x => typeof x === 'string');
+    if(P.layout != null){ const l = asArr(P.layout).filter(x => x && typeof x === 'object'); P.layout = l.length ? l : null; }
+    if(!P.winGeom || typeof P.winGeom !== 'object' || Array.isArray(P.winGeom)) P.winGeom = {};
+    P.wall = Object.assign({ light: null, dark: null }, (P.wall && typeof P.wall === 'object') ? P.wall : {});
+    if(!['float', 'low', 'hide'].includes(P.dockMode)) P.dockMode = 'float';
+    return P;
+  };
   try{
     const stored = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
     if(stored.device !== undefined){ delete stored.device; stored.dock = []; stored.layout = null; stored.lock = false; delete stored.wallBlur; }     // settings from the earlier tablet-style layout: start the desktop fresh
     K.prefs = Object.assign({}, PREF_DEFAULT, stored);
   }catch(e){ K.prefs = Object.assign({}, PREF_DEFAULT); }
-  K.prefs.wall = Object.assign({ light: null, dark: null }, K.prefs.wall);
+  normPrefs(K.prefs);
   K.setPref = function(k, v){
     K.prefs[k] = v; try{ localStorage.setItem(PREF_KEY, JSON.stringify(K.prefs)); }catch(e){}
     K.emit('prefs', k); if(C.signedIn() && K.loaded){ K.dirty.add('prefs'); K.emit('dirty'); }
   };
-  function loadPrefsFromCloud(p){ if(!p || typeof p !== 'object') return; K.prefs = Object.assign({}, K.prefs, p); K.prefs.wall = Object.assign({ light: null, dark: null }, K.prefs.wall); try{ localStorage.setItem(PREF_KEY, JSON.stringify(K.prefs)); }catch(e){} K.emit('prefs', '*'); }
+  function loadPrefsFromCloud(p){ if(!p || typeof p !== 'object') return; K.prefs = normPrefs(Object.assign({}, K.prefs, p)); try{ localStorage.setItem(PREF_KEY, JSON.stringify(K.prefs)); }catch(e){} K.emit('prefs', '*'); }
 
   /* ---- auth actions ---- */
   C.signInGoogle = async () => { const p = new firebase.auth.GoogleAuthProvider(); const r = await C.auth.signInWithPopup(p); return r.user; };
@@ -129,8 +185,8 @@
     mailRef.on('child_added', s => {
       const m = s.val(); count(s); if(!m) return;
       K.mailAdd({ id: 'srv-' + s.key, from: String(m.from || 'Mr West').slice(0, 30), subj: String(m.subj || '').slice(0, 120), body: String(m.body || '').slice(0, 1000), kind: 'admin' });
-      s.ref.remove().catch(() => {});
-    }, () => {});
+      s.ref.remove().catch(e => D.warn('cloud.mailbox', 'could not delete a delivered message: ' + (e && e.code || e)));
+    }, e => D.error('cloud.mailbox', e));
   }
   function stopMail(){ if(mailRef){ mailRef.off(); mailRef = null; } }
   async function loadBroadcasts(){
@@ -161,14 +217,17 @@
     const S = K.S, r2 = K.round2;
     return { name: S.meta.name || '', value: r2(S.cash), nw: r2(K.netWorth()), re: r2(K.propValue()), stk: r2(K.stockValue ? K.stockValue() : 0), inv: r2(K.inventoryValue()),
       disc: S.lab.found.length, runs: S.lab.runs || 0, props: Object.keys(S.props).length, els: Object.keys(S.inv.e).length,
-      fac: r2(S.factory.lines.reduce((s, l) => s + (l.on ? l.rate : 0), 0)), made: Math.floor(S.factory.made || 0) };
+      fac: r2(((S.factory && S.factory.lines) || []).reduce((s, l) => s + (l && l.on ? (+l.rate || 0) : 0), 0)), made: Math.floor((S.factory && S.factory.made) || 0) };
   };
   function publishBoard(force){
     if(!C.signedIn() || !K.S.meta.name) return;
-    const e = C.boardEntry(), sig = JSON.stringify(e), now = Date.now();
+    let e, sig; try{ e = C.boardEntry(); Object.keys(e).forEach(k => { if(typeof e[k] === 'number' && !isFinite(e[k])) e[k] = 0; }); sig = JSON.stringify(e); }
+    catch(err){ D.error('cloud.boardEntry', err, { probe: D.probe ? D.probe() : null }); return; }                // never lets a broken leaderboard record look like a failed save
+    const now = Date.now();
     if(force ? (now - lbAt < 4000 && sig === lbLast) : (now - lbAt < CFG.leaderboardEveryMs || sig === lbLast)) return;
     lbAt = now; lbLast = sig; e.updatedAt = firebase.database.ServerValue.TIMESTAMP;
-    return C.db.ref('leaderboard/' + C.user.uid).set(e).catch(() => {});
+    try{ return C.db.ref('leaderboard/' + C.user.uid).set(e).catch(err => { lbLast = ''; D.error('cloud.publishBoard', err, { code: err && err.code, entry: D.summarize ? D.summarize(e) : undefined }); }); }
+    catch(err){ lbLast = ''; D.error('cloud.publishBoard', err, { entry: D.summarize ? D.summarize(e) : undefined }); }
   }
   C.publishBoard = publishBoard;
   C.setName = async function(name){

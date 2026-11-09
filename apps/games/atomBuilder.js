@@ -26,7 +26,7 @@ Games.register({ id: "atomBuilder", play(content, api){
     });
     document.getElementById('abCheck').addEventListener('click', () => {
       const resultEl = document.getElementById('abResult');
-      if(p === targetP && n === targetN && e === targetE) api.win('atomBuilder', 3, resultEl, 'Correct atom built!');
+      if(p === targetP && n === targetN && e === targetE){ const t = api.elapsed(); api.score('atomBuilder', Math.min(1000, 200 + 25 * (targetP + targetN) + Math.max(0, 250 - 5 * Math.max(0, t - 15))), resultEl, 'Correct atom built in ' + t.toFixed(0) + ' s!'); }          // bigger atoms and faster builds score more
       else api.lose(resultEl, `Needed ${targetP}p/${targetN}n/${targetE}e — you had ${p}p/${n}n/${e}e.`);
     });
   }

@@ -58,7 +58,7 @@
   function view(l){
     const pr = proc(l.f), comp = compOf(l.f) || {}, e = est(l.f), rg = F.shopRange(e, CFG), q = l.route === 'shop' ? FA.quote(l.id) : null, run = l.on && l.rate > 0, sh = sheetOf(l, run ? l.rate : 0);
     return { id: l.id, f: l.f, name: nameOf(l.f), tier: l.tier, cap: F.rateCap(l.tier, CFG), rate: l.rate, on: l.on, route: l.route, price: l.price, auto: l.auto, stock: l.stock, storage: F.storage(l.tier, CFG), listed: l.listed,
-      comp, est: e, shopRange: rg, marketRange: F.marketRange(e, CFG), upgradeCost: F.upgradeCost(l.tier, CFG), unitCost: isFinite(sh.unit) ? r2(sh.unit) : 0, sheet: sh, g: gOf(l), rateEff: sh.effRate, process: { mode: pr.mode, steps: pr.steps.map(x => ({ eq: x.eq, name: x.name, y: x.y })), yield: pr.yield, missing: pr.missing },
+      comp, est: e, shopRange: rg, marketRange: F.marketRange(e, CFG), upgradeCost: F.upgradeCost(l.tier, CFG), unitCost: isFinite(sh.unit) ? r2(sh.unit) : 0, sheet: sh, g: l.g, rateEff: sh.effRate, process: { mode: pr.mode, steps: pr.steps.map(x => ({ eq: x.eq, name: x.name, y: x.y })), yield: pr.yield, missing: pr.missing },
       costPerMin: run ? r2(sh.costPerMin) : 0, chance: q ? q.chance : null, sat: q ? q.sat : null, lockLeft: Math.max(0, Math.ceil((l.sellAt - K.now()) / 1000)), note: l.note, batch: F.batch(l.tier, CFG), full: l.stock >= F.storage(l.tier, CFG) - 1e-6 };
   }
   FA.state = function(){
@@ -155,7 +155,7 @@
   FA.setOn = function(id, on){ const l = line(id); if(!l) return no('No such line.'); l.on = !!on; touch(); return ok(on ? 'Line running.' : 'Line paused.'); };
   FA.setAuto = function(id, a){ const l = line(id); if(!l) return no('No such line.'); l.auto = !!a; touch(); return ok('Saved.'); };
   /* ---- flowsheet editing: every call is re-validated here; the app only asks ---- */
-  function gOf(l){ if(!l.g || typeof l.g !== 'object') l.g = { nodes: [], wires: [], next: 1 }; if(!Array.isArray(l.g.nodes)) l.g.nodes = []; if(!Array.isArray(l.g.wires)) l.g.wires = []; return l.g; }
+  const gOf = l => l.g || (l.g = { nodes: [], wires: [], next: 1 });
   const gSp = /^[A-Za-z0-9()]{1,16}$/;
   FA.sources = function(){                                                          // what a Source node can buy: every element, plus the compounds you have discovered (and water)
     const P = F.priceFn(F.cfgOf(CFG), { atomPrice: elPrice, compOf }), found = new Set(K.S.lab.found.map(keyOf).filter(Boolean)), out = [];
@@ -189,7 +189,7 @@
     g.wires.push({ a, b, s: sp }); touch(); return ok('Connected.');
   };
   FA.gUnwire = function(id, a, b, sp){ const l = line(id); if(!l) return no('No such line.'); const g = gOf(l), n = g.wires.length; g.wires = g.wires.filter(w => !(w.a === a && w.b === b && w.s === sp)); if(g.wires.length === n) return no('No such wire.'); touch(); return ok('Wire removed.'); };
-  FA.gAuto = function(id){ const l = line(id); if(!l) return no('No such line.'); const sh = autoOf(l.f, {}, 1); if(!sh.reactors.length) return no('No route for that.'); l.g = cleanGraph(F.graphFromSheet(sh)); touch(); return ok((sh.reactors.length > 1 ? 'Built the industrial route, stage by stage — rearrange or edit it.' : 'Built a single reactor — this product has no multi-stage route.') + (sh.unstudied && sh.unstudied.length ? ' Discover ' + sh.unstudied.map(F.sub).join(', ') + ' in WestLab to remove the +25 % unstudied-process cost.' : '')); };
+  FA.gAuto = function(id){ const l = line(id); if(!l) return no('No such line.'); const sh = autoOf(l.f, {}, 1); if(!sh.reactors.length) return no('No route for that.'); l.g = cleanGraph(F.graphFromSheet(sh)); touch(); return ok(sh.mode === 'process' ? 'Built the industrial route — rearrange or edit it.' : 'Built a direct-combination reactor (discover the intermediates in WestLab for the real process).'); };
   FA.gClear = function(id){ const l = line(id); if(!l) return no('No such line.'); l.g = { nodes: [], wires: [], next: 1 }; touch(); return ok('Cleared.'); };
   FA.setReserve = function(v){ S().reserve = F.clamp(r2(num(v, 0)), 0, 1e9); touch(); return ok('Cash reserve saved.'); };
   FA.setPos = function(key, x, y){ const p = S().pos; key = String(key).slice(0, 40); if(isFinite(+x) && isFinite(+y)){ p[key] = { x: Math.round(+x), y: Math.round(+y) }; K.touch('factory'); } };

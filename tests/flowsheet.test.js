@@ -43,10 +43,8 @@ const soda = base('Na2CO3', ALL, {}, 10); assert(soda.reactors.some(r => r.main 
 assert(soda.surplus.some(x => x.sp === 'CaCl2'), 'CaCl2 is the waste of ammonia recovery');
 const sodaBuyNH3 = base('Na2CO3', ALL, { NH3: 'buy' }, 10); assert(!sodaBuyNH3.reactors.some(r => r.main === 'NH3') && sodaBuyNH3.feeds.some(f => f.sp === 'NH3'), 'buying NH3 drops the recovery step');
 const sodaCO2 = base('Na2CO3', ALL, { CO2: 'make' }, 10); assert(sodaCO2.reactors.some(r => r.main === 'CO2' && r.kind === 'formation'), 'CO2 built from C + O2'); assert(sodaCO2.feeds.some(f => f.sp === 'C') && sodaCO2.feeds.some(f => f.sp === 'O2'));
-// 6. missing discoveries → the SAME staged plant (never one reactor from the elements), +25 %
-const dir = base('HNO3', ['HNO3'], {}, 10); assert.strictEqual(dir.mode, 'process'); assert.deepStrictEqual(dir.reactors.map(r => r.main), ['NH3', 'NO', 'NO2', 'HNO3'], 'no discoveries: still the staged Ostwald plant'); assert(dir.recycle > 0, 'NO still recycles'); assert(dir.feeds.every(f => f.el)); const full = hno3.unit; assert(Math.abs(dir.unit / full - 1.25) < 1e-9, 'unstudied staged plant costs +25 %');
-{ const g = F.graphFromSheet(dir), mine = F.graphSheet(g, { f: 'HNO3', found: ['HNO3'], rate: 10, atomPrice: e => AP[e] || 5, compOf: sp => { const c = atomsOf(sp); return c && Object.keys(c).length > 1 ? c : null; } }), done = F.graphSheet(g, { f: 'HNO3', found: ALL, rate: 10, atomPrice: e => AP[e] || 5, compOf: sp => { const c = atomsOf(sp); return c && Object.keys(c).length > 1 ? c : null; } });
-  assert(mine.producing && done.producing, 'auto-built staged graph runs without discoveries'); assert(Math.abs(mine.unit / done.unit - 1.25) < 1e-9, 'graph solver applies the same +25 % until the intermediates are discovered'); }
+// 6. missing discoveries → the old behaviour: one 'direct' reactor from the elements, +25 %
+const dir = base('HNO3', ['HNO3'], {}, 10); assert.strictEqual(dir.mode, 'direct'); assert.strictEqual(dir.reactors.length, 1); assert(dir.feeds.every(f => f.el)); const full = hno3.unit; assert(dir.unit > full, 'direct combination costs more than the process');
 // plain products keep their old price exactly: atoms × 1.05
 const plain = base('NaCl', ALL, {}, 1); assert.strictEqual(plain.mode, 'plain'); assert(Math.abs(plain.unit - (AP.Na + AP.Cl) * 1.05) < 1e-9);
 // 7. a paused line (rate 0) still has its structure and price

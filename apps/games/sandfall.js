@@ -30,7 +30,7 @@ Games.register({ id: 'sandfall', play(content, api){
   content.querySelector('#sfClr').addEventListener('click', () => { for(let i = 0; i < g.length; i++) if(g[i] === 2) g[i] = 0; ink = INK0; });
   function finish(){
     over = true; const pct = cupCount() / GRAINS, msg = Math.round(pct * 100) + '% of the sand reached the beaker.';
-    if(pct >= 0.9) api.win('sandfall', 5, res, msg + ' Perfect pour!'); else if(pct >= 0.75) api.win('sandfall', 4, res, msg); else if(pct >= 0.5) api.win('sandfall', 3, res, msg); else api.lose(res, msg + ' You need at least 50%.');
+    api.score('sandfall', Math.round(pct * 900 + pct * 100 * Math.max(0, ink) / INK0), res, msg + (pct >= 0.9 ? ' Perfect pour!' : ''));          // sand in the beaker, plus a little for glass you didn't need
   }
   (function loop(){
     if(over || !content.isConnected) return; frames++;

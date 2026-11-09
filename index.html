@@ -56,6 +56,8 @@
   <div class="ov" id="sessionLost" style="display:none"><div class="card"><div class="ico" id="sessionIco"></div><b>WestOS is open in another window</b><span>To keep your money safe, only one window can use your account at a time. Everything you did here has been saved.</span><div class="bs"><button id="sessionBtn">Use WestOS here</button></div></div></div>
 </div>
 
+<!-- diagnostics FIRST: catches (and loudly logs) errors thrown by everything below -->
+<script src="os/diag.js"></script>
 <!-- config, icons and reference data -->
 <script src="os/config.js?v=20261107a"></script>
 <script src="os/icons.js?v=20261107a"></script>
@@ -64,7 +66,7 @@
 <script src="data/databook-data.js?v=20261105b"></script>
 <script src="data/moderation-data.js?v=20261105b"></script>
 <script src="data/economy-data.js?v=atoms1"></script>
-<script src="data/chem-data.js?v=20261105b"></script>
+<script src="data/chem-data.js?v=20261109a"></script>
 <script src="data/thermo-data.js?v=atoms1"></script>
 <script src="data/property-data.js?v=20261105b"></script>
 <script src="data/news-data.js?v=20261105b"></script>
@@ -77,7 +79,8 @@
 <script src="os/lib/ff-sync.js?v=20261105b"></script>
 <script src="os/lib/world.js?v=20261105b"></script>
 <script src="os/lib/arcade-games.js?v=20261106a"></script>
-<script src="os/lib/factory-sim.js?v=20261107a"></script>
+<script src="os/lib/factory-sim.js?v=20261109a"></script>
+<script src="os/lib/game-scoring.js"></script>
 <!-- kernel: state, cloud, market, bank, gallery, api -->
 <script src="os/kernel/state.js?v=20261107a"></script>
 <script src="os/kernel/maint.js"></script>
@@ -85,9 +88,10 @@
 <script src="os/kernel/market.js?v=20261105b"></script>
 <script src="os/kernel/bank.js?v=20261105b"></script>
 <script src="os/kernel/arcade.js?v=20261106a"></script>
-<script src="os/kernel/factory.js?v=20261107a"></script>
+<script src="os/kernel/factory.js?v=20261109a"></script>
 <script src="os/kernel/gallery.js?v=20261105b"></script>
-<script src="os/kernel/api.js?v=20261107a"></script>
+<script src="os/kernel/api.js?v=20261109a"></script>
+<script src="os/kernel/minigames.js"></script>
 <!-- desktop widgets: one file each; add a widget by adding a file and a line here -->
 <script src="os/widgets/wanted.js?v=20261105b"></script>
 <script src="os/widgets/stocks.js?v=20261105b"></script>

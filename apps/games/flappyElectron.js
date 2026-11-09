@@ -11,7 +11,7 @@ Games.register({ id: 'flappyElectron', play(content, api){
   const keyh = e => { if(!content.isConnected){ window.removeEventListener('keydown', keyh); return; } if(e.key === ' ' || e.key === 'ArrowUp'){ e.preventDefault(); flap(); } };
   window.addEventListener('keydown', keyh); try{ window.parent.addEventListener('keydown', keyh); }catch(_){}
   function end(){ if(over) return; over = true; const msg = 'You passed ' + score + ' gate' + (score === 1 ? '' : 's') + '.';
-    if(score >= 35) api.win('flappyElectron', 5, res, msg + ' Superconducting!'); else if(score >= 20) api.win('flappyElectron', 4, res, msg); else if(score >= 10) api.win('flappyElectron', 3, res, msg); else if(score >= 5) api.win('flappyElectron', 2, res, msg); else api.lose(res, msg + ' Reach 5 to earn.'); }
+    if(score >= 5) api.score('flappyElectron', score * 50, res, msg + (score >= 35 ? ' Superconducting!' : '')); else api.lose(res, msg + ' Reach 5 to earn.'); }          // 50 points per gate
   function draw(){
     ctx.fillStyle = '#2a2118'; ctx.fillRect(0, 0, W, H);
     pipes.forEach(p => { ctx.fillStyle = '#c9772e'; ctx.fillRect(p.x, 0, PW, p.gy); ctx.fillRect(p.x, p.gy + GAP, PW, H - p.gy - GAP); ctx.fillStyle = '#f2b27a'; ctx.fillRect(p.x - 4, p.gy - 12, PW + 8, 12); ctx.fillRect(p.x - 4, p.gy + GAP, PW + 8, 12); ctx.fillStyle = '#1b130c'; ctx.font = '700 18px system-ui'; ctx.textAlign = 'center'; ctx.fillText('+', p.x + PW / 2, p.gy - 22); ctx.fillText('−', p.x + PW / 2, p.gy + GAP + 34); });

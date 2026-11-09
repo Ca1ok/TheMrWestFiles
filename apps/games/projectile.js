@@ -42,7 +42,7 @@ Games.register({ id: "projectile", play(content, api){
     ctx.stroke();
     const resultEl = document.getElementById('projResult');
     const diff = Math.abs(range - targetX);
-    if(diff <= 8) api.win('projectile', 5, resultEl, `Landed ${range.toFixed(1)}m — target was ${targetX.toFixed(1)}m!`);
+    if(diff <= 8) api.score('projectile', Math.max(1, Math.round(1000 * (1 - diff / 8))), resultEl, `Landed ${range.toFixed(1)}m — target was ${targetX.toFixed(1)}m!`);
     else api.lose(resultEl, `Landed ${range.toFixed(1)}m — target was ${targetX.toFixed(1)}m (off by ${diff.toFixed(1)}m).`);
   });
 } });

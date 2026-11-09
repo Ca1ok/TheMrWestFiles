@@ -13,7 +13,7 @@ Static site on GitHub Pages (no build step, no npm deps at runtime). A browser "
 ## 1. Repo map (what to touch for what)
 ```
 index.html                 shell page; loads ALL scripts in a fixed order (see §2). New kernel/widget/lib file => add a <script> line here.
-os/config.js               Firebase keys, adminEmail, tax numbers, game.dailySoftcap(75)/dropChance, factory knobs, epoch (world-clock tick 0)
+os/config.js               Firebase keys, adminEmail, tax numbers, game.dailySoftcap(250)/dropChance/maxBase(120), factory knobs, epoch (world-clock tick 0)
 os/icons.js                OS_GLYPHS (24px line SVGs), OS_EMOJI map, OS_APPS registry, osIcon(name,size,sw), osEmoji(e|glyph,size), osAppTile(app,size)
 os/tokens.css              CSS vars (light/dark palette, --tint, --card, --fill, --label*, --ease, --spring)
 os/os.css  os/poster.css   shell styles / WANTED poster
@@ -71,6 +71,12 @@ Kit exports: `row group h esc money num ago icon tile ico toast confirm alert sh
 - Other sinks/sources: WestShop (element prices swing via world.js), WestLab (reactions, discoveries), RealEstate (props, daily sector prices), $WEST stock (deterministic model shared by browser + GitHub Action), WestFactory (idle production, market fee), Arcade (casino; limits live in Firebase `arcadeConfig`, enforced by rules).
 - Leaderboard categories are defined in `os/kernel/cloud.js` (`C.LB`); records are written ≤ every 15 s.
 
+## 6a. Minigame scoring, high scores, boards (os/lib/game-scoring.js, os/kernel/minigames.js)
+Scored games call `api.score(id, points, resultEl, label)` (Games.html). Points → payout base = 0.5·e^(2.3·points/par), capped by `game.maxBase`, then the old K.award factors. Per-game `par/min/max` live in `GameScoring.TABLE` (tests/game-scoring.test.js). `api.elapsed()` gives seconds since the round began. Lucky Assay is unscored (legacy `api.win`). Personal bests: `K.S.games.hi[id]={s,t,p}` (survive the daily reset; p = last published). Public boards: `gameScores/<game|all>/<uid>` {n,s,t,c} (raise-only; rules snippet in database.rules.gameScores.json). Facade: `OS.games.submit/info/scoring/estimate/ids`, `OS.gameBoards.list/mine/refresh`.
+
+## 6c. Diagnostics (os/diag.js, loaded FIRST)
+Captures errors with stacks, promise rejections, console.error/warn, failed script loads, and every failing `OS.*` call (wrapped in boot.js). Ring buffer + localStorage mirror; `K.diag.text()` is attached to bug reports (WestReport) with sync state and a state-shape probe. Apps: `OS.debug.error(src, err, data)`. cloud.js saving: on a rejected save it re-sends field by field (cash+arcade together) so one bad field can't block the rest; `C.lastErr/C.badFields` name the culprit. Dock position pref `dockMode` = float|low|hide.
+
 ## 6b. Maintenance mode
 Firebase `maintenance` = `{all:bool, apps:{AppId:true}, sys:{trading|market:true}, msg, t}` (public read, admin write, live listener). `os/kernel/maint.js`: `appMsg(id)/sysMsg(key)/siteMsg()` return '' when fine (verified admin always exempt). Enforced in shell `openApp` (dialog), open windows (`.mcover`), icon wrench badge, whole-site overlay `#maint`, `mguard()` wrappers in `api.js`, `arcade.begin`, `FA.tick/claim/pushMarket`. Settings and Bank can't be switched off alone. New money-moving action => wrap it in `mguard`. Client-side only.
 
@@ -83,9 +89,10 @@ Current: titration, balance (educational) · mazePaint, sandfall, colourBlocks, 
 - GitHub Action `update-market.yml` (cron 10 min): `tick-market.js` advances `market/market-data.json` + `market/history/{recent,hourly}.json`, reading admin ledgers from Firebase; retry-by-recompute on push race. Price = seeded noise × trend (base + growth) + admin ledger; browser recomputes identically. `export-lab-cache.yml` writes `lab-cache/`.
 - WestLab: engine in `os/lib/chem.js` (+phys/mol/ff); results cached to GitHub `lab-cache/` so repeat combos aren't recomputed.
 
-## 8b. WestLab engine (ENGINE_VERSION 2)
-- **ENGINE_VERSION** (`os/lib/phys.js`) is the first part of every cache key (`e2|…`). Bump it whenever ANY change can alter a card (data tables, rules, thermo, kinetics). The export Action then purges other-version entries and replays all Firebase submissions; `tools/preseed-lab-cache.js` (workflow "Pre-seed WestLab cache", manual button) refills the common reactions. Never hand-edit `lab-cache/`.
+## 8b. WestLab engine (ENGINE_VERSION 3)
+- **ENGINE_VERSION** (`os/lib/phys.js`) is the first part of every cache key (`e3|…`). Bump it whenever ANY change can alter a card (data tables, rules, thermo, kinetics). The export Action then purges other-version entries and replays all Firebase submissions; `tools/preseed-lab-cache.js` (workflow "Pre-seed WestLab cache", manual button) refills the common reactions. Never hand-edit `lab-cache/`.
 - **To regenerate after an engine change:** bump ENGINE_VERSION → push → Actions → "Pre-seed WestLab cache" → Run, then "Export WestLab discoveries" → Run. Or locally: `node tools/preseed-lab-cache.js`.
+- `lab-cache/discoveries.json` is a *checked view* of Firebase `labCache`: the export Action re-derives each entry with the current engine (`.github/scripts/lab-verify.js`), stamps it with `ev`, and drops what the engine no longer makes (listed in `discoveries-rejected.json`). `node tests/discoveries.test.js` guards this and the no-free-atoms rule (the Gibbs search in `phys.js` uses `stdState()` so a bare `F`/`H`/… reagent is always X2).
 - Atom keys of diatomic elements (`N`,`H`,`O`,`F`,`Cl`,`Br`,`I`) mean the element in its standard state X2 in every rule (`Chem.solve`). `N` and `N2` give identical chemistry.
 - **Named reactions** live in `data/chem-data.js` (`NAMED_REACTIONS`, consulted first; `notModelled:true` makes the engine refuse instead of guessing). **Spec/tests:** `data/reaction-catalogue.js` (not loaded by the browser) + `node tests/catalogue.test.js`; also `tests/thermo-audit.test.js` (ΔGf vs CRC, isomer-collision guard) and `tests/cache.test.js`.
 - Determinism: no Math.random/Date in the engine; the Gibbs search has a work budget (`GS_BUDGET`), not a clock.

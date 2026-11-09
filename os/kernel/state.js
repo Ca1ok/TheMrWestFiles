@@ -22,7 +22,7 @@
   K.defaults = () => ({
     v: 3, cash: CFG.startCash, inv: { e: {}, c: {} }, lots: [], props: {},
     bank: { last: '', bills: [], hist: [] }, mail: [],
-    lab: { found: [], tools: { basic: 1 }, runs: 0, tray: {} }, games: { day: '', plays: {}, earned: 0 },
+    lab: { found: [], tools: { basic: 1 }, runs: 0, tray: {} }, games: { day: '', plays: {}, earned: 0, hi: {} },
     shop: { demand: {} }, meta: { created: Date.now(), name: '', lastBroadcast: 0 }, arcade: { d: 0, net: 0, open: 0, t: 0 }, factory: { lines: [], slots: 2, reserve: 50, made: 0, sold: 0, earned: 0, lastTick: 0, nid: 1, pos: {} }
   });
   K.S = K.defaults();
@@ -47,7 +47,11 @@
     S.mail = K.toArr(S.mail);
     S.lab = Object.assign({ found: [], tools: { basic: 1 }, runs: 0 }, S.lab); S.lab.found = K.toArr(S.lab.found); S.lab.tools = Object.assign({ basic: 1 }, S.lab.tools);
     { const tr = {}, src = (S.lab.tray && typeof S.lab.tray === 'object') ? S.lab.tray : {}; Object.keys(src).forEach(k => { const v = Math.floor(+src[k]); if(v > 0 && v < 1e6 && Chem.speciesOf(k)) tr[k] = v; }); S.lab.tray = tr; }   // WestLab output tray: products waiting to be collected into the inventory
-    S.games = Object.assign({ day: '', plays: {}, earned: 0 }, S.games);
+    S.games = Object.assign({ day: '', plays: {}, earned: 0, hi: {} }, (S.games && typeof S.games === 'object') ? S.games : {});
+    if(!S.games.plays || typeof S.games.plays !== 'object') S.games.plays = {}; if(!isFinite(+S.games.earned)) S.games.earned = 0;
+    { const hi = {}, src = (S.games.hi && typeof S.games.hi === 'object') ? S.games.hi : {};                              // lifetime best score per game (kept across days; p = the best already published to the mini-game leaderboard)
+      Object.keys(src).forEach(id => { const r = src[id]; if(r && isFinite(+r.s) && +r.s > 0 && typeof GameScoring !== 'undefined' && GameScoring.has(id)){ const s0 = GameScoring.clampPoints(id, r.s); hi[id] = { s: s0, t: +r.t || 0, p: Math.min(s0, Math.max(0, Math.round(+r.p) || 0)) }; } });
+      S.games.hi = hi; if(!isFinite(+S.games.pAll)) delete S.games.pAll; }
     S.shop = Object.assign({ demand: {} }, S.shop); S.shop.demand = S.shop.demand || {};
     S.meta = Object.assign({ created: Date.now(), name: '', lastBroadcast: 0 }, S.meta);
     { const c = Object.assign({ d: 0, net: 0, open: 0, t: 0 }, (S.arcade && typeof S.arcade === 'object') ? S.arcade : {}); S.arcade = { d: +c.d || 0, net: isFinite(+c.net) ? round2(+c.net) : 0, open: +c.open > 0 ? round2(+c.open) : 0, t: +c.t || 0 }; }   // arcade ledger: today's net winnings + any stake still at risk
@@ -113,7 +117,7 @@
   };
 
   /* ---- minigames: payouts shrink per game per day and soften after a daily total ---- */
-  K.gameDay = () => { const d = K.today(); if(K.S.games.day !== d) K.S.games = { day: d, plays: {}, earned: 0 }; return K.S.games; };
+  K.gameDay = () => { const d = K.today(); if(K.S.games.day !== d) K.S.games = { day: d, plays: {}, earned: 0, hi: K.S.games.hi || {}, pAll: K.S.games.pAll }; return K.S.games; };   // a new day resets plays/earned, never the high scores
   K.collectionBonus = () => 1 + Math.min(0.5, 0.004 * Object.keys(K.S.inv.e).length + 0.004 * K.S.lab.found.length);
   const CHEAP = ['H', 'C', 'N', 'O', 'Na', 'Mg', 'Al', 'Si', 'S', 'Cl', 'K', 'Ca', 'Fe', 'Zn', 'Cu'];
   K.award = function(gameId, base){

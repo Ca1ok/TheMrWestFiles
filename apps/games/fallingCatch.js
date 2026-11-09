@@ -7,8 +7,7 @@ Games.register({ id: "fallingCatch", play(content, api){
     if(round > TOTAL){
       content.innerHTML = `<h3>Falling Elements — Finished</h3>`;
       const resultEl = document.createElement('div'); content.appendChild(resultEl);
-      if(correct >= 5) api.win('fallingCatch', 3, resultEl, `${correct}/${TOTAL} caught!`);
-      else api.lose(resultEl, `${correct}/${TOTAL} caught — need 5+.`);
+      api.score('fallingCatch', correct * 150 + (correct === TOTAL ? 100 : 0), resultEl, `${correct}/${TOTAL} caught!`);          // 5+ to earn, a clean sweep scores 1000
       return;
     }
     const pool = ELEMENTS.filter(e => e[1]);

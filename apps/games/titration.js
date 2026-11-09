@@ -16,7 +16,8 @@ Games.register({ id: "titration", play(content, api){
   document.getElementById('titrationStopBtn').addEventListener('click', () => {
     const diff = Math.abs(volume - target);
     const resultEl = document.getElementById('titrationResult');
-    if(diff <= 2) api.win('titration', 4, resultEl, `True endpoint was ${target.toFixed(1)} mL — within ${diff.toFixed(1)} mL!`);
+    const pts = Math.max(0, Math.round(1000 * (1 - diff / 3)));                          // points: 1000 for a perfect stop, 333 at the edge of the window
+    if(diff <= 2) api.score('titration', pts, resultEl, `True endpoint was ${target.toFixed(1)} mL — within ${diff.toFixed(1)} mL!`);
     else api.lose(resultEl, `True endpoint was ${target.toFixed(1)} mL — you were off by ${diff.toFixed(1)} mL.`);
   });
 } });

@@ -17,7 +17,7 @@ Games.register({ id: 'colourBlocks', play(content, api){
   function pop(r, c){
     if(over) return; const gp = group(r, c); if(gp.length < 2) return; gp.forEach(p => { b[p[0]][p[1]] = -1; }); collapse(); hov = []; draw();
     if(!movesLeft()){ over = true; const k = remaining(), msg = k + ' tile' + (k === 1 ? '' : 's') + ' left.';
-      if(k === 0) api.win('colourBlocks', 5, res, 'Board cleared!'); else if(k <= 3) api.win('colourBlocks', 4, res, msg); else if(k <= 8) api.win('colourBlocks', 3, res, msg); else if(k <= 14) api.win('colourBlocks', 2, res, msg); else api.lose(res, msg + ' Get it under 15 to earn.'); }
+      api.score('colourBlocks', Math.max(0, 1000 - k * 60), res, k === 0 ? 'Board cleared!' : msg); }          // 1000 for a clear, 60 off per tile left
   }
   grid.addEventListener('mouseleave', () => { if(hov.length){ hov = []; draw(); } });
   draw();

@@ -20,7 +20,7 @@ Games.register({ id: "balance", play(content, api){
     const inputs = content.querySelectorAll('.bal-input');
     const guess = Array.from(inputs).map(i => parseInt(i.value, 10));
     const resultEl = document.getElementById('balResult');
-    if(guess.every((v, i) => v === eq.answer[i])) api.win('balance', 4, resultEl, 'Balanced correctly!');
+    if(guess.every((v, i) => v === eq.answer[i])){ const t = api.elapsed(); api.score('balance', 400 + Math.round(600 * Math.max(0, Math.min(1, 1 - (t - 6) / 54))), resultEl, 'Balanced in ' + t.toFixed(1) + ' s!'); }          // 400 for a correct answer, up to 1000 for a fast one
     else api.lose(resultEl, `Correct coefficients were: ${eq.answer.join(', ')}.`);
   });
 } });

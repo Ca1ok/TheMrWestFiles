@@ -17,7 +17,7 @@ Games.register({ id: "reaction", play(content, api){
     if(!armed){ api.lose(resultEl, 'Too early! Wait for green.'); box.style.background = '#7a1f1f'; box.textContent = 'Too early'; return; }
     const rt = performance.now() - startTime;
     box.textContent = `${rt.toFixed(0)} ms`;
-    if(rt <= 400) api.win('reaction', 3, resultEl, `${rt.toFixed(0)}ms reaction time!`);
+    if(rt <= 400) api.score('reaction', rt <= 150 ? 1000 : Math.round(1000 * (450 - rt) / 300), resultEl, `${rt.toFixed(0)}ms reaction time!`);
     else api.lose(resultEl, `${rt.toFixed(0)}ms — need 400ms or under to earn cash.`);
     armed = false;
   });

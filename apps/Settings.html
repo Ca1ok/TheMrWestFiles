@@ -61,9 +61,10 @@ const A = Kit.app({ title: 'Settings', build: (body) => {
       row({ title: 'Reduce motion', sub: 'Skips zoom and slide animations', right: toggle(!!P_.get('reduceMotion'), v => P_.set('reduceMotion', v)) }), row({ title: 'Reduce transparency', sub: 'Turns off blur — faster on older devices', right: toggle(!!P_.get('reduceTransparency'), v => P_.set('reduceTransparency', v)) })));
     // Desktop
     rest.appendChild(h('div', { class: 'cap' }, 'Desktop'));
-    rest.appendChild(group(row({ glyph: 'grid', color: '#4a6fa8', title: 'Dock apps', sub: OS.prefs.get('dock').length ? OS.prefs.get('dock').join(', ') : 'All apps', chev: true, onClick: openDock }),
+    rest.appendChild(group(row({ glyph: 'grid', color: '#4a6fa8', title: 'Dock apps', sub: (OS.prefs.get('dock') || []).length ? OS.prefs.get('dock').join(', ') : 'All apps', chev: true, onClick: openDock }),
       row({ glyph: 'refresh', color: '#7b7468', title: 'Reset layout', sub: 'Restore the default widgets and window sizes', onClick: async () => { if(await Kit.confirm({ title: 'Reset the desktop?', ok: 'Reset', destructive: true })){ OS.shell.resetLayout(); Kit.toast('Desktop reset'); } } })));
     rest.appendChild(group(
+      h('div', { class: 'row' }, h('div', { class: 'tx' }, h('b', null, 'Dock position'), h('small', { class: 'wrap' }, 'Low pushes the dock down flush with the bottom edge. Auto-hide tucks it away; touch the bottom edge to bring it back. Windows and the desktop use the freed space.')), h('div', { style: { width: '260px' } }, seg([{ id: 'float', label: 'Floating' }, { id: 'low', label: 'Low' }, { id: 'hide', label: 'Auto-hide' }], P_.get('dockMode') || 'float', v => P_.set('dockMode', v)))),
       h('div', { class: 'row' }, h('div', { class: 'tx' }, h('b', null, 'Icon size'), h('small', null, 'App icons on the desktop')), h('div', { style: { width: '210px' } }, seg([{ id: 'small', label: 'Small' }, { id: 'medium', label: 'Medium' }, { id: 'large', label: 'Large' }], P_.get('iconSize') || 'medium', v => P_.set('iconSize', v)))),
       row({ title: '24-hour clock', sub: 'Used by the Clock widget', right: toggle(!!P_.get('clock24'), v => P_.set('clock24', v)) }),
       row({ title: 'Show seconds on the clock', right: toggle(!!P_.get('clockSeconds'), v => P_.set('clockSeconds', v)) })));

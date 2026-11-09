@@ -40,7 +40,7 @@ function sellCap(l){ const e = l.rateEff || 0; if(l.route !== 'shop') return e; 
 const A = Kit.app({ title: 'WestFactory', right: [{ icon: 'plus', label: 'Add line', onClick: () => addSheet() }], build: (body) => {
   const kp = h('div', { class: 'kp' }), bar = h('div', { class: 'fbar' }), tabs = h('div', { class: 'tabs' }), tools = h('div', { class: 'tools' }), net = h('div', { class: 'net' }), stage = h('div', { class: 'stage' }), side = h('div', { class: 'side' });
   net.appendChild(stage); body.append(kp, bar, tabs, tools, h('div', { class: 'wrap' }, net, side), h('div', { class: 'foot' }, 'Build each plant like a factory floor: add Sources (elements or compounds you discovered) and Reactors (recipes), then wire output dots (right) to input dots (left) and finish at the warehouse. Strange loops are fine — a by-product can be wired back as a recycle, but every loop needs a make-up feed. Drag nodes to arrange; click a node or wire to inspect it.'));
-  const curLine = () => { const l = ST.lines.find(l => l.id === selLine) || null; if(l && (!l.g || !Array.isArray(l.g.nodes))) l.g = { nodes: [], wires: [], next: 1, ...(l.g || {}), nodes: (l.g && l.g.nodes) || [], wires: (l.g && l.g.wires) || [] }; return l; };
+  const curLine = () => ST.lines.find(l => l.id === selLine) || null;
   const addAll = (el, ...a) => el.append(...a.flat().filter(Boolean));
   const put = (...a) => side.append(...a.flat().filter(Boolean));
   const say = r => { Kit.toast(r.msg, r.ok ? 'good' : 'bad'); return r; };
@@ -85,6 +85,7 @@ const A = Kit.app({ title: 'WestFactory', right: [{ icon: 'plus', label: 'Add li
   let svg = null, pills = [];
   function drawNet(){
     const l = curLine(); stage.innerHTML = ''; NODES = {}; PORTS = {}; pills = []; svg = null; if(!l){ stage.style.height = '520px'; stage.style.width = '1000px'; stage.appendChild(h('div', { class: 'empty-hint' }, h('b', null, 'No production lines yet'), 'Press Add line, pick a molecule you have discovered, then build its plant here.', h('div', { class: 'row2', style: { marginTop: '12px', pointerEvents: 'auto' } }, h('button', { class: 'btn', onclick: () => addSheet() }, 'Add line')))); return; }
+    if(!l.g || !l.sheet || !l.sheet.nodes){ stage.style.height = '300px'; stage.appendChild(h('div', { class: 'empty-hint', style: { left: '300px' } }, h('b', null, 'Game files out of date'), 'The factory engine in your browser is older than this app. Hard-refresh the page (Ctrl/Cmd + Shift + R) so os/kernel/factory.js, os/kernel/api.js and os/lib/factory-sim.js reload.')); return; }
     const sh = l.sheet, gmap = {}; l.g.nodes.forEach(q => { gmap[q.id] = q; });
     let maxX = 0, maxY = 0;
     sh.nodes.forEach(n => { const gp = gmap[n.id]; if(!gp) return; const k = 'n:' + n.id, e = card(l, n, gp); stage.appendChild(e); NODES[k] = { kind: n.t, x: gp.x, y: gp.y, el: e, n, gp }; });
@@ -133,8 +134,8 @@ const A = Kit.app({ title: 'WestFactory', right: [{ icon: 'plus', label: 'Add li
     bar.innerHTML = ''; addAll(bar, h('button', { class: 'btn', onclick: () => addSheet() }, 'Add line (' + ST.lines.length + '/' + ST.slots + ')'),
       ST.nextSlotCost != null ? h('button', { class: 'btn gray', onclick: buySlot }, 'Unlock slot · ' + m2(ST.nextSlotCost)) : null, h('span', { class: 'grow' }),
       h('label', { class: 'foot', style: { margin: 0 } }, 'Keep ', h('input', { class: 'field', type: 'number', min: '0', value: String(ST.reserve), style: { width: '90px', display: 'inline-block', height: '34px' }, onchange: e => { const r = FA.setReserve(e.target.value); Kit.toast(r.msg, r.ok ? 'good' : 'bad'); } }), ' in the bank'));
-    tabs.innerHTML = ''; ST.lines.forEach(l => tabs.appendChild(h('button', { class: 'chip' + (l.id === selLine ? ' on' : ''), onclick: () => { selLine = l.id; sel = null; wiring = null; refresh(); } }, h('i', { class: !l.on ? 'stop' : (l.sheet.producing ? '' : 'bad') }), h('span', { html: pf(l.f) }))));
-    tools.innerHTML = ''; const l = curLine(); if(!l) return;
+    tabs.innerHTML = ''; ST.lines.forEach(l => tabs.appendChild(h('button', { class: 'chip' + (l.id === selLine ? ' on' : ''), onclick: () => { selLine = l.id; sel = null; wiring = null; refresh(); } }, h('i', { class: !l.on ? 'stop' : (l.sheet && l.sheet.producing ? '' : 'bad') }), h('span', { html: pf(l.f) }))));
+    tools.innerHTML = ''; const l = curLine(); if(!l || !l.g) return;
     addAll(tools, h('button', { class: 'btn', onclick: () => pickSource(l) }, '+ Source'), h('button', { class: 'btn', onclick: () => pickReactor(l) }, '+ Reactor'),
       h('button', { class: 'btn gray', onclick: async () => { if(l.g.nodes.length && !(await Kit.confirm({ title: 'Replace this plant?', msg: 'Auto-build replaces the nodes and wires with the real industrial route.', ok: 'Auto-build' }))) return; wiring = null; sel = null; say(FA.gAuto(l.id)); refresh(); } }, 'Auto-build route'),
       l.g.nodes.length ? h('button', { class: 'btn gray', onclick: async () => { if(await Kit.confirm({ title: 'Clear the plant?', msg: 'Removes every node and wire.', ok: 'Clear', destructive: true })){ wiring = null; sel = null; say(FA.gClear(l.id)); refresh(); } } }, 'Clear') : null, h('span', { class: 'grow' }),
@@ -157,7 +158,7 @@ const A = Kit.app({ title: 'WestFactory', right: [{ icon: 'plus', label: 'Add li
       const list = h('div'), q = h('input', { class: 'field', placeholder: 'Search a molecule, e.g. NO or ammonia', style: { marginBottom: '8px' }, oninput: paint });
       function paint(){ const t = q.value.trim().toLowerCase(); list.innerHTML = ''; const rows = all.filter(r => !t || r.eq.toLowerCase().includes(t) || r.name.toLowerCase().includes(t) || r.id.toLowerCase().includes(t)).slice(0, 60);
         list.appendChild(rows.length ? group(rows.map(r => row({ left: h('div', { class: 'formula', style: { width: '64px', fontSize: '15px', color: r.locked ? 'var(--label3)' : 'var(--tint)' }, html: '→ ' + pf(r.main) }), title: r.eq, sub: (r.locked ? '🔒 ' + (r.reason || 'discover ' + r.missing.join(', ') + ' in WestLab') + ' · ' : '') + r.name + ' · ' + Math.round(r.y * 100) + '% yield' + (r.needs && r.needs.length ? ' · needs ' + r.needs.join(', ') : ''), wrap: true, chevron: false, onClick: r.locked ? null : () => { const p = nextPos(), x = say(FA.gAdd(l.id, 'rx', r.id, p.x, p.y)); if(x.ok){ api.close(); refresh(); } } }))) : h('div', { class: 'empty' }, 'No match.')); }
-      sb.append(h('div', { class: 'foot', style: { marginBottom: '8px' } }, 'Real industrial steps unlock when you have discovered their molecules in WestLab. Auto-build always lays out the full staged route (until you study the intermediates in WestLab it runs about 25 % costlier). Every discovered compound can also be built directly from its elements (costlier, no catalyst).'), q, list); paint();
+      sb.append(h('div', { class: 'foot', style: { marginBottom: '8px' } }, 'Real industrial steps unlock when you have discovered their molecules in WestLab. Every discovered compound can also be built directly from its elements (costlier, no catalyst).'), q, list); paint();
     } });
   }
   function addSheet(){

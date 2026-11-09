@@ -18,7 +18,7 @@ Games.register({ id: 'tubeSort', play(content, api){
     const a = tubes[sel], b = tubes[i]; if(!a.length) { sel = null; return draw(); } const top = a[a.length - 1]; let run = 0; while(run < a.length && a[a.length - 1 - run] === top) run++;
     if(b.length && b[b.length - 1] !== top || b.length >= CAP){ sel = b.length ? i : null; if(b.length === 0) sel = null; draw(); return; }
     const n = Math.min(run, CAP - b.length); hist.push(JSON.stringify(tubes)); for(let k = 0; k < n; k++) b.push(a.pop()); sel = null; draw();
-    if(solved(tubes)){ over = true; api.win('tubeSort', NC - 1, res, 'Sorted in ' + hist.length + ' pours!'); }
+    if(solved(tubes)){ over = true; api.score('tubeSort', Math.max(100, Math.min(1000, Math.round(NC * 100 + 500 * Math.max(0, 1 - (hist.length - 3 * NC) / (10 * NC))))), res, 'Sorted in ' + hist.length + ' pours!'); }
   }
   content.querySelector('#tsUndo').addEventListener('click', () => { if(over || !hist.length) return; tubes = JSON.parse(hist.pop()); sel = null; draw(); });
   content.querySelector('#tsRe').addEventListener('click', () => { if(over) return; tubes = JSON.parse(start); hist = []; sel = null; draw(); });

@@ -21,7 +21,7 @@ Games.register({ id: 'elementMerge', play(content, api){
   }
   function end(why){
     if(over) return; over = true; const nm = SYM[maxL] + ' (element ' + (maxL + 1) + ')', msg = why + ' Best element: ' + nm + '.';
-    if(maxL >= 7) api.win('elementMerge', 5, res, msg); else if(maxL >= 6) api.win('elementMerge', 4, res, msg); else if(maxL >= 5) api.win('elementMerge', 3, res, msg); else if(maxL >= 4) api.win('elementMerge', 2, res, msg); else api.lose(res, msg + ' Reach Boron or beyond to earn.');
+    if(maxL >= 4) api.score('elementMerge', score * 4, res, msg); else api.lose(res, msg + ' Reach Boron or beyond to earn.');          // score = every fusion, worth its new element number (each step up doubles it)
   }
   const mx = e => { const r = cv.getBoundingClientRect(); aim = Math.max(rad(next), Math.min(W - rad(next), (e.clientX - r.left) / r.width * W)); };
   cv.addEventListener('pointermove', mx); cv.addEventListener('pointerdown', e => { mx(e); if(over || cool > 0) return; const b = add(aim, 40, next); b.vy = 0; cool = .5; next = Math.floor(Math.random() * 4); });

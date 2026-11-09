@@ -19,8 +19,8 @@ textarea.field{ line-height:1.45; }
 <script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
 <script>
 const { h, row, group, seg, toggle, ago } = Kit, R = OS.report;
-const AREAS = ['Desktop / menu bar', 'Widgets', 'Sign-in / account', 'Messages', 'Stocks', 'News', 'WestShop', 'WestLab', 'Real Estate', 'Bank', 'Games', 'Photos', 'Notes', 'Files', 'Settings', 'WestReport', 'Something else'];
-const APP_AREA = { Messages: 'Messages', Stocks: 'Stocks', News: 'News', WestShop: 'WestShop', WestLab: 'WestLab', RealEstate: 'Real Estate', Bank: 'Bank', Games: 'Games', Photos: 'Photos', Notes: 'Notes', Files: 'Files', Settings: 'Settings', WestReport: 'WestReport' };
+const AREAS = ['Desktop / menu bar', 'Widgets', 'Sign-in / account', 'Messages', 'Stocks', 'News', 'WestShop', 'WestLab', 'Real Estate', 'Bank', 'Games', 'Arcade', 'Leaderboard', 'WestFactory', 'Photos', 'Notes', 'Files', 'Settings', 'WestReport', 'Something else'];
+const APP_AREA = { Messages: 'Messages', Stocks: 'Stocks', News: 'News', WestShop: 'WestShop', WestLab: 'WestLab', RealEstate: 'Real Estate', Bank: 'Bank', Games: 'Games', Arcade: 'Arcade', Leaderboard: 'Leaderboard', WestFactory: 'WestFactory', Photos: 'Photos', Notes: 'Notes', Files: 'Files', Settings: 'Settings', WestReport: 'WestReport' };
 const SEV = { low: ['Minor', '#6ab0ff'], medium: ['Normal', '#e8b64f'], high: ['Serious', '#e8803d'], critical: ['Blocking', '#e5484d'] };
 const HKEY = 'westreport.sent';
 let tab = 'bug', kind = 'bug', filter = 'open', allowFlagged = false, reports = [], loaded = false, loading = false, lastSent = 0;
@@ -84,8 +84,10 @@ const A = Kit.app({ title: 'WestReport', build: (body) => {
     const desc = h('textarea', { class: 'field', placeholder: feat ? 'What would you like to see added?' : 'What went wrong? What did you see?', maxlength: feat ? 1200 : 2000, rows: 4 });
     const steps = feat ? null : h('textarea', { class: 'field', placeholder: '1. Open …  2. Click …  3. …', maxlength: 1500, rows: 3 });
     const expd = h('textarea', { class: 'field', placeholder: feat ? 'How would it make the site better?' : 'What did you expect to happen?', maxlength: 1000, rows: 2 });
-    let attach = !feat; const text = () => ['Page: ' + ctx.url, 'Last app used: ' + (ctx.app || 'none') + (ctx.recentApps.length > 1 ? ' (recent: ' + ctx.recentApps.join(', ') + ')' : ''), 'Open windows: ' + (ctx.openWindows.join(', ') || 'none'), 'Screen: ' + ctx.screen + ' · theme ' + ctx.theme + ' · update speed ' + ctx.speed, 'Browser: ' + ctx.browser, 'Online: ' + ctx.online + ' · signed in: ' + ctx.signedIn,
-      ctx.errors.length ? 'Recent script errors:\n' + ctx.errors.map(e => '  [' + e.src + '] ' + e.msg).join('\n') : 'Recent script errors: none'].join('\n');
+    let attach = !feat; const text = () => ['Page: ' + ctx.url, 'Last app used: ' + (ctx.app || 'none') + (ctx.recentApps.length > 1 ? ' (recent: ' + ctx.recentApps.join(', ') + ')' : ''), 'Open windows: ' + (ctx.openWindows.join(', ') || 'none'), 'Screen: ' + ctx.screen + ' · theme ' + ctx.theme + ' · update speed ' + ctx.speed, 'Browser: ' + ctx.browser, 'Online: ' + ctx.online + ' · signed in: ' + ctx.signedIn + ' · dock: ' + ctx.dock,
+      'Saving: ' + (ctx.sync.pending.length ? 'PENDING ' + ctx.sync.pending.join(',') : 'nothing pending') + ' · loaded ' + ctx.sync.loaded + ' · connected ' + ctx.sync.connected + (ctx.sync.sessionLost ? ' · SESSION LOST' : '') + (ctx.sync.lastError ? '\n  last save error: ' + (ctx.sync.lastError.code || '') + ' ' + ctx.sync.lastError.msg : '') + (ctx.sync.rejected.length ? '\n  server rejected: ' + ctx.sync.rejected.join(', ') : ''),
+      'State shape: ' + (ctx.state.length ? 'PROBLEMS — ' + ctx.state.join('; ') : 'ok'),
+      ctx.diag].join('\n');
     const pre = h('pre', { class: 'ctx' }, text());
     const send = h('button', { class: 'btn block', style: { marginTop: '18px' }, onclick: submit }, feat ? 'Send suggestion' : 'Send report');
     main.append(h('label', { class: 'lbl2' }, feat ? 'Which part of the site?' : 'Where did it happen?'), area);

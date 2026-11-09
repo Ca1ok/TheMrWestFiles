@@ -135,8 +135,8 @@ const Phys = (function(){
   const ALL = ['heat', 'spark', 'pressure', 'catalyst', 'cryo', 'distill', 'polymer'];
   const normKey = k => { const s = Chem.speciesOf(k); return s ? s.key : k; };
   // ENGINE_VERSION: bump this whenever ANY change can alter a card (data tables, rules, thermodynamics, kinetics). It is the first part of every cache key, so a new engine can
-  // never read an answer computed by an old one (browser memory, lab-cache/reactions/*.json). The export Action also deletes entries of other versions. 1 = original engine, 2 = standard-state fix + ethanol data fix.
-  const ENGINE_VERSION = 2;
+  // never read an answer computed by an old one (browser memory, lab-cache/reactions/*.json). The export Action also deletes entries of other versions. 1 = original engine, 2 = standard-state fix + ethanol data fix, 3 = the Gibbs search no longer balances against free atoms (bare F/H/N/O/Cl/Br/I reagents mean the X2 element).
+  const ENGINE_VERSION = 3;
   function cacheKey(a){ const body = a.target ? '>' + a.target : (a.keys || []).map(normKey).sort().join('+'); return 'e' + ENGINE_VERSION + '|' + body + '|' + Math.round(a.T) + '|' + (+a.P || 1) + '|' + (a.cat ? 1 : 0) + (a.elec ? 1 : 0) + (a.ign ? 1 : 0); }
   function fnv(s){ let h = 0x811c9dc5; for(let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return ('00000000' + h.toString(16)).slice(-8); }
   const shardOf = key => fnv(key).slice(0, 2);
@@ -151,7 +151,7 @@ const Phys = (function(){
     }
     if(sol && sol.notModelled) return bad(sol.reason);                                                   // a deliberate refusal: never fall through to the Gibbs-search guesser
     if(!a.target && (!sol || !sol.reactants || sol.type === 'No reaction')){                    // no rule → search for the thermodynamically best reaction (but never invent reactions between plain dissolved salts)
-      const sps = [...new Set(a.keys || [])].map(k => Chem.speciesOf(k)).filter(Boolean), salts = sps.length > 1 && sps.every(x => { const d = x.kind === 'compound' && Chem.ions(x.comp); return d && d.cation && Chem.isMetal(d.cation.f) && d.anion.f !== 'O' && d.anion.f !== 'OH'; });
+      const sps = [...new Set(a.keys || [])].map(k => stdState(Chem.speciesOf(k))).filter(Boolean).filter((x, i, arr) => arr.findIndex(y => ck(y.comp) === ck(x.comp)) === i), salts = sps.length > 1 && sps.every(x => { const d = x.kind === 'compound' && Chem.ions(x.comp); return d && d.cation && Chem.isMetal(d.cation.f) && d.anion.f !== 'O' && d.anion.f !== 'OH'; });
       const isMetalEl = x => x.kind === 'element' && Chem.isMetal(x.el), isAcid = x => { const d = x.kind === 'compound' && Chem.ions(x.comp); return d && d.cation && d.cation.f === 'H' && !(x.f === 'H2O'); }, isSalt = x => { const d = x.kind === 'compound' && Chem.ions(x.comp); return d && d.cation && Chem.isMetal(d.cation.f) && d.anion.f !== 'O' && d.anion.f !== 'OH'; };
       const aqueousRules = sps.some(isMetalEl) && sps.some(x => isAcid(x) || isSalt(x));          // metal + acid / metal + salt are decided by the activity series, which the rules already know
       if(sps.length && !salts && !aqueousRules){
@@ -193,8 +193,13 @@ const Phys = (function(){
   /* ------------------------------------------------------------ Gibbs-energy search: when no rule knows the products, find the balanced reaction among KNOWN species that releases the most Gibbs energy at this T.
    * (Element budget is conserved exactly; products come from the tabulated table + registry + the elements themselves; tabulated products are preferred over estimated ones.) */
   // Deterministic work budget for the Gibbs search (replaces a wall-clock time-box, which would make the answer depend on how fast the machine is — the browser and the GitHub Action must agree).
+  // A bare atom key of a diatomic element (H, N, O, F, Cl, Br, I) names the ELEMENT, whose standard state is X2 (chem.js does the same in solve()). The Gibbs search must never balance a reaction
+  // against free atoms either (ΔHf of a free F/H/N/O atom is hundreds of kJ/mol, which fakes huge 'spontaneous' reactions like 2 F → F2 or H2SO4 + 2 F → O2 + 2 HF + SO2).
+  const DIA_EL = new Set(['H', 'N', 'O', 'F', 'Cl', 'Br', 'I']);
+  const isFreeAtom = sp => !!sp && sp.kind === 'element' && DIA_EL.has(sp.el) && Object.keys(sp.comp).length === 1 && sp.comp[sp.el] === 1;
+  const stdState = sp => isFreeAtom(sp) ? (Chem.speciesOf(sp.el + '2') || sp) : sp;
   let POOL = null; const GS_BUDGET = 120000; let GS_MAX = 0;
-  function pool(){ if(POOL) return POOL; init(); POOL = []; const seen = new Set(), add = f => { const sp = Chem.speciesOf(f); if(!sp) return; const k = ck(sp.comp); if(seen.has(k)) return; seen.add(k); POOL.push({ sp, tab: !!DB[k], els: Object.keys(sp.comp), k }); };
+  function pool(){ if(POOL) return POOL; init(); POOL = []; const seen = new Set(), add = f => { const sp = Chem.speciesOf(f); if(!sp || isFreeAtom(sp)) return; const k = ck(sp.comp); if(seen.has(k)) return; seen.add(k); POOL.push({ sp, tab: !!DB[k], els: Object.keys(sp.comp), k }); };
     Object.keys(typeof THERMO !== 'undefined' ? THERMO : {}).forEach(add); Chem.registryList().forEach(r => add(r.formula)); return POOL; }
   const subsets = (arr, max) => { const out = []; const rec = (i, cur) => { if(cur.length) out.push(cur.slice()); if(cur.length >= max) return; for(let j = i; j < arr.length; j++){ cur.push(arr[j]); rec(j + 1, cur); cur.pop(); } }; rec(0, []); return out; };
   const isOrg = x => x.kind === 'compound' && x.comp.C && x.comp.H, isHC = x => isOrg(x) && Object.keys(x.comp).every(e => e === 'C' || e === 'H');
@@ -214,7 +219,7 @@ const Phys = (function(){
     init(); const all = pool(); let best = null, work = 0;
     const trySet = S => {
       const E = [...new Set(S.flatMap(x => Object.keys(x.comp)))], have = new Set(S.map(x => ck(x.comp)));
-      let cand = all.filter(x => x.els.every(e => E.includes(e)) && !have.has(x.k)); E.forEach(e => { const el = Chem.speciesOf(e); if(el && !have.has(ck(el.comp)) && !cand.some(x => x.k === ck(el.comp))) cand.push({ sp: el, tab: true, els: Object.keys(el.comp), k: ck(el.comp) }); });
+      let cand = all.filter(x => x.els.every(e => E.includes(e)) && !have.has(x.k)); E.forEach(e => { const el = stdState(Chem.speciesOf(e)); if(el && !have.has(ck(el.comp)) && !cand.some(x => x.k === ck(el.comp))) cand.push({ sp: el, tab: true, els: Object.keys(el.comp), k: ck(el.comp) }); });
       cand = cand.sort((a, b) => (b.tab - a.tab) || (a.sp.comp ? nAt(a.sp.comp) - nAt(b.sp.comp) : 0)).slice(0, 44);
       let hit = null;
       for(const tabOnly of [true, false]){

@@ -30,8 +30,7 @@ Games.register({ id: "whackAtom", play(content, api){
       clearInterval(spawnTimer); clearInterval(countdownTimer);
       cells.forEach(c => c.textContent = '');
       const resultEl = document.getElementById('whackResult');
-      if(score >= 8) api.win('whackAtom', 4, resultEl, `Score: ${score}!`);
-      else api.lose(resultEl, `Score: ${score} — need 8+ to earn cash.`);
+      api.score('whackAtom', score * 100, resultEl, `Hit ${score} atom${score === 1 ? '' : 's'}.`);          // 100 points per atom; 8+ to earn
     }
   }, 1000);
 } });

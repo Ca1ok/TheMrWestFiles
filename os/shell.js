@@ -47,6 +47,9 @@
 
   /* ================= menu bar ================= */
   const reportBtn = $('#reportBtn'); reportBtn.addEventListener('click', () => openApp('WestReport', reportBtn));
+  { let lastNote = 0, notes = 0;                                   // a logged script error lights the "Report a bug" button (and says so once in a while) — it never fails silently
+    if(K.diag) K.diag.on(lvl => { const n = K.diag.unseen(); reportBtn.classList.toggle('has-err', n > 0); reportBtn.title = n > 0 ? n + ' script error' + (n === 1 ? '' : 's') + ' logged — click to report (details are attached automatically)' : 'Report a bug or suggest a feature';
+      if(lvl === 'error' && notes < 3 && Date.now() - lastNote > 45000){ lastNote = Date.now(); notes++; toast('Something went wrong and was logged — use “Report a bug” and it is attached automatically'); } }); }
   const editBtn = $('#editBtn'), doneBtn = $('#doneBtn'), mbApp = $('#mbApp'), syncBtn = $('#syncIc'), bellBtn = $('#bell'), cashBtn = $('#mbCash');
   function paintMenuRight(){
     const si = K.cloud.signedIn(); syncBtn.innerHTML = osIcon(si ? 'cloud' : 'cloudOff', 16, 2); syncBtn.title = si ? 'Progress is saved to your account' : 'Not signed in — progress is not saved (click to sign in)';
@@ -56,7 +59,8 @@
   let lastCash = null;
   function paintCash(){ const c = OS.cash(); cashBtn.innerHTML = osIcon('dollar', 14, 2.4) + '<span>' + money(c, true).replace('$', '') + '</span>'; cashBtn.title = 'Balance ' + money(c) + ' — open Bank'; if(lastCash != null && c !== lastCash){ cashBtn.classList.remove('bump'); void cashBtn.offsetWidth; cashBtn.classList.add('bump'); } lastCash = c; }
   K.on('auth', paintMenuRight); K.on('mail', paintMenuRight); K.on('cash', paintCash); K.on('loaded', () => { paintMenuRight(); paintCash(); });
-  K.on('sync', s => { syncBtn.classList.toggle('busy', s === 'saving'); syncBtn.classList.toggle('err', s === 'error'); });
+  K.on('sync', s => { syncBtn.classList.toggle('busy', s === 'saving' || s === 'slow'); syncBtn.classList.toggle('err', s === 'error');
+    const le = K.cloud.lastErr; syncBtn.title = s === 'error' && le ? 'Couldn’t save — ' + le.msg + '. Click to retry; “Report a bug” attaches the details.' : s === 'slow' ? 'Still saving… slow or interrupted connection' : s === 'saving' ? 'Saving…' : (K.cloud.signedIn() ? 'Progress is saved to your account' : 'Not signed in — progress is not saved (click to sign in)'); });
   syncBtn.addEventListener('click', () => { if(!K.cloud.signedIn()) openApp('Settings', syncBtn); else { K.cloud.flushNow(); toast('Saved'); } });
   bellBtn.addEventListener('click', () => openApp('Messages', bellBtn)); cashBtn.addEventListener('click', () => openApp('Bank', cashBtn));
   paintMenuRight(); paintCash();
@@ -93,8 +97,11 @@
   /* Every item remembers the exact cell it sits in, so nothing slides around when another icon is moved or removed. */
   const pinAll = () => layout.forEach(it => { const rec = items.get(it.k); if(rec && rec.slot) it.pos = { p: rec.slot.p, r: rec.slot.r, c: rec.slot.c }; });
 
+  /* Dock position (Settings → Desktop → Dock): float = the floating dock · low = pushed down flush with the bottom edge · hide = tucked away, slides up when the pointer touches the bottom edge */
+  const DOCK_H = { float: 104, low: 80, hide: 30 }, DOCK_KEEP = { float: 92, low: 70, hide: 16 };
+  const dockMode = () => ({ low: 'low', hide: 'hide' }[K.prefs.dockMode] || 'float');
   function metrics(){
-    const W = S.w, pad = Math.max(14, Math.round(W * 0.02)), availW = W - pad * 2, topY = MB + 16, dockH = 104, availH = Math.max(240, S.h - topY - dockH);
+    const W = S.w, pad = Math.max(14, Math.round(W * 0.02)), availW = W - pad * 2, topY = MB + 16, dockH = DOCK_H[dockMode()], availH = Math.max(240, S.h - topY - dockH);
     const cols = Math.max(4, Math.round(availW / 128)), rows = Math.max(3, Math.round(availH / 118)), cw = availW / cols, rh = availH / rows;
     const mult = { small: 0.82, large: 1.18 }[K.prefs.iconSize] || 1, ic = Math.max(36, Math.round(Math.min(80, cw * 0.58, (rh - 30) * 0.92) * mult));
     return { cols, pad, cw, ic, rh, topY, rows, dockH };
@@ -291,15 +298,15 @@
   const wins = new Map();                         // appId → { el, g:{x,y,w,h,max,prev}, iframe, loaded }
   let zTop = 10, focusId = null, cascade = 0;
   /* ---- bug-report context: recent script errors from the desktop and every app, so a report arrives with the evidence ---- */
-  const ERRS = [], recent = [];
-  const logErr = (src, msg) => { ERRS.push({ t: Date.now(), src, msg: String(msg).slice(0, 300) }); if(ERRS.length > 25) ERRS.shift(); };
-  const hookErrs = (win, src) => { try{ win.addEventListener('error', e => logErr(src, (e.message || 'error') + (e.filename ? ' @' + String(e.filename).split('/').pop() + ':' + e.lineno : ''))); win.addEventListener('unhandledrejection', e => logErr(src, 'promise: ' + ((e.reason && e.reason.message) || e.reason))); }catch(_){} };
-  hookErrs(window, 'desktop');
+  const recent = [];
+  /* Errors are captured by os/diag.js (loaded first): stacks, promise rejections, console.error/warn, failed script loads. The desktop window is
+     hooked there; each app window is hooked here when its iframe loads, so a report names the app that failed. */
+  const hookErrs = (win, src) => { try{ if(K.diag) K.diag.hook(win, src); }catch(_){} };
   const EASE = 'cubic-bezier(.22,.9,.28,1)', MIN_W = 380, MIN_H = 300;
   const DEFAULT_SIZE = { Stocks: [1040, 720], WestLab: [1080, 740], WestShop: [1040, 720], Photos: [1040, 720], Notes: [1000, 720], WestReport: [820, 700], Files: [940, 660], Settings: [860, 660], Messages: [860, 640], Bank: [900, 720], News: [940, 740], RealEstate: [1000, 720], Games: [940, 700], Arcade: [940, 760], WestFactory: [1200, 760], Leaderboard: [1000, 740], Preview: [1000, 740] };
   const small = () => S.w < 700;
   const winArea = () => ({ w: S.w, h: S.h - MB });
-  const maxRect = () => ({ x: 0, y: 0, w: S.w, h: S.h - MB - (small() ? 0 : 92) });
+  const maxRect = () => ({ x: 0, y: 0, w: S.w, h: S.h - MB - (small() ? 0 : DOCK_KEEP[dockMode()]) });
   const iconRect = id => { const el = $('[data-app="' + id + '"] .tile', dockEl) || $('[data-app="' + id + '"] .tile', desk); if(!el) return { x: S.w / 2 - 26, y: S.h - MB - 70, w: 52, h: 52 }; const r = el.getBoundingClientRect(), s = winsEl.getBoundingClientRect(); return { x: r.left - s.left, y: r.top - s.top, w: r.width, h: r.height }; };
   const applyGeom = w => { const g = w.g; w.el.style.width = g.w + 'px'; w.el.style.height = g.h + 'px'; w.el.style.transform = 'translate3d(' + g.x + 'px,' + g.y + 'px,0)'; w.el.classList.toggle('max', !!g.max); };
   const saveGeom = () => { const out = Object.assign({}, K.prefs.winGeom || {}); wins.forEach((w, id) => { out[id] = { x: w.g.x, y: w.g.y, w: w.g.w, h: w.g.h, max: !!w.g.max, prev: w.g.prev || null }; }); K.setPref('winGeom', out); };
@@ -308,12 +315,13 @@
     if(small()) return { x: 0, y: 0, w: mr.w, h: mr.h, max: true };
     if(saved && saved.w >= MIN_W){ const g = { x: saved.x, y: saved.y, w: Math.min(saved.w, A.w), h: Math.min(saved.h, A.h - 60), max: !!saved.max, prev: saved.prev || null }; if(g.max){ Object.assign(g, { prev: g.prev || { x: 80, y: 40, w: 900, h: 640 } }, mr); } return g; }
     const d = DEFAULT_SIZE[id] || [940, 680], w = Math.min(d[0], A.w - 60), h = Math.min(d[1], A.h - 150), off = (cascade++ % 6) * 28;
-    return { x: Math.max(10, Math.round((A.w - w) / 2) + off - 70), y: Math.max(10, Math.min(Math.round((A.h - h) / 2) - 40 + off, A.h - 104 - h)), w, h, max: false };      // keeps new windows clear of the dock
+    return { x: Math.max(10, Math.round((A.w - w) / 2) + off - 70), y: Math.max(10, Math.min(Math.round((A.h - h) / 2) - 40 + off, A.h - DOCK_H[dockMode()] - h)), w, h, max: false };      // keeps new windows clear of the dock
   }
   const clampGeom = g => { const A = winArea(); g.w = Math.max(MIN_W, Math.min(g.w, A.w)); g.h = Math.max(MIN_H, Math.min(g.h, A.h)); g.x = Math.max(-g.w + 140, Math.min(g.x, A.w - 140)); g.y = Math.max(0, Math.min(g.y, A.h - 38)); return g; };
   function fitWindows(){ wins.forEach(w => { if(small() || w.g.max){ Object.assign(w.g, maxRect(), { max: true }); } else clampGeom(w.g); applyGeom(w); }); }
   function setFocus(id){
     if(id && id !== 'WestReport'){ const i = recent.indexOf(id); if(i > -1) recent.splice(i, 1); recent.unshift(id); recent.length = Math.min(recent.length, 4); }
+    if(id === 'WestReport' && K.diag) K.diag.markSeen();
     focusId = id; wins.forEach((w, k) => w.el.classList.toggle('focus', k === id)); const w = wins.get(id); if(w) w.el.style.zIndex = ++zTop;
     mbApp.textContent = id && APP(id) ? APP(id).name : ''; K.emit('focus', id);
   }
@@ -492,16 +500,26 @@
   OS.home = () => { [...wins.keys()].forEach(minimizeWin); };           // "show desktop"
   OS.focused = () => focusId; OS.openApps = () => [...wins.keys()];
   OS.theme = theme; OS.screen = () => ({ w: S.w, h: S.h, kind: 'desktop', sat: 0, sab: 0 });
-  OS.reportContext = () => { const a = OS.auth.user(); return { url: location.href.split('#')[0], app: recent[0] || null, recentApps: recent.slice(), openWindows: Array.from(wins.keys()), screen: S.w + 'x' + S.h + ' @' + (window.devicePixelRatio || 1) + 'x', theme: document.documentElement.dataset.theme || '', browser: navigator.userAgent, lang: navigator.language, signedIn: !!a, online: navigator.onLine, speed: K.prefs.updateSpeed || 'balanced', errors: ERRS.slice(-12) }; };
+  OS.reportContext = () => { const a = OS.auth.user(); return { url: location.href.split('#')[0], app: recent[0] || null, recentApps: recent.slice(), openWindows: Array.from(wins.keys()), screen: S.w + 'x' + S.h + ' @' + (window.devicePixelRatio || 1) + 'x', theme: document.documentElement.dataset.theme || '', browser: navigator.userAgent, lang: navigator.language, signedIn: !!a, online: navigator.onLine, speed: K.prefs.updateSpeed || 'balanced', dock: K.prefs.dockMode || 'float',
+    errors: K.diag ? K.diag.entries(60).filter(e => e.lvl === 'error').slice(-12).map(e => ({ t: e.t, src: e.src, msg: e.msg })) : [],
+    diag: K.diag ? K.diag.text(2300) : '',                                                           // compact errors-with-stacks + recent activity + previous-session errors (≤ report limit)
+    state: K.diag ? K.diag.probe() : [],                                                              // empty = every part of the saved state has the expected shape
+    sync: { signedIn: K.cloud.signedIn(), loaded: !!K.loaded, pending: [...K.dirty].filter(f => f !== 'lb'), sessionLost: !!K.sessionLost, connected: K.cloud.connected, lastError: K.cloud.lastErr ? { code: K.cloud.lastErr.code, msg: K.cloud.lastErr.msg, fields: K.cloud.lastErr.fields } : null, rejected: Object.keys(K.cloud.badFields || {}) } }; };
   /* Preview: the photo viewer. Anything that wants to show a picture hands it over here; one Preview window, which switches to whatever was opened last. */
   let previewItem = null;
   OS.preview = item => { previewItem = item; if(wins.has('Preview')){ K.emit('preview'); openApp('Preview', null); } else openApp('Preview', null); };
   OS.previewTake = () => { const p = previewItem; previewItem = null; return p; };
   OS.toast = toast; OS.openPage = url => window.open(url, '_blank', 'noopener'); OS.apps = () => OS_APPS.map(a => ({ id: a.id, name: a.name, g: a.g, glyph: a.glyph }));
   OS.shell = { resetLayout(){ K.setPref('layout', null); K.setPref('winGeom', {}); loadLayout(); relayoutHome(true); }, relayout: () => { loadLayout(); relayoutHome(true); } };
-  K.on('prefs', k => { if(k === 'theme' || k === 'reduceMotion' || k === 'reduceTransparency' || k === 'perfMode' || k === 'perfAuto' || k === '*') applyTheme(); if(k === 'wall' || k === '*'){ wallKey = ''; paintWall(); } if(k === 'iconSize' || k === '*'){ dockEl.dataset.sig = ''; items.forEach(r => { r.cols = -1; }); relayoutHome(true); }
+  let dockT = null; const dockZone = document.createElement('div'); dockZone.id = 'dockZone'; screen.appendChild(dockZone);
+  function applyDockMode(){ const m = dockMode(); screen.dataset.dock = m; dockEl.classList.remove('peek'); if(S.w){ relayoutHome(true); fitWindows(); } }
+  const peek = on => { clearTimeout(dockT); if(on) dockEl.classList.add('peek'); else dockT = setTimeout(() => dockEl.classList.remove('peek'), 450); };
+  dockZone.addEventListener('pointerenter', () => peek(true)); dockZone.addEventListener('pointerdown', () => peek(true)); dockZone.addEventListener('pointerleave', () => peek(false));       // the strip sits above windows, so it works over a maximized app too
+  dockEl.addEventListener('pointerenter', () => peek(true)); dockEl.addEventListener('pointerleave', () => peek(false)); dockEl.addEventListener('focusin', () => peek(true)); dockEl.addEventListener('focusout', () => peek(false));
+  dockEl.addEventListener('click', () => { if(dockMode() === 'hide') peek(false); });                                             // after you pick an app the dock tucks away again
+  K.on('prefs', k => { if(k === 'dockMode' || k === '*') applyDockMode(); if(k === 'theme' || k === 'reduceMotion' || k === 'reduceTransparency' || k === 'perfMode' || k === 'perfAuto' || k === '*') applyTheme(); if(k === 'wall' || k === '*'){ wallKey = ''; paintWall(); } if(k === 'iconSize' || k === '*'){ dockEl.dataset.sig = ''; items.forEach(r => { r.cols = -1; }); relayoutHome(true); }
     if(k === 'dock' || k === '*'){ dockEl.dataset.sig = ''; loadLayout(); relayoutHome(true); } });
   K.on('loaded', () => { applyTheme(); loadLayout(); relayoutHome(false); });
-  setEditing(false); measure(); applyTheme(); loadLayout(); relayoutHome(false); K.emit('screen', { w: S.w, h: S.h });
+  setEditing(false); measure(); screen.dataset.dock = dockMode(); applyTheme(); loadLayout(); relayoutHome(false); K.emit('screen', { w: S.w, h: S.h });
   bootCheck();
 });

@@ -33,7 +33,7 @@ Games.register({ id: 'mazePaint', play(content, api){
     if(over || !content.isConnected) return; const d = D[di]; let r = pos[0], c = pos[1], k = 0;
     while(true){ const nr = r + d[0], nc = c + d[1]; if(nr < 0 || nc < 0 || nr >= n || nc >= n || lv.blk[nr][nc]) break; r = nr; c = nc; paint[r][c] = true; k++; }
     if(!k) return; pos = [r, c]; moves++; draw();
-    if(count() === lv.open){ over = true; api.win('mazePaint', n - 2, res, 'Every tile stained in ' + moves + ' slides!'); }
+    if(count() === lv.open){ over = true; api.score('mazePaint', Math.max(100, Math.min(1000, Math.round(350 + n * 40 + 500 * Math.max(0, 1 - (moves - 3) / 22)))), res, 'Every tile stained in ' + moves + ' slides!'); }
   }
   content.querySelectorAll('.gx-pad button').forEach(b => b.addEventListener('click', () => move(+b.dataset.d)));
   content.querySelector('#mzReset').addEventListener('click', () => { if(!over) reset(); });
