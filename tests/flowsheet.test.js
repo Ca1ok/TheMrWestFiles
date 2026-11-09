@@ -43,8 +43,8 @@ const soda = base('Na2CO3', ALL, {}, 10); assert(soda.reactors.some(r => r.main 
 assert(soda.surplus.some(x => x.sp === 'CaCl2'), 'CaCl2 is the waste of ammonia recovery');
 const sodaBuyNH3 = base('Na2CO3', ALL, { NH3: 'buy' }, 10); assert(!sodaBuyNH3.reactors.some(r => r.main === 'NH3') && sodaBuyNH3.feeds.some(f => f.sp === 'NH3'), 'buying NH3 drops the recovery step');
 const sodaCO2 = base('Na2CO3', ALL, { CO2: 'make' }, 10); assert(sodaCO2.reactors.some(r => r.main === 'CO2' && r.kind === 'formation'), 'CO2 built from C + O2'); assert(sodaCO2.feeds.some(f => f.sp === 'C') && sodaCO2.feeds.some(f => f.sp === 'O2'));
-// 6. missing discoveries → the old behaviour: one 'direct' reactor from the elements, +25 %
-const dir = base('HNO3', ['HNO3'], {}, 10); assert.strictEqual(dir.mode, 'direct'); assert.strictEqual(dir.reactors.length, 1); assert(dir.feeds.every(f => f.el)); const full = hno3.unit; assert(dir.unit > full, 'direct combination costs more than the process');
+// 6. discovery no longer gates the staged route: with nothing but the product discovered the full 4-reactor nitric-acid plant is still planned (intermediates are made in the plant)
+const dir = base('HNO3', ['HNO3'], {}, 10); assert.strictEqual(dir.mode, 'process'); assert.strictEqual(dir.reactors.length, 4); assert(dir.missing.includes('NO')); assert(Math.abs(dir.unit - hno3.unit) < 1e-9);
 // plain products keep their old price exactly: atoms × 1.05
 const plain = base('NaCl', ALL, {}, 1); assert.strictEqual(plain.mode, 'plain'); assert(Math.abs(plain.unit - (AP.Na + AP.Cl) * 1.05) < 1e-9);
 // 7. a paused line (rate 0) still has its structure and price

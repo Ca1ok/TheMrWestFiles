@@ -76,12 +76,81 @@ const FactorySim = (function(){
     NaOH: { need: ['NaCl'], steps: [S({ NaCl: 2, H2O: 2 }, { NaOH: 2, H2: 1, Cl2: 1 }, 'Chlor-alkali electrolysis (membrane cell)', 0.97)] },
     C2H5OH: { need: ['C2H4'], steps: [S({ C2H4: 1, H2O: 1 }, { C2H5OH: 1 }, 'Catalytic hydration of ethene (H₃PO₄, ~570 K, 70 bar)', 0.95)] }
   };
+  /* ---- THE AUTO-PLANNER. Any product WITHOUT a curated route is planned from WestLab's own chemistry: `lab` (see labFrom) can say which reactions make a molecule, so the planner walks
+   * backwards — product ← the reaction that makes it ← the molecules THAT needs ← … ← elements and a few raw feedstocks — and returns the stages as a route (same shape as ROUTES[f]).
+   * Only reactions WestLab really runs between molecules it knows are used (no invented hydrides …); 'combine the elements' is the last resort for the final product only; fewer stages beat more; curated ROUTES entries are reused as ready-made sub-chains. Nothing is stored: the plan is
+   * recomputed from the engine, so it can never disagree with WestLab. */
+  const FEEDSTOCKS = new Set(['H2O', 'CO2', 'NaCl', 'CaCO3', 'CaO', 'CH4', 'SiO2', 'Fe2O3', 'Al2O3']);   // bought as they are (water, air gas, salt, limestone, quicklime, natural gas, sand, ores)
+  const DERIVED_Y = 0.99, MAX_DEPTH = 4;
+  const lexLess = (a, b) => { for(let i = 0; i < Math.max(a.length, b.length); i++){ if((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) < (b[i] || 0); } return false; };
+  const stepFrom = (rx, sp) => { const out = { [sp]: rx.out[sp] }; Object.keys(rx.out).forEach(k => { if(k !== sp) out[k] = rx.out[k]; });
+    return Object.assign(S(rx.in, out, (rx.type || 'Reaction') + (rx.needs && rx.needs.length ? ' (' + rx.needs.join(', ') + ')' : ''), DERIVED_Y), { derived: true }); };
+  function plan(f, lab){
+    const memo = {}, feed = sp => !!elemOf(sp) || FEEDSTOCKS.has(sp);
+    function best(sp, stack){
+      if(stack.length){ if(feed(sp)) return { steps: [] }; if(ROUTES[sp]) return { steps: ROUTES[sp].steps.slice() }; }
+      if(memo[sp]) return memo[sp];
+      if(stack.length >= MAX_DEPTH || stack.indexOf(sp) >= 0) return null;
+      let pick = null;
+      lab.cands(sp).forEach(cd => {
+        const steps = []; let ok = true;
+        Object.keys(cd.r.in).forEach(sp2 => { if(!ok) return; const sub = best(sp2, stack.concat(sp)); if(!sub){ ok = false; return; } sub.steps.forEach(x => { if(!steps.some(t => t.main === x.main)) steps.push(x); }); });
+        if(!ok || steps.some(t => t.main === sp)) return;
+        const st = stepFrom(cd.r, sp); steps.push(RECIPES[recipeKey(st)] || st);                                // the curated recipe (with its own yield) when WestLab's reaction is one we already know
+        const score = [Object.keys(cd.r.out)[0] === sp ? 0 : 1, steps.length, cd.named ? 0 : 1, cd.r.needs.length, Object.keys(cd.r.in).length];   // 1) the molecule is the reaction's MAIN product, not a by-product  2) fewest stages  3) a curated reaction  4) fewer conditions  5) fewer reagents
+        if(!pick || lexLess(score, pick.score)) pick = { steps, score };
+      });
+      if(pick) memo[sp] = pick;
+      return pick;
+    }
+    const r = best(f, []); if(!r || !r.steps.length) return null;                           // no real route in WestLab for it (or an intermediate has none): the caller falls back to 'combine the elements'
+    return { need: [], steps: r.steps, derived: true };
+  }
+  const routeOf = (f, lab) => { if(ROUTES[f]) return ROUTES[f]; if(!lab || elemOf(f)) return null; lab.routes = lab.routes || {}; if(!(f in lab.routes)){ let r = null; try{ r = plan(f, lab); }catch(e){ r = null; } lab.routes[f] = r; } return lab.routes[f]; };
+  /* The bridge to WestLab: wraps the Chem engine (Node tests pass the one from .github/scripts/westlab-loader.js, the browser passes the global Chem) and the NAMED_REACTIONS table.
+   *   react(keys) → { in, out, needs, type } | null   the reaction WestLab runs for exactly these reagents (conditions limited to what a plant can supply: heat, catalyst, pressure, electric current)
+   *   cands(sp)   → every reaction that makes `sp`: curated named reactions first, then every single reagent / pair from a pool of the molecules `sp` could be made from
+   *   comp(sp)    → atoms per molecule, or null */
+  function labFrom(Chem, named){
+    const OKN = new Set(['heat', 'catalyst', 'pressure', 'spark']), ALLC = ['heat', 'spark', 'catalyst', 'pressure', 'cryo', 'distill', 'polymer'], reactMemo = {}, candMemo = {}, poolMemo = {};
+    const keyOf = k => { const q = Chem.speciesOf(DIA.has(k) ? k + '2' : k); return q ? q.key : null; };
+    const comp = sp => { const q = Chem.speciesOf(sp); return q && q.kind !== 'element' && q.comp ? q.comp : null; };
+    function react(keys){
+      const id = keys.slice().sort().join('+'); if(id in reactMemo) return reactMemo[id]; let res = null;
+      try{
+        const x = Chem.solve(keys, ALLC);
+        if(x && x.ok && !x.notModelled && (x.needs || []).every(n => OKN.has(n))){
+          const inn = {}, out = {}; let bad = false;
+          x.reactants.forEach(q => { if(DIA.has(q.s.key)) bad = true; inn[q.s.key] = (inn[q.s.key] || 0) + q.coeff; });
+          x.products.forEach(q => { if(DIA.has(q.s.key)) bad = true; out[q.s.key] = (out[q.s.key] || 0) + q.coeff; });
+          if(!bad && Object.keys(inn).length && Object.keys(out).length) res = { in: inn, out, needs: (x.needs || []).slice(), type: x.type || '', eq: x.equation };
+        }
+      }catch(e){ res = null; }
+      return (reactMemo[id] = res);
+    }
+    function pool(sp){
+      if(poolMemo[sp]) return poolMemo[sp]; const cp = comp(sp) || {}, els = Object.keys(cp), allow = new Set(els.concat(['H', 'O'])), seen = new Set(), list = [];
+      const add = k => { const q = k && Chem.speciesOf(k); if(!q || q.key === sp || seen.has(q.key)) return; seen.add(q.key); list.push(q.key); };
+      allow.forEach(e => add(DIA.has(e) ? e + '2' : e)); add('H2O');
+      FEEDSTOCKS.forEach(k => { const c = Chem.parse(k); if(c && Object.keys(c).every(e => allow.has(e))) add(k); });
+      Chem.registryList().forEach(r => { const c = Chem.parse(r.formula); if(c && Object.keys(c).every(e => allow.has(e))) add(r.formula); });
+      const sz = k => { const c = Chem.parse(k) || {}; return Object.keys(c).reduce((t, e) => t + c[e], 0); };
+      return (poolMemo[sp] = list.sort((a, b) => sz(a) - sz(b) || (a < b ? -1 : 1)).slice(0, 40));
+    }
+    function cands(sp){
+      if(candMemo[sp]) return candMemo[sp]; const list = [], seen = new Set();
+      const add = (keys, isNamed) => { keys = keys.map(k => k && keyOf(k)); if(keys.some(k => !k)) return; const r = react(keys); if(!r || !(sp in r.out) || (sp in r.in)) return; const id = Object.keys(r.in).sort().join('+') + '>' + Object.keys(r.out).sort().join('+'); if(seen.has(id)) return; seen.add(id); list.push({ keys: Object.keys(r.in), r, named: !!isNamed }); };
+      (named || []).forEach(e => { if(e.notModelled || !e.r || !e.p) return; if(e.p.map(k => keyOf(k)).indexOf(sp) >= 0) add(e.r.slice(), true); });
+      const P = pool(sp); P.forEach(a => add([a], false)); for(let i = 0; i < P.length; i++) for(let j = i + 1; j < P.length; j++) add([P[i], P[j]], false);
+      return (candMemo[sp] = list);
+    }
+    return { react, cands, comp, pool, keyOf };
+  }
   /* How a line for `f` is made right now. found = formulas you have discovered. → { mode: 'plain' | 'process' | 'direct', steps, factor (multiplies the element cost), yield, missing } */
-  function process(f, found, c){
-    c = cfgOf(c); const r = ROUTES[f]; if(!r) return { mode: 'plain', steps: [], factor: 1 + c.overhead, yield: 1, missing: [] };
-    const have = new Set(found || []), missing = r.need.filter(x => !have.has(x)), y = r.steps.reduce((p, st) => p * st.y, 1);
-    if(r.steps.length > 1 && missing.length) return { mode: 'direct', steps: [], factor: (1 + c.overhead) * (1 + c.directPenalty), yield: 1, missing, route: r.steps };
-    return { mode: 'process', steps: r.steps, factor: (1 + c.overhead + c.stepOverhead * (r.steps.length - 1)) / y, yield: y, missing: [] };
+  function process(f, found, c, lab){
+    c = cfgOf(c); const r = routeOf(f, lab); if(!r) return { mode: 'plain', steps: [], factor: 1 + c.overhead, yield: 1, missing: [] };
+    const have = new Set(found || []), missing = (r.need || []).filter(x => !have.has(x)), y = r.steps.reduce((p, st) => p * st.y, 1);
+    return { mode: 'process', steps: r.steps, factor: (1 + c.overhead + c.stepOverhead * (r.steps.length - 1)) / y, yield: y, missing, derived: !!r.derived };   // the staged route is ALWAYS built: intermediates are made in the plant, so they need not be discovered first
   }
 
   /* ---- FLOWSHEETS. A line is a small plant: a TREE of reactor nodes. Each reactor is one balanced step; its inputs are bought (an element, or a finished compound at atoms × readyMarkup)
@@ -99,9 +168,9 @@ const FactorySim = (function(){
     return Object.assign(S(inn, { [sp]: m }, 'Combine the elements directly (no catalyst, no process)', y), { id, kind: 'formation' });
   };
   function flowsheet(f, o){
-    o = o || {}; const c = cfgOf(o.cfg), pr = process(f, o.found, c), r = ROUTES[f], opt = o.opt || {}, scale = o.rate == null ? 1 : Math.max(0, +o.rate || 0);
+    o = o || {}; const c = cfgOf(o.cfg), pr = process(f, o.found, c, o.lab), r = routeOf(f, o.lab), opt = o.opt || {}, scale = o.rate == null ? 1 : Math.max(0, +o.rate || 0);
     const atomPrice = o.atomPrice || (() => 1), compOf = o.compOf || (() => null), have = new Set(o.found || []);
-    const mfd = new Set(); Object.keys(ROUTES).forEach(k => ROUTES[k].steps.forEach(st => mfd.add(st.main)));       // manufactured intermediates carry the wholesale premium; commodities (NaCl, CO₂, CaCO₃, water …) cost their atoms
+    const mfd = new Set(); Object.keys(ROUTES).forEach(k => ROUTES[k].steps.forEach(st => mfd.add(st.main))); if(r) r.steps.forEach(st => mfd.add(st.main));       // manufactured intermediates carry the wholesale premium; commodities (NaCl, CO₂, CaCO₃, water …) cost their atoms
     const mk = sp => mfd.has(sp) ? c.readyMarkup : 1;
     const price = sp => { const e = elemOf(sp); if(e) return e.n * atomPrice(e.sym); const cp = compOf(sp); if(!cp) return Infinity; return Object.keys(cp).reduce((t, k) => t + cp[k] * atomPrice(k), 0) * mk(sp); };
     const formation = (sp, y, id) => { const cp = compOf(sp); return cp ? makeFormation(sp, cp, y, id) : null; };
@@ -111,12 +180,12 @@ const FactorySim = (function(){
       r.steps.forEach(st => Object.keys(st.in).forEach(sp => { if(!mains.has(sp) && !elemOf(sp) && !raw.includes(sp)) raw.push(sp); }));
       r.steps.forEach((st, i) => { const sp = st.main; if(sp !== f && !toggles.some(t => t.sp === sp)) toggles.push({ sp, role: 'made', opt: opt[sp] === 'buy' ? 'buy' : 'make', via: st.name }); });
       raw.forEach(sp => toggles.push({ sp, role: 'raw', opt: opt[sp] === 'make' ? 'make' : 'buy', via: null }));
-      defs = r.steps.map((st, i) => Object.assign({}, st, { id: nodeId('s', i), kind: 'real' })).filter(d => d.main === f || opt[d.main] !== 'buy');
+      defs = r.steps.map((st, i) => Object.assign({}, st, { id: nodeId('s', i), kind: st.kind || 'real' })).filter(d => d.main === f || opt[d.main] !== 'buy');
       raw.forEach((sp, n) => {                                                     // a raw compound switched to 'make' is built from its elements (a bought one is the default)
         if(opt[sp] !== 'make') return; const fm = formation(sp, 1 / (1 + c.directPenalty), 'g' + n), t = toggles.find(x => x.sp === sp); if(fm){ defs.push(fm); t.via = fm.name; }
       });
       toggles.forEach(t => { t.price = price(t.sp); t.canBuy = isFinite(t.price); });
-    } else { const fm = formation(f, pr.mode === 'direct' ? 1 / (1 + c.directPenalty) : 1, 'f0'); if(fm) defs = [fm]; }
+    } else { const fm = formation(f, 1, 'f0'); if(fm) defs = [fm]; }
 
     const xi = defs.map(() => 0); let stable = false;
     for(let it = 0; it < 600; it++){                                               // demand-driven sizing; by-products reduce the demand of whoever consumes them
@@ -147,7 +216,7 @@ const FactorySim = (function(){
     const reactors = act.map(a => { const d = a.d, ins = {}, loss = {}; Object.keys(d.in).forEach(k => { ins[k] = d.in[k] * a.x * scale; }); Object.keys(d.out).forEach(k => { loss[k] = d.out[k] * (1 - d.y) * a.x * scale; });
       return { id: d.id, rc: d.kind === 'formation' ? 'F:' + d.main : recipeKey(d), kind: d.kind, eq: d.eq, name: d.name, y: d.y, main: d.main, mainl: sub(d.main), depth: dep[d.id], extent: a.x * scale, out: d.out[d.main] * d.y * a.x * scale, ins, loss, final: d.main === f }; });
     const recycle = edges.filter(e => e.recycle).reduce((t, e) => t + e.mol, 0);
-    return { mode: pr.mode, missing: pr.missing, reactors, feeds, edges, surplus, toggles, unit, gross, credit: Math.min(credit, gross * 0.95) * mult, mult, costPerMin: unit * scale, recycle, stable, steps: R };
+    return { mode: pr.mode, missing: pr.missing, derived: !!pr.derived, reactors, feeds, edges, surplus, toggles, unit, gross, credit: Math.min(credit, gross * 0.95) * mult, mult, costPerMin: unit * scale, recycle, stable, steps: R };
   }
   /* ---- THE RECIPE BOOK + PLAYER-BUILT FLOWSHEETS (Satisfactory style). The player places Source nodes (buy an element or a discovered compound), Reactor nodes (one recipe each) and wires
    * them; the warehouse is the last node ('o'). graphSheet() solves that graph: demand-driven from the warehouse, by-product wires are used first, an input needs a PRIMARY supply
@@ -155,12 +224,20 @@ const FactorySim = (function(){
   const recipeKey = st => st.main + '<' + Object.keys(st.in).join('+');
   const RECIPES = {}; Object.keys(ROUTES).forEach(k => ROUTES[k].steps.forEach(st => { const id = recipeKey(st); if(!RECIPES[id]) RECIPES[id] = Object.assign({ id, kind: 'real' }, st); }));
   EXTRA.forEach(st => { const id = recipeKey(st); if(!RECIPES[id]) RECIPES[id] = Object.assign({ id, kind: 'real' }, st); });
-  function recipeOf(id, compOf, c){ if(RECIPES[id]) return RECIPES[id]; if(/^F:/.test(id || '')){ const sp = id.slice(2), cp = compOf && compOf(sp); return cp ? makeFormation(sp, cp, 1 / (1 + cfgOf(c).directPenalty), id) : null; } return null; }
+  function recipeOf(id, compOf, c, lab){
+    if(RECIPES[id]) return RECIPES[id];
+    if(/^F:/.test(id || '')){ const sp = id.slice(2), cp = compOf && compOf(sp); return cp ? makeFormation(sp, cp, 1 / (1 + cfgOf(c).directPenalty), id) : null; }
+    const m = lab && /^([A-Za-z0-9()]{1,16})<([A-Za-z0-9()+]{1,60})$/.exec(id || '');                // a recipe the auto-planner found: 'main<reagent+reagent', re-derived from WestLab so it can't drift
+    if(m){ const rx = lab.react(m[2].split('+').map(k => lab.keyOf(k) || k)); if(rx && rx.out[m[1]] && !rx.in[m[1]]){ const st = stepFrom(rx, m[1]); if(recipeKey(st) === id) return Object.assign({ id, kind: 'real' }, st); } }
+    return null;
+  }
   const FREE = new Set(['H2O']);                                                    // water needs no discovery
   /* Every recipe the player can see: real industrial steps (unlocked when their main product and compound inputs are discovered) + 'combine the elements' for each discovered compound. */
-  function recipes(found, compOf, c){
+  function recipes(found, compOf, c, lab){
     const have = new Set(found || []), known = sp => elemOf(sp) || FREE.has(sp) || have.has(sp), out = [];
     Object.keys(RECIPES).forEach(id => { const r = RECIPES[id], miss = [r.main].concat(Object.keys(r.in)).filter(sp => !known(sp)); out.push({ id, kind: 'real', eq: r.eq, name: r.name, y: r.y, main: r.main, in: r.in, out: r.out, locked: miss.length > 0, missing: miss }); });
+    if(lab) (found || []).forEach(sp => { const rt = routeOf(sp, lab); if(!rt || !rt.derived) return; rt.steps.forEach(st => { const id = recipeKey(st); if(RECIPES[id] || out.some(q => q.id === id)) return;
+      const miss = [st.main].concat(Object.keys(st.in)).filter(x => !known(x)); out.push({ id, kind: 'real', eq: st.eq, name: st.name, y: st.y, main: st.main, in: st.in, out: st.out, locked: miss.length > 0, missing: miss, derived: true }); }); });
     (found || []).forEach(sp => { const cp = compOf && compOf(sp); if(!cp || RECIPES[sp]) return; const fr = recipeOf('F:' + sp, compOf, c); if(fr) out.push({ id: 'F:' + sp, kind: 'formation', eq: fr.eq, name: fr.name, y: fr.y, main: sp, in: fr.in, out: fr.out, locked: false, missing: [] }); });
     return out;
   }
@@ -173,7 +250,8 @@ const FactorySim = (function(){
     nodes.forEach(n => {
       if(!n || !n.id || X[n.id]) return;
       if(n.t === 'src'){ if(!n.sp || !(elemOf(n.sp) || compOf(n.sp))) return; X[n.id] = { id: n.id, t: 'src', sp: n.sp, in: {}, out: { [n.sp]: 1 }, main: n.sp, y: 1, name: 'Buy ' + sub(n.sp) }; order.push(X[n.id]); }
-      else if(n.t === 'rx'){ const rc = recipeOf(n.rc, compOf, c); if(!rc) return; X[n.id] = { id: n.id, t: 'rx', rc: rc.id, in: rc.in, out: rc.out, main: rc.main, y: rc.y, name: rc.name, eq: rc.eq, kind: rc.kind }; order.push(X[n.id]); }
+      else if(n.t === 'rx'){ let rc = recipeOf(n.rc, compOf, c, o.lab); if(!rc) return; if(rc.kind === 'formation' && rc.main === f) rc = Object.assign({}, rc, { y: 1 });   // building the line's own product straight from its elements is the 'plain' price (no direct-combination penalty)
+       X[n.id] = { id: n.id, t: 'rx', rc: rc.id, in: rc.in, out: rc.out, main: rc.main, y: rc.y, name: rc.name, eq: rc.eq, kind: rc.kind }; order.push(X[n.id]); }
     });
     const seen = new Set(), W = [];
     ((g && g.wires) || []).forEach(w => { if(!w || !X[w.a] || !X[w.a].out[w.s]) return; if(w.b === 'o' ? w.s !== f : !(X[w.b] && X[w.b].t === 'rx' && X[w.b].in[w.s])) return; const k = w.a + '>' + w.b + ':' + w.s; if(seen.has(k)) return; seen.add(k); W.push({ a: w.a, b: w.b, s: w.s, i: W.length }); });
@@ -210,7 +288,7 @@ const FactorySim = (function(){
   function graphFromSheet(sh){
     const nodes = [], wires = [], id = {}, byDepth = {}, W = 270; let n = 1;
     sh.reactors.forEach(r => { const row = byDepth[r.depth] = (byDepth[r.depth] == null ? 0 : byDepth[r.depth] + 1), nid = 'n' + n++; id[r.id] = nid; nodes.push({ id: nid, t: 'rx', rc: r.rc, x: 40 + r.depth * W, y: 250 + row * 230 }); });
-    const cnt = {}; sh.feeds.forEach(f => { const cn = nodes.find(q => q.id === id[f.to]), j = cnt[f.to] = (cnt[f.to] == null ? 0 : cnt[f.to] + 1), nid = 'n' + n++; id[f.id] = nid; nodes.push({ id: nid, t: 'src', sp: f.sp, x: cn.x + j * 100, y: 20 + (j % 2) * 110 }); wires.push({ a: nid, b: id[f.to], s: f.sp }); });
+    const cnt = {}; sh.feeds.forEach(f => { const cn = f.to === 'out' ? { x: 40 } : nodes.find(q => q.id === id[f.to]), j = cnt[f.to] = (cnt[f.to] == null ? 0 : cnt[f.to] + 1), nid = 'n' + n++; id[f.id] = nid; nodes.push({ id: nid, t: 'src', sp: f.sp, x: cn.x + j * 100, y: 20 + (j % 2) * 110 }); wires.push({ a: nid, b: f.to === 'out' ? 'o' : id[f.to], s: f.sp }); });
     sh.edges.forEach(e => wires.push({ a: id[e.from], b: e.to === 'out' ? 'o' : id[e.to], s: e.sp }));
     return { nodes, wires, next: n };
   }
@@ -229,6 +307,6 @@ const FactorySim = (function(){
     c = cfgOf(c); const els = {}; let cost = 0; Object.keys(comp).forEach(e => { els[e] = comp[e] * line.rate; cost += comp[e] * line.rate * price(e); });
     return { els, costPerMin: r2(cost * (factor != null ? factor : 1 + c.overhead)) };
   }
-  return { DEFAULTS, cfgOf, r2, clamp, rateCap, upgradeCost, slotCost, storage, batch, shopRange, shopChance, marketRange, planProduction, flows, process, flowsheet, graphSheet, graphFromSheet, recipes, recipeOf, RECIPES, elemOf, priceFn, sub, ROUTES };
+  return { FEEDSTOCKS, labFrom, routeOf, DEFAULTS, cfgOf, r2, clamp, rateCap, upgradeCost, slotCost, storage, batch, shopRange, shopChance, marketRange, planProduction, flows, process, flowsheet, graphSheet, graphFromSheet, recipes, recipeOf, RECIPES, elemOf, priceFn, sub, ROUTES };
 })();
 if(typeof module !== 'undefined' && module.exports) module.exports = FactorySim;

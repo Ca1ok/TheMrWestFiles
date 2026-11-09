@@ -10,6 +10,7 @@
  *   HONEST LIMIT: wallets are client-side on this site, so the Market is only as tamper-proof as the rest of the economy (see the Arcade notes). */
 (window.__OSM = window.__OSM || []).push(function(K){
   const F = FactorySim, C = K.cloud, r2 = K.round2, CFG = Object.assign({}, F.DEFAULTS, (typeof OS_CONFIG !== 'undefined' && OS_CONFIG.factory) || {});
+  const LAB = F.labFrom(Chem, typeof NAMED_REACTIONS !== 'undefined' ? NAMED_REACTIONS : []);   // WestLab's own engine: the auto-planner asks it which reactions make a molecule
   const FA = K.factory = {}, STEP_MS = 10000, ELS = new Set(ELEMENTS.map(e => e[1]));
   const fmt = n => '$' + (+n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const ok = (msg, extra) => Object.assign({ ok: true, msg }, extra), no = (msg, extra) => Object.assign({ ok: false, msg }, extra);
@@ -27,12 +28,12 @@
     K.toArr(g && g.nodes).slice(0, 24).forEach(n => {
       if(!n || !/^[a-z0-9]{1,8}$/.test(String(n.id)) || n.id === 'o' || ids.has(n.id)) return;
       if(n.t === 'src' && typeof n.sp === 'string' && /^[A-Za-z0-9()]{1,16}$/.test(n.sp)){ ids.add(n.id); nodes.push({ id: n.id, t: 'src', sp: n.sp, x: clampN(n.x), y: clampN(n.y) }); }
-      else if(n.t === 'rx' && typeof n.rc === 'string' && /^[A-Za-z0-9()<+:]{1,60}$/.test(n.rc)){ ids.add(n.id); nodes.push({ id: n.id, t: 'rx', rc: n.rc, x: clampN(n.x), y: clampN(n.y) }); }
+      else if(n.t === 'rx' && typeof n.rc === 'string' && /^[A-Za-z0-9()<+:]{1,80}$/.test(n.rc)){ ids.add(n.id); nodes.push({ id: n.id, t: 'rx', rc: n.rc, x: clampN(n.x), y: clampN(n.y) }); }
     });
     K.toArr(g && g.wires).slice(0, 48).forEach(w => { if(w && ids.has(w.a) && (w.b === 'o' || ids.has(w.b)) && typeof w.s === 'string' && /^[A-Za-z0-9()]{1,16}$/.test(w.s)) wires.push({ a: w.a, b: w.b, s: w.s }); });
     return { nodes, wires, next: Math.max(1, Math.floor(num(g && g.next, nodes.length + 1))) };
   };
-  const migrate = l => { try{ return cleanGraph(F.graphFromSheet(F.flowsheet(l.f, { found: K.S.lab.found, opt: cleanOpt(l._o), rate: 1, atomPrice: elPrice, compOf, cfg: CFG }))); }catch(e){ return { nodes: [], wires: [], next: 1 }; } };   // old lines become the equivalent graph
+  const migrate = l => { try{ return cleanGraph(F.graphFromSheet(F.flowsheet(l.f, { found: K.S.lab.found, opt: cleanOpt(l._o), rate: 1, atomPrice: elPrice, compOf, cfg: CFG, lab: LAB }))); }catch(e){ return { nodes: [], wires: [], next: 1 }; } };   // old lines become the equivalent graph
   const cleanOpt = o => { const out = {}; if(o && typeof o === 'object') Object.keys(o).slice(0, 16).forEach(k => { if(/^[A-Za-z0-9()]{1,16}$/.test(k) && (o[k] === 'buy' || o[k] === 'make')) out[k] = o[k]; }); return out; };
 
   /* ---- state hygiene (called after every load / adopt) ---- */
@@ -42,17 +43,17 @@
     lines.forEach(l => {
       if(!l || typeof l.f !== 'string' || !compOf(l.f)) return; const tier = F.clamp(Math.floor(num(l.tier, 1)), 1, CFG.maxTier);
       out.lines.push({ id: String(l.id || ('l' + out.nid++)).replace(/[^a-z0-9_-]/gi, '').slice(0, 12) || ('l' + out.nid++), f: keyOf(l.f), tier, rate: F.clamp(num(l.rate, 0), 0, F.rateCap(tier, CFG)), on: l.on !== false, route: l.route === 'market' ? 'market' : 'shop',
-        price: Math.max(0.01, r2(num(l.price, est(l.f)))), auto: l.auto !== false, stock: F.clamp(num(l.stock, 0), 0, F.storage(tier, CFG)), sellAt: num(l.sellAt, 0), listed: Math.max(0, Math.floor(num(l.listed, 0))), note: String(l.note || '').slice(0, 80), g: null, _o: l.opt, _g: l.g });
+        price: Math.max(0.01, r2(num(l.price, est(l.f)))), auto: l.auto !== false, stock: F.clamp(num(l.stock, 0), 0, F.storage(tier, CFG)), sellAt: num(l.sellAt, 0), listed: Math.max(0, Math.floor(num(l.listed, 0))), note: String(l.note || '').slice(0, 80), keepEmpty: l.keepEmpty === true, g: null, _o: l.opt, _g: l.g });
     });
-    out.lines.forEach(l => { l.g = l._g ? cleanGraph(l._g) : migrate(l); delete l._g; delete l._o; });
+    out.lines.forEach(l => { l.g = l._g ? cleanGraph(l._g) : migrate(l); if(!l.g.nodes.length && !l.keepEmpty) l.g = migrate(l); delete l._g; delete l._o; });   // a plant with nothing in it builds itself (unless you cleared it on purpose)
     if(raw.pos && typeof raw.pos === 'object') Object.keys(raw.pos).filter(k => /^wh:[^:]+$|^hub:|^bank$/.test(k)).slice(0, 40).forEach(k => { const p = raw.pos[k]; if(p && isFinite(+p.x) && isFinite(+p.y)) out.pos[String(k).slice(0, 40)] = { x: Math.round(+p.x), y: Math.round(+p.y) }; });
     K.S.factory = out;
   };
 
   /* ---- derived numbers for the UI ---- */
-  const proc = f => F.process(f, K.S.lab.found, CFG);                       // how this product is made right now (real multistep process, or direct from the elements)
-  const autoOf = (f, opt, rate) => F.flowsheet(f, { found: K.S.lab.found, opt, rate, atomPrice: elPrice, compOf, cfg: CFG });   // the real industrial route as a tree (used by 'Auto-build' and the add-line margins)
-  const sheetOf = (l, rate) => F.graphSheet(l.g, { f: l.f, found: K.S.lab.found, rate, atomPrice: elPrice, compOf, cfg: CFG, cap: 3 * F.rateCap(l.tier, CFG) });   // the player's graph, solved (rate 0 = structure + unit cost only)
+  const proc = f => F.process(f, K.S.lab.found, CFG, LAB);                       // how this product is made right now (real multistep process, or direct from the elements)
+  const autoOf = (f, opt, rate) => F.flowsheet(f, { found: K.S.lab.found, opt, rate, atomPrice: elPrice, compOf, cfg: CFG, lab: LAB });   // the staged route as a tree (used by 'Auto-build' and the add-line margins)
+  const sheetOf = (l, rate) => F.graphSheet(l.g, { f: l.f, found: K.S.lab.found, rate, atomPrice: elPrice, compOf, cfg: CFG, lab: LAB, cap: 3 * F.rateCap(l.tier, CFG) });   // the player's graph, solved (rate 0 = structure + unit cost only)
   let memo = null;                                                              // per-tick cache of unit costs (prices don't move inside one tick)
   const sheetFor = l => { if(memo && memo.has(l.id)) return memo.get(l.id); const sh = sheetOf(l, 0); if(memo) memo.set(l.id, sh); return sh; };
   function view(l){
@@ -147,7 +148,8 @@
     if(!K.S.lab.found.some(x => keyOf(x) === key)) return no('Discover it in WestLab first.');
     if(s.lines.length >= s.slots) return no('No free line — buy another slot.');
     if(s.lines.some(l => l.f === key)) return no('You already produce that.');
-    const id = 'l' + (s.nid++); s.lines.push({ id, f: key, tier: 1, rate: 1, on: true, route: 'shop', price: r2(est(key) * 0.9), auto: true, stock: 0, sellAt: 0, listed: 0, note: '', g: { nodes: [], wires: [], next: 1 } }); touch(); return ok('Line built for ' + nameOf(key) + '.', { id });
+    const id = 'l' + (s.nid++); s.lines.push({ id, f: key, tier: 1, rate: 1, on: true, route: 'shop', price: r2(est(key) * 0.9), auto: true, stock: 0, sellAt: 0, listed: 0, note: '', keepEmpty: false, g: { nodes: [], wires: [], next: 1 } }); const nl = s.lines[s.lines.length - 1]; nl.g = migrate(nl); touch();
+    return ok('Line built for ' + nameOf(key) + ' — ' + (nl.g.nodes.filter(q => q.t === 'rx').length || 1) + ' stage(s) planned from WestLab.', { id });
   };
   FA.buySlot = function(){ const s = S(), c = F.slotCost(s.slots, CFG); if(c == null) return no('You already have every slot.'); if(!K.spend(c, 'WestFactory: new line slot')) return no('You need ' + fmt(c) + '.'); s.slots++; touch(); return ok('Slot unlocked for ' + fmt(c) + '.'); };
   FA.upgrade = function(id){ const l = line(id); if(!l) return no('No such line.'); const c = F.upgradeCost(l.tier, CFG); if(c == null) return no('Already at the top tier.'); if(!K.spend(c, 'WestFactory: upgrade ' + l.f)) return no('You need ' + fmt(c) + '.'); l.tier++; touch(); return ok('Upgraded to tier ' + l.tier + ' (max ' + F.rateCap(l.tier, CFG) + ' mol/min).'); };
@@ -170,7 +172,7 @@
     for(const c of LAB_CONDS){ try{ const x = Chem.solve(Object.keys(rc.in), c); if(x && x.ok && x.products.map(q => q.s.key).sort().join() === want){ res = { ok: true, needs: x.needs || [] }; break; } }catch(e){} }
     return (labMemo[rc.id] = res);
   };
-  FA.recipes = () => F.recipes(K.S.lab.found, compOf, CFG).map(r => { if(r.kind !== 'real') return Object.assign(r, { needs: [], lab: true }); const lb = labOf(r); return Object.assign(r, { needs: lb.needs, lab: lb.ok, locked: r.locked || !lb.ok, reason: lb.ok ? '' : 'not a reaction WestLab can run' }); });
+  FA.recipes = () => F.recipes(K.S.lab.found, compOf, CFG, LAB).map(r => { if(r.kind !== 'real') return Object.assign(r, { needs: [], lab: true }); const lb = labOf(r); return Object.assign(r, { needs: lb.needs, lab: lb.ok, locked: r.locked || !lb.ok, reason: lb.ok ? '' : 'not a reaction WestLab can run' }); });
   FA.gAdd = function(id, kind, ref, x, y){
     const l = line(id); if(!l) return no('No such line.'); const g = gOf(l); if(g.nodes.length >= 24) return no('A plant can have at most 24 nodes.'); ref = String(ref);
     const n = { id: 'n' + (g.next++), t: kind === 'src' ? 'src' : 'rx', x: F.clamp(Math.round(num(x, 40)), 0, 6000), y: F.clamp(Math.round(num(y, 40)), 0, 6000) };
@@ -189,8 +191,9 @@
     g.wires.push({ a, b, s: sp }); touch(); return ok('Connected.');
   };
   FA.gUnwire = function(id, a, b, sp){ const l = line(id); if(!l) return no('No such line.'); const g = gOf(l), n = g.wires.length; g.wires = g.wires.filter(w => !(w.a === a && w.b === b && w.s === sp)); if(g.wires.length === n) return no('No such wire.'); touch(); return ok('Wire removed.'); };
-  FA.gAuto = function(id){ const l = line(id); if(!l) return no('No such line.'); const sh = autoOf(l.f, {}, 1); if(!sh.reactors.length) return no('No route for that.'); l.g = cleanGraph(F.graphFromSheet(sh)); touch(); return ok(sh.mode === 'process' ? 'Built the industrial route — rearrange or edit it.' : 'Built a direct-combination reactor (discover the intermediates in WestLab for the real process).'); };
-  FA.gClear = function(id){ const l = line(id); if(!l) return no('No such line.'); l.g = { nodes: [], wires: [], next: 1 }; touch(); return ok('Cleared.'); };
+  FA.gAuto = function(id){ const l = line(id); if(!l) return no('No such line.'); const sh = autoOf(l.f, {}, 1); if(!sh.reactors.length) return no('No route for that.'); const g = cleanGraph(F.graphFromSheet(sh)); if(g.nodes.length < sh.reactors.length + sh.feeds.length) return no('That plant is too big for one line (24 nodes max).'); l.g = g; l.keepEmpty = false; touch();
+    return ok(sh.mode === 'process' ? 'Planned ' + sh.reactors.length + ' stage' + (sh.reactors.length === 1 ? '' : 's') + ' from WestLab’s reactions — rearrange or edit it.' : 'WestLab has no multi-step route for this one, so it is built straight from its elements.'); };
+  FA.gClear = function(id){ const l = line(id); if(!l) return no('No such line.'); l.keepEmpty = true; l.g = { nodes: [], wires: [], next: 1 }; touch(); return ok('Cleared.'); };
   FA.setReserve = function(v){ S().reserve = F.clamp(r2(num(v, 0)), 0, 1e9); touch(); return ok('Cash reserve saved.'); };
   FA.setPos = function(key, x, y){ const p = S().pos; key = String(key).slice(0, 40); if(isFinite(+x) && isFinite(+y)){ p[key] = { x: Math.round(+x), y: Math.round(+y) }; K.touch('factory'); } };
   FA.setRoute = async function(id, route){
