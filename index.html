@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e0b08">
+<meta name="mobile-web-app-capable" content="yes">
+<title>WestOS — The Mr West Files</title>
+<link rel="icon" type="image/png" href="assets/icons/WestOS.png">
+<link rel="stylesheet" href="os/tokens.css?v=20261105b">
+<link rel="stylesheet" href="os/poster.css?v=20261105b">
+<link rel="stylesheet" href="os/os.css?v=20261105b">
+</head>
+<body>
+<div id="screen" class="locked">
+  <div class="wall" id="wall0"></div><div class="wall" id="wall1"></div><div class="wall-dim"></div>
+
+  <div id="menubar">
+    <div class="l">
+      <div class="mb-brand"><img src="assets/icons/WestOS.png" alt=""><span>WestOS</span></div>
+      <button class="mbtn" id="editBtn"></button>
+      <button class="mbtn" id="reportBtn" title="Report a bug or suggest a feature"><svg class="gl" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 7.5V7a3 3 0 0 1 6 0v.5M7 10h10v4a5 5 0 0 1-10 0v-4zM12 10v9M3 12h4M17 12h4M4 6.5l3 2.5M20 6.5l-3 2.5M4 19l3-2.5M20 19l-3-2.5"/></svg><span>Report a bug</span></button>
+      <button class="mbtn" id="doneBtn" style="display:none">Done</button>
+      <span class="mb-app" id="mbApp"></span>
+    </div>
+    <div class="r">
+      <button class="mbtn mb-sync" id="syncIc" aria-label="Sync status"></button>
+      <button class="mbtn mb-bell" id="bell" aria-label="Messages"></button>
+      <button class="mbtn mb-cash" id="mbCash" aria-label="Open Bank"></button>
+    </div>
+  </div>
+
+  <div id="desk">
+    <div class="pages" id="pages"></div>
+    <div class="dots" id="dots"></div>
+  </div>
+  <div class="dock" id="dock"></div>
+
+  <div id="windows"></div>
+  <div id="sheetwrap"><div class="scrim"></div><div class="sheet" id="sheet"></div></div>
+  <div id="banners"></div>
+
+  <!-- The lock screen is also the BOOT screen: it is on screen from the very first paint and stays until your account (and the maintenance state) is known,
+       so a reload never flashes a stock, default-layout desktop first. -->
+  <div id="lock">
+    <div class="shade"></div>
+    <div class="clock"><div class="date" id="lockDate"></div><div class="time" id="lockTime"></div></div>
+    <div class="notifs" id="lockNotifs"></div>
+    <div class="bootmsg" id="lockMsg">Loading your desktop…</div>
+    <div class="spin" id="lockSpin"></div>
+    <div class="hint" id="lockHint" style="display:none">Click anywhere to open</div>
+  </div>
+
+  <!-- maintenance mode (whole site) and "open in another window" -->
+  <div class="ov" id="maint" style="display:none"><div class="card"><div class="ico" id="maintIco"></div><b id="maintTitle">Maintenance mode</b><span id="maintNote"></span><div class="bs"><button id="maintRetry">Try again</button><button id="maintAdmin" class="plain">Admin sign-in</button></div></div></div>
+  <div class="ov" id="sessionLost" style="display:none"><div class="card"><div class="ico" id="sessionIco"></div><b>WestOS is open in another window</b><span>To keep your money safe, only one window can use your account at a time. Everything you did here has been saved.</span><div class="bs"><button id="sessionBtn">Use WestOS here</button></div></div></div>
+</div>
+
+<!-- diagnostics FIRST: catches (and loudly logs) errors thrown by everything below -->
+<script src="os/diag.js"></script>
+<!-- config, icons and reference data -->
+<script src="os/config.js?v=20261107a"></script>
+<script src="os/icons.js?v=20261107a"></script>
+<script src="data/wanted-data.js?v=20261105b"></script>
+<script src="data/periodic-table-data.js?v=20261105b"></script>
+<script src="data/databook-data.js?v=20261105b"></script>
+<script src="data/moderation-data.js?v=20261105b"></script>
+<script src="data/economy-data.js?v=atoms1"></script>
+<script src="data/chem-data.js?v=20261109a"></script>
+<script src="data/thermo-data.js?v=atoms1"></script>
+<script src="data/property-data.js?v=20261105b"></script>
+<script src="data/news-data.js?v=20261105b"></script>
+<!-- pure libraries (shared with the GitHub Actions and the tests) -->
+<script src="os/lib/market-model.js?v=20261105b"></script>
+<script src="os/lib/chem.js?v=atoms1"></script>
+<script src="os/lib/phys.js?v=20261105b"></script>
+<script src="os/lib/mol.js?v=20261105b"></script>
+<script src="os/lib/ff.js?v=20261105b"></script>
+<script src="os/lib/ff-sync.js?v=20261105b"></script>
+<script src="os/lib/world.js?v=20261105b"></script>
+<script src="os/lib/economy.js?v=20261110a"></script>
+<script src="os/lib/worldgen.js?v=20261110a"></script>
+<script src="os/lib/eco-sim.js?v=20261110a"></script>
+<script src="os/lib/arcade-games.js?v=20261106a"></script>
+<script src="os/lib/factory-sim.js?v=20261109a"></script>
+<script src="os/lib/game-scoring.js"></script>
+<!-- kernel: state, cloud, market, bank, gallery, api -->
+<script src="os/kernel/state.js?v=20261110a"></script>
+<script src="os/kernel/maint.js"></script>
+<script src="os/kernel/cloud.js?v=20261110a"></script>
+<script src="os/kernel/ledger.js?v=20261110a"></script>
+<script src="os/kernel/market.js?v=20261110a"></script>
+<script src="os/kernel/bank.js?v=20261110a"></script>
+<script src="os/kernel/arcade.js?v=20261110a"></script>
+<script src="os/kernel/factory.js?v=20261110a"></script>
+<script src="os/kernel/gallery.js?v=20261105b"></script>
+<script src="os/kernel/api.js?v=20261110a"></script>
+<script src="os/kernel/minigames.js"></script>
+<!-- desktop widgets: one file each; add a widget by adding a file and a line here -->
+<script src="os/widgets/wanted.js?v=20261105b"></script>
+<script src="os/widgets/stocks.js?v=20261105b"></script>
+<script src="os/widgets/bank.js?v=20261105b"></script>
+<script src="os/widgets/news.js?v=20261105b"></script>
+<script src="os/widgets/messages.js?v=20261105b"></script>
+<script src="os/widgets/realestate.js?v=20261105b"></script>
+<script src="os/widgets/clock.js?v=20261105b"></script>
+<script src="os/widgets/element.js?v=20261105b"></script>
+<script src="os/widgets/games.js?v=20261105b"></script>
+<script src="os/shell.js?v=20261107a"></script>
+<script src="os/onboarding.js?v=20261110a"></script>
+<script src="os/kernel/boot.js?v=20261110a"></script>
+<script>
+/* last-resort boot failsafe, independent of every other script: if the boot screen is still up after 15 s, let the person in */
+setTimeout(function(){ var l = document.getElementById('lock'), sc = document.getElementById('screen'); if(l && sc && sc.classList.contains('locked') && !l.dataset.ready){ sc.classList.remove('locked'); l.style.display = 'none'; } }, 15000);
+</script>
+</body>
+</html>

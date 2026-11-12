@@ -1,0 +1,147 @@
+# AGENTS.md — WestOS / The Mr West Files (read this first, then open only the files you need)
+
+Static site on GitHub Pages (no build step, no npm deps at runtime). A browser "OS": menu bar + desktop (icons/widgets) + dock + real app windows (each app = iframe of `apps/<Id>.html`). One shared wallet/economy. Backend = Firebase Realtime DB + Auth (public web keys; security lives in `database.rules.json`). Admin = one verified Google email set in `os/config.js` and mirrored in the rules.
+
+## 0. Owner's standing rules (follow without being told)
+- **Deliver changed files only, in repo folder structure, as a `.zip`** the owner drag-drops over the repo. Zips can't delete: list files to delete in the reply.
+- Do NOT add/bump `?v=` cache-busting query strings on script/link tags (the owner removed them; `index.html` still has old ones — leave alone).
+- Keep the architecture (multi-file, `OS` facade, kernel/app split). Add features by adding files + one registry line, not by rewriting.
+- Money must stay **balanced** and work through the one wallet (see §6). Free Firebase tier: keep reads/writes minimal.
+- Reply short: what changed, what's untested, files to delete. No fluff.
+- Verify in a real headless browser before delivering (see §9). Don't claim tested what wasn't.
+
+## 1. Repo map (what to touch for what)
+```
+index.html                 shell page; loads ALL scripts in a fixed order (see §2). New kernel/widget/lib file => add a <script> line here.
+os/config.js               Firebase keys, adminEmail, tax numbers, game.dailySoftcap(250)/dropChance/maxBase(120), factory knobs, epoch (world-clock tick 0)
+os/icons.js                OS_GLYPHS (24px line SVGs), OS_EMOJI map, OS_APPS registry, osIcon(name,size,sw), osEmoji(e|glyph,size), osAppTile(app,size)
+os/tokens.css              CSS vars (light/dark palette, --tint, --card, --fill, --label*, --ease, --spring)
+os/os.css  os/poster.css   shell styles / WANTED poster
+os/shell.js  (~450 lines)  menu bar, desktop grid, edit mode, drag/drop, dock, window manager, notifications, lock screen, add-to-desktop sheet
+os/widgets/*.js            one desktop widget per file (wanted, stocks, bank, news, messages, realestate, clock, element, games)
+os/app/kit.js + kit.css    UI kit every app uses (window.Kit) + OS bridge
+os/kernel/                 PRIVATE logic (closed over, not on window): state.js (wallet/inv/mail/shop/props/award), maint.js (maintenance switches), cloud.js (auth/save/one-window lock/mailbox/leaderboard/admin),
+                           market.js ($WEST), bank.js (tax), arcade.js, factory.js, gallery.js (Photos), api.js (builds the public `OS` facade), boot.js
+os/lib/                    PURE libs, also run by Node tests/Actions: chem.js (WestLab engine), phys.js, mol.js, ff.js, ff-sync.js, world.js (news/property/element-price swings),
+                           market-model.js, factory-sim.js, arcade-games.js
+apps/<Id>.html             one app per file (Messages Stocks News WestShop WestLab RealEstate Bank Games Arcade WestFactory Photos Preview Leaderboard Notes Files WestReport Settings)
+apps/games/<id>.js         minigames; apps/games/manifest.js = list + categories
+data/*.js                  reference data (periodic table, chem, economy, thermo, properties, news, wanted poster, databook, moderation)
+assets/icons/<AppId>.png   app tile PNGs (regen: tools/make-icons.py)
+market/ lab-cache/         WRITTEN BY GitHub Actions (market-data.json + history/*.json; lab-cache/{compounds,reactions}/*.json + discoveries.json). Don't hand-edit.
+.github/workflows+scripts  update-market.yml (every 10 min, tick-market.js), export-lab-cache.yml
+tests/*.test.js            Node tests (economy, engine, factory, mol, phys, arcade)
+tools/                     make-icons.py, westlab_pipeline.py (offline PubChem/RDKit batch)
+```
+**STALE, ignore (not loaded by index.html):** root `shell.js`, `os.css`, `tokens.css`, `icons.js`, `kernel/`, `app/`, `widgets/`. Always edit under `os/`.
+`database.rules.json` is not in the zip the owner uploads; the owner pastes rules into the Firebase console (they supply the current rules when needed — give back a full replacement, not a diff).
+
+## 2. Runtime architecture
+- Script order in `index.html`: config → icons → data/* → os/lib/* → os/kernel/* → os/widgets/* → shell.js → boot.js.
+- Kernel/shell modules register with `(window.__OSM = window.__OSM||[]).push(function(K){...})`; `boot.js` runs them all with shared private `K` (events `K.on/K.emit`, `K.S` state, `K.prefs`, `K.cloud`, `K.market`…), freezes the facade, sets `window.OS`, then loads Firebase SDK **after first paint**.
+- Widgets register with `(window.__OSW = window.__OSW||[]).push({id,name,app,desc,sizes:[...],on:[events],cls?,mount(el,size,ctx){...;return {update(evt),destroy()}}})`. `ctx = {OS,esc,money,tile,spark}`. `on` limits which events repaint it. Sizes: xs 1×1, h 2×1, v 1×2, s 2×2, x3 3×2, b 4×1, m 4×2, l 4×4. Add the widget id to `defaultLayout()` in shell.js only if it should be on by default.
+- Apps run in iframes of the same origin and reach the shell through `window.parent.OS` (Kit does this; opened standalone they redirect to `index.html#open=<Id>`).
+- Events (K.on / OS.on): cash inv mail bank props market lab games arcade factory stock auth loaded prefs theme screen focus sync notify preview volatility maint session.
+- **Boot screen:** `index.html` ships `#screen.locked` + the lock screen with a spinner, so a reload never shows a stock desktop. shell.js opens it once `OS.auth.ready()` and `K.maint.ready()` (min 650 ms, 12 s failsafe), or waits for a click if pref `lock` is on. Dock/menubar/windows are hidden while `.locked`.
+- **Saving (money-safe):** anything touching cash/inv/lots/props/factory/lab/shop/bank saves within `cashSyncMs` (3 s); mail/prefs/meta in the 20 s batch. `C.flushNow()` resolves TRUE only when the server has it — never delete/move something on the server because of local money until it does (see `FA.claim`: credit → flush → delete, plus a local claimed-id list so nothing pays twice). Failed saves retry with backoff and flash the sync icon. **One window per browser:** the newest window owns the account (localStorage `westos_active`); an older one flushes, sets `K.sessionLost`, shows "open in another window" and never writes/ticks/claims (reload = take over).
+- Persistence: `K.S` (game state, schema `v:3`: cash, inv{e,c}, lots, props, bank, mail, lab, games, shop, meta, arcade, factory) saved to `players/<uid>` in Firebase, debounced (`syncDebounceMs` 20s, only changed fields) + localStorage; UI prefs live in `K.prefs` (keys: theme wall iconSize dock layout seenApps winGeom reduceMotion reduceTransparency banners lock updateSpeed clock24 clockSeconds) via `OS.prefs.get/set` — free-form, no rules change needed. Signed-out players aren't saved.
+
+## 3. The `OS` facade (what apps may call) — defined in `os/kernel/api.js` (grep `K.facade =`)
+`on, now, today, cash(), prefs{get,all,set}, shop, lab, props, bank, mail, auth, stock, games{award(id,base),info()}, arcade, factory, files, world, admin, gallery, leaderboard, maintenance{app(id),sys(key),site(),note(),config(),systems(),lockedApps()}, report, chem, phys, mol, worldModel, data{ELEMENTS,TOOLS,PROPERTIES,...}, netWorth, nameOk, sync(), notify(n), econ()`; shell adds `open(id), close(id), home(), focused(), openApps(), theme(), screen(), toast(msg), openPage(url), apps(), preview(item), previewTake(), shell{resetLayout,relayout}, reportContext()`.
+New capability for apps = add to api.js (and to the freeze list in boot.js if it's a new object).
+
+## 4. Shell internals (os/shell.js) — desktop grid & windows
+- Layout item: `{t:'a'|'w', id, k, size?, pos?:{p,r,c}}` stored in `prefs.layout`. Apps in the dock are not on the desk. `pos` = page/row/col cell; unpinned items first-fit. `pinAll()` freezes every item to its current `rec.slot` before any structural change (remove/resize/drop/add) so nothing slides.
+- `metrics()` derives cols/rows/cell size/icon size from window size (≈128×118 px cells, min 4×3, fills the area between menu bar and dock) → re-run on resize (`relayoutHome`). `pack()` = pinned (clamped, nearest-free fallback) then first-fit. Drag: ghost snaps to nearest free cell (`dropSpot`), edge-hover flips pages (one extra empty page allowed while dragging). Arrow keys move the focused item in edit mode; Enter/Space opens.
+- Windows: `wins` Map(appId→{el,g{x,y,w,h,max,prev},iframe}); `openApp/closeApp/minimizeWin/restoreWin/toggleMax/setFocus`; geometry saved in `prefs.winGeom`; `DEFAULT_SIZE` per app; screens <700px force maximized. Title-bar buttons magnify near the pointer (`wireLights`, CSS var `--s`; coarse pointers always large).
+- Dock icon size scales with width; `NEW_APPS` list appends newly shipped apps for existing accounts (add new app ids there).
+- Add an app: entry in `OS_APPS` (icons.js) + glyph + `assets/icons/<Id>.png` + `apps/<Id>.html` + `DEFAULT_SIZE` entry + `NEW_APPS`.
+
+## 5. App contract (apps/*.html)
+```html
+<link rel=stylesheet href="../os/tokens.css"><link rel=stylesheet href="../os/app/kit.css">
+<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
+<script> const {h,row,group,money,esc,num}=Kit; Kit.app({title:'X', right:[{icon,label,onClick}], build:(body,P)=>{ ... }}) </script>
+```
+Kit exports: `row group h esc money num ago icon tile ico toast confirm alert sheet seg toggle app cashChip spark live debounce raf`. `Kit.app` gives a page stack with large titles; `A.push({title,backLabel,build})` pushes a page. `Kit.live(evt,fn)` subscribes and auto-unsubscribes on close. `h(tag,attrs,...kids)` supports `class, html, style(obj), onclick…`. CSS classes in kit.css: card, row, group, chip(s), seg, btn, field, num, grow, hstack, stack, empty, reveal, switch, bar-prog, section-label, cap…
+
+## 6. Economy (keep balanced)
+- Start cash $1000 (`startCash`). `OS.econ()` is a growing multiplier; payouts/softcaps scale with it. Tax: bank bills over `threshold` $100k, rate grows to 50%, due 48h, seizure if ignored.
+- **Minigame payout** `K.award(id, base)`: base clamped 0–40 (keep ≤6); amount = base × diminishing(1 − 0.12×(plays−1), floor .15) × collectionBonus × econ; ×0.25 once daily earned ≥ `dailySoftcap`(75)×econ; 18% chance of an element drop. Existing bases: 1–5; new games use 2–5.
+- Other sinks/sources: WestShop (element prices swing via world.js), WestLab (reactions, discoveries), RealEstate (props, daily sector prices), $WEST stock (deterministic model shared by browser + GitHub Action), WestFactory (idle production, market fee), Arcade (casino; limits live in Firebase `arcadeConfig`, enforced by rules).
+- Leaderboard categories are defined in `os/kernel/cloud.js` (`C.LB`); records are written ≤ every 15 s.
+
+## 6d. The WestEconomy — a CLOSED ledger (read before touching ANY money code)
+- **The law:** money is never created or destroyed, only moved. Total supply is fixed at **$100 trillion** (integer CENTS, `os/lib/economy.js`). At genesis it sits in 5 system accounts (`SEED`: market pool $83T, casino $15T, bank $2T, treasury, city). Every player/bot account (`eco/acct/<id>`) holds `b` (cash) plus `sys.{pool,arcade,bank,gov,city}` (what it has paid INTO each system account, negative = received) and `s`/`r` (sent/claimed via the inbox) and always satisfies `b + Σsys + s − r = 0`. System balances are DERIVED (`SEED + Σ sys`), so nobody ever writes the hot pool (no contention). `Economy.audit(db)` adds everything up (BigInt) and must equal SUPPLY.
+- **Never write `S.cash`.** It is a read-only view of the ledger. Use `K.earn / K.spend` (market pool, universal tax `taxBp` goes to the treasury), `K.earnFrom / K.spendTo(sys, …)` (casino etc.), `K.ledger.send/sendSale` (other accounts, via inbox), and the domain ops in `os/kernel/ledger.js` (`buy`, `rent`, `takeLoan`, `payBill`, …). Each domain op = ONE atomic multi-path update (`L.exec`) that `database.rules.json` checks against the ledger.
+- **Rules are generated:** edit `tools/build-rules.js` (+ `tools/rules-base.json` for unchanged nodes), run `node tools/build-rules.js`, then `node tests/rules.test.js` (≈100 honest + cheating cases through `tests/rules-harness.js`, an evaluator for Firebase rules). Paste `database.rules.json` into the Firebase console. Every account write needs `rev = old + 1` (a stale tab is refused, never merged); guarded player fields (`inv, lots, bank, lab, games, factory`) are saved in the same update as the account, so money and goods can't diverge.
+- **World server:** `.github/scripts/eco-tick.js` (workflow `eco-tick.yml`, every 10 min, secret `FIREBASE_SERVICE_ACCOUNT`) runs `os/lib/eco-sim.js` (100 bots +10/week with 40–100-day lives, wages/rent/house buying/market purchases, taxes → bills, loan lateness, fires/medical/police events, the city building houses, stats + stock-market mood), audits, and writes ONE atomic update (skips the run if a player touched the same records meanwhile). `genesis()` builds a new economy (admin: Settings → Economy). Players' accounts are only touched by it to collect overdue bills/loans; bots/system accounts are fully server-owned.
+- **Houses:** geometry is a pure function of the index (`os/lib/worldgen.js`: 64 houses per district, golden-angle spiral → infinite). Firebase only stores what changes: `world/own/<id>` (owner `o`, value `v`, ask `a`, rent/hour `rh`, tenant `t/tn/ts/th`, damage `dm`, fire `f`), `world/home/<uid>` (where you live; no home = homeless: half game pay, no loans), `world/meta`, `world/ev`. Rent is prepaid by the hour (`ts + th·1h`), auto-topped-up while online, eviction after `graceHours`.
+- **Onboarding:** `os/onboarding.js` (grant $100k from the pool → pick a home). OG players (`eco/og/<uid>`, set by the reset) get +$50k, 10 mol Au/Ag and the quiet ★ OG mark (`leaderboard/<uid>/og`).
+- **Tests:** `tests/rules.test.js`, `tests/eco-sim.test.js` (`DAYS=90 node …` — audits every 30-min step), `tests/eco-tick.test.js` (the real Action script on a fake firebase-admin), `tests/e2e.test.js` (the real site in headless Chromium against a fake Firebase that enforces the real rules).
+- **Browser-edit limits (layers, in order):** (1) cash, houses, loans, bills, inbox are fully rule-checked (can't be edited at all); (2) player-reported pool flows (shop/stock/games/lab/factory NPC sales — prices and item counts come from the client) are bounded by the LIFETIME EARNING ALLOWANCE `−sys.pool ≤ startGrant + ogExtra + earnSlack + earnPerDay × days since c0` plus a daily net limit `poolDaily` (a tenth for homeless players) — so a cheater can extract at most ≈ `earnPerDay` ($100k) per day per account, the same as top legit play; `K.earnFrom` clamps to the same numbers so honest saves are never refused (`L.poolRoom()`); (3) market purchases are price-checked against the listing in the inbox rule (`l`,`n` fields, listing `q` reduced in the same update); (4) `eco/stats.flags` lists accounts above 85% of their allowance for the admin. Casino outcomes and minigame scores are still client-reported: capped per write, per day (`an`) and homeless players can't gamble. Truly preventing them needs server code (Cloud Functions/Blaze).
+- **Wallet cap:** `maxAcct` = 5e15 cents ($50T) enforced in the rules; the marginal wealth tax (`Economy.wealthTax`, brackets in `cfg.wealthBrackets`) takes 0.5%/day above $250k rising to 40%/day above $250B, so nobody can stay anywhere near it.
+- **Homeless** = no `world/home/<uid>`: pool draws ÷ `homelessPoolDiv`, no casino stakes, no loans (all in the rules). Skipping onboarding's home step just leaves you homeless.
+- **Building licences:** `world/lic/<uid>` (fee `licFee` → city, `licDays`), orders `world/build/<uid>/b1..b3` with an escrow (`cfg.builds[type].c × pi`) paid to the city in the same update; the Action's `builds()` scans/builds plots until the type matches, charges real value × `buildMarkupBp` (105%, so sell-back at 90% never profits), refunds the rest via `payFromSys` (the hidden `_sys` account).
+- **Other limits:** net worth/leaderboard numbers are client-computed. A single balance must stay < 9e15 cents. The rules were verified with the in-repo evaluator, not Google's emulator.
+
+## 6a. Minigame scoring, high scores, boards (os/lib/game-scoring.js, os/kernel/minigames.js)
+Scored games call `api.score(id, points, resultEl, label)` (Games.html). Points → payout base = 0.5·e^(2.3·points/par), capped by `game.maxBase`, then the old K.award factors. Per-game `par/min/max` live in `GameScoring.TABLE` (tests/game-scoring.test.js). `api.elapsed()` gives seconds since the round began. Lucky Assay is unscored (legacy `api.win`). Personal bests: `K.S.games.hi[id]={s,t,p}` (survive the daily reset; p = last published). Public boards: `gameScores/<game|all>/<uid>` {n,s,t,c} (raise-only; rules snippet in database.rules.gameScores.json). Facade: `OS.games.submit/info/scoring/estimate/ids`, `OS.gameBoards.list/mine/refresh`.
+
+## 6c. Diagnostics (os/diag.js, loaded FIRST)
+Captures errors with stacks, promise rejections, console.error/warn, failed script loads, and every failing `OS.*` call (wrapped in boot.js). Ring buffer + localStorage mirror; `K.diag.text()` is attached to bug reports (WestReport) with sync state and a state-shape probe. Apps: `OS.debug.error(src, err, data)`. cloud.js saving: on a rejected save it re-sends field by field (cash+arcade together) so one bad field can't block the rest; `C.lastErr/C.badFields` name the culprit. Dock position pref `dockMode` = float|low|hide.
+
+## 6b. Maintenance mode
+Firebase `maintenance` = `{all:bool, apps:{AppId:true}, sys:{trading|market:true}, msg, t}` (public read, admin write, live listener). `os/kernel/maint.js`: `appMsg(id)/sysMsg(key)/siteMsg()` return '' when fine (verified admin always exempt). Enforced in shell `openApp` (dialog), open windows (`.mcover`), icon wrench badge, whole-site overlay `#maint`, `mguard()` wrappers in `api.js`, `arcade.begin`, `FA.tick/claim/pushMarket`. Settings and Bank can't be switched off alone. New money-moving action => wrap it in `mguard`. Client-side only.
+
+## 7. Minigames (apps/games)
+`manifest.js`: `GAME_MANIFEST=[{id,category,icon,name,desc}]`, `GAME_CATEGORIES={educational,puzzle,fun}`. `icon` = a glyph name from OS_GLYPHS (or emoji mapped in OS_EMOJI). Game file: `Games.register({id, play(content, api){...}})`; call `api.win(id, base, resultEl, msg)` or `api.lose(resultEl, msg)` exactly once (the Games app handles payout, "Play again", daily bar). Games must stop loops/listeners when `!content.isConnected`. Shared CSS helpers in Games.html: `.gx-hint .gx-bar .gx-btn .gx-cv .gx-pad .mz-* .cb-* .ts-*`.
+Current: titration, balance (educational) · mazePaint, sandfall, colourBlocks, tubeSort (puzzle) · reaction, projectile, memoryMatch, whackAtom, atomBuilder, fallingCatch, luckyAssay, elementMerge, flappyElectron (fun).
+
+## 8. Data, Firebase & Actions
+- DB paths (see rules): `players/$uid` (owner write; `inv/lots/bank/lab/games/factory` guarded by the ledger revision, `mail/shop/prefs/meta` light; NO cash — see 6d), `eco/*` and `world/*` (the ledger and the world), `leaderboard/$uid`, `market/{listings,proceeds}`, `mailbox/$uid`, `broadcast`, `marketAdjustments`, `marketVolatility` (admin ledgers), `arcadeConfig`, `labCache`/`labSubmit`, `gallery/*` (private photo store, monthly byte budget), `reports` (bug/feature, admin-read), `maintenance` (public read, admin write). Any new top-level path needs a rules addition — hand the owner the **full updated rules JSON**. Anonymous auth never stores progress.
+- GitHub Action `update-market.yml` (cron 10 min): `tick-market.js` advances `market/market-data.json` + `market/history/{recent,hourly}.json`, reading admin ledgers from Firebase; retry-by-recompute on push race. Price = seeded noise × trend (base + growth) + admin ledger; browser recomputes identically. `export-lab-cache.yml` writes `lab-cache/`.
+- WestLab: engine in `os/lib/chem.js` (+phys/mol/ff); results cached to GitHub `lab-cache/` so repeat combos aren't recomputed.
+
+## 8b. WestLab engine (ENGINE_VERSION 3)
+- **ENGINE_VERSION** (`os/lib/phys.js`) is the first part of every cache key (`e3|…`). Bump it whenever ANY change can alter a card (data tables, rules, thermo, kinetics). The export Action then purges other-version entries and replays all Firebase submissions; `tools/preseed-lab-cache.js` (workflow "Pre-seed WestLab cache", manual button) refills the common reactions. Never hand-edit `lab-cache/`.
+- **To regenerate after an engine change:** bump ENGINE_VERSION → push → Actions → "Pre-seed WestLab cache" → Run, then "Export WestLab discoveries" → Run. Or locally: `node tools/preseed-lab-cache.js`.
+- `lab-cache/discoveries.json` is a *checked view* of Firebase `labCache`: the export Action re-derives each entry with the current engine (`.github/scripts/lab-verify.js`), stamps it with `ev`, and drops what the engine no longer makes (listed in `discoveries-rejected.json`). `node tests/discoveries.test.js` guards this and the no-free-atoms rule (the Gibbs search in `phys.js` uses `stdState()` so a bare `F`/`H`/… reagent is always X2).
+- Atom keys of diatomic elements (`N`,`H`,`O`,`F`,`Cl`,`Br`,`I`) mean the element in its standard state X2 in every rule (`Chem.solve`). `N` and `N2` give identical chemistry.
+- **Named reactions** live in `data/chem-data.js` (`NAMED_REACTIONS`, consulted first; `notModelled:true` makes the engine refuse instead of guessing). **Spec/tests:** `data/reaction-catalogue.js` (not loaded by the browser) + `node tests/catalogue.test.js`; also `tests/thermo-audit.test.js` (ΔGf vs CRC, isomer-collision guard) and `tests/cache.test.js`.
+- Determinism: no Math.random/Date in the engine; the Gibbs search has a work budget (`GS_BUDGET`), not a clock.
+- Venting (open vessel at ≤1 bar) only applies when a reactant is a solid/liquid. Decomposing carbonates/hydroxides never "melt". Compound melting points: `COMPOUND_MP` in thermo-data.js.
+- Cache misses are computed in `os/lib/westlab-worker.js` (api.js `computeCard`, falls back to the main thread). Known gaps: aqueous standard states (neutralisation/electrolysis voltages), constant Cp (no Shomate yet), compound×compound pre-seed left to the Action.
+
+## 9. Test & verify recipe (works in this sandbox)
+```bash
+cd <repo>; (python3 -m http.server 8123 >/dev/null 2>&1 &); sleep 1.5; python3 test.py   # server dies between tool calls: start it in the SAME command
+```
+Python Playwright + Chromium are preinstalled (`from playwright.sync_api import sync_playwright`). Pattern: `pg.goto('http://localhost:8123/index.html')`, wait ~2 s, `pg.evaluate("OS.open('Games')")`, find the app frame with `[f for f in pg.frames if 'Games.html' in f.url][0]`, drive DOM, `pg.screenshot(path)`, collect `pageerror`. Set prefs for layout tests with `OS.prefs.set('layout',[...]); OS.shell.relayout()`. Firebase/Google hosts are unreachable offline (expected `ERR_NAME_NOT_RESOLVED` console noise; play is signed-out). Pure libs: `node tests/<name>.test.js`. Syntax check: `node -e "new Function(require('fs').readFileSync(f,'utf8'))"`.
+
+## 10. Delivery checklist
+1. Edit under `os/`, `apps/`, `data/` only. 2. Syntax-check + headless-run the feature. 3. `zip -q out.zip <changed files>` from repo root (paths relative to root). 4. Reply: what changed, tested vs untested, files to delete, any required Firebase rules change (full JSON). 5. If behaviour changes in a durable way, update this file.
+
+## 11. Gotchas learned
+- Games/Arcade tiles must not use raw emoji (blank boxes on emoji-less systems) → use `osEmoji`/glyph names; `osIcon` falls back to a dot for unknown names.
+- Single-script, shared state: one thrown error in a kernel module can kill later code — wrap listener bodies in try/catch.
+- Don't replace in-memory state wholesale when an async fetch resolves (loses actions taken meanwhile); use pending-save flags and MAX-merges for ticking counters.
+- Timers in background tabs are throttled: catch up using elapsed wall time, flush saves on `visibilitychange`/`pagehide`.
+- Deterministic systems (market, news, property prices, world.js) must stay seed/clock-pure so every client and the Action agree.
+- Window iframes are `pointer-events:none` while dragging/resizing; apps must clean up subscriptions on `pagehide`.
+
+## 12. Future ideas (for later consideration — not started, owner hasn't approved)
+**Moving off plain JavaScript.** Browsers only run JS and WebAssembly (WASM), so "another language" means one of these:
+- **TypeScript + Vite (best next step):** types would catch whole classes of bugs here (missing `K.maint`, stale money fields, wrong facade names). Needs a build step; a GitHub Action can build and publish to Pages (still free). Would break the current "no build step, owner drag-drops files" workflow, so migrate only if the owner agrees; keep the `OS` facade / kernel-app split.
+- **Rust (or C++/Zig) → WASM, only for hot maths:** WestLab chem/force-field (`os/lib/chem.js, phys.js, ff.js`), market model, factory catch-up loop. Not for UI (WASM can't touch the DOM directly). Do it only if profiling shows these are slow.
+- **WebGL/WebGPU:** only if we add lots of moving graphics (particles, big animated flow diagrams). WebGPU support is still uneven.
+- **UI framework (Svelte/Solid/React):** only worth it if the apps grow much larger or update very often.
+- Note: the window-drag lag was rendering cost (backdrop blur, big shadows), not JS speed — fixed with the `.moving` / `perf-low` CSS and the Graphics setting, so a language rewrite would not have helped there.
+Suggested order if ever pursued: (1) TypeScript + Vite + Action deploy, (2) Rust/WASM for WestLab maths only if slow, (3) leave the rest alone.
+
+## 13. WestFactory flowsheets (durable behaviour)
+- A factory line is a **player-built flowsheet** (Satisfactory style): `l.g = {nodes, wires, next}` — `src` nodes buy an element/discovered compound, `rx` nodes run one recipe (`RECIPES` in `os/lib/factory-sim.js`, keyed `main<in1+in2`, or `F:<compound>` = combine the elements), wires carry one species; the warehouse is the virtual node `'o'`. `FactorySim.graphSheet(g, {f, rate, atomPrice, compOf, cap})` solves it demand-driven from the warehouse: by-product wires are used first, an input must have a supply (a source or an active upstream reactor), a loop needs a make-up source, spare by-products are credited at atom value, reactors are capped at 3× the tier's rate. Price = (feeds − credit) × (1 + overhead + stepOverhead·(reactors−1)).
+- Kernel actions (all validated server-side of the UI): `gAdd/gMove/gDel/gWire/gUnwire/gAuto/gClear`, `sources()`, `recipes()`. `gAuto` and the load-time migration of old single-reactor lines use `FactorySim.flowsheet()` (the auto route tree) + `graphFromSheet()`. Positions of the warehouse/hub/bank live in `factory.pos` (`wh:<line>`, `hub:*`, `bank`); node positions live in the graph.
+- **Auto-planner (any molecule):** `FactorySim.routeOf(f, lab)` returns the curated `ROUTES[f]` if there is one, otherwise PLANS the stages from WestLab itself (`labFrom(Chem, NAMED_REACTIONS)` → `cands(sp)` = every named reaction plus every single reagent / pair from the known compounds `sp` could come from, run through `Chem.solve`). It walks backwards product ← reaction ← its reagents ← … ← elements / `FEEDSTOCKS` (water, CO₂, NaCl, CaCO₃, CaO, CH₄ …), depth ≤ 4, preferring (1) the molecule is the reaction's main product, (2) fewest stages, (3) a curated named reaction, (4) fewer conditions. Only conditions a plant can supply (heat/catalyst/pressure/spark) are allowed; if no real route exists the line is built straight from its elements ('plain'). Intermediates need NOT be discovered — only the final product does (`process()` no longer has a 'direct' mode). `addLine`, `Auto-build` and the load-time migration all use it; a plant left empty rebuilds itself unless the player pressed Clear (`keepEmpty`). Auto recipes are never stored: a reactor node's `rc` id `main<reagent+reagent` is re-derived from WestLab by `recipeOf(id, compOf, cfg, lab)`, so factory and lab cannot disagree. `node tests/autoroute.test.js` checks every compound WestLab knows (atom balance, fits 24 nodes, graph = tree price, WestLab really runs each step).
+- Add a curated process (own yields / wording) = add a `ROUTES` entry (its steps become recipes automatically); a molecule WestLab already derives needs nothing. `node tests/flowsheet.test.js` checks atom balance of every route, that every auto graph prices identically to its tree, wiring rules, loops and the reactor cap.
+- **One chemistry for lab and factory:** a factory recipe is usable only if `Chem.solve(reagents, conditions)` returns exactly its products (`labOf` in `os/kernel/factory.js`; `tests/flowsheet.test.js` §10 enforces it). Industrial steps WestLab lacked were added to `NAMED_REACTIONS` in `data/chem-data.js` (NO₂ absorption, urea, methanol, ethene hydration, NaHCO₃ calcination, ammonia recovery). To add a factory process, add the reaction to WestLab first, then a `ROUTES` entry.
