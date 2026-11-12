@@ -1,0 +1,111 @@
+{
+  "model": 2,
+  "tickIndex": 27949199,
+  "state": {
+    "fairValue": 0.9504729559571669,
+    "momentum": -0.005143130349699386,
+    "vol": 0.0013466581505703601,
+    "spike": -1.2827789570240103e-12,
+    "price": 0.9455845496496021
+  },
+  "t": 1794257900057,
+  "adjustments": [
+    {
+      "tickIndex": 8662345,
+      "delta": 10,
+      "at": 1789435986368,
+      "id": "-P1XgZ4loKeucxyjZbjo"
+    },
+    {
+      "tickIndex": 8731227,
+      "delta": 10,
+      "at": 1789453206976,
+      "id": "-P1YiFKQe6U7iTvZTihN"
+    },
+    {
+      "tickIndex": 8731327,
+      "delta": -10,
+      "at": 1789453231974,
+      "id": "-P1YiLROIOoNi3zOgmgC"
+    },
+    {
+      "tickIndex": 8731398,
+      "delta": -10,
+      "at": 1789453249528,
+      "id": "-P1YiPiPByT1G7RqvAr4"
+    },
+    {
+      "tickIndex": 8731665,
+      "delta": 100,
+      "at": 1789453316275,
+      "id": "-P1Yif0Tod0Yv_EuaSsC"
+    },
+    {
+      "tickIndex": 9312969,
+      "delta": -100,
+      "at": 1789598642252,
+      "id": "-P1gO1zoov7FZxQnj3M8"
+    },
+    {
+      "tickIndex": 9370373,
+      "delta": 100,
+      "at": 1789612993423,
+      "id": "-P1hEmgZKJOvFuIM-i_g"
+    },
+    {
+      "tickIndex": 10022811,
+      "delta": 100,
+      "at": 1789776102877,
+      "id": "-P1qxzfWwQAZw22JhQvx"
+    },
+    {
+      "tickIndex": 15953122,
+      "delta": -100,
+      "at": 1791258678460,
+      "id": "-P3EK_GTNrSPW-MkJ_Ou",
+      "fadeSec": 300
+    },
+    {
+      "tickIndex": 16229325,
+      "delta": -100,
+      "at": 1791327712110,
+      "id": "-P3IRvBNsQQAgZOeSi3K"
+    },
+    {
+      "tickIndex": 21767298,
+      "delta": 100,
+      "at": 1792712223916,
+      "id": "-P4_yPkcyyalNKbHgwCU"
+    },
+    {
+      "tickIndex": 22922700,
+      "delta": 100,
+      "at": 1793001076417,
+      "id": "-P4rBI02XRgVD4xQZnQw",
+      "fadeSec": 300
+    },
+    {
+      "tickIndex": 22922923,
+      "delta": -200,
+      "at": 1793001122768,
+      "id": "-P4rBTKFpPNase0Znvy5"
+    },
+    {
+      "tickIndex": 23131880,
+      "delta": 100,
+      "at": 1793053114664,
+      "id": "-P4uHo1MxIXroYUE7cvq"
+    },
+    {
+      "tickIndex": 23133178,
+      "delta": -150,
+      "at": 1793053289765,
+      "id": "-P4uITlwvsKlfydwv9iQ"
+    }
+  ],
+  "lastAdjKey": "-P4uITlwvsKlfydwv9iQ",
+  "dayAgo": {
+    "tickIndex": 27603600,
+    "n": 0.9051
+  }
+}
