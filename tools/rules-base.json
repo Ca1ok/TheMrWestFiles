@@ -1,0 +1,189 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "arcadeConfig": {
+      ".read": true,
+      ".write": "(auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)",
+      "enabled": { ".validate": "newData.isBoolean()" },
+      "games": { "$g": { ".validate": "newData.isBoolean() && ($g === 'slots' || $g === 'bus' || $g === 'poker' || $g === 'blackjack')" } },
+      "betPct": { ".validate": "newData.isNumber() && newData.val() >= 0.001 && newData.val() <= 1" },
+      "betCap": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 1000000000" },
+      "minBet": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 1000000" },
+      "dailyCap": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000000000" },
+      "cooldownMs": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 600000" },
+      "maxMult": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 1000" },
+      "$other": { ".validate": false }
+    },
+    "maintenance": {
+      ".read": true,
+      ".write": "(auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)",
+      ".validate": "newData.hasChildren(['all', 't'])",
+      "all": { ".validate": "newData.isBoolean()" },
+      "apps": { "$id": { ".validate": "newData.val() === true && $id.matches(/^[A-Za-z0-9]{1,24}$/)" } },
+      "sys": { "$k": { ".validate": "newData.val() === true && $k.matches(/^[a-z]{1,16}$/)" } },
+      "msg": { ".validate": "newData.isString() && newData.val().length <= 160" },
+      "t": { ".validate": "newData.isNumber()" },
+      "$other": { ".validate": false }
+    },
+    "market": {
+      ".write": "(auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)",
+      "listings": {
+        ".read": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous')",
+        ".indexOn": ["t"],
+        "$id": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && ((!data.exists() && newData.child('u').val() === auth.uid && $id.beginsWith(auth.uid)) || (data.exists() && data.child('u').val() === auth.uid))",
+          ".validate": "!newData.exists() || newData.hasChildren(['u','n','f','p','q','t'])",
+          "u": { ".validate": "newData.isString() && newData.val().length <= 40" },
+          "n": { ".validate": "newData.isString() && newData.val().length <= 20" },
+          "nm": { ".validate": "newData.isString() && newData.val().length <= 60" },
+          "f": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 40" },
+          "p": { ".validate": "newData.isNumber() && newData.val() >= 0.01 && newData.val() <= 1000000000" },
+          "t": { ".validate": "newData.isNumber()" },
+          "q": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && data.exists() && newData.isNumber() && newData.val() < data.val() && newData.val() >= 0",
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000"
+          },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+    "gameScores": {
+      ".read": true,
+      "$g": {
+        ".indexOn": ["s"],
+        "$uid": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && auth.uid === $uid && newData.exists()) || (auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)",
+          ".validate": "newData.hasChildren(['n','s','t']) && $g.matches(/^[A-Za-z0-9]{1,24}$/) && (!data.exists() || newData.child('s').val() >= data.child('s').val())",
+          "n": { ".validate": "newData.isString() && newData.val().length >= 2 && newData.val().length <= 20 && !newData.val().matches(/.*[<>&\\\"'`].*/)" },
+          "s": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000" },
+          "t": { ".validate": "newData.isNumber() && newData.val() === now" },
+          "c": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+    "mailbox": {
+      "$uid": {
+        ".read": "((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && auth.uid === $uid) || (auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)",
+        "$id": {
+          ".write": "(auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true) || (((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && auth.uid === $uid) && data.exists() && !newData.exists())",
+          ".validate": "!newData.exists() || newData.hasChildren(['subj','body','t'])",
+          "from": { ".validate": "newData.isString() && newData.val().length <= 30" },
+          "subj": { ".validate": "newData.isString() && newData.val().length <= 120" },
+          "body": { ".validate": "newData.isString() && newData.val().length <= 1000" },
+          "t": { ".validate": "newData.isNumber()" }
+        }
+      }
+    },
+    "broadcast": {
+      ".read": true,
+      "$id": {
+        ".write": "(auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)",
+        "from": { ".validate": "newData.isString() && newData.val().length <= 30" },
+        "subj": { ".validate": "newData.isString() && newData.val().length <= 120" },
+        "body": { ".validate": "newData.isString() && newData.val().length <= 1000" },
+        "t": { ".validate": "newData.isNumber()" }
+      }
+    },
+    "marketAdjustments": {
+      ".read": true,
+      "$id": {
+        ".write": "(auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)",
+        ".validate": "newData.hasChildren(['tickIndex','delta','at'])",
+        "tickIndex": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        "delta": { ".validate": "newData.isNumber() && newData.val() >= -10000000 && newData.val() <= 10000000" },
+        "at": { ".validate": "newData.isNumber()" },
+        "fadeSec": { ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 2592000" },
+        "$other": { ".validate": false }
+      }
+    },
+    "marketVolatility": {
+      ".read": true,
+      "$id": {
+        ".write": "(auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)",
+        ".validate": "newData.hasChildren(['tickIndex','level','at'])",
+        "tickIndex": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        "level": { ".validate": "newData.isString() && newData.val().matches(/^(classic|calm|normal|wild|insane)$/)" },
+        "at": { ".validate": "newData.isNumber()" },
+        "$other": { ".validate": false }
+      }
+    },
+    "labCache": {
+      ".read": true,
+      ".write": "(auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)",
+      "$key": {
+        ".write": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && !data.exists() && newData.exists()",
+        "by": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 20 && !newData.val().matches(/.*[<>&\\\"'`].*/)" },
+        "t": { ".validate": "newData.isNumber()" },
+        "eq": { ".validate": "newData.isString() && newData.val().length <= 240" },
+        "n": { ".validate": "newData.isString() && newData.val().length <= 240" },
+        "$other": { ".validate": false }
+      }
+    },
+    "labSubmit": {
+      ".read": true,
+      ".indexOn": ["t"],
+      ".write": "(auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)",
+      "$id": {
+        ".write": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && !data.exists() && newData.exists() && $id.matches(/^[0-9a-f]{8}$/)",
+        ".validate": "newData.hasChildren(['T','P','c','e','t'])",
+        "r": { "$i": { ".validate": "$i.matches(/^[0-3]$/) && newData.isString() && newData.val().length >= 1 && newData.val().length <= 40" } },
+        "g": { ".validate": "newData.isString() && newData.val().length <= 60" },
+        "T": { ".validate": "newData.isNumber() && newData.val() >= 75 && newData.val() <= 1500" },
+        "P": { ".validate": "newData.isNumber() && (newData.val() === 1 || newData.val() === 2 || newData.val() === 5 || newData.val() === 10 || newData.val() === 20 || newData.val() === 50 || newData.val() === 100 || newData.val() === 200 || newData.val() === 500)" },
+        "c": { ".validate": "newData.val() === 0 || newData.val() === 1" },
+        "e": { ".validate": "newData.val() === 0 || newData.val() === 1" },
+        "t": { ".validate": "newData.isNumber() && newData.val() === now" },
+        "$other": { ".validate": false }
+      }
+    },
+    "gallery": {
+      "items": { ".read": true, "$id": { ".write": "(auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)" } },
+      "thumbs": { ".read": true, "$id": { ".write": "(auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)" } },
+      "view": {
+        ".read": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && (!root.child('gallery/usage/until').exists() || now > root.child('gallery/usage/until').val() || root.child('gallery/usage/bytes').val() < 7000000000)",
+        "$id": { ".write": "(auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)" }
+      },
+      "full": {
+        ".read": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && (!root.child('gallery/usage/until').exists() || now > root.child('gallery/usage/until').val() || root.child('gallery/usage/bytes').val() < 7000000000)",
+        "$id": { ".write": "(auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)" }
+      },
+      "stats": {
+        ".read": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous')",
+        "$id": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous')",
+          "views": { ".validate": "newData.isNumber() && newData.val() === (data.exists() ? data.val() : 0) + 1" },
+          "downloads": { ".validate": "newData.isNumber() && newData.val() === (data.exists() ? data.val() : 0) + 1" },
+          "$other": { ".validate": false }
+        }
+      },
+      "usage": {
+        ".read": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous')",
+        ".write": "(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous')",
+        ".validate": "newData.hasChildren(['bytes','until']) && newData.child('bytes').isNumber() && newData.child('until').isNumber() && newData.child('bytes').val() >= 0 && (!data.exists() || now > data.child('until').val() || newData.child('bytes').val() <= data.child('bytes').val() + 60000000)"
+      }
+    },
+    "reports": {
+      ".read": "(auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true)",
+      ".indexOn": ["t"],
+      "$id": {
+        ".write": "(auth != null && auth.token.email === 'kirattdhaliwal@gmail.com' && auth.token.email_verified === true) || ((auth != null && auth.token.firebase.sign_in_provider !== 'anonymous') && !data.exists() && newData.exists() && newData.child('status').val() === (newData.child('kind').val() === 'feature' ? 'pending' : 'open'))",
+        ".validate": "newData.hasChildren(['kind','uid','title','desc','status','t'])",
+        "uid": { ".validate": "newData.val() === auth.uid || (auth != null && auth.token.email === 'kirattdhaliwal@gmail.com')" },
+        "name": { ".validate": "newData.isString() && newData.val().length >= 0 && newData.val().length <= 30" },
+        "title": { ".validate": "newData.isString() && newData.val().length >= 3 && newData.val().length <= 100" },
+        "area": { ".validate": "newData.isString() && newData.val().length >= 0 && newData.val().length <= 60" },
+        "sev": { ".validate": "newData.isString() && newData.val().matches(/^(low|medium|high|critical)$/)" },
+        "desc": { ".validate": "newData.isString() && newData.val().length >= 10 && newData.val().length <= 2000" },
+        "steps": { ".validate": "newData.isString() && newData.val().length >= 0 && newData.val().length <= 1500" },
+        "expected": { ".validate": "newData.isString() && newData.val().length >= 0 && newData.val().length <= 1000" },
+        "ctx": { ".validate": "newData.isString() && newData.val().length >= 0 && newData.val().length <= 4000" },
+        "status": { ".validate": "newData.isString() && newData.val().matches(/^(open|fixed|wontfix|pending|approved|rejected|done)$/)" },
+        "t": { ".validate": "newData.isNumber()" },
+        "$other": { ".validate": false },
+        "kind": { ".validate": "newData.isString() && newData.val().matches(/^(bug|feature)$/)" }
+      }
+    }
+  }
+}
