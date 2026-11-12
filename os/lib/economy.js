@@ -31,6 +31,8 @@
     earnSlack: 100000,        // + $1,000 of slack
     licFee: 5000000,          // a building licence from the council costs $50,000 and lasts licDays
     licDays: 30,
+    plotFee: 25000000,        // an industrial plot (needed to open WestFactory) costs $250,000, bought once, paid to the city (world/plot/<uid>/f)
+    labFee: 15000000,         // a laboratory in the University Quarter (needed to open WestLab) costs $150,000, bought once (world/plot/<uid>/l)
     builds: { studio: { n: 'Studio', c: 6980000 }, apartment: { n: 'Apartment', c: 17960000 }, townhouse: { n: 'Townhouse', c: 39900000 }, house: { n: 'House', c: 89800000 }, villa: { n: 'Villa', c: 299000000 } },   // escrow per type = the most that type can ever be worth (+5%); the exact price is charged when it is built and the rest refunded
     buildMarkupBp: 10500,     // a player-built house costs 105% of its value (so building and selling it straight to the city (90%) never profits)
     marketFeeBp: 500,         // 5% fee on player-to-player market sales (to the treasury)

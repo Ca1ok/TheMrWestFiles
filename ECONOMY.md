@@ -13,7 +13,7 @@ Until step 5, players can look around but nothing is saved (the site says so). W
 
 ## What's in it
 - **Onboarding**: welcome → $100,000 grant from the pool → pick a home (rent by the day, or buy). Homeless players earn half from games and can't borrow.
-- **WestMap** (new app): the whole country, every house and who owns/rents it, buy/sell/list/rent out/evict, fires with fire engines, ambulances and police, an economy dashboard.
+- **WestMap**: a suburban country: houses along winding streets, highways from downtown to every district (express roads to the cities where the expensive houses are), a University Quarter and an Industrial Estate, NPC dots you can click to see where they are going, and every player's dot, which moves to the Arcade, Bank, WestShop, Exchange, Estate Agency, their lab or their factory depending on their front window (home screen = home). Plus buy/sell/list/rent out/evict, fires with fire engines, ambulances and police, an economy dashboard.
 - **Taxes everywhere**: 4% on every trade with the market pool (shop, $WEST, games) and on casino payouts, 2% stamp duty on houses, daily property tax, daily wealth tax above $250k, 10% estate tax when a bot dies, hospital/fire bills. The treasury pays public-sector bots; bills are paid automatically when you can afford them and enforced by the city (collect cash → seize houses).
 - **Loans**: Bank → Loans: three plans (7/30/90 days), interest fixed up front, three loans at a time, late fees grow 2%/day.
 - **Bots**: 100 with unique characters, +10 a week, 40–100-day lives; they work, rent, buy and sell houses, buy items from the market, pay tax, and can be your tenants or landlords.
@@ -32,6 +32,9 @@ Casino outcomes and minigame scores are still reported by the browser (capped pe
 
 ## Wallet cap and taxes
 No account can hold more than **$50 trillion** (rule-enforced). The wealth tax is progressive: 0.5%/day above $250k, rising through 1.5%, 4%, 8%, 15%, 25% to **40%/day above $250 billion** — a $50T wallet would lose ~90% within ten days, so balances stay far below the cap.
+
+## Industrial plots and laboratories
+WestFactory only opens if you own a plot in the Industrial Estate ($250,000, `plotFee`); WestLab only opens if you own a laboratory in the University Quarter ($150,000, `labFee`). Each is bought once and the money goes to the city (the same closed loop as house sales: it only moves). Plot ownership is `world/plot/<uid>/<f|l>`; the rules require the exact fee, the server clock and the ledger tag `plot-f` / `plot-l`, and refuse a second purchase. The admin can change both fees in Settings → Economy (0 = free). Where a player stands on the map (`world/loc`) is cosmetic and never moves money.
 
 ## Building licences
 Council licence ($50,000, 30 days) → order up to three houses (studio … villa) with a deposit → within ~10 minutes the world server builds the next plot of that type, charges its real value + 5% and refunds the rest. Building and immediately selling to the city can't profit (105% in, 90% out).

@@ -110,6 +110,7 @@
   K.collectionBonus = () => 1 + Math.min(0.5, 0.004 * Object.keys(K.S.inv.e).length + 0.004 * K.S.lab.found.length);
   const CHEAP = ['H', 'C', 'N', 'O', 'Na', 'Mg', 'Al', 'Si', 'S', 'Cl', 'K', 'Ca', 'Fe', 'Zn', 'Cu'];
   K.award = function(gameId, base){
+    if(K.ledger && K.ledger.guestMsg && K.ledger.guestMsg()) return { amount: 0, bonus: 1, drop: null, earnedToday: 0, softcap: 0, guest: true };       // signed-out: view only, nothing is earned
     const g = K.gameDay(), plays = (g.plays[gameId] || 0) + 1; g.plays[gameId] = plays;
     const ec = econNow(), dim = Math.max(0.15, 1 - (plays - 1) * 0.12), soft = g.earned >= CFG.game.dailySoftcap * ec ? 0.25 : 1, bonus = K.collectionBonus();
     const homeless = K.ledger && K.ledger.homeless && K.ledger.homeless() ? 0.5 : 1;         // no home → half pay: find somewhere to live

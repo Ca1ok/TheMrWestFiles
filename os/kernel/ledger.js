@@ -94,10 +94,10 @@
     db.ref('eco/cfg').on('value', s => { L.cfg = E.cfgOf({ eco: { cfg: s.val() || {} } }); K.emit('eco'); });
     db.ref('eco/epoch').on('value', s => { const v = s.val(); if(L.epoch && v && v.n !== L.epoch.n){ K.emit('notify', { app: 'Settings', title: 'New economy', body: 'The WestEconomy was reset — reloading…' }); setTimeout(() => location.reload(), 1500); } });
     db.ref('eco/stats').on('value', s => { L.stats = s.val(); K.emit('eco'); });
-    listenBills(uid); listenLoans(uid); listenInbox(uid); listenHome(uid); listenBuild(uid);
-    L.started = true; return { offline: false, fresh: !sa.exists() };
+    listenBills(uid); listenLoans(uid); listenInbox(uid); listenHome(uid); listenBuild(uid); listenPlot(uid);
+    L.started = true; setTimeout(() => { try{ pushLoc(true); }catch(e){} }, 3000); return { offline: false, fresh: !sa.exists() };
   };
-  L.stop = function(){ if(!C.db) return; ['eco/cfg', 'eco/epoch', 'eco/stats', 'world/meta', 'world/own', 'world/ev'].forEach(p => { try{ C.db.ref(p).off(); }catch(e){} }); if(C.user){ ['eco/bill/', 'eco/loan/', 'eco/inbox/', 'world/home/'].forEach(p => { try{ C.db.ref(p + C.user.uid).off(); }catch(e){} }); try{ C.db.ref('world/own').orderByChild('o').equalTo(C.user.uid).off(); }catch(e){} } L.started = false; L.world = null; L.mine = {}; L.bills = {}; L.loans = {}; L.home = null; L.homeHouse = null; L.initGuest(); };
+  L.stop = function(){ if(!C.db) return; ['eco/cfg', 'eco/epoch', 'eco/stats', 'world/meta', 'world/own', 'world/ev'].forEach(p => { try{ C.db.ref(p).off(); }catch(e){} }); if(C.user){ ['eco/bill/', 'eco/loan/', 'eco/inbox/', 'world/home/'].forEach(p => { try{ C.db.ref(p + C.user.uid).off(); }catch(e){} }); try{ C.db.ref('world/own').orderByChild('o').equalTo(C.user.uid).off(); }catch(e){} try{ C.db.ref('world/plot/' + C.user.uid).off(); }catch(e){} try{ L.clearLoc(); }catch(e){} } try{ L.watchMap(false); }catch(e){} L.myPlot = null; L.started = false; L.world = null; L.mine = {}; L.bills = {}; L.loans = {}; L.home = null; L.homeHouse = null; L.initGuest(); };
 
   /* ---------- atomic operations: save pending state first, then ONE update the rules check against the ledger ---------- */
   let chain = Promise.resolve();
@@ -202,6 +202,46 @@
     changed(); return { result: { amount: dollars(g), og: L.og } };
   });
 
+  /* ---------- industrial plots (WestFactory) & University Quarter labs (WestLab) ----------
+   * Bought once for a fixed fee paid to the city, recorded in world/plot/<uid>/<f|l>. ONE atomic update like the building licence; database.rules.json checks the fee,
+   * the server clock and that the ledger tag (hop = 'plot-f' / 'plot-l') matches. Opening the app is gated in the shell (OS.homes.gate); the browser-edit limit is
+   * the same as the other player-reported flows (a cheater could open the app without a plot, but cannot get a plot without paying the city). */
+  L.myPlot = null;
+  function listenPlot(u){ C.db.ref('world/plot/' + u).on('value', s => { L.myPlot = s.val() || {}; K.emit('world'); K.emit('plots'); }, e => D.error('ledger.plot', e)); }
+  L.hasPlot = kind => !!(L.myPlot && L.myPlot[kind]);
+  L.plotFee = kind => kind === 'f' ? L.cfg.plotFee : L.cfg.labFee;
+  const NEEDS = { WestFactory: 'f', WestLab: 'l' };
+  /* null = fine to open; otherwise what is missing. Guests, an economy that has not started and a not-yet-loaded plot record never block. */
+  L.gate = id => { const kind = NEEDS[id]; if(!kind || L.guest || L.offline || !L.started || L.myPlot === null || L.hasPlot(kind)) return null; return { kind, fee: dollars(L.plotFee(kind)), app: id }; };
+  L.buyPlot = kind => needExec(async () => {
+    if(kind !== 'f' && kind !== 'l') return { error: 'Unknown plot.' }; if(await fresh('world/plot/' + uid() + '/' + kind)) return { error: kind === 'f' ? 'You already own an industrial plot.' : 'You already own a laboratory.' };
+    const fee = L.plotFee(kind); if(!move('city', fee)) return { error: (kind === 'f' ? 'An industrial plot' : 'A laboratory') + ' costs $' + dollars(fee).toLocaleString() + '.' };
+    L.acct.hop = 'plot-' + kind; logTx(-dollars(fee), kind === 'f' ? 'Industrial plot' : 'University lab'); changed(); return { paths: { ['world/plot/' + uid() + '/' + kind]: TS() }, result: { fee: dollars(fee) } };
+  });
+
+  /* ---------- where everybody is: the map's live layers ----------
+   * world/loc/<uid> = { p: place, t, n } is the app in your front window (see WorldGen.APP_PLACE); nothing on the map costs money. It is written only when the place
+   * changes (min 4.5 s apart), refreshed every 4 min while you are online, and removed when you disconnect. Readers ignore entries older than 12 minutes.
+   * The map listens to world/loc, world/plot and world/home ONLY while WestMap is open (L.watchMap) so the free tier is not spent on it all day. */
+  L.plots = {}; L.locs = {}; L.homes = {}; let mapOn = false, locWant = 'home', locSent = null, locAt = 0, locTimer = null, locRef = null;
+  L.watchMap = on => { if(!C.db) return; if(on && !mapOn){ mapOn = true;
+      C.db.ref('world/plot').on('value', s => { L.plots = s.val() || {}; K.emit('mapdata'); }, e => D.error('ledger.plots', e)); C.db.ref('world/loc').on('value', s => { L.locs = s.val() || {}; K.emit('mapdata'); }, e => D.error('ledger.loc', e));
+      C.db.ref('world/home').on('value', s => { L.homes = s.val() || {}; K.emit('mapdata'); }, e => D.error('ledger.homes', e)); }
+    else if(!on && mapOn){ mapOn = false; ['world/plot', 'world/loc', 'world/home'].forEach(p => { try{ C.db.ref(p).off(); }catch(e){} }); } };
+  function pushLoc(force){
+    clearTimeout(locTimer); locTimer = null; if(!C.user || L.guest || L.offline || !L.started || !name()) return; const now = Date.now();
+    if(!force && locWant === locSent && now - locAt < 240000){ locTimer = setTimeout(() => pushLoc(false), 240000 - (now - locAt) + 50); return; }
+    if(now - locAt < 4500){ locTimer = setTimeout(() => pushLoc(force), 4500 - (now - locAt) + 50); return; }
+    const ref = C.db.ref('world/loc/' + uid()); locAt = now; locSent = locWant;
+    ref.set({ p: locWant, t: TS(), n: name() }).then(() => { if(!locRef){ locRef = ref; try{ ref.onDisconnect().remove(); }catch(e){} } }).catch(e => { D.warn('loc', e && e.message); });
+    locTimer = setTimeout(() => pushLoc(false), 240000);
+  }
+  L.setPlace = place => { place = place || 'home'; if(place === locWant && locSent !== null) return; locWant = place; clearTimeout(locTimer); locTimer = setTimeout(() => pushLoc(true), 600); };
+  L.clearLoc = () => { clearTimeout(locTimer); locTimer = null; if(C.db && C.user && locRef){ try{ locRef.remove(); }catch(e){} } locRef = null; locSent = null; locAt = 0; };
+  K.on('focus', id => { try{ L.setPlace((W.APP_PLACE || {})[id] || 'home'); }catch(e){} });
+  K.on('auth', () => { if(!C.signedIn || !C.signedIn()) L.clearLoc(); });
+  document.addEventListener('visibilitychange', () => { if(document.hidden) return; if(locSent !== null) pushLoc(true); });
+
   /* ---------- houses ---------- */
   function listenHome(u){
     C.db.ref('world/home/' + u).on('value', s => { const v = s.val(); L.home = v && v.h ? v.h : null; K.emit('home'); if(L.home) watchHome(L.home); else { L.homeHouse = null; } }, e => D.error('ledger.home', e));
@@ -221,7 +261,7 @@
 
   /* the world, for WestMap: every house (one value listener; the SDK only downloads the changes after the first load) */
   L.watchWorld = function(cb){
-    if(L.world) return; L.world = {}; const db = C.db;
+    if(L.world || !C.db) return; L.world = {}; const db = C.db;
     db.ref('world/own').on('value', s => { L.world = s.val() || {}; K.emit('world'); }, e => D.error('ledger.world', e));
     db.ref('world/ev').on('value', s => { L.events = s.val() || {}; K.emit('world'); });
   };

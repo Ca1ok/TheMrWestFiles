@@ -16,87 +16,221 @@ h3{margin:0 0 4px;font:800 18px var(--font);letter-spacing:-.01em} .sub{color:va
 .ev{display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--sep,rgba(255,255,255,.07));cursor:pointer} .ev .dot{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font:800 15px var(--font);color:#fff;flex:none}
 .tag{display:inline-block;border-radius:6px;padding:2px 7px;font:700 11px var(--font);background:var(--fill,rgba(255,255,255,.1));margin-right:4px} .good{color:var(--good)} .bad{color:var(--bad)} .warnc{color:var(--warn)}
 @media (max-width:760px){#wm{flex-direction:column}#side{width:auto;max-width:none;height:46%;border-left:0}#bar{max-width:calc(100% - 20px)}}
-</style></head><body><div id="wm"><canvas id="cv"></canvas><div id="bar"></div><div id="zoom"><button data-z="1">+</button><button data-z="-1">−</button><button data-z="0" title="Fit">⌂</button></div><div id="legend"></div>
+.chip.on{background:var(--tint);color:#fff;border-color:transparent} .btn.mini{width:auto;padding:6px 10px;font-size:12.5px;margin:2px 4px 2px 0;display:inline-block} .who{display:flex;gap:8px;align-items:center;margin:2px 0} .who i{width:10px;height:10px;border-radius:50%;flex:none} #tip{position:absolute;pointer-events:none;background:var(--material,var(--card));backdrop-filter:blur(10px);border:1px solid var(--sep,rgba(255,255,255,.12));border-radius:9px;padding:5px 9px;font:700 12px var(--font);display:none;max-width:240px;z-index:3}
+</style></head><body><div id="wm"><canvas id="cv"></canvas><div id="bar"></div><div id="zoom"><button data-z="1">+</button><button data-z="-1">−</button><button data-z="0" title="Fit">⌂</button></div><div id="legend"></div><div id="tip"></div>
 <div id="side"><div id="tabs"></div><div id="pane"></div></div></div>
 <script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
 <script>
 const H = OS.homes, G = H.gen, { h, money, esc } = Kit, $ = s => document.querySelector(s);
-const cv = $('#cv'), ctx = cv.getContext('2d'), DAY = 86400000, HOUR = 3600000;
-let me = null, world = {}, list = [], byId = {}, bots = {}, sel = null, tab = 'info', filter = { mine: 0, sale: 0, rent: 0, fire: 0 }, V = { x: 0, y: 0, k: 1 }, fitted = false, need = true, vehicles = [], seenEv = new Set(), firstEv = true;
+const cv = $('#cv'), ctx = cv.getContext('2d'), DAY = 86400000, HOUR = 3600000, MIN = 60000;
+let me = null, world = {}, list = [], byId = {}, bots = {}, botList = [], owners = {}, sel = null, selX = null, follow = null, tab = 'info', filter = { mine: 0, sale: 0, rent: 0, fire: 0 }, layers = { npc: 1, ppl: 1 };
+let V = { x: 0, y: 0, k: 1 }, fitted = false, need = true, vehicles = [], seenEv = new Set(), firstEv = true, plots = {}, locs = {}, homesAll = {}, anim = {}, npcPos = [], pplPos = [];
 const dark = () => document.documentElement.dataset.theme !== 'light';
 const isBot = o => /^b\d+$/.test(o), fmt0 = n => '$' + Math.round(n).toLocaleString(), fmt2 = n => '$' + (+n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const COL = { mine: '#3fd07a', bank: '#8a93a6', player: '#5aa0f0', bot: '#e8a04f' };
 const kind = hs => hs.o === me ? 'mine' : hs.o === 'bank' ? 'bank' : isBot(hs.o) ? 'bot' : 'player';
 const toast = (m, ok) => Kit.toast(m, ok ? 'good' : 'bad');
+const nd = () => G.districtCount(list.length || 512), clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const PC = { bank: ['#4a6fa8', 'B'], exchange: ['#3fae78', 'E'], shop: ['#d9a441', 'S'], arcade: ['#b36be0', 'A'], agency: ['#c98a62', 'R'], hall: ['#7c8696', 'C'], park: ['#5d8f4a', 'P'], uni: ['#6f7fd0', 'U'], lab: ['#52b5b0', 'L'], ind: ['#c0764a', 'F'], plant: ['#8a6a58', 'W'] };
+const POI_APP = { bank: 'Bank', exchange: 'Stocks', shop: 'WestShop', arcade: 'Arcade', agency: 'RealEstate', lab: 'WestLab' };
+const POI_INFO = { bank: 'Deposits, loans and your tax bills.', exchange: 'Where $WEST shares are traded.', shop: 'Buy and sell elements and tools.', arcade: 'The casino. You must have a home to play.', agency: 'Houses for sale and rent.', hall: 'The council: licences, building orders and emergency services.', park: 'Central Park. Nice for a stroll.', uni: 'The University Library, a favourite of teachers and students.', lab: 'The Research Institute. Chemists and lab techs work here.', ind: 'The Freight Depot of the Industrial Estate.', plant: 'The power plant that keeps the factories running.' };
 
 /* ---------- data ---------- */
 function rebuild(){
-  world = H.world(); const ids = Object.keys(world); list = ids.map(id => { let e = byId[id]; if(!e){ e = byId[id] = { id, g: H.house(id) }; } e.h = world[id]; return e; }).filter(e => e.h); need = true;
-  if(!fitted && list.length){ fit(); fitted = true; } if(sel && !world[sel]) sel = null; paintSide();
+  world = H.world(); const ids = Object.keys(world); owners = {};
+  list = ids.map(id => { let e = byId[id]; if(!e){ e = byId[id] = { id, g: H.house(id) }; } e.h = world[id]; if(e.h.o && !isBot(e.h.o) && e.h.o !== 'bank' && e.h.on) owners[e.h.o] = e.h.on; return e; }).filter(e => e.h); need = true;
+  if(!fitted && list.length){ fit(); fitted = true; } if(sel && !world[sel]) sel = null; mapData(); paintSide();
 }
 function events(){ const ev = H.events(); Object.keys(ev).forEach(k => { if(seenEv.has(k)) return; seenEv.add(k); const e = ev[k]; if(!firstEv && Date.now() - e.t < 15 * 60000) launch(e); }); firstEv = false; }
-OS.on('world', () => { rebuild(); events(); if(tab === 'feed') paintSide(); }); OS.on('home', paintSide); OS.on('cash', Kit.debounce(() => { if(tab === 'me') paintSide(); }, 400)); OS.on('eco', () => { if(tab === 'eco') paintSide(); });
-async function loadBots(){ try{ bots = await H.bots(); if(tab === 'info' || tab === 'eco') paintSide(); }catch(e){} }
+const nameOf = uid => uid === me ? 'You' : (locs[uid] && locs[uid].n) || owners[uid] || 'A player';
+function mapData(){ plots = H.plots(); locs = H.locs(); homesAll = H.allHomes(); const now = Date.now(), n = nd();
+  Object.keys(locs).forEach(uid => { const l = locs[uid]; if(!l || !l.p || now - l.t > 12 * MIN) { delete anim[uid]; return; }
+    const hid = homesAll[uid] && homesAll[uid].h, to = G.playerPlace(l.p, uid, hid), a = anim[uid];
+    if(!a){ anim[uid] = { place: l.p, hid, cur: to, to, rt: null, t0: 0, dur: 1 }; }
+    else if(a.place !== l.p || a.hid !== hid){ const rt = G.route(a.cur, to, n), L = G.lenOf(rt); anim[uid] = { place: l.p, hid, cur: a.cur, from: a.cur, to, rt: L > 3 ? rt : null, t0: performance.now(), dur: clamp(L / 70 * 1000, 2500, 8000) }; } });
+  Object.keys(anim).forEach(uid => { if(!locs[uid] || now - locs[uid].t > 12 * MIN) delete anim[uid]; }); need = true; }
+function playerXY(uid, now){ const a = anim[uid]; if(!a) return null; if(a.rt){ const f = (now - a.t0) / a.dur; if(f >= 1){ a.rt = null; a.cur = a.to; } else { const p = G.posAlong(a.rt, f); a.cur = { x: p.x, y: p.y, node: a.to.node }; return { x: p.x, y: p.y, moving: true, a: p.a }; } } return { x: a.to.x, y: a.to.y, moving: false }; }
+OS.on('world', () => { rebuild(); events(); if(tab === 'feed') paintSide(); }); OS.on('mapdata', () => { mapData(); if(tab === 'places' || (selX && tab === 'info')) paintSideSoon(); }); OS.on('plots', () => { if(tab === 'places') paintSide(); });
+OS.on('home', paintSide); OS.on('cash', Kit.debounce(() => { if(tab === 'me') paintSide(); }, 400)); OS.on('eco', () => { if(tab === 'eco') paintSide(); });
+const paintSideSoon = Kit.debounce(() => paintSide(), 250);
+async function loadBots(){ try{ bots = await H.bots(); botList = Object.keys(bots).map(id => { const r = bots[id]; return { id, n: +id.slice(1), rec: r, b: { n: +id.slice(1), job: r.j || 'baker', thrift: typeof r.th === 'number' ? r.th : 0.5 }, home: r.h ? G.house(+String(r.h).slice(1)) : null }; }); need = true; if(tab === 'info' || tab === 'eco') paintSide(); }catch(e){} }
 
 /* ---------- view ---------- */
 function resize(){ const r = cv.getBoundingClientRect(), d = Math.min(2, devicePixelRatio || 1); cv.width = Math.round(r.width * d); cv.height = Math.round(r.height * d); ctx.setTransform(d, 0, 0, d, 0, 0); need = true; }
 addEventListener('resize', () => { resize(); }); new ResizeObserver(resize).observe(cv);
 function fit(){ const b = G.bounds(list.length || 512), w = cv.clientWidth || 800, hh = cv.clientHeight || 600; V.k = Math.min(w / (b.x1 - b.x0), hh / (b.y1 - b.y0)) * 0.95; V.x = w / 2 - (b.x0 + b.x1) / 2 * V.k; V.y = hh / 2 - (b.y0 + b.y1) / 2 * V.k; need = true; }
 const sx = x => x * V.k + V.x, sy = y => y * V.k + V.y;
-function focus(id){ const e = byId[id]; if(!e) return; sel = id; V.k = Math.max(V.k, 3.4); V.x = cv.clientWidth / 2 - e.g.x * V.k; V.y = cv.clientHeight / 2 - e.g.y * V.k; need = true; tab = 'info'; paintSide(); }
-function zoomAt(f, cx, cy){ const nk = Math.max(0.35, Math.min(9, V.k * f)), r = nk / V.k; V.x = cx - (cx - V.x) * r; V.y = cy - (cy - V.y) * r; V.k = nk; need = true; }
+function focusXY(x, y, k){ follow = null; V.k = Math.max(V.k, k || 3.4); V.x = cv.clientWidth / 2 - x * V.k; V.y = cv.clientHeight / 2 - y * V.k; need = true; }
+function focus(id){ const e = byId[id]; if(!e) return; sel = id; selX = null; focusXY(e.g.x, e.g.y); tab = 'info'; paintSide(); }
+function zoomAt(f, cx, cy){ const nk = Math.max(0.3, Math.min(9, V.k * f)), r = nk / V.k; V.x = cx - (cx - V.x) * r; V.y = cy - (cy - V.y) * r; V.k = nk; need = true; }
 let drag = null; const pts = new Map();
 cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.offsetX, y: e.offsetY }); drag = { x: e.offsetX, y: e.offsetY, vx: V.x, vy: V.y, moved: 0, d0: pts.size === 2 ? dist2() : 0, k0: V.k }; cv.classList.add('drag'); });
 cv.addEventListener('pointermove', e => { if(!pts.has(e.pointerId)) { hover(e); return; } pts.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
-  if(pts.size === 2 && drag){ const p = [...pts.values()], d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y); if(drag.d0 > 0){ const nk = Math.max(0.35, Math.min(9, drag.k0 * d / drag.d0)); zoomAt(nk / V.k, (p[0].x + p[1].x) / 2, (p[0].y + p[1].y) / 2); } else drag.d0 = d; return; }
-  if(drag){ drag.moved += Math.abs(e.offsetX - drag.x) + Math.abs(e.offsetY - drag.y); V.x = drag.vx + e.offsetX - drag.x; V.y = drag.vy + e.offsetY - drag.y; need = true; } });
+  if(pts.size === 2 && drag){ const p = [...pts.values()], d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y); if(drag.d0 > 0){ const nk = Math.max(0.3, Math.min(9, drag.k0 * d / drag.d0)); zoomAt(nk / V.k, (p[0].x + p[1].x) / 2, (p[0].y + p[1].y) / 2); } else drag.d0 = d; return; }
+  if(drag){ drag.moved += Math.abs(e.offsetX - drag.x) + Math.abs(e.offsetY - drag.y); if(drag.moved > 6) follow = null; V.x = drag.vx + e.offsetX - drag.x; V.y = drag.vy + e.offsetY - drag.y; need = true; } });
 const dist2 = () => { const p = [...pts.values()]; return Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y); };
-cv.addEventListener('pointerup', e => { pts.delete(e.pointerId); cv.classList.remove('drag'); if(drag && drag.moved < 6 && pts.size === 0){ const id = pick(e.offsetX, e.offsetY); sel = id; tab = 'info'; need = true; paintSide(); } if(!pts.size) drag = null; });
+cv.addEventListener('pointerup', e => { pts.delete(e.pointerId); cv.classList.remove('drag'); if(drag && drag.moved < 6 && pts.size === 0){ const r = hit(e.offsetX, e.offsetY); if(r && r.t === 'house'){ sel = r.id; selX = null; } else if(r){ selX = r; } else { sel = null; selX = null; } tab = 'info'; need = true; paintSide(); } if(!pts.size) drag = null; });
 cv.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.deltaY < 0 ? 1.18 : 1 / 1.18, e.offsetX, e.offsetY); }, { passive: false });
-document.querySelectorAll('#zoom button').forEach(b => b.onclick = () => { const z = +b.dataset.z; if(!z) fit(); else zoomAt(z > 0 ? 1.4 : 1 / 1.4, cv.clientWidth / 2, cv.clientHeight / 2); });
-function pick(px, py){ let best = null, bd = Math.max(5, 7 * V.k) ** 2; for(const e of list){ const dx = sx(e.g.x) - px, dy = sy(e.g.y) - py, d = dx * dx + dy * dy; if(d < bd){ bd = d; best = e.id; } } return best; }
-function hover(e){ cv.style.cursor = pick(e.offsetX, e.offsetY) ? 'pointer' : 'grab'; }
+document.querySelectorAll('#zoom button').forEach(b => b.onclick = () => { const z = +b.dataset.z; follow = null; if(!z) fit(); else zoomAt(z > 0 ? 1.4 : 1 / 1.4, cv.clientWidth / 2, cv.clientHeight / 2); });
+function pickHouse(px, py){ let best = null, bd = Math.max(5, 7 * V.k) ** 2; for(const e of list){ const dx = sx(e.g.x) - px, dy = sy(e.g.y) - py, d = dx * dx + dy * dy; if(d < bd){ bd = d; best = e.id; } } return best; }
+/* what is under the pointer: a person first, then a building, then a plot, then a house */
+function hit(px, py){
+  let best = null, bd = 100;
+  for(const p of pplPos){ const d = (sx(p.x) - px) ** 2 + (sy(p.y) - py) ** 2; if(d < bd + 20){ bd = d; best = { t: 'player', id: p.id }; } }
+  if(!best) for(const p of npcPos){ const d = (sx(p.x) - px) ** 2 + (sy(p.y) - py) ** 2; if(d < bd){ bd = d; best = { t: 'npc', id: p.id }; } }
+  if(best) return best;
+  for(const id in G.POIS){ if(id === 'hub') continue; const p = G.POIS[id], r = Math.max(9, 9 * Math.min(V.k, 2)); if(Math.abs(sx(p.x) - px) < r && Math.abs(sy(p.y) - py) < r) return { t: 'poi', id }; }
+  for(const uid in plots){ for(const kd of ['f', 'l']){ if(!plots[uid][kd]) continue; const c = G.plotCell(kd, uid); if(Math.abs(sx(c.x) - px) < c.w * V.k / 2 + 2 && Math.abs(sy(c.y) - py) < c.h * V.k / 2 + 2) return { t: 'plot', id: uid, kd }; } }
+  const hs = pickHouse(px, py); return hs ? { t: 'house', id: hs } : null;
+}
+const tip = $('#tip');
+function hover(e){ const r = hit(e.offsetX, e.offsetY); cv.style.cursor = r ? 'pointer' : 'grab'; let txt = '';
+  if(r){ if(r.t === 'npc'){ const b = bots[r.id]; txt = b ? b.n + ' · ' + b.j : ''; } else if(r.t === 'player') txt = nameOf(r.id); else if(r.t === 'poi') txt = G.POIS[r.id].n; else if(r.t === 'plot') txt = (r.kd === 'f' ? 'Factory plot · ' : 'Laboratory · ') + nameOf(r.id); else if(r.t === 'house'){ const e2 = byId[r.id]; txt = e2 ? e2.g.addr + ' · ' + e2.g.typeName : ''; } }
+  if(txt){ tip.textContent = txt; tip.style.display = 'block'; tip.style.left = Math.min(cv.clientWidth - 200, e.offsetX + 14) + 'px'; tip.style.top = (e.offsetY + 14) + 'px'; } else tip.style.display = 'none'; }
+cv.addEventListener('pointerleave', () => { tip.style.display = 'none'; });
 
 /* ---------- drawing ---------- */
+const ROADS = {};
+const roadsOf = k => ROADS[k] || (ROADS[k] = G.roads(k));
+function poly(pts, w, col, dash){ ctx.beginPath(); for(let i = 0; i < pts.length; i++){ const x = sx(pts[i][0]), y = sy(pts[i][1]); if(i) ctx.lineTo(x, y); else ctx.moveTo(x, y); } ctx.lineWidth = w; ctx.strokeStyle = col; ctx.setLineDash(dash || []); ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke(); ctx.setLineDash([]); }
+function rrect(x, y, w, hh, r){ ctx.beginPath(); if(ctx.roundRect) ctx.roundRect(x, y, w, hh, r); else ctx.rect(x, y, w, hh); }
 function shown(e){ const hs = e.h; if(filter.mine && hs.o !== me) return false; if(filter.sale && !(hs.a > 0 || hs.o === 'bank')) return false; if(filter.rent && !(hs.rh > 0 && !hs.t)) return false; if(filter.fire && !(hs.dm > 0)) return false; return true; }
+function remaining(rt, f){ const tot = G.lenOf(rt); if(f <= 0) return rt; let d = f * tot; for(let i = 1; i < rt.length; i++){ const sl = Math.hypot(rt[i][0] - rt[i - 1][0], rt[i][1] - rt[i - 1][1]); if(d <= sl){ const u = sl ? d / sl : 0; return [[rt[i - 1][0] + (rt[i][0] - rt[i - 1][0]) * u, rt[i - 1][1] + (rt[i][1] - rt[i - 1][1]) * u]].concat(rt.slice(i)); } d -= sl; } return [rt[rt.length - 1]]; }
+function npcAt(nb, now){ return G.npcState(nb.b, nb.home, now, nd()); }
 function draw(t){
-  const W = cv.clientWidth, Hh = cv.clientHeight, d = dark(); ctx.clearRect(0, 0, W, Hh);
-  const bg = ctx.createLinearGradient(0, 0, 0, Hh); bg.addColorStop(0, d ? '#10161c' : '#cfe3ea'); bg.addColorStop(1, d ? '#0b1014' : '#bcd7df'); ctx.fillStyle = bg; ctx.fillRect(0, 0, W, Hh);
-  const nd = G.districtCount(list.length || 512), size = Math.max(4, 11 * V.k);
-  for(let k = 0; k < nd; k++){ const D = G.district(k), x = sx(D.cx), y = sy(D.cy), r = 74 * V.k; if(x + r < 0 || y + r < 0 || x - r > W || y - r > Hh) continue;
-    ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = D.color + (d ? '26' : '33'); ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = D.color + '66'; ctx.stroke();
-    if(V.k < 2.6){ ctx.fillStyle = d ? '#e9dfcf' : '#2a2118'; ctx.font = '700 ' + Math.max(10, 12 * Math.min(1.6, V.k)) + 'px system-ui'; ctx.textAlign = 'center'; ctx.fillText(D.name, x, y - r - 6); } }
+  const W = cv.clientWidth, Hh = cv.clientHeight, d = dark(), k = V.k, now = Date.now(); ctx.clearRect(0, 0, W, Hh);
+  const bg = ctx.createLinearGradient(0, 0, 0, Hh); bg.addColorStop(0, d ? '#121b15' : '#d3e4c8'); bg.addColorStop(1, d ? '#0c120e' : '#bfd6b3'); ctx.fillStyle = bg; ctx.fillRect(0, 0, W, Hh);
+  const vx0 = -V.x / k, vy0 = -V.y / k, vx1 = (W - V.x) / k, vy1 = (Hh - V.y) / k, vis = (x, y, r) => x + r > vx0 && x - r < vx1 && y + r > vy0 && y - r < vy1, n = nd();
+  const roadC = d ? '#2d343c' : '#9aa1a8', casing = d ? '#171b20' : '#7a8087', txt = d ? '#e9dfcf' : '#2a2118', C = G.CORE;
+  /* zones: downtown, the University Quarter (labs) and the Industrial Estate (factories) */
+  ctx.fillStyle = d ? '#1d232a' : '#c5cbd0'; rrect(sx(C.x - 112), sy(C.y - 104), 224 * k, 208 * k, 14 * k); ctx.fill(); ctx.strokeStyle = d ? '#3a434d' : '#9aa1a8'; ctx.lineWidth = 1; ctx.stroke();
+  for(const zid of ['uni', 'ind']){ const z = G.ZONES[zid]; if(!vis((z.x0 + z.x1) / 2, (z.y0 + z.y1) / 2, 200)) continue; ctx.fillStyle = z.c + (d ? '26' : '30'); rrect(sx(z.x0 - 8), sy(z.y0 - 8), (z.x1 - z.x0 + 16) * k, (z.y1 - z.y0 + 16) * k, 10 * k); ctx.fill(); ctx.strokeStyle = z.c + '99'; ctx.lineWidth = 1.2; ctx.stroke();
+    if(k > 1.1){ ctx.strokeStyle = z.c + '40'; ctx.lineWidth = 1; const cw = (z.x1 - z.x0) / z.cols, rh = (z.y1 - z.y0) / z.rows; for(let i = 0; i < z.cols; i++) for(let j = 0; j < z.rows; j++){ ctx.strokeRect(sx(z.x0 + i * cw + cw * 0.15), sy(z.y0 + j * rh + rh * 0.19), cw * 0.7 * k, rh * 0.62 * k); } }
+    if(k < 3.2){ ctx.fillStyle = txt; ctx.font = '800 ' + clamp(12 * k, 10, 17) + 'px system-ui'; ctx.textAlign = 'center'; ctx.fillText(z.n, sx((z.x0 + z.x1) / 2), sy(z.y0 - 14)); } }
+  if(k < 3.2){ ctx.fillStyle = txt; ctx.font = '800 ' + clamp(12 * k, 10, 17) + 'px system-ui'; ctx.textAlign = 'center'; ctx.fillText('Downtown', sx(C.x), sy(C.y - 112)); }
+  /* districts: a soft disc, and a harder urban footprint for the cities */
+  for(let q = 0; q < n; q++){ const D = G.district(q), x = sx(D.cx), y = sy(D.cy), r = 76 * k; if(x + r < 0 || y + r < 0 || x - r > W || y - r > Hh) continue;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = D.color + (D.city ? (d ? '40' : '4d') : (d ? '1e' : '2e')); ctx.fill(); ctx.lineWidth = D.city ? 1.6 : 1; ctx.strokeStyle = D.color + (D.city ? 'aa' : '55'); ctx.stroke();
+    if(k < 2.8){ ctx.fillStyle = txt; ctx.font = '700 ' + clamp(12 * k, 10, 19) + 'px system-ui'; ctx.textAlign = 'center'; ctx.fillText(D.name, x, y - r - 6); if(D.city){ ctx.fillStyle = D.color; ctx.font = '800 ' + clamp(9 * k, 8, 13) + 'px system-ui'; ctx.fillText('CITY', x, y - r + clamp(8 * k, 9, 16)); } } }
+  /* highways: wide, with an express line to every city */
+  const hw = G.highways(n); hw.forEach(e => { const w = (e.spur ? 3.6 : e.express ? 7.4 : 6) * clamp(k, 0.55, 2.4); poly(e.pts, w + 2.4, casing); });
+  hw.forEach(e => { const w = (e.spur ? 3.6 : e.express ? 7.4 : 6) * clamp(k, 0.55, 2.4); poly(e.pts, w, e.express ? (d ? '#6e5530' : '#c9a463') : roadC); if(k > 0.8 && !e.spur) poly(e.pts, Math.max(1, w * 0.14), d ? '#e9dfcf' : '#fff', [w * 1.6, w * 1.6]); });
+  /* downtown streets */
+  ['bank', 'exchange', 'shop', 'arcade', 'agency', 'hall', 'park'].forEach(id => { const p = G.POIS[id]; poly([[C.x, C.y], [p.x, p.y]], 3.2 * clamp(k, 0.6, 2), roadC); }); poly([[C.x - 60, C.y - 40], [C.x + 60, C.y - 40], [C.x + 60, C.y + 40], [C.x - 60, C.y + 40], [C.x - 60, C.y - 40]], 2.4 * clamp(k, 0.6, 2), roadC);
+  /* suburban streets: four winding streets and a central avenue per district */
+  if(k > 0.5) for(let q = 0; q < n; q++){ const D = G.district(q); if(!vis(D.cx, D.cy, 90)) continue; roadsOf(q).forEach(r => { const w = (r.avenue ? 3.4 : 2.6) * clamp(k, 0.5, 3); if(k > 1.6) poly(r.pts, w + 1.6, casing); poly(r.pts, w, roadC); if(k > 2.4) poly(r.pts, Math.max(.8, w * .12), d ? '#c8bda8' : '#fff', [w * 1.4, w * 1.8]); }); }
+  /* buildings of the core */
+  for(const id in G.POIS){ if(id === 'hub') continue; const p = G.POIS[id], x = sx(p.x), y = sy(p.y); if(x < -30 || y < -30 || x > W + 30 || y > Hh + 30) continue; const s = 16 * clamp(k, 0.75, 2.2), c = PC[id]; ctx.fillStyle = c[0]; rrect(x - s / 2, y - s / 2, s, s, s * .24); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.4)'; ctx.lineWidth = 1; ctx.stroke(); ctx.fillStyle = '#fff'; ctx.font = '800 ' + s * .62 + 'px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(c[1], x, y + 1); ctx.textBaseline = 'alphabetic';
+    if(k > 0.9){ ctx.fillStyle = txt; ctx.font = '700 ' + clamp(9.5 * k, 9, 12) + 'px system-ui'; ctx.fillText(p.n, x, y + s / 2 + 11); } }
+  /* plots: every factory and laboratory that has been bought */
+  for(const uid in plots) for(const kd of ['f', 'l']){ if(!plots[uid][kd]) continue; const c = G.plotCell(kd, uid), x = sx(c.x), y = sy(c.y); if(x < -40 || y < -40 || x > W + 40 || y > Hh + 40) continue; const mine = uid === me, z = kd === 'f' ? G.ZONES.ind : G.ZONES.uni, w = c.w * k, hh = c.h * k;
+    ctx.fillStyle = mine ? '#3fd07a' : z.c; ctx.fillRect(x - w / 2, y - hh / 2, w, hh); ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(x - w / 2, y - hh / 2, w, hh * .28); if(kd === 'f'){ ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fillRect(x - w * .32, y - hh * .5 - hh * .22, w * .14, hh * .3); } if(mine){ ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.4; ctx.strokeRect(x - w / 2, y - hh / 2, w, hh); }
+    if(k > 2.2){ ctx.fillStyle = txt; ctx.font = '700 ' + clamp(8 * k, 9, 11) + 'px system-ui'; ctx.textAlign = 'center'; ctx.fillText(nameOf(uid), x, y + hh / 2 + 10); } }
+  /* houses */
+  const size = Math.max(3.2, 7 * k);
   for(const e of list){ const x = sx(e.g.x), y = sy(e.g.y); if(x < -20 || y < -20 || x > W + 20 || y > Hh + 20) continue; const hs = e.h, on = shown(e), s = size * (hs.v > 6e7 ? 1.25 : hs.v > 1.5e7 ? 1.1 : 1);
-    ctx.globalAlpha = on ? 1 : 0.16; ctx.fillStyle = COL[kind(hs)]; ctx.fillRect(x - s / 2, y - s / 2, s, s);
-    if(hs.dm > 0){ ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(x - s / 2, y - s / 2, s, s * hs.dm / 100); }
-    if(hs.t && V.k > 1.2){ ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, Math.max(1.2, s * .17), 0, 7); ctx.fill(); }
+    ctx.globalAlpha = on ? 1 : 0.16; ctx.save(); ctx.translate(x, y); if(k > 1.6) ctx.rotate(e.g.ang || 0); ctx.fillStyle = COL[kind(hs)]; ctx.fillRect(-s / 2, -s / 2, s, s);
+    if(e.g.city && k > 1.3){ ctx.fillStyle = 'rgba(255,255,255,.3)'; ctx.fillRect(-s / 2, -s / 2, s, s * .3); } if(hs.dm > 0){ ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(-s / 2, -s / 2, s, s * hs.dm / 100); }
+    if(hs.o === me && k > 1.6){ ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.2; ctx.strokeRect(-s / 2, -s / 2, s, s); } ctx.restore();
+    if(hs.t && k > 1.2){ ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, Math.max(1.2, s * .17), 0, 7); ctx.fill(); }
     if(hs.a > 0 && hs.o !== 'bank'){ ctx.fillStyle = '#ffd24a'; ctx.fillRect(x + s / 2 - s * .32, y - s / 2 - s * .12, s * .38, s * .3); }
-    if(hs.rh > 0 && !hs.t && V.k > 1.4){ ctx.strokeStyle = '#7fe0b0'; ctx.lineWidth = 1.4; ctx.strokeRect(x - s / 2 - 1.5, y - s / 2 - 1.5, s + 3, s + 3); }
-    if(hs.f && hs.dm > 0){ const p = 0.6 + 0.4 * Math.sin(t / 130 + e.g.i); ctx.globalAlpha = on ? 1 : 0.4; ctx.fillStyle = 'rgba(255,' + Math.round(90 + 70 * p) + ',30,.95)'; ctx.beginPath(); ctx.moveTo(x, y - s * (.9 + .3 * p)); ctx.lineTo(x + s * .42, y + s * .1); ctx.lineTo(x - s * .42, y + s * .1); ctx.fill(); ctx.fillStyle = 'rgba(255,230,120,.95)'; ctx.beginPath(); ctx.moveTo(x, y - s * .45); ctx.lineTo(x + s * .2, y + s * .1); ctx.lineTo(x - s * .2, y + s * .1); ctx.fill(); }
-    if(hs.o === me && V.k > 1.6){ ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.2; ctx.strokeRect(x - s / 2, y - s / 2, s, s); } ctx.globalAlpha = 1; }
-  for(let k = 0; k < nd; k++){ if(V.k < 1.1) break; G.stations(k).forEach(s => { const x = sx(s.x), y = sy(s.y), r = Math.max(5, 7 * Math.min(V.k, 2.2)); if(x < -20 || y < -20 || x > W + 20 || y > Hh + 20) return;
-    ctx.fillStyle = s.t === 'fire' ? '#e5484d' : s.t === 'police' ? '#3a6fd8' : '#f4f4f4'; ctx.beginPath(); ctx.roundRect(x - r, y - r, r * 2, r * 2, r * .35); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.stroke();
-    ctx.fillStyle = s.t === 'ambulance' ? '#e5484d' : '#fff'; if(s.t === 'ambulance'){ ctx.fillRect(x - r * .55, y - r * .16, r * 1.1, r * .32); ctx.fillRect(x - r * .16, y - r * .55, r * .32, r * 1.1); } else if(s.t === 'police'){ ctx.beginPath(); ctx.moveTo(x, y - r * .6); ctx.lineTo(x + r * .5, y - r * .3); ctx.lineTo(x + r * .4, y + r * .35); ctx.lineTo(x, y + r * .65); ctx.lineTo(x - r * .4, y + r * .35); ctx.lineTo(x - r * .5, y - r * .3); ctx.fill(); } else { ctx.beginPath(); ctx.moveTo(x, y - r * .6); ctx.lineTo(x + r * .45, y + r * .5); ctx.lineTo(x - r * .45, y + r * .5); ctx.fill(); } }); }
-  const now = performance.now(); vehicles = vehicles.filter(v => now - v.t0 < v.dur + 2500);
-  vehicles.forEach(v => { const p = Math.min(1, (now - v.t0) / v.dur), x = sx(v.from.x + (v.to.x - v.from.x) * p), y = sy(v.from.y + (v.to.y - v.from.y) * p); const flash = Math.floor(now / 160) % 2; ctx.fillStyle = v.t === 'fire' ? '#ff4d4d' : v.t === 'police' ? (flash ? '#4d8dff' : '#ff4d4d') : '#fff'; ctx.beginPath(); ctx.arc(x, y, Math.max(3.5, 4.5 * Math.min(V.k, 2)), 0, 7); ctx.fill(); ctx.strokeStyle = flash ? '#fff' : '#000'; ctx.lineWidth = 1.5; ctx.stroke(); if(p >= 1){ ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.font = '700 11px system-ui'; ctx.fillText(v.label, x + 8, y - 8); } });
+    if(hs.rh > 0 && !hs.t && k > 1.4){ ctx.strokeStyle = '#7fe0b0'; ctx.lineWidth = 1.4; ctx.strokeRect(x - s / 2 - 1.5, y - s / 2 - 1.5, s + 3, s + 3); }
+    if(hs.f && hs.dm > 0){ const p = 0.6 + 0.4 * Math.sin(t / 130 + e.g.i); ctx.globalAlpha = on ? 1 : 0.4; ctx.fillStyle = 'rgba(255,' + Math.round(90 + 70 * p) + ',30,.95)'; ctx.beginPath(); ctx.moveTo(x, y - s * (.9 + .3 * p)); ctx.lineTo(x + s * .42, y + s * .1); ctx.lineTo(x - s * .42, y + s * .1); ctx.fill(); }
+    ctx.globalAlpha = 1; }
+  for(let q = 0; q < n; q++){ if(k < 1.1) break; G.stations(q).forEach(s => { const x = sx(s.x), y = sy(s.y), r = Math.max(5, 7 * Math.min(k, 2.2)); if(x < -20 || y < -20 || x > W + 20 || y > Hh + 20) return;
+    ctx.fillStyle = s.t === 'fire' ? '#e5484d' : s.t === 'police' ? '#3a6fd8' : '#f4f4f4'; rrect(x - r, y - r, r * 2, r * 2, r * .35); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.stroke();
+    ctx.fillStyle = s.t === 'ambulance' ? '#e5484d' : '#fff'; if(s.t === 'ambulance'){ ctx.fillRect(x - r * .55, y - r * .16, r * 1.1, r * .32); ctx.fillRect(x - r * .16, y - r * .55, r * .32, r * 1.1); } else if(s.t === 'police'){ ctx.beginPath(); ctx.moveTo(x, y - r * .6); ctx.lineTo(x + r * .5, y - r * .3); ctx.lineTo(x + r * .4, y + r * .35); ctx.lineTo(x, y + r * .6); ctx.lineTo(x - r * .4, y + r * .35); ctx.lineTo(x - r * .5, y - r * .3); ctx.closePath(); ctx.fill(); } else { ctx.beginPath(); ctx.moveTo(x, y - r * .6); ctx.lineTo(x + r * .5, y + r * .5); ctx.lineTo(x - r * .5, y + r * .5); ctx.fill(); } }); }
+  const pn = performance.now(); vehicles = vehicles.filter(v => pn - v.t0 < v.dur + 2500);
+  vehicles.forEach(v => { const p = Math.min(1, (pn - v.t0) / v.dur), x = sx(v.from.x + (v.to.x - v.from.x) * p), y = sy(v.from.y + (v.to.y - v.from.y) * p); const flash = Math.floor(pn / 160) % 2; ctx.fillStyle = v.t === 'fire' ? '#ff4d4d' : v.t === 'police' ? (flash ? '#4d8dff' : '#ff4d4d') : '#fff'; ctx.beginPath(); ctx.arc(x, y, Math.max(3.5, 4.5 * Math.min(k, 2)), 0, 7); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.lineWidth = 1; ctx.stroke(); if(p >= 1){ ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.beginPath(); ctx.arc(x, y, 8 + (pn - v.t0 - v.dur) / 90, 0, 7); ctx.stroke(); } });
   if(sel && byId[sel]){ const e = byId[sel], x = sx(e.g.x), y = sy(e.g.y), pulse = 1 + 0.12 * Math.sin(t / 220); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.4; ctx.beginPath(); ctx.arc(x, y, size * 1.15 * pulse, 0, 7); ctx.stroke(); ctx.strokeStyle = '#000'; ctx.lineWidth = .8; ctx.stroke(); }
+  /* the NPCs: one dot each; the chosen one shows where it is going */
+  npcPos = []; const nr = clamp(2 + k * 0.9, 3, 6.5);
+  if(layers.npc) for(const nb of botList){ const st = npcAt(nb, now), x = sx(st.x), y = sy(st.y); npcPos.push({ id: nb.id, x: st.x, y: st.y }); if(x < -10 || y < -10 || x > W + 10 || y > Hh + 10) continue;
+    ctx.fillStyle = nb.rec.c || '#e8a04f'; ctx.beginPath(); ctx.arc(x, y, nr, 0, 7); ctx.fill(); ctx.lineWidth = st.moving ? 1.6 : 1; ctx.strokeStyle = st.moving ? '#fff' : 'rgba(0,0,0,.55)'; ctx.stroke(); }
+  if(selX && selX.t === 'npc'){ const nb = botList.find(q => q.id === selX.id); if(nb){ const st = npcAt(nb, now), x = sx(st.x), y = sy(st.y);
+    if(st.moving){ poly(st.route.map(p => p), Math.max(2, 3 * Math.min(k, 2)), 'rgba(255,210,74,.28)'); poly(remaining(st.route, st.f), Math.max(2.2, 3.4 * Math.min(k, 2)), '#ffd24a', [8, 6]); }
+    const dx = sx(st.to.x), dy = sy(st.to.y), pu = 1 + 0.15 * Math.sin(t / 200); ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 2.2; ctx.beginPath(); ctx.arc(dx, dy, 9 * pu, 0, 7); ctx.stroke(); ctx.fillStyle = '#ffd24a'; ctx.font = '800 11.5px system-ui'; ctx.textAlign = 'center'; ctx.fillText(st.to.label, dx, dy - 14);
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.4; ctx.beginPath(); ctx.arc(x, y, nr + 4 + Math.sin(t / 180), 0, 7); ctx.stroke(); ctx.fillStyle = txt; ctx.font = '800 12px system-ui'; ctx.fillText(nb.rec.n || nb.id, x, y - nr - 8); } }
+  /* the players, wherever their front window puts them */
+  pplPos = []; if(layers.ppl) for(const uid in anim){ const p = playerXY(uid, pn); if(!p) continue; pplPos.push({ id: uid, x: p.x, y: p.y }); const x = sx(p.x), y = sy(p.y); if(x < -30 || y < -30 || x > W + 30 || y > Hh + 30) continue; const mine = uid === me, r = clamp(4.6 + k * 0.9, 5.5, 9);
+    ctx.fillStyle = mine ? '#3fd07a' : '#5aa0f0'; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke(); if(mine){ ctx.strokeStyle = 'rgba(63,208,122,.55)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r + 4 + 2 * Math.sin(t / 260), 0, 7); ctx.stroke(); }
+    const nm = nameOf(uid); ctx.font = '800 11.5px system-ui'; ctx.textAlign = 'center'; const tw = ctx.measureText(nm).width + 10; ctx.fillStyle = 'rgba(15,18,22,.78)'; rrect(x - tw / 2, y - r - 19, tw, 16, 8); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillText(nm, x, y - r - 7); }
+  if(selX && selX.t === 'player'){ const p = playerXY(selX.id, pn); if(p){ ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.4; ctx.beginPath(); ctx.arc(sx(p.x), sy(p.y), 15 + Math.sin(t / 180), 0, 7); ctx.stroke(); } }
+  if(selX && (selX.t === 'poi')){ const p = G.POIS[selX.id]; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.4; ctx.beginPath(); ctx.arc(sx(p.x), sy(p.y), 14 * clamp(k, .8, 2) + Math.sin(t / 200), 0, 7); ctx.stroke(); }
 }
+
 function launch(ev){ const types = ev.k === 'fire' ? ['fire'] : ev.k === 'police' ? ['police'] : ['ambulance'], e = byId[ev.h]; if(!e) return; const nd = G.districtCount(list.length); let best = null, bd = 1e12;
   for(let k = 0; k < nd; k++){ const s = G.stations(k).find(q => q.t === types[0]), dd = (s.x - e.g.x) ** 2 + (s.y - e.g.y) ** 2; if(dd < bd){ bd = dd; best = s; } }
   if(best) vehicles.push({ t: types[0], from: best, to: e.g, t0: performance.now(), dur: 5000 + Math.min(4000, Math.sqrt(bd) * 18), label: ev.k === 'fire' ? 'Fire crew' : ev.k === 'police' ? 'Police' : 'Ambulance' }); need = true; }
-(function loop(t){ if(need || vehicles.length || list.some(e => e.h.f && e.h.dm > 0)){ draw(t); need = false; } requestAnimationFrame(loop); })(0);
+let lastDraw = 0, lastFrame = 0;
+(function loop(t){ requestAnimationFrame(loop); if(document.hidden || t - lastDraw < 28) return; lastDraw = t;
+  if(follow){ let p = null; if(follow.t === 'npc'){ const nb = botList.find(q => q.id === follow.id); if(nb) p = npcAt(nb, Date.now()); } else if(follow.t === 'player') p = playerXY(follow.id, performance.now()); if(p){ V.x += (cv.clientWidth / 2 - p.x * V.k - V.x) * 0.18; V.y += (cv.clientHeight / 2 - p.y * V.k - V.y) * 0.18; } }
+  draw(t); })(0);
 
 /* ---------- side panel ---------- */
-const TABS = [['info', 'House'], ['me', 'Me'], ['eco', 'Economy'], ['feed', 'Events']];
+const TABS = [['info', 'Info'], ['places', 'Places'], ['me', 'Me'], ['eco', 'Economy'], ['feed', 'Events']];
 function paintTabs(){ const t = $('#tabs'); t.innerHTML = ''; TABS.forEach(([id, l]) => t.appendChild(h('button', { class: tab === id ? 'on' : '', onclick: () => { tab = id; paintSide(); } }, l))); }
-function paintBar(){ const b = $('#bar'); b.innerHTML = ''; [['mine', 'My houses'], ['sale', 'For sale'], ['rent', 'To rent'], ['fire', 'Damaged']].forEach(([k, l]) => b.appendChild(h('button', { class: 'chip' + (filter[k] ? ' on' : ''), onclick: () => { filter[k] = filter[k] ? 0 : 1; need = true; paintBar(); } }, l)));
-  $('#legend').innerHTML = [['mine', 'You'], ['bank', 'City'], ['player', 'Players'], ['bot', 'Bots']].map(([k, l]) => '<span><i style="background:' + COL[k] + '"></i>' + l + '</span>').join('') + '<span>🔥 fire</span>'.replace('🔥', '▲') + '<span><i style="background:#ffd24a"></i>for sale</span>'; }
-function paintSide(){ paintTabs(); const p = $('#pane'); p.innerHTML = ''; ({ info: paintInfo, me: paintMe, eco: paintEco, feed: paintFeed })[tab](p); }
+function paintBar(){ const b = $('#bar'); b.innerHTML = ''; [['mine', 'My houses'], ['sale', 'For sale'], ['rent', 'To rent'], ['fire', 'Damaged']].forEach(([k, l]) => b.appendChild(h('button', { class: 'chip' + (filter[k] ? ' on' : ''), onclick: () => { filter[k] = filter[k] ? 0 : 1; paintBar(); } }, l)));
+  [['ppl', 'Players'], ['npc', 'NPCs']].forEach(([k, l]) => b.appendChild(h('button', { class: 'chip' + (layers[k] ? ' on' : ''), onclick: () => { layers[k] = layers[k] ? 0 : 1; paintBar(); } }, l)));
+  $('#legend').innerHTML = [['mine', 'You'], ['bank', 'City'], ['player', 'Players'], ['bot', 'Bots']].map(([k, l]) => '<span><i style="background:' + COL[k] + '"></i>' + l + '</span>').join('') + '<span><i style="background:#ffd24a"></i>for sale</span><span><i style="background:#2d343c;border:1px solid #8a93a6"></i>highway</span><span><i style="background:#c9a463"></i>express to a city</span>'; }
+function paintSide(){ paintTabs(); const p = $('#pane'); p.innerHTML = ''; ({ info: paintInfo, places: paintPlaces, me: paintMe, eco: paintEco, feed: paintFeed })[tab](p); }
+const ago = ms => ms < 90000 ? Math.max(1, Math.round(ms / 1000)) + 's' : Math.round(ms / 60000) + ' min';
+const placeName = pl => G.PLACE_NAMES[pl] || 'Home';
+const people = () => { const now = Date.now(); return Object.keys(locs).filter(u => locs[u] && locs[u].p && now - locs[u].t < 12 * MIN).map(u => ({ uid: u, l: locs[u] })); };
+const whoHere = (x, y, r) => { const out = []; pplPos.forEach(p => { if(Math.hypot(p.x - x, p.y - y) < r) out.push({ t: 'player', id: p.id, name: nameOf(p.id) }); }); npcPos.forEach(p => { if(Math.hypot(p.x - x, p.y - y) < r && bots[p.id]) out.push({ t: 'npc', id: p.id, name: bots[p.id].n }); }); return out; };
+const pick2 = x => { selX = x; tab = 'info'; paintSide(); };
+function paintInfo(p){ if(selX){ if(selX.t === 'npc') return paintNpc(p); if(selX.t === 'player') return paintPlayer(p); if(selX.t === 'poi') return paintPoi(p); if(selX.t === 'plot') return paintPlot(p); } paintHouse(p); }
+function paintNpc(p){
+  const nb = botList.find(q => q.id === selX.id), r = bots[selX.id]; if(!nb || !r){ p.append(h('div', { class: 'sub' }, 'This person is no longer in WestCountry.')); return; }
+  const st = npcAt(nb, Date.now()), now = Date.now(), why = x => G.WHY[x.why] || 'out and about';
+  p.append(h('h3', null, r.n), h('div', { class: 'sub' }, r.j + ' · ' + (r.tier ? ['', 'modest', 'comfortable', 'well-off', 'wealthy', 'rich'][r.tier] + ' income' : '')), h('div', { style: { margin: '8px 0' } }, h('span', { class: 'tag' }, 'NPC'), nb.home ? h('span', { class: 'tag' }, 'lives at ' + nb.home.addr) : h('span', { class: 'tag warnc' }, 'homeless')));
+  p.append(h('div', { class: 'card' }, h('b', null, st.moving ? 'On the way to ' + st.to.label : 'At ' + st.to.label), h('div', { class: 'sub' }, st.moving ? why(st.to) + ' · arriving in ' + ago(st.eta) : (st.to.why === 'home' ? 'At home.' : 'Here for ' + why(st.to).replace(/^(going|heading to|visiting|checking|looking at)\s?/, '') + '.')), h('div', { class: 'sub', style: { marginTop: '6px' } }, 'Starts from ' + st.from.label)));
+  p.append(h('div', { class: 'card' }, h('b', null, 'Next stops'), ...st.next.map((x, i) => h('div', { class: 'sub' }, (i ? 'Then ' : 'Next: ') + x.label + ' — ' + why(x)))));
+  p.append(btn(follow && follow.id === r.id ? 'Stop following' : 'Follow ' + r.n.split(' ')[0], () => { follow = follow && follow.id === selX.id ? null : { t: 'npc', id: selX.id }; if(follow) V.k = Math.max(V.k, 2.6); paintSide(); }), btn('Show destination', () => focusXY(st.to.x, st.to.y, Math.max(V.k, 2.4)), 'sec'), nb.home ? btn('Show their home', () => focus(nb.home.id), 'sec') : '');
+  p.append(h('div', { class: 'sub', style: { marginTop: '8px' } }, r.bio + (r.cash ? ' Has about ' + fmt0(r.cash) + ' in the bank.' : '')));
+  clearTimeout(paintNpc.t); paintNpc.t = setTimeout(() => { if(tab === 'info' && selX && selX.t === 'npc') paintSide(); }, 2000);
+}
+function paintPlayer(p){
+  const uid = selX.id, l = locs[uid], mine = uid === me; if(!l){ p.append(h('div', { class: 'sub' }, 'This player has gone offline.')); return; }
+  const a = anim[uid], moving = a && a.rt, hid = homesAll[uid] && homesAll[uid].h;
+  p.append(h('h3', null, nameOf(uid)), h('div', { style: { margin: '8px 0' } }, h('span', { class: 'tag' }, mine ? 'You' : 'Player'), h('span', { class: 'tag good' }, 'online')), h('div', { class: 'card' }, h('b', null, (moving ? 'Heading to ' : 'At ') + placeName(l.p)), h('div', { class: 'sub' }, 'Players appear where their front window is: the Arcade app puts them in the Arcade, the Bank app in the Bank, and so on. With no window open (or any other app) they are at home.')));
+  p.append(btn(follow && follow.id === uid ? 'Stop following' : 'Follow', () => { follow = follow && follow.id === uid ? null : { t: 'player', id: uid }; if(follow) V.k = Math.max(V.k, 2.6); paintSide(); }), hid && byId[hid] ? btn('Show their home', () => focus(hid), 'sec') : '');
+  clearTimeout(paintNpc.t); paintNpc.t = setTimeout(() => { if(tab === 'info' && selX && selX.t === 'player') paintSide(); }, 2500);
+}
+function paintPoi(p){
+  const id = selX.id, o = G.POIS[id], app = POI_APP[id], near = whoHere(o.x, o.y, 26);
+  p.append(h('h3', null, o.n), h('div', { class: 'sub' }, POI_INFO[id] || ''));
+  if(app) p.append(btn('Go there — open ' + (APPNAME[app] || app), () => OS.open(app)));
+  p.append(h('h3', { style: { marginTop: '14px' } }, 'Here now (' + near.length + ')')); if(!near.length) p.append(h('div', { class: 'sub' }, 'Nobody at the moment.'));
+  near.slice(0, 30).forEach(x => p.append(h('div', { class: 'ev', onclick: () => pick2({ t: x.t, id: x.id }) }, h('div', { class: 'dot', style: { background: x.t === 'player' ? '#5aa0f0' : (bots[x.id] && bots[x.id].c) || '#e8a04f' } }, x.name[0]), h('div', null, h('b', null, x.name), h('div', { class: 'sub' }, x.t === 'player' ? 'Player' : bots[x.id].j)))));
+}
+const APPNAME = { Bank: 'the Bank', Stocks: 'Stocks', WestShop: 'WestShop', Arcade: 'the Arcade', RealEstate: 'Real Estate', WestLab: 'WestLab' };
+function paintPlot(p){
+  const uid = selX.id, kd = selX.kd, mine = uid === me, z = kd === 'f' ? G.ZONES.ind : G.ZONES.uni;
+  p.append(h('h3', null, kd === 'f' ? 'Factory plot' : 'Laboratory'), h('div', { class: 'sub' }, z.n + ' · owned by ' + nameOf(uid)), h('div', { style: { margin: '8px 0' } }, mine ? h('span', { class: 'tag good' }, 'Yours') : ''));
+  p.append(h('div', { class: 'card' }, h('div', { class: 'sub' }, kd === 'f' ? 'WestFactory runs from a plot in the Industrial Estate. Each player buys theirs once.' : 'WestLab runs from a laboratory in the University Quarter. Each player buys theirs once.')));
+  if(mine) p.append(btn('Open ' + (kd === 'f' ? 'WestFactory' : 'WestLab'), () => OS.open(kd === 'f' ? 'WestFactory' : 'WestLab')));
+}
+function paintPlaces(p){
+  const lv = H.home(), l = locs[me], now = Date.now(); p.append(h('h3', null, 'Where you are'));
+  p.append(h('div', { class: 'card' }, h('b', null, l && now - l.t < 12 * MIN ? placeName(l.p) : (H.ready() ? 'Home' : 'Not signed in')), h('div', { class: 'sub' }, 'Your dot follows the app in your front window: Arcade → the Arcade, Bank → the Bank, WestShop, Stocks → the Exchange, Real Estate → the Estate Agency, WestLab → your laboratory, WestFactory → your factory. Everything else, or just the home screen, is home. Everyone with this map open sees it.')));
+  p.append(h('h3', { style: { marginTop: '14px' } }, 'Your workplaces'));
+  [['f', 'Industrial plot', 'WestFactory', G.ZONES.ind], ['l', 'Laboratory', 'WestLab', G.ZONES.uni]].forEach(([kd, nm, app, z]) => { const own = H.plot(kd), fee = H.plotFee(kd);
+    p.append(h('div', { class: 'card' }, h('b', null, nm + ' — ' + z.n), h('div', { class: 'sub' }, kd === 'f' ? 'WestFactory only opens if you own a plot in the Industrial Estate.' : 'WestLab only opens if you own a laboratory in the University Quarter.'),
+      own ? h('div', null, h('span', { class: 'tag good' }, 'Owned'), btn('Show on map', () => { const c = G.plotCell(kd, me); focusXY(c.x, c.y, 4); }, 'sec'), btn('Open ' + app, () => OS.open(app), 'sec'))
+          : h('div', null, h('div', { class: 'row2', style: { margin: '6px 0' } }, h('b', null, fmt0(fee)), h('span', { class: 'sub' }, 'once, paid to the city')), H.ready() ? btn('Buy ' + nm.toLowerCase(), () => act(() => H.buyPlot(kd), nm + ' bought!').then(() => { mapData(); paintSide(); }), '') : h('div', { class: 'sub bad' }, H.guest() ? 'Sign in to buy.' : 'The economy has not been started.')))); });
+  const pl = people(); p.append(h('h3', { style: { marginTop: '14px' } }, 'Players online (' + pl.length + ')')); if(!pl.length) p.append(h('div', { class: 'sub' }, 'Nobody with a window open right now.'));
+  pl.sort((a, b) => nameOf(a.uid).localeCompare(nameOf(b.uid))).forEach(x => p.append(h('div', { class: 'ev', onclick: () => { pick2({ t: 'player', id: x.uid }); const q = playerXY(x.uid, performance.now()); if(q) focusXY(q.x, q.y, 3.2); } }, h('div', { class: 'dot', style: { background: x.uid === me ? COL.mine : '#5aa0f0' } }, nameOf(x.uid)[0]), h('div', null, h('b', null, nameOf(x.uid)), h('div', { class: 'sub' }, placeName(x.l.p))))));
+  p.append(h('h3', { style: { marginTop: '14px' } }, 'Places'));
+  Object.keys(G.POIS).filter(id => id !== 'hub').forEach(id => { const o = G.POIS[id], c = PC[id]; p.append(h('div', { class: 'ev', onclick: () => { pick2({ t: 'poi', id }); focusXY(o.x, o.y, 3); } }, h('div', { class: 'dot', style: { background: c[0] } }, c[1]), h('div', null, h('b', null, o.n), h('div', { class: 'sub' }, POI_INFO[id])))); });
+  p.append(h('div', { class: 'sub', style: { marginTop: '10px' } }, 'Highways link downtown to every district. The orange express roads run straight to the cities, where the most expensive houses are.'));
+}
+
 const who = hs => hs.o === 'bank' ? 'The City' : hs.on || 'Player';
 async function act(fn, ok){ const r = await fn(); toast(r.msg || (r.ok ? ok : 'Not possible.'), r.ok); if(r.ok){ await new Promise(r => setTimeout(r, 400)); rebuild(); } return r; }
-function paintInfo(p){
+function paintHouse(p){
   if(!H.ready()){ p.append(h('div', { class: 'card' }, h('b', null, H.guest() ? 'Sign in to buy and rent' : 'The economy has not been started'), h('div', { class: 'sub' }, 'You can still look around — the map shows every house in WestCountry.'))); }
-  const e = sel && byId[sel]; if(!e){ p.append(h('h3', null, 'WestCountry'), h('div', { class: 'sub' }, 'Tap a house. Green is yours, grey belongs to the city, blue to other players, orange to bots. Money never appears or disappears here — houses just change hands.'), h('div', { class: 'card' }, h('b', null, list.length + ' houses'), h('div', { class: 'sub' }, list.filter(x => x.h.o === 'bank' && !x.h.t).length + ' vacant city houses · ' + list.filter(x => x.h.a > 0 && x.h.o !== 'bank').length + ' for sale by owners'))); return; }
+  const e = sel && byId[sel]; if(!e){ p.append(h('h3', null, 'WestCountry'), h('div', { class: 'sub' }, 'Tap a house, a person, a building or a plot. Green is yours, grey belongs to the city, blue to other players, orange to bots. Money never appears or disappears here — houses just change hands.'), h('div', { class: 'card' }, h('b', null, list.length + ' houses'), h('div', { class: 'sub' }, list.filter(x => x.h.o === 'bank' && !x.h.t).length + ' vacant city houses · ' + list.filter(x => x.h.a > 0 && x.h.o !== 'bank').length + ' for sale by owners'))); return; }
   const hs = e.h, g = e.g, mine = hs.o === me, cfg = H.cfg(), v = hs.v / 100, live = H.home() && H.home().id === e.id, bot = isBot(hs.o) ? bots[hs.o] : null;
   p.append(h('h3', null, g.addr), h('div', { class: 'sub' }, g.typeName + (g.beds ? ' · ' + g.beds + ' bed' : '') + ' · ' + g.district), h('div', { style: { margin: '8px 0' } }, mine ? h('span', { class: 'tag good' }, 'Yours') : '', live ? h('span', { class: 'tag' }, 'You live here') : '', hs.a > 0 ? h('span', { class: 'tag warnc' }, 'For sale') : '', hs.rh > 0 && !hs.t ? h('span', { class: 'tag good' }, 'To rent') : '', hs.dm > 0 ? h('span', { class: 'tag bad' }, 'Damaged ' + hs.dm + '%') : ''));
   const kv = [['Value', fmt0(v)], ['Owner', who(hs)], ['Tenant', hs.t ? (hs.tn || 'Resident') : 'Vacant'], ['Rent', hs.rh > 0 ? fmt2(hs.rh * 24 / 100) + ' / day' : '—'], ['Property tax', fmt2(hs.v * cfg.propTaxBpDay / 10000 / 100) + ' / day']]; if(hs.t) kv.push(['Rent paid until', new Date(hs.ts + hs.th * HOUR).toLocaleString()]);
@@ -152,5 +286,6 @@ function paintFeed(p){
   ids.slice(0, 40).forEach(id => { const e = ev[id], c = e.k === 'fire' ? '#e5484d' : e.k === 'police' ? '#3a6fd8' : '#2f9e6e', t = e.k === 'fire' ? 'Fire at ' + e.a + ' — ' + e.dm + '% damage, crew in ' + e.resp + ' min' : e.k === 'police' ? 'Break-in at ' + e.a + ' — police in ' + e.resp + ' min' + (e.caught ? ', thief caught' : ', thief got away') : 'Ambulance to ' + e.a + ' — arrived in ' + e.resp + ' min';
     p.append(h('div', { class: 'ev', onclick: () => focus(e.h) }, h('div', { class: 'dot', style: { background: c } }, e.k === 'fire' ? '▲' : e.k === 'police' ? '★' : '+'), h('div', null, h('b', null, t), h('div', { class: 'sub' }, e.d + ' · ' + Kit.ago(e.t))))); });
 }
-(async function init(){ me = H.uid(); resize(); paintBar(); paintSide(); H.watch(); rebuild(); events(); loadBots(); setInterval(loadBots, 180000); setInterval(() => { need = true; if(tab === 'me') paintSide(); }, 60000); OS.on('auth', () => { me = H.uid(); rebuild(); }); })();
+(async function init(){ me = H.uid(); resize(); paintBar(); paintSide(); H.watch(); H.watchMap(true); rebuild(); events(); loadBots(); setInterval(loadBots, 180000); setInterval(() => { need = true; mapData(); if(tab === 'me') paintSide(); }, 30000); OS.on('auth', () => { me = H.uid(); rebuild(); });
+  const off = () => { try{ H.watchMap(false); }catch(e){} }; addEventListener('pagehide', off); addEventListener('beforeunload', off); })();
 </script></body></html>

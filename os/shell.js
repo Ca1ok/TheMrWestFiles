@@ -333,7 +333,8 @@
   function openApp(id, originEl){
     const app = APP(id); if(!app) return;
     if(wins.has(id)){ const w = wins.get(id); if(w.el.classList.contains('hidden')) restoreWin(id); setFocus(id); return; }
-    { const mm = (K.maint.ready() && OS.auth.ready()) ? K.maint.appMsg(id) : ''; if(mm){ maintDialog(app, mm); return; } }          // maintenance mode: "'X' is in maintenance mode"
+    { const mm = (K.maint.ready() && OS.auth.ready()) ? K.maint.appMsg(id) : ''; if(mm){ maintDialog(app, mm); return; } }
+    { const gt = OS.homes && OS.homes.gate ? OS.homes.gate(id) : null; if(gt){ plotDialog(app, gt); return; } }                  // WestFactory needs an industrial plot, WestLab a laboratory in the University Quarter (bought in WestMap)          // maintenance mode: "'X' is in maintenance mode"
     const g = initialGeom(id), el = document.createElement('div'); el.className = 'win';
     const dir = ['n', 's', 'e', 'w', 'nw', 'ne', 'sw', 'se'].map(d => '<i class="rz ' + d + '" data-d="' + d + '"></i>').join('');
     el.innerHTML = '<div class="tb"><div class="lights"><button class="lbtn c" aria-label="Close" title="Close"><svg viewBox="0 0 8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 1.5l5 5M6.5 1.5l-5 5"/></svg></button><button class="lbtn m" aria-label="Minimize" title="Minimize"><svg viewBox="0 0 8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.5 4h5"/></svg></button><button class="lbtn z" aria-label="Maximize" title="Maximize"><svg viewBox="0 0 8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.8 6.2V3M1.8 6.2H5M6.2 1.8V5M6.2 1.8H3"/></svg></button></div><div class="ttl">' + osAppTile(app, 16) + '<span>' + esc(app.name) + '</span></div></div>' +
@@ -475,6 +476,11 @@
   $('#sessionBtn').addEventListener('click', () => location.reload());                              // a reload makes THIS window the active one and loads your latest saved progress
   K.on('session', st => { if(st === 'lost') sessEl.style.display = ''; });
   const maintOn = () => K.maint.ready() && OS.auth.ready();
+  function plotDialog(app, gt){
+    $$('.mdlg', screen).forEach(x => x.remove()); const lab = gt.kind === 'l', d = document.createElement('div'); d.className = 'mdlg';
+    d.innerHTML = '<div class="card"><div class="ico">' + osAppTile(app, 56) + '</div><b>' + (lab ? 'You need a laboratory' : 'You need an industrial plot') + '</b><span>' + (lab ? 'WestLab runs from a laboratory in the University Quarter.' : 'WestFactory runs from a plot in the Industrial Estate.') + ' Buy one once in WestMap for ' + money(gt.fee) + '.</span><button data-go>Open WestMap</button><button data-no style="background:transparent;color:inherit;opacity:.7">Not now</button></div>';
+    screen.appendChild(d); const close = () => d.remove(); $('[data-go]', d).addEventListener('click', () => { close(); openApp('WestMap'); }); $('[data-no]', d).addEventListener('click', close); d.addEventListener('click', e => { if(e.target === d) close(); });
+  }
   function maintDialog(app, msg){
     $$('.mdlg', screen).forEach(x => x.remove());
     const d = document.createElement('div'), note = K.maint.note(); d.className = 'mdlg';

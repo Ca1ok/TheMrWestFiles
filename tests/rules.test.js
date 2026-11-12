@@ -161,4 +161,23 @@ const apply = r => r.tree;
   const old = world(); old.labCache = { k: { by: 'x', t: 1 } }; old.market = { listings: {} };
   const r = H.update(old, upd, NOW, H.ADMIN); ok(r, 'the admin reset write'); no(H.update(old, upd, NOW, U), 'a player running the reset');
   assert.ok(E.audit({ eco: r.tree.eco }).ok, 'the reset economy balances'); assert.strictEqual(Object.keys(r.tree.world.own).length, 512); assert.ok(!r.tree.players && !r.tree.leaderboard, 'old progress is gone'); }
+
+// ---- industrial plots (WestFactory), University Quarter labs (WestLab) and the map presence node ----
+{ const t0 = apply(run(world(), 'u1', a => { mv(a, 'pool', -10000000); a.ob = 1; })); t0.eco.acct.u1.b += 90000000; t0.eco.acct.u1.sys.pool -= 90000000; const plot = (tree, kind, fee, tv, hop) => run(tree, 'u1', a => { mv(a, 'city', fee); a.hop = hop || 'plot-' + kind; }, { ['world/plot/u1/' + kind]: tv });
+  ok(plot(t0, 'f', 25000000, NOW), 'buying an industrial plot'); ok(plot(t0, 'l', 15000000, NOW), 'buying a university lab');
+  no(plot(t0, 'f', 24999999, NOW), 'a plot for less than the fee'); no(plot(t0, 'f', 15000000, NOW), 'a plot at the lab price'); no(plot(t0, 'l', 25000000, NOW), 'a lab at the plot price'); no(plot(t0, 'f', 25000000, NOW - 1), 'a back-dated plot');
+  no(plot(t0, 'f', 25000000, NOW, 'plot-l'), 'a plot with the wrong ledger tag'); no(plot(t0, 'f', 25000000, NOW, 'lic'), 'a plot filed as a licence');
+  no(H.update(t0, { 'world/plot/u1/f': NOW }, NOW, U), 'a free plot'); no(H.update(t0, { 'world/plot/u1/f': NOW }, NOW, V), 'a plot for someone else without paying');
+  no(run(t0, 'u1', a => { mv(a, 'city', 25000000); a.hop = 'plot-f'; }, { 'world/plot/u2/f': NOW }), 'paying for a plot but filing it under another player'); no(plot(t0, 'x', 25000000, NOW), 'an unknown plot kind');
+  no(run(t0, 'u1', a => { mv(a, 'city', 25000000); a.hop = 'plot-f'; }), 'paying the city plot money with no plot record');
+  const tp = apply(plot(t0, 'f', 25000000, NOW));
+  no(H.update(tp, { 'world/plot/u1/f': NOW + 1 }, NOW + 1, U), 'rewriting an owned plot'); no(H.update(tp, { 'world/plot/u1/f': null }, NOW, U), 'deleting a plot record');
+  no(run(tp, 'u1', a => { mv(a, 'city', 25000000); a.hop = 'plot-f'; }, { 'world/plot/u1/f': NOW }), 'buying a second industrial plot'); ok(run(tp, 'u1', a => { mv(a, 'city', 15000000); a.hop = 'plot-l'; }, { 'world/plot/u1/l': NOW }), 'then buying the lab as well');
+  // presence
+  const lb = t0.leaderboard.u1.name, loc = (tree, who, v, now) => H.update(tree, { ['world/loc/' + who]: v }, now === undefined ? NOW : now, who === 'u1' ? U : V);
+  ok(loc(t0, 'u1', { p: 'arcade', t: NOW, n: lb }), 'moving to the arcade on the map'); ok(loc(t0, 'u1', { p: 'home', t: NOW, n: lb }), 'going home');
+  no(loc(t0, 'u1', { p: 'arcade', t: NOW - 5000, n: lb }), 'a back-dated location'); no(loc(t0, 'u1', { p: 'arcade', t: NOW, n: 'Mallory' }), 'a location under a fake name');
+  no(loc(t0, 'u1', { p: 'Arcade!', t: NOW, n: lb }), 'a location with junk characters'); no(loc(t0, 'u1', { p: 'arcade', t: NOW, n: lb, x: 1 }), 'a location with extra fields'); no(H.update(t0, { 'world/loc/u2': { p: 'arcade', t: NOW, n: 'Bob' } }, NOW, U), 'writing another player\u2019s location without being them');
+  const tl = apply(loc(t0, 'u1', { p: 'bank', t: NOW, n: lb })); no(loc(tl, 'u1', { p: 'arcade', t: NOW + 1000, n: lb }, NOW + 1000), 'moving twice within 4 seconds'); ok(loc(tl, 'u1', { p: 'arcade', t: NOW + 4000, n: lb }, NOW + 4000), 'moving again after 4 seconds');
+  ok(loc(tl, 'u1', null), 'removing my own location (onDisconnect)'); }
 console.log('rules ok');
