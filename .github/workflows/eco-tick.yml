@@ -1,0 +1,32 @@
+name: WestEconomy world server
+
+# Runs the bots, taxes, loans, fires and house building (os/lib/eco-sim.js) and audits the ledger. One-time setup:
+#   Firebase console → Project settings → Service accounts → Generate new private key → paste the whole JSON into
+#   GitHub → Settings → Secrets and variables → Actions → New repository secret named FIREBASE_SERVICE_ACCOUNT.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eco-tick
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install firebase-admin
+        run: npm install --no-save --no-audit --no-fund firebase-admin@12
+      - name: Run one world step
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node .github/scripts/eco-tick.js
