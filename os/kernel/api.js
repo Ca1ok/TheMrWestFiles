@@ -206,6 +206,7 @@
   const admin = {
     ok: C.isAdmin, players: () => C.admin.players(), read: uid => C.admin.read(uid), setField: (u, p, v) => C.admin.setField(u, p, v), reset: u => C.admin.reset(u), rename: (u, n) => C.admin.rename(u, n),
     mail: (u, s, b) => C.admin.mail(u, s, b), broadcast: (s, b) => C.admin.broadcast(s, b),
+    ecoStatus: () => C.admin.ecoStatus(), ecoStart: c => C.admin.ecoStart(c), ecoCfg: p => C.admin.ecoCfg(p), ecoAudit: () => C.admin.ecoAudit(),
     maintenanceGet: () => { need_(); return K.maint.config(); }, maintenanceSet: c => { need_(); return C.admin.maintSet(c); },
     arcadeGet: () => { need_(); return CSN.loadConfig(true).then(() => CSN.config()); }, arcadeSet: c => { need_(); return C.admin.arcadeSet(c).then(() => CSN.loadConfig(true)); },
     setVolatility: l => K.market.admin.setVolatility(l), adjustPrice: (d, f) => K.market.admin.adjust(d, f), volatility: () => C.isAdmin() ? K.market.volLevel() : null, volLevels: () => C.isAdmin() ? K.market.admin.levels() : [], volLedger: () => C.isAdmin() ? K.market.volLedger() : [],

@@ -49,6 +49,7 @@ tools/                     make-icons.py, westlab_pipeline.py (offline PubChem/R
 ## 3. The `OS` facade (what apps may call) — defined in `os/kernel/api.js` (grep `K.facade =`)
 `on, now, today, cash(), prefs{get,all,set}, shop, lab, props, bank, mail, auth, stock, games{award(id,base),info()}, arcade, factory, files, world, admin, gallery, leaderboard, maintenance{app(id),sys(key),site(),note(),config(),systems(),lockedApps()}, report, chem, phys, mol, worldModel, data{ELEMENTS,TOOLS,PROPERTIES,...}, netWorth, nameOk, sync(), notify(n), econ()`; shell adds `open(id), close(id), home(), focused(), openApps(), theme(), screen(), toast(msg), openPage(url), apps(), preview(item), previewTake(), shell{resetLayout,relayout}, reportContext()`.
 New capability for apps = add to api.js (and to the freeze list in boot.js if it's a new object).
+**Two-step wiring for admin tools:** `OS.admin` (api.js, ~line 206) is a hand-written list of wrappers, NOT `C.admin` (cloud.js). A new `A.foo = …` in cloud.js is invisible to apps until `foo: (...a) => C.admin.foo(...a)` is added to the `admin` object in api.js, otherwise the app gets `OS.admin.foo is not a function`. Same for every other facade object (`OS.x` only has what api.js lists). Currently bridged: ecoStatus, ecoStart, ecoCfg, ecoAudit.
 
 ## 4. Shell internals (os/shell.js) — desktop grid & windows
 - Layout item: `{t:'a'|'w', id, k, size?, pos?:{p,r,c}}` stored in `prefs.layout`. Apps in the dock are not on the desk. `pos` = page/row/col cell; unpinned items first-fit. `pinAll()` freezes every item to its current `rec.slot` before any structural change (remove/resize/drop/add) so nothing slides.
@@ -123,6 +124,7 @@ Python Playwright + Chromium are preinstalled (`from playwright.sync_api import 
 1. Edit under `os/`, `apps/`, `data/` only. 2. Syntax-check + headless-run the feature. 3. `zip -q out.zip <changed files>` from repo root (paths relative to root). 4. Reply: what changed, tested vs untested, files to delete, any required Firebase rules change (full JSON). 5. If behaviour changes in a durable way, update this file.
 
 ## 11. Gotchas learned
+- **"OS.<obj>.<fn> is not a function"** = the function exists in a kernel file but was never added to the facade in `os/kernel/api.js`. Grep the name in api.js first; check every `OS.admin.*` call in apps has a matching entry (`grep -oh "OS\.admin\.[a-zA-Z]*" -r apps | sort -u`).
 - Games/Arcade tiles must not use raw emoji (blank boxes on emoji-less systems) → use `osEmoji`/glyph names; `osIcon` falls back to a dot for unknown names.
 - Single-script, shared state: one thrown error in a kernel module can kill later code — wrap listener bodies in try/catch.
 - Don't replace in-memory state wholesale when an async fetch resolves (loses actions taken meanwhile); use pending-save flags and MAX-merges for ticking counters.
