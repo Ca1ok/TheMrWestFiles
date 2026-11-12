@@ -56,6 +56,7 @@ New capability for apps = add to api.js (and to the freeze list in boot.js if it
 - `metrics()` derives cols/rows/cell size/icon size from window size (≈128×118 px cells, min 4×3, fills the area between menu bar and dock) → re-run on resize (`relayoutHome`). `pack()` = pinned (clamped, nearest-free fallback) then first-fit. Drag: ghost snaps to nearest free cell (`dropSpot`), edge-hover flips pages (one extra empty page allowed while dragging). Arrow keys move the focused item in edit mode; Enter/Space opens.
 - Windows: `wins` Map(appId→{el,g{x,y,w,h,max,prev},iframe}); `openApp/closeApp/minimizeWin/restoreWin/toggleMax/setFocus`; geometry saved in `prefs.winGeom`; `DEFAULT_SIZE` per app; screens <700px force maximized. Title-bar buttons magnify near the pointer (`wireLights`, CSS var `--s`; coarse pointers always large).
 - Dock icon size scales with width; `NEW_APPS` list appends newly shipped apps for existing accounts (add new app ids there).
+- **Default desktop/dock** = `DEFAULT_DOCK`, `DEFAULT_APPS`, `DEFAULT_WIDGETS` (shell.js, cells are page/row/col). Used whenever `prefs.dock`/`prefs.layout` are empty (new players, and Settings → Reset layout which clears both). Change the stock look there, not in PREF_DEFAULT. A new app that should start on the desktop needs a `DEFAULT_APPS` entry too (else it is in neither dock nor desktop until added via Edit desktop).
 - Add an app: entry in `OS_APPS` (icons.js) + glyph + `assets/icons/<Id>.png` + `apps/<Id>.html` + `DEFAULT_SIZE` entry + `NEW_APPS`.
 
 ## 5. App contract (apps/*.html)

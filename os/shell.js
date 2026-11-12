@@ -66,7 +66,7 @@
   paintMenuRight(); paintCash();
 
   /* ================= desktop layout ================= */
-  const DEFAULT_DOCK = OS_APPS.map(a => a.id);
+  const DEFAULT_DOCK = ['Messages', 'News', 'WestMap', 'Files', 'Settings'];      // what a new player (or Settings → Reset layout) gets; everything else starts on the desktop
   const SIZES = { xs: [1, 1], h: [2, 1], v: [1, 2], s: [2, 2], x3: [3, 2], b: [4, 1], m: [4, 2], l: [4, 4] };
   const SIZE_NAMES = { xs: 'Tiny · 1×1', h: 'Strip · 2×1', v: 'Tall · 1×2', s: 'Small · 2×2', x3: 'Medium · 3×2', b: 'Banner · 4×1', m: 'Wide · 4×2', l: 'Large · 4×4' };
   let layout = [], M = null, editing = false, pageCount = 1, curPage = 0, dragPages = 0;
@@ -74,9 +74,14 @@
   const dockIds = () => { const base = (K.prefs.dock && K.prefs.dock.length ? K.prefs.dock : DEFAULT_DOCK).filter(id => APP(id)); wins.forEach((w, id) => { if(!base.includes(id)) base.push(id); }); return base; };
   const szLabel = z => SIZES[z][0] + '×' + SIZES[z][1];
   const wk = () => 'w' + Math.random().toString(36).slice(2, 8);
+  /* The stock desktop (cells are page/row/col on a ~10×5 grid; smaller screens clamp or first-fit via pack()). Apps listed here that are also in the dock are skipped by loadLayout. */
+  const DEFAULT_APPS = [['Stocks', 0, 0], ['WestShop', 0, 1], ['WestLab', 0, 2], ['WestFactory', 0, 3], ['Bank', 1, 0], ['RealEstate', 1, 1], ['Photos', 1, 2], ['Notes', 1, 3],
+    ['Games', 2, 0], ['Arcade', 2, 1], ['Leaderboard', 2, 2], ['Preview', 2, 3], ['WestReport', 3, 3]];
+  const DEFAULT_WIDGETS = [['stocks', 'x3', 3, 0], ['news', 's', 0, 4], ['element', 'h', 2, 4], ['realestate', 'h', 3, 4], ['bank', 'h', 4, 3], ['messages', 'h', 4, 5], ['games', 'xs', 4, 7], ['wanted', 'l', 0, 6]];
   function defaultLayout(){
-    return [['wanted', 'm'], ['stocks', 's'], ['bank', 's'], ['news', 'm'], ['messages', 's'], ['realestate', 's'], ['clock', 's'], ['element', 's'], ['games', 's']]
-      .filter(([id]) => WIDGETS.find(w => w.id === id)).map(([id, size]) => ({ t: 'w', id, size, k: wk() }));
+    const apps = DEFAULT_APPS.filter(([id]) => APP(id)).map(([id, r, c]) => ({ t: 'a', id, k: 'a-' + id, pos: { p: 0, r, c } }));
+    const wids = DEFAULT_WIDGETS.filter(([id]) => WIDGETS.find(w => w.id === id)).map(([id, size, r, c]) => ({ t: 'w', id, size, k: wk(), pos: { p: 0, r, c } }));
+    return apps.concat(wids);
   }
   /* Apps added after a player saved their dock/desktop are appended once, so new apps (WestReport) show up for existing accounts. */
   const NEW_APPS = ['WestReport', 'Leaderboard', 'Preview', 'Arcade', 'WestFactory', 'WestMap'];
@@ -510,7 +515,7 @@
   OS.preview = item => { previewItem = item; if(wins.has('Preview')){ K.emit('preview'); openApp('Preview', null); } else openApp('Preview', null); };
   OS.previewTake = () => { const p = previewItem; previewItem = null; return p; };
   OS.toast = toast; OS.openPage = url => window.open(url, '_blank', 'noopener'); OS.apps = () => OS_APPS.map(a => ({ id: a.id, name: a.name, g: a.g, glyph: a.glyph }));
-  OS.shell = { resetLayout(){ K.setPref('layout', null); K.setPref('winGeom', {}); loadLayout(); relayoutHome(true); }, relayout: () => { loadLayout(); relayoutHome(true); } };
+  OS.shell = { defaultDock: () => DEFAULT_DOCK.slice(), resetLayout(){ K.setPref('layout', null); K.setPref('dock', []); K.setPref('winGeom', {}); loadLayout(); relayoutHome(true); }, relayout: () => { loadLayout(); relayoutHome(true); } };
   let dockT = null; const dockZone = document.createElement('div'); dockZone.id = 'dockZone'; screen.appendChild(dockZone);
   function applyDockMode(){ const m = dockMode(); screen.dataset.dock = m; dockEl.classList.remove('peek'); if(S.w){ relayoutHome(true); fitWindows(); } }
   const peek = on => { clearTimeout(dockT); if(on) dockEl.classList.add('peek'); else dockT = setTimeout(() => dockEl.classList.remove('peek'), 450); };

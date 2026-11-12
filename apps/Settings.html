@@ -61,8 +61,8 @@ const A = Kit.app({ title: 'Settings', build: (body) => {
       row({ title: 'Reduce motion', sub: 'Skips zoom and slide animations', right: toggle(!!P_.get('reduceMotion'), v => P_.set('reduceMotion', v)) }), row({ title: 'Reduce transparency', sub: 'Turns off blur — faster on older devices', right: toggle(!!P_.get('reduceTransparency'), v => P_.set('reduceTransparency', v)) })));
     // Desktop
     rest.appendChild(h('div', { class: 'cap' }, 'Desktop'));
-    rest.appendChild(group(row({ glyph: 'grid', color: '#4a6fa8', title: 'Dock apps', sub: (OS.prefs.get('dock') || []).length ? OS.prefs.get('dock').join(', ') : 'All apps', chev: true, onClick: openDock }),
-      row({ glyph: 'refresh', color: '#7b7468', title: 'Reset layout', sub: 'Restore the default widgets and window sizes', onClick: async () => { if(await Kit.confirm({ title: 'Reset the desktop?', ok: 'Reset', destructive: true })){ OS.shell.resetLayout(); Kit.toast('Desktop reset'); } } })));
+    rest.appendChild(group(row({ glyph: 'grid', color: '#4a6fa8', title: 'Dock apps', sub: (OS.prefs.get('dock') || []).length ? OS.prefs.get('dock').join(', ') : OS.shell.defaultDock().join(', '), chev: true, onClick: openDock }),
+      row({ glyph: 'refresh', color: '#7b7468', title: 'Reset layout', sub: 'Restore the default desktop, dock and window sizes', onClick: async () => { if(await Kit.confirm({ title: 'Reset the desktop?', ok: 'Reset', destructive: true })){ OS.shell.resetLayout(); Kit.toast('Desktop reset'); } } })));
     rest.appendChild(group(
       h('div', { class: 'row' }, h('div', { class: 'tx' }, h('b', null, 'Dock position'), h('small', { class: 'wrap' }, 'Low pushes the dock down flush with the bottom edge. Auto-hide tucks it away; touch the bottom edge to bring it back. Windows and the desktop use the freed space.')), h('div', { style: { width: '260px' } }, seg([{ id: 'float', label: 'Floating' }, { id: 'low', label: 'Low' }, { id: 'hide', label: 'Auto-hide' }], P_.get('dockMode') || 'float', v => P_.set('dockMode', v)))),
       h('div', { class: 'row' }, h('div', { class: 'tx' }, h('b', null, 'Icon size'), h('small', null, 'App icons on the desktop')), h('div', { style: { width: '210px' } }, seg([{ id: 'small', label: 'Small' }, { id: 'medium', label: 'Medium' }, { id: 'large', label: 'Large' }], P_.get('iconSize') || 'medium', v => P_.set('iconSize', v)))),
@@ -102,7 +102,7 @@ const A = Kit.app({ title: 'Settings', build: (body) => {
   }
   function openDock(){
     A.push({ title: 'Dock apps', backLabel: 'Settings', build: (b) => {
-      const apps = OS.apps(), sel = new Set(P_.get('dock').length ? P_.get('dock') : apps.map(a => a.id)); const list = h('div');
+      const apps = OS.apps(), sel = new Set(P_.get('dock').length ? P_.get('dock') : OS.shell.defaultDock()); const list = h('div');
       const draw = () => { list.innerHTML = ''; list.appendChild(group(apps.map(a => row({ left: h('span', { html: Kit.tile(a.id, 34).replace('class="tile"', 'class="tile" style="border-radius:8px"') || '' }), title: a.name, right: h('span', { style: { color: 'var(--tint)', opacity: sel.has(a.id) ? 1 : 0 }, html: Kit.icon('check', 20, 3) }), onClick: () => { if(sel.has(a.id)){ if(sel.size <= 2) return Kit.toast('Keep at least two apps'); sel.delete(a.id); } else sel.add(a.id); P_.set('dock', apps.map(x => x.id).filter(id => sel.has(id))); draw(); } })))); };
       b.append(h('p', { class: 'sub' }, 'Choose which apps live in the dock. Apps you remove can be added back as desktop shortcuts.'), list); draw();
     } });
