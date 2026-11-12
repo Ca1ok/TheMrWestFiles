@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WestMap</title>
+<link rel="stylesheet" href="../os/tokens.css"><link rel="stylesheet" href="../os/app/kit.css">
+<style>
+html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--label);font-family:var(--font)}
+#wm{display:flex;height:100%;position:relative} #cv{flex:1;min-width:0;display:block;touch-action:none;cursor:grab} #cv.drag{cursor:grabbing}
+#side{width:340px;max-width:44%;display:flex;flex-direction:column;background:var(--bg2);border-left:1px solid var(--sep,rgba(255,255,255,.08))}
+#tabs{display:flex;gap:4px;padding:8px;border-bottom:1px solid var(--sep,rgba(255,255,255,.08))} #tabs button{flex:1;border:0;background:transparent;color:var(--label2);font:700 13px var(--font);padding:8px 4px;border-radius:9px;cursor:pointer} #tabs button.on{background:var(--tint-dim);color:var(--tint2)}
+#pane{flex:1;overflow:auto;padding:12px 14px 18px}
+#bar{position:absolute;left:10px;top:10px;display:flex;gap:6px;flex-wrap:wrap;max-width:calc(100% - 380px)} .chip{background:var(--material,var(--card));backdrop-filter:blur(14px);border:1px solid var(--sep,rgba(255,255,255,.1));color:var(--label);border-radius:999px;padding:6px 11px;font:700 12.5px var(--font);cursor:pointer;display:flex;gap:6px;align-items:center} .chip.on{background:var(--tint);color:#fff;border-color:transparent} .chip i{width:9px;height:9px;border-radius:50%;display:inline-block}
+#zoom{position:absolute;left:10px;bottom:12px;display:flex;flex-direction:column;gap:6px} #zoom button{width:34px;height:34px;border-radius:10px;border:1px solid var(--sep,rgba(255,255,255,.1));background:var(--material,var(--card));color:var(--label);font:700 18px var(--font);cursor:pointer}
+#legend{position:absolute;left:56px;bottom:14px;display:flex;gap:10px;flex-wrap:wrap;font:600 11.5px var(--font);color:var(--label2);background:var(--material,var(--card));padding:6px 10px;border-radius:10px} #legend span i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+h3{margin:0 0 4px;font:800 18px var(--font);letter-spacing:-.01em} .sub{color:var(--label2);font:500 13px/1.4 var(--font)} .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:10px 0;font:500 13.5px var(--font)} .kv span:nth-child(odd){color:var(--label2)} .kv span:nth-child(even){text-align:right;font-weight:700}
+.btn{border:0;border-radius:11px;padding:10px 14px;background:var(--tint);color:#fff;font:700 14px var(--font);cursor:pointer;width:100%;margin:5px 0} .btn.sec{background:var(--fill,rgba(255,255,255,.1));color:var(--label)} .btn.bad{background:var(--bad)} .btn:disabled{opacity:.5;cursor:default}
+.card{background:var(--card);border-radius:14px;padding:12px 13px;margin:10px 0} .row2{display:flex;gap:8px;align-items:center} input,select{background:var(--card2,var(--card));color:var(--label);border:1px solid var(--sep,rgba(255,255,255,.12));border-radius:9px;padding:8px 10px;font:600 14px var(--font);width:100%;box-sizing:border-box}
+.ev{display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--sep,rgba(255,255,255,.07));cursor:pointer} .ev .dot{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font:800 15px var(--font);color:#fff;flex:none}
+.tag{display:inline-block;border-radius:6px;padding:2px 7px;font:700 11px var(--font);background:var(--fill,rgba(255,255,255,.1));margin-right:4px} .good{color:var(--good)} .bad{color:var(--bad)} .warnc{color:var(--warn)}
+@media (max-width:760px){#wm{flex-direction:column}#side{width:auto;max-width:none;height:46%;border-left:0}#bar{max-width:calc(100% - 20px)}}
+</style></head><body><div id="wm"><canvas id="cv"></canvas><div id="bar"></div><div id="zoom"><button data-z="1">+</button><button data-z="-1">−</button><button data-z="0" title="Fit">⌂</button></div><div id="legend"></div>
+<div id="side"><div id="tabs"></div><div id="pane"></div></div></div>
+<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
+<script>
+const H = OS.homes, G = H.gen, { h, money, esc } = Kit, $ = s => document.querySelector(s);
+const cv = $('#cv'), ctx = cv.getContext('2d'), DAY = 86400000, HOUR = 3600000;
+let me = null, world = {}, list = [], byId = {}, bots = {}, sel = null, tab = 'info', filter = { mine: 0, sale: 0, rent: 0, fire: 0 }, V = { x: 0, y: 0, k: 1 }, fitted = false, need = true, vehicles = [], seenEv = new Set(), firstEv = true;
+const dark = () => document.documentElement.dataset.theme !== 'light';
+const isBot = o => /^b\d+$/.test(o), fmt0 = n => '$' + Math.round(n).toLocaleString(), fmt2 = n => '$' + (+n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const COL = { mine: '#3fd07a', bank: '#8a93a6', player: '#5aa0f0', bot: '#e8a04f' };
+const kind = hs => hs.o === me ? 'mine' : hs.o === 'bank' ? 'bank' : isBot(hs.o) ? 'bot' : 'player';
+const toast = (m, ok) => Kit.toast(m, ok ? 'good' : 'bad');
+
+/* ---------- data ---------- */
+function rebuild(){
+  world = H.world(); const ids = Object.keys(world); list = ids.map(id => { let e = byId[id]; if(!e){ e = byId[id] = { id, g: H.house(id) }; } e.h = world[id]; return e; }).filter(e => e.h); need = true;
+  if(!fitted && list.length){ fit(); fitted = true; } if(sel && !world[sel]) sel = null; paintSide();
+}
+function events(){ const ev = H.events(); Object.keys(ev).forEach(k => { if(seenEv.has(k)) return; seenEv.add(k); const e = ev[k]; if(!firstEv && Date.now() - e.t < 15 * 60000) launch(e); }); firstEv = false; }
+OS.on('world', () => { rebuild(); events(); if(tab === 'feed') paintSide(); }); OS.on('home', paintSide); OS.on('cash', Kit.debounce(() => { if(tab === 'me') paintSide(); }, 400)); OS.on('eco', () => { if(tab === 'eco') paintSide(); });
+async function loadBots(){ try{ bots = await H.bots(); if(tab === 'info' || tab === 'eco') paintSide(); }catch(e){} }
+
+/* ---------- view ---------- */
+function resize(){ const r = cv.getBoundingClientRect(), d = Math.min(2, devicePixelRatio || 1); cv.width = Math.round(r.width * d); cv.height = Math.round(r.height * d); ctx.setTransform(d, 0, 0, d, 0, 0); need = true; }
+addEventListener('resize', () => { resize(); }); new ResizeObserver(resize).observe(cv);
+function fit(){ const b = G.bounds(list.length || 512), w = cv.clientWidth || 800, hh = cv.clientHeight || 600; V.k = Math.min(w / (b.x1 - b.x0), hh / (b.y1 - b.y0)) * 0.95; V.x = w / 2 - (b.x0 + b.x1) / 2 * V.k; V.y = hh / 2 - (b.y0 + b.y1) / 2 * V.k; need = true; }
+const sx = x => x * V.k + V.x, sy = y => y * V.k + V.y;
+function focus(id){ const e = byId[id]; if(!e) return; sel = id; V.k = Math.max(V.k, 3.4); V.x = cv.clientWidth / 2 - e.g.x * V.k; V.y = cv.clientHeight / 2 - e.g.y * V.k; need = true; tab = 'info'; paintSide(); }
+function zoomAt(f, cx, cy){ const nk = Math.max(0.35, Math.min(9, V.k * f)), r = nk / V.k; V.x = cx - (cx - V.x) * r; V.y = cy - (cy - V.y) * r; V.k = nk; need = true; }
+let drag = null; const pts = new Map();
+cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.offsetX, y: e.offsetY }); drag = { x: e.offsetX, y: e.offsetY, vx: V.x, vy: V.y, moved: 0, d0: pts.size === 2 ? dist2() : 0, k0: V.k }; cv.classList.add('drag'); });
+cv.addEventListener('pointermove', e => { if(!pts.has(e.pointerId)) { hover(e); return; } pts.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+  if(pts.size === 2 && drag){ const p = [...pts.values()], d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y); if(drag.d0 > 0){ const nk = Math.max(0.35, Math.min(9, drag.k0 * d / drag.d0)); zoomAt(nk / V.k, (p[0].x + p[1].x) / 2, (p[0].y + p[1].y) / 2); } else drag.d0 = d; return; }
+  if(drag){ drag.moved += Math.abs(e.offsetX - drag.x) + Math.abs(e.offsetY - drag.y); V.x = drag.vx + e.offsetX - drag.x; V.y = drag.vy + e.offsetY - drag.y; need = true; } });
+const dist2 = () => { const p = [...pts.values()]; return Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y); };
+cv.addEventListener('pointerup', e => { pts.delete(e.pointerId); cv.classList.remove('drag'); if(drag && drag.moved < 6 && pts.size === 0){ const id = pick(e.offsetX, e.offsetY); sel = id; tab = 'info'; need = true; paintSide(); } if(!pts.size) drag = null; });
+cv.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.deltaY < 0 ? 1.18 : 1 / 1.18, e.offsetX, e.offsetY); }, { passive: false });
+document.querySelectorAll('#zoom button').forEach(b => b.onclick = () => { const z = +b.dataset.z; if(!z) fit(); else zoomAt(z > 0 ? 1.4 : 1 / 1.4, cv.clientWidth / 2, cv.clientHeight / 2); });
+function pick(px, py){ let best = null, bd = Math.max(5, 7 * V.k) ** 2; for(const e of list){ const dx = sx(e.g.x) - px, dy = sy(e.g.y) - py, d = dx * dx + dy * dy; if(d < bd){ bd = d; best = e.id; } } return best; }
+function hover(e){ cv.style.cursor = pick(e.offsetX, e.offsetY) ? 'pointer' : 'grab'; }
+
+/* ---------- drawing ---------- */
+function shown(e){ const hs = e.h; if(filter.mine && hs.o !== me) return false; if(filter.sale && !(hs.a > 0 || hs.o === 'bank')) return false; if(filter.rent && !(hs.rh > 0 && !hs.t)) return false; if(filter.fire && !(hs.dm > 0)) return false; return true; }
+function draw(t){
+  const W = cv.clientWidth, Hh = cv.clientHeight, d = dark(); ctx.clearRect(0, 0, W, Hh);
+  const bg = ctx.createLinearGradient(0, 0, 0, Hh); bg.addColorStop(0, d ? '#10161c' : '#cfe3ea'); bg.addColorStop(1, d ? '#0b1014' : '#bcd7df'); ctx.fillStyle = bg; ctx.fillRect(0, 0, W, Hh);
+  const nd = G.districtCount(list.length || 512), size = Math.max(4, 11 * V.k);
+  for(let k = 0; k < nd; k++){ const D = G.district(k), x = sx(D.cx), y = sy(D.cy), r = 74 * V.k; if(x + r < 0 || y + r < 0 || x - r > W || y - r > Hh) continue;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = D.color + (d ? '26' : '33'); ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = D.color + '66'; ctx.stroke();
+    if(V.k < 2.6){ ctx.fillStyle = d ? '#e9dfcf' : '#2a2118'; ctx.font = '700 ' + Math.max(10, 12 * Math.min(1.6, V.k)) + 'px system-ui'; ctx.textAlign = 'center'; ctx.fillText(D.name, x, y - r - 6); } }
+  for(const e of list){ const x = sx(e.g.x), y = sy(e.g.y); if(x < -20 || y < -20 || x > W + 20 || y > Hh + 20) continue; const hs = e.h, on = shown(e), s = size * (hs.v > 6e7 ? 1.25 : hs.v > 1.5e7 ? 1.1 : 1);
+    ctx.globalAlpha = on ? 1 : 0.16; ctx.fillStyle = COL[kind(hs)]; ctx.fillRect(x - s / 2, y - s / 2, s, s);
+    if(hs.dm > 0){ ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(x - s / 2, y - s / 2, s, s * hs.dm / 100); }
+    if(hs.t && V.k > 1.2){ ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, Math.max(1.2, s * .17), 0, 7); ctx.fill(); }
+    if(hs.a > 0 && hs.o !== 'bank'){ ctx.fillStyle = '#ffd24a'; ctx.fillRect(x + s / 2 - s * .32, y - s / 2 - s * .12, s * .38, s * .3); }
+    if(hs.rh > 0 && !hs.t && V.k > 1.4){ ctx.strokeStyle = '#7fe0b0'; ctx.lineWidth = 1.4; ctx.strokeRect(x - s / 2 - 1.5, y - s / 2 - 1.5, s + 3, s + 3); }
+    if(hs.f && hs.dm > 0){ const p = 0.6 + 0.4 * Math.sin(t / 130 + e.g.i); ctx.globalAlpha = on ? 1 : 0.4; ctx.fillStyle = 'rgba(255,' + Math.round(90 + 70 * p) + ',30,.95)'; ctx.beginPath(); ctx.moveTo(x, y - s * (.9 + .3 * p)); ctx.lineTo(x + s * .42, y + s * .1); ctx.lineTo(x - s * .42, y + s * .1); ctx.fill(); ctx.fillStyle = 'rgba(255,230,120,.95)'; ctx.beginPath(); ctx.moveTo(x, y - s * .45); ctx.lineTo(x + s * .2, y + s * .1); ctx.lineTo(x - s * .2, y + s * .1); ctx.fill(); }
+    if(hs.o === me && V.k > 1.6){ ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.2; ctx.strokeRect(x - s / 2, y - s / 2, s, s); } ctx.globalAlpha = 1; }
+  for(let k = 0; k < nd; k++){ if(V.k < 1.1) break; G.stations(k).forEach(s => { const x = sx(s.x), y = sy(s.y), r = Math.max(5, 7 * Math.min(V.k, 2.2)); if(x < -20 || y < -20 || x > W + 20 || y > Hh + 20) return;
+    ctx.fillStyle = s.t === 'fire' ? '#e5484d' : s.t === 'police' ? '#3a6fd8' : '#f4f4f4'; ctx.beginPath(); ctx.roundRect(x - r, y - r, r * 2, r * 2, r * .35); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.stroke();
+    ctx.fillStyle = s.t === 'ambulance' ? '#e5484d' : '#fff'; if(s.t === 'ambulance'){ ctx.fillRect(x - r * .55, y - r * .16, r * 1.1, r * .32); ctx.fillRect(x - r * .16, y - r * .55, r * .32, r * 1.1); } else if(s.t === 'police'){ ctx.beginPath(); ctx.moveTo(x, y - r * .6); ctx.lineTo(x + r * .5, y - r * .3); ctx.lineTo(x + r * .4, y + r * .35); ctx.lineTo(x, y + r * .65); ctx.lineTo(x - r * .4, y + r * .35); ctx.lineTo(x - r * .5, y - r * .3); ctx.fill(); } else { ctx.beginPath(); ctx.moveTo(x, y - r * .6); ctx.lineTo(x + r * .45, y + r * .5); ctx.lineTo(x - r * .45, y + r * .5); ctx.fill(); } }); }
+  const now = performance.now(); vehicles = vehicles.filter(v => now - v.t0 < v.dur + 2500);
+  vehicles.forEach(v => { const p = Math.min(1, (now - v.t0) / v.dur), x = sx(v.from.x + (v.to.x - v.from.x) * p), y = sy(v.from.y + (v.to.y - v.from.y) * p); const flash = Math.floor(now / 160) % 2; ctx.fillStyle = v.t === 'fire' ? '#ff4d4d' : v.t === 'police' ? (flash ? '#4d8dff' : '#ff4d4d') : '#fff'; ctx.beginPath(); ctx.arc(x, y, Math.max(3.5, 4.5 * Math.min(V.k, 2)), 0, 7); ctx.fill(); ctx.strokeStyle = flash ? '#fff' : '#000'; ctx.lineWidth = 1.5; ctx.stroke(); if(p >= 1){ ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.font = '700 11px system-ui'; ctx.fillText(v.label, x + 8, y - 8); } });
+  if(sel && byId[sel]){ const e = byId[sel], x = sx(e.g.x), y = sy(e.g.y), pulse = 1 + 0.12 * Math.sin(t / 220); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.4; ctx.beginPath(); ctx.arc(x, y, size * 1.15 * pulse, 0, 7); ctx.stroke(); ctx.strokeStyle = '#000'; ctx.lineWidth = .8; ctx.stroke(); }
+}
+function launch(ev){ const types = ev.k === 'fire' ? ['fire'] : ev.k === 'police' ? ['police'] : ['ambulance'], e = byId[ev.h]; if(!e) return; const nd = G.districtCount(list.length); let best = null, bd = 1e12;
+  for(let k = 0; k < nd; k++){ const s = G.stations(k).find(q => q.t === types[0]), dd = (s.x - e.g.x) ** 2 + (s.y - e.g.y) ** 2; if(dd < bd){ bd = dd; best = s; } }
+  if(best) vehicles.push({ t: types[0], from: best, to: e.g, t0: performance.now(), dur: 5000 + Math.min(4000, Math.sqrt(bd) * 18), label: ev.k === 'fire' ? 'Fire crew' : ev.k === 'police' ? 'Police' : 'Ambulance' }); need = true; }
+(function loop(t){ if(need || vehicles.length || list.some(e => e.h.f && e.h.dm > 0)){ draw(t); need = false; } requestAnimationFrame(loop); })(0);
+
+/* ---------- side panel ---------- */
+const TABS = [['info', 'House'], ['me', 'Me'], ['eco', 'Economy'], ['feed', 'Events']];
+function paintTabs(){ const t = $('#tabs'); t.innerHTML = ''; TABS.forEach(([id, l]) => t.appendChild(h('button', { class: tab === id ? 'on' : '', onclick: () => { tab = id; paintSide(); } }, l))); }
+function paintBar(){ const b = $('#bar'); b.innerHTML = ''; [['mine', 'My houses'], ['sale', 'For sale'], ['rent', 'To rent'], ['fire', 'Damaged']].forEach(([k, l]) => b.appendChild(h('button', { class: 'chip' + (filter[k] ? ' on' : ''), onclick: () => { filter[k] = filter[k] ? 0 : 1; need = true; paintBar(); } }, l)));
+  $('#legend').innerHTML = [['mine', 'You'], ['bank', 'City'], ['player', 'Players'], ['bot', 'Bots']].map(([k, l]) => '<span><i style="background:' + COL[k] + '"></i>' + l + '</span>').join('') + '<span>🔥 fire</span>'.replace('🔥', '▲') + '<span><i style="background:#ffd24a"></i>for sale</span>'; }
+function paintSide(){ paintTabs(); const p = $('#pane'); p.innerHTML = ''; ({ info: paintInfo, me: paintMe, eco: paintEco, feed: paintFeed })[tab](p); }
+const who = hs => hs.o === 'bank' ? 'The City' : hs.on || 'Player';
+async function act(fn, ok){ const r = await fn(); toast(r.msg || (r.ok ? ok : 'Not possible.'), r.ok); if(r.ok){ await new Promise(r => setTimeout(r, 400)); rebuild(); } return r; }
+function paintInfo(p){
+  if(!H.ready()){ p.append(h('div', { class: 'card' }, h('b', null, H.guest() ? 'Sign in to buy and rent' : 'The economy has not been started'), h('div', { class: 'sub' }, 'You can still look around — the map shows every house in WestCountry.'))); }
+  const e = sel && byId[sel]; if(!e){ p.append(h('h3', null, 'WestCountry'), h('div', { class: 'sub' }, 'Tap a house. Green is yours, grey belongs to the city, blue to other players, orange to bots. Money never appears or disappears here — houses just change hands.'), h('div', { class: 'card' }, h('b', null, list.length + ' houses'), h('div', { class: 'sub' }, list.filter(x => x.h.o === 'bank' && !x.h.t).length + ' vacant city houses · ' + list.filter(x => x.h.a > 0 && x.h.o !== 'bank').length + ' for sale by owners'))); return; }
+  const hs = e.h, g = e.g, mine = hs.o === me, cfg = H.cfg(), v = hs.v / 100, live = H.home() && H.home().id === e.id, bot = isBot(hs.o) ? bots[hs.o] : null;
+  p.append(h('h3', null, g.addr), h('div', { class: 'sub' }, g.typeName + (g.beds ? ' · ' + g.beds + ' bed' : '') + ' · ' + g.district), h('div', { style: { margin: '8px 0' } }, mine ? h('span', { class: 'tag good' }, 'Yours') : '', live ? h('span', { class: 'tag' }, 'You live here') : '', hs.a > 0 ? h('span', { class: 'tag warnc' }, 'For sale') : '', hs.rh > 0 && !hs.t ? h('span', { class: 'tag good' }, 'To rent') : '', hs.dm > 0 ? h('span', { class: 'tag bad' }, 'Damaged ' + hs.dm + '%') : ''));
+  const kv = [['Value', fmt0(v)], ['Owner', who(hs)], ['Tenant', hs.t ? (hs.tn || 'Resident') : 'Vacant'], ['Rent', hs.rh > 0 ? fmt2(hs.rh * 24 / 100) + ' / day' : '—'], ['Property tax', fmt2(hs.v * cfg.propTaxBpDay / 10000 / 100) + ' / day']]; if(hs.t) kv.push(['Rent paid until', new Date(hs.ts + hs.th * HOUR).toLocaleString()]);
+  const k = h('div', { class: 'kv' }); kv.forEach(([a, b]) => k.append(h('span', null, a), h('span', null, b))); p.append(k);
+  if(bot) p.append(h('div', { class: 'card' }, h('b', null, bot.n + ' · ' + bot.j), h('div', { class: 'sub' }, bot.bio + ' Has about ' + fmt0(bot.cash || 0) + ' in the bank.')));
+  if(!H.ready()) return;
+  if(hs.dm > 0 && hs.o !== 'bank') p.append(h('div', { class: 'card' }, h('b', { class: 'bad' }, 'Fire damage'), h('div', { class: 'sub' }, mine ? 'A repair bill is waiting in the Bank app; paying it repairs the house.' : 'The owner has been billed for repairs.')));
+  if(hs.o === 'bank'){
+    if(!hs.t) p.append(btn('Buy for ' + fmt0(v) + ' + ' + fmt0(H.duty(hs.v)) + ' duty', () => act(() => H.buy(e.id, !H.home()), 'Bought it!')));
+    if(hs.rh > 0 && !hs.t) p.append(rentBox(e));
+  } else if(mine){
+    if(!live && (!hs.t || true)) p.append(btn('Live here', () => act(() => H.setHome(e.id), 'You live here now.'), 'sec'));
+    const ask = h('input', { type: 'number', min: 0, placeholder: 'Asking price $', value: hs.a > 0 ? hs.a / 100 : '' }), rent = h('input', { type: 'number', min: 0, step: 0.5, placeholder: 'Rent per day $', value: hs.rh > 0 ? (hs.rh * 24 / 100).toFixed(2) : '' });
+    p.append(h('div', { class: 'card' }, h('b', null, 'Sell to a player or bot'), ask, btn(hs.a > 0 ? 'Update price' : 'List for sale', () => act(() => H.setAsk(e.id, +ask.value || 0), 'Listed.'), 'sec'), hs.a > 0 ? btn('Take off the market', () => act(() => H.setAsk(e.id, 0), 'Unlisted.'), 'sec') : ''));
+    p.append(h('div', { class: 'card' }, h('b', null, 'Rent it out'), h('div', { class: 'sub' }, 'Tenants prepay by the hour and the money lands in your account. Suggested: ' + fmt2(v * cfg.rentBpDay / 10000) + '/day (max ' + fmt2(hs.v / 2000 * 24 / 100) + ').'), rent, btn('Set rent', () => act(() => H.setRent(e.id, +rent.value || 0), 'Rent set.'), 'sec')));
+    if(hs.t) p.append(btn('Evict ' + (hs.tn || 'tenant') + ' (rent ran out)', () => act(() => H.evict(e.id), 'Evicted.'), 'sec'));
+    p.append(btn('Sell to the city for ' + fmt0(H.sellValue(hs.v)) + ' now', () => { if(confirm('Sell ' + g.addr + ' to the city for ' + fmt0(H.sellValue(hs.v)) + '? (90% of its value)')) act(() => H.sellToCity(e.id), 'Sold.'); }, 'sec'));
+  } else {
+    if(hs.a > 0) p.append(btn('Buy for ' + fmt0(hs.a / 100) + ' + ' + fmt0(H.duty(hs.a)) + ' duty', () => act(() => H.buy(e.id, !H.home()), 'Bought it!')));
+    if(hs.rh > 0 && !hs.t) p.append(rentBox(e));
+    if(hs.t === me) p.append(h('div', { class: 'card' }, h('b', null, 'You rent this'), btn('Top up 24 hours (' + fmt2(hs.rh * 24 / 100) + ')', () => act(() => H.topUp(24), 'Rent paid.')), btn('Move out', () => act(() => H.leave(), 'You moved out.'), 'sec')));
+  }
+}
+function rentBox(e){ const hrs = h('select', null, ...[24, 72, 168, 336].map(x => h('option', { value: x }, x / 24 + ' day' + (x > 24 ? 's' : '') + ' — ' + fmt2(e.h.rh * x / 100)))); return h('div', { class: 'card' }, h('b', null, 'Rent it'), h('div', { class: 'sub' }, 'Paid up front; it tops up automatically while you play. If it runs out you are evicted.'), hrs, btn('Move in', () => act(() => H.rent(e.id, +hrs.value), 'Welcome home!'))); }
+const btn = (t, f, cls) => h('button', { class: 'btn ' + (cls || ''), onclick: f }, t);
+function paintMe(p){
+  if(!H.ready()){ p.append(h('div', { class: 'sub' }, 'Sign in to see your home and houses.')); return; }
+  const lv = H.home(), mine = H.mine(), cfg = H.cfg(); p.append(h('h3', null, 'Cash ' + fmt2(OS.cash())));
+  if(lv){ const left = H.rentLeftMs(); p.append(h('div', { class: 'card' }, h('b', null, 'You live at ' + lv.g.addr), h('div', { class: 'sub' }, lv.owned ? 'You own it.' : 'Rented — ' + (left > 0 ? Math.floor(left / HOUR) + 'h of rent left (tops up automatically).' : 'rent has run out!')), btn('Show on map', () => focus(lv.id), 'sec'), lv.owned ? '' : btn('Top up 24 hours', () => act(() => H.topUp(24), 'Rent paid.'), 'sec'))); }
+  else p.append(h('div', { class: 'card' }, h('b', { class: 'bad' }, 'You are homeless'), h('div', { class: 'sub' }, 'Homeless players can draw only a tenth of the daily earning limit, the Arcade is closed and the bank won’t lend. Buy or rent any house on the map (grey = the city’s).')));
+  p.append(h('h3', { style: { marginTop: '14px' } }, 'My houses (' + mine.length + ')'));
+  if(!mine.length) p.append(h('div', { class: 'sub' }, 'You don’t own any houses yet. Property tax is ' + (cfg.propTaxBpDay / 100).toFixed(2) + '% of value per day; rent out spare houses to earn it back.'));
+  mine.forEach(x => p.append(h('div', { class: 'ev', onclick: () => focus(x.id) }, h('div', { class: 'dot', style: { background: COL.mine } }, '⌂'), h('div', null, h('b', null, x.g.addr), h('div', { class: 'sub' }, x.g.typeName + ' · ' + fmt0(x.v / 100) + (x.t ? ' · rented to ' + (x.tn || 'someone') : x.a > 0 ? ' · for sale' : x.rh > 0 ? ' · for rent' : ''))))));
+  const bills = OS.bank.open(); if(bills.length) p.append(h('div', { class: 'card' }, h('b', null, 'Bills waiting: ' + fmt2(OS.bank.owed())), btn('Open Bank', () => OS.open('Bank'), 'sec')));
+  const lic = H.licence(); p.append(h('h3', { style: { marginTop: '14px' } }, 'Build a house'));
+  if(!lic.active) p.append(h('div', { class: 'card' }, h('b', null, 'Building licence'), h('div', { class: 'sub' }, 'The council only lets licensed people commission houses. A licence costs ' + fmt0(lic.fee) + ', lasts ' + lic.days + ' days and lets you order up to three houses at a time.'), btn('Buy a licence — ' + fmt0(lic.fee), () => act(() => H.buyLicence(), 'Licence granted!'))));
+  else { p.append(h('div', { class: 'sub' }, 'Licensed for another ' + Math.max(1, Math.round(lic.leftMs / DAY)) + ' day(s). Pay a deposit; within ~10 minutes the council builds the next plot of that type, charges its real value + ' + Math.round((lic.markup - 1) * 100) + '% and refunds the rest. Building and selling straight to the city never makes money — rent it out or sell it to a player.'));
+    H.buildTypes().forEach(t => p.append(btn('Order a ' + t.name + ' — deposit ' + fmt0(t.escrow), () => act(() => H.build(t.id), 'Ordered! The council will build it shortly.'), 'sec')));
+    H.orders().forEach(o => p.append(h('div', { class: 'ev' }, h('div', { class: 'dot', style: { background: '#8a6a3a' } }, '⚒'), h('div', null, h('b', null, 'Building a ' + o.y), h('div', { class: 'sub' }, 'deposit ' + fmt0(o.c / 100) + ' · ordered ' + Kit.ago(o.t)))))); }
+  p.append(btn('Ask the city to build more houses', async () => { const r = await H.requestHousing(); toast(r.msg, r.ok); }, 'sec'));
+}
+function paintEco(p){
+  const s = H.stats(), cfg = H.cfg(); p.append(h('h3', null, 'The WestEconomy'), h('div', { class: 'sub' }, 'A fixed $100 trillion circulates between the pool, the casino, the bank, the treasury, the city, players and bots. Money only moves — it is never created or destroyed.'));
+  if(!s){ p.append(h('div', { class: 'sub', style: { marginTop: '10px' } }, 'No statistics yet.')); return; }
+  const k = h('div', { class: 'kv' }), add = (a, b) => k.append(h('span', null, a), h('span', null, b)), M = c => money(c / 100, { compact: true });
+  add('Market pool', M(s.sys.pool)); add('Casino bankroll', M(s.sys.arcade)); add('Bank capital', M(s.sys.bank)); add('Treasury (taxes)', M(s.sys.gov)); add('City fund', M(s.sys.city)); add('Held by players & bots', M(s.held)); add('Audit', s.ok ? '✓ supply intact' : '⚠ mismatch');
+  add('Players / bots', s.players + ' / ' + s.bots); add('Houses (vacant)', s.houses + ' (' + s.vacant + ')'); add('Bots housed', s.housed + ' / ' + s.bots); add('House price index', (s.pi / 100).toFixed(0) + '%'); add('Economy health', s.health.toFixed(3) + (s.health >= 1 ? ' ▲' : ' ▼')); add('Avg bot cash', fmt0(s.avgBot)); add('Bots died / houses built', s.died + ' / ' + s.built);
+  p.append(k, h('div', { class: 'card' }, h('b', null, 'Taxes'), h('div', { class: 'sub' }, (cfg.taxBp / 100) + '% on every trade with the market pool and casino payouts · ' + (cfg.dutyBp / 100) + '% stamp duty on house sales · ' + (cfg.propTaxBpDay / 100).toFixed(2) + '%/day property tax · wealth tax above ' + fmt0(cfg.wealthFree / 100) + ' · 10% estate tax when a bot dies. The treasury pays public-sector bots and the city services.')), h('div', { class: 'sub' }, 'Updated ' + Kit.ago(s.t)));
+}
+function paintFeed(p){
+  p.append(h('h3', null, 'Emergency services'), h('div', { class: 'sub' }, 'Fires, medical emergencies and break-ins hit every house with the same chance. The nearest fire station, hospital and police station respond.'));
+  const ev = H.events(), ids = Object.keys(ev).sort().reverse(); if(!ids.length) p.append(h('div', { class: 'sub', style: { marginTop: '10px' } }, 'All quiet in WestCountry.'));
+  ids.slice(0, 40).forEach(id => { const e = ev[id], c = e.k === 'fire' ? '#e5484d' : e.k === 'police' ? '#3a6fd8' : '#2f9e6e', t = e.k === 'fire' ? 'Fire at ' + e.a + ' — ' + e.dm + '% damage, crew in ' + e.resp + ' min' : e.k === 'police' ? 'Break-in at ' + e.a + ' — police in ' + e.resp + ' min' + (e.caught ? ', thief caught' : ', thief got away') : 'Ambulance to ' + e.a + ' — arrived in ' + e.resp + ' min';
+    p.append(h('div', { class: 'ev', onclick: () => focus(e.h) }, h('div', { class: 'dot', style: { background: c } }, e.k === 'fire' ? '▲' : e.k === 'police' ? '★' : '+'), h('div', null, h('b', null, t), h('div', { class: 'sub' }, e.d + ' · ' + Kit.ago(e.t))))); });
+}
+(async function init(){ me = H.uid(); resize(); paintBar(); paintSide(); H.watch(); rebuild(); events(); loadBots(); setInterval(loadBots, 180000); setInterval(() => { need = true; if(tab === 'me') paintSide(); }, 60000); OS.on('auth', () => { me = H.uid(); rebuild(); }); })();
+</script></body></html>

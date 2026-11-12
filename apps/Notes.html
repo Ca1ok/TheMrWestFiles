@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Notes</title>
+<link rel="stylesheet" href="../os/tokens.css"><link rel="stylesheet" href="../os/app/kit.css">
+<style>
+.ptw{ overflow-x:auto; margin:0 -16px; padding:4px 16px 14px; scrollbar-width:thin; } .pt{ display:grid; grid-template-columns:repeat(18,minmax(46px,1fr)); gap:3px; min-width:860px; }
+.c{ aspect-ratio:1; border-radius:7px; padding:3px 4px; text-align:left; background:color-mix(in srgb,var(--cc) 20%,var(--card)); position:relative; overflow:hidden; transition:transform .2s var(--spring),opacity .3s,filter .3s; display:flex; flex-direction:column; justify-content:space-between; }
+.c:hover{ transform:scale(1.18); z-index:3; box-shadow:var(--shadow); } .c:active{ transform:scale(.94); } .c .z{ font:600 9px/1 var(--font); color:var(--label2); } .c .s{ font:800 17px/1 var(--font); color:var(--cc); letter-spacing:-.02em; } .c .m{ font:500 8px/1 var(--font); color:var(--label2); white-space:nowrap; overflow:hidden; }
+.c.dim{ opacity:.18; filter:grayscale(.8); } .gap{ aspect-ratio:1; border-radius:7px; border:1px dashed var(--sep); display:grid; place-items:center; font:600 8px var(--font); color:var(--label3); }
+.lg{ display:flex; flex-wrap:wrap; gap:6px; margin:12px 0 4px; } .lg .chip{ display:inline-flex; align-items:center; gap:6px; height:28px; line-height:28px; font-size:12.5px; } .lg i{ width:9px; height:9px; border-radius:50%; background:var(--cc); }
+.bigsym{ width:110px; height:110px; border-radius:24px; background:color-mix(in srgb,var(--cc) 22%,var(--card)); display:flex; flex-direction:column; justify-content:space-between; padding:10px 12px; flex:none; } .bigsym .s{ font:800 52px/1 var(--font); color:var(--cc); letter-spacing:-.03em; } .bigsym small{ color:var(--label2); font:600 13px var(--font); }
+.db table{ width:100%; border-collapse:collapse; font:400 15px/1.4 var(--font); background:var(--card); border-radius:var(--r-m); overflow:hidden; display:block; overflow-x:auto; } .db th,.db td{ padding:9px 12px; text-align:left; border-bottom:.5px solid var(--sep); white-space:nowrap; } .db th{ font-weight:700; background:var(--fill); color:var(--label2); font-size:13px; } .db p,.db .note{ color:var(--label2); font-size:14px; line-height:1.5; } .db h4{ margin:18px 0 6px; font:700 17px var(--font); }
+.fm{ font:700 15px var(--font); color:var(--tint); }
+</style></head><body><div id="app"></div>
+<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
+<script>
+const { h, row, group, esc } = Kit, D = OS.data, CH = OS.chem, pf = f => CH.prettyFormula(f);
+const stateOf = n => D.GAS_AT_25C.has(n) ? 'gas' : D.LIQUID_AT_25C.has(n) ? 'liquid' : D.UNKNOWN_STATE.has(n) ? 'unknown' : 'solid';
+const blockOf = e => { const g = e[6], c = e[4]; if(c === 'lanthanide' || c === 'actinide') return 'f'; if(e[1] === 'He' || g <= 2) return 's'; if(g >= 13) return 'p'; return 'd'; };
+const A = Kit.app({ title: 'Notes', build: (body) => {
+  body.appendChild(h('div', { class: 'cap', style: { marginTop: 0 } }, 'Chemistry'));
+  body.appendChild(group(row({ glyph: 'grid', color: '#d9843f', title: 'Periodic Table', sub: 'All 118 elements — click any for details', chev: true, onClick: periodic }), row({ glyph: 'notes', color: '#d4a72c', title: 'Data Book', sub: D.DATABOOK.length + ' reference tables', chev: true, onClick: databook }), row({ glyph: 'search', color: '#2a8f8a', title: 'Compound Lookup', sub: 'Names, formulas and molar masses', chev: true, onClick: lookup })));
+  body.appendChild(h('div', { class: 'foot' }, 'These notes are a standalone study reference — nothing here affects your game.'));
+} });
+function periodic(){
+  A.push({ title: 'Periodic Table', backLabel: 'Notes', build: (b) => {
+    let mode = 'category', hi = null, q = ''; const wrap = h('div', { class: 'ptw' }), lg = h('div', { class: 'lg' });
+    const seg = Kit.seg([{ id: 'category', label: 'Category' }, { id: 'state', label: 'State' }, { id: 'block', label: 'Block' }], mode, v => { mode = v; hi = null; draw(); });
+    const sr = h('div', { class: 'search', style: { marginTop: '10px' } }, h('span', { html: Kit.icon('search', 17, 2) }), h('input', { class: 'field', placeholder: 'Find an element', oninput: e => { q = e.target.value.toLowerCase(); mark(); } }));
+    b.append(seg, sr, lg, wrap);
+    const keyOf = e => mode === 'category' ? e[4] : mode === 'state' ? stateOf(e[0]) : blockOf(e), colOf = e => ({ category: D.CATEGORY_COLORS, state: D.STATE_COLORS, block: D.BLOCK_COLORS })[mode][keyOf(e)] || '#c9a876';
+    const labels = () => mode === 'category' ? D.CATEGORY_LABELS : mode === 'state' ? D.STATE_LABELS : D.BLOCK_LABELS, colors = () => mode === 'category' ? D.CATEGORY_COLORS : mode === 'state' ? D.STATE_COLORS : D.BLOCK_COLORS;
+    function draw(){
+      lg.innerHTML = ''; Object.keys(labels()).forEach(k => lg.appendChild(h('button', { class: 'chip' + (hi === k ? ' on' : ''), style: { '--cc': colors()[k] }, onclick: () => { hi = hi === k ? null : k; draw(); } }, h('i'), labels()[k])));
+      const pt = h('div', { class: 'pt' });
+      D.ELEMENTS.forEach(e => { const g = e[6], per = e[5]; let col = g, row_ = per; if(g === 0){ const lan = e[4] === 'lanthanide'; col = 3 + e[0] - (lan ? 57 : 89); row_ = lan ? 9 : 10; } const c = h('button', { class: 'c', 'data-n': e[0], style: { gridColumn: col, gridRow: row_, '--cc': colOf(e) }, onclick: () => detail(e) }, h('span', { class: 'z' }, e[0]), h('span', { class: 's' }, e[1]), h('span', { class: 'm' }, e[2])); c._e = e; pt.appendChild(c); });
+      pt.appendChild(h('div', { class: 'gap', style: { gridColumn: 3, gridRow: 6 } }, '57–71')); pt.appendChild(h('div', { class: 'gap', style: { gridColumn: 3, gridRow: 7 } }, '89–103')); wrap.innerHTML = ''; wrap.appendChild(pt); mark();
+    }
+    function mark(){ $$('.c', wrap).forEach(c => { const e = c._e; const m1 = !hi || keyOf(e) === hi, m2 = !q || e[2].toLowerCase().includes(q) || e[1].toLowerCase() === q || String(e[0]) === q; c.classList.toggle('dim', !(m1 && m2)); }); }
+    const $$ = Kit.$$; draw();
+  } });
+}
+function detail(e){
+  const col = D.CATEGORY_COLORS[e[4]] || '#c9a876', ox = (D.OXIDATION[e[1]] || []), en = D.ELECTRONEG[e[1]], mp = D.MELTING_POINTS[e[1]], bp = D.BOILING_POINTS[e[1]], st = stateOf(e[0]);
+  const comps = D.COMPOUND_LOOKUP.filter(c => c.comp[e[1]]).slice(0, 10), k = t => t + ' K (' + (t - 273.15).toFixed(0) + ' °C)';
+  Kit.sheet({ title: e[2], build: (sb) => {
+    sb.appendChild(h('div', { class: 'hstack', style: { gap: '16px', marginBottom: '14px' } }, h('div', { class: 'bigsym', style: { '--cc': col } }, h('small', null, e[0]), h('div', { class: 's' }, e[1]), h('small', null, e[3].toFixed(3))), h('div', null, h('div', { class: 'tag', style: { background: col + '33', color: col } }, D.CATEGORY_LABELS[e[4]] || e[4]), h('div', { class: 'sub', style: { marginTop: '8px' } }, 'Period ' + e[5] + (e[6] ? ' · Group ' + e[6] : ' · f-block') + ' · ' + blockOf(e) + '-block'))));
+    sb.appendChild(group(row({ title: 'State at 25 °C', right: D.STATE_LABELS[st].split(' /')[0] }), row({ title: 'Atomic mass', right: e[3] + ' u' }), mp ? row({ title: 'Melting point', right: k(mp) }) : null, bp ? row({ title: 'Boiling point', right: k(bp) }) : null, en ? row({ title: 'Electronegativity', right: en.toFixed(2) }) : null, row({ title: 'Common oxidation states', right: ox.length ? ox.map(x => (x > 0 ? '+' : '') + x).join(', ') : 'none (inert)' })));
+    if(comps.length){ sb.appendChild(h('div', { class: 'cap' }, 'Found in')); sb.appendChild(group(comps.map(c => row({ left: h('div', { class: 'fm', style: { width: '70px' }, html: pf(c.formula) }), title: c.name, sub: c.common && c.common !== c.name ? c.common : c.desc, })))); }
+  } });
+}
+function databook(){
+  A.push({ title: 'Data Book', backLabel: 'Notes', build: (b) => {
+    const sr = h('div', { class: 'search' }, h('span', { html: Kit.icon('search', 17, 2) }), h('input', { class: 'field', placeholder: 'Search tables', oninput: e => draw(e.target.value.toLowerCase()) })), list = h('div', { style: { marginTop: '12px' } }); b.append(sr, list);
+    function draw(q){ list.innerHTML = ''; const rows = D.DATABOOK.filter(s => !q || s.title.toLowerCase().includes(q) || s.body.toLowerCase().includes(q)); list.appendChild(rows.length ? group(rows.map(s => row({ glyph: 'notes', color: '#d4a72c', title: s.title, chev: true, onClick: () => A.push({ title: s.title.replace(/\s*\(.*$/, ''), backLabel: 'Data Book', build: (bb) => { bb.appendChild(h('div', { class: 'db', html: s.body })); } }) }))) : h('div', { class: 'empty' }, 'Nothing found.')); }
+    draw('');
+  } });
+}
+function lookup(){
+  A.push({ title: 'Compound Lookup', backLabel: 'Notes', build: (b) => {
+    const inp = h('input', { class: 'field', placeholder: 'e.g. NaCl, sulfuric acid, CH4', autocapitalize: 'off', spellcheck: 'false' }), out = h('div', { style: { marginTop: '14px' } }); b.append(inp, out);
+    const chips = h('div', { class: 'chips', style: { marginTop: '10px' } }, ...['H2O', 'NaCl', 'CO2', 'NH3', 'H2SO4', 'CaCO3', 'C6H12O6'].map(f => h('button', { class: 'chip', onclick: () => { inp.value = f; draw(); } }, h('span', { html: pf(f) })))); b.insertBefore(chips, out);
+    function draw(){
+      const q = inp.value.trim(), ql = q.toLowerCase(); out.innerHTML = ''; if(!q) return;
+      const hits = D.COMPOUND_LOOKUP.filter(c => c.name.toLowerCase().includes(ql) || c.formula.toLowerCase() === ql || (c.common || '').toLowerCase().includes(ql)).slice(0, 12);
+      const d = CH.describe(q); const rows = [];
+      if(d && !hits.some(c => c.formula.toLowerCase() === ql) && Object.keys(d.comp).length > 0){ rows.push(row({ left: h('div', { class: 'fm', style: { width: '74px' }, html: pf(d.formula) }), title: d.name, sub: d.category + ' · ' + d.mass.toFixed(2) + ' g/mol', wrap: true })); }
+      hits.forEach(c => rows.push(row({ left: h('div', { class: 'fm', style: { width: '74px' }, html: pf(c.formula) }), title: c.name, sub: (c.common && c.common !== c.name ? c.common + ' — ' : '') + c.desc + ' · ' + CH.massOf(c.comp).toFixed(2) + ' g/mol', wrap: true })));
+      out.appendChild(rows.length ? group(rows) : h('div', { class: 'empty' }, 'No match. Try a formula like Ca(OH)2.'));
+    }
+    inp.addEventListener('input', Kit.debounce(draw, 150));
+  } });
+}
+</script></body></html>

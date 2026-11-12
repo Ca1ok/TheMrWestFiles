@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Leaderboard</title>
+<link rel="stylesheet" href="../os/tokens.css"><link rel="stylesheet" href="../os/app/kit.css">
+<style>
+.cats{ display:flex; gap:8px; overflow-x:auto; padding:2px 16px 12px; margin:0 -16px; scrollbar-width:none; } .cats::-webkit-scrollbar{ display:none; }
+.cat{ flex:none; display:inline-flex; align-items:center; gap:7px; height:36px; padding:0 14px 0 10px; border-radius:18px; background:var(--card); color:var(--label); font:600 13.5px var(--font); box-shadow:inset 0 0 0 1px var(--sep,rgba(255,255,255,.08)); transition:transform .2s var(--spring),background .2s,color .2s; }
+.cat:active{ transform:scale(.95); } .cat .gi{ width:22px; height:22px; border-radius:7px; display:grid; place-items:center; background:var(--c); color:#fff; } .cat.on{ background:var(--c); color:#fff; box-shadow:none; } .cat.on .gi{ background:rgba(255,255,255,.22); }
+.hero{ border-radius:var(--r-xl); padding:18px 20px; color:#fff; position:relative; overflow:hidden; box-shadow:var(--shadow); background:linear-gradient(155deg,var(--c),color-mix(in srgb,var(--c) 40%,#10131c)); margin-bottom:14px; }
+.hero::after{ content:""; position:absolute; right:-50px; top:-50px; width:200px; height:200px; border-radius:50%; background:radial-gradient(circle,rgba(255,255,255,.18),transparent 70%); }
+.hero small{ opacity:.78; font:600 12.5px var(--font); letter-spacing:.05em; text-transform:uppercase; } .hero .big{ font:800 40px/1.05 var(--font); letter-spacing:-.02em; margin:4px 0 2px; } .hero .sub2{ opacity:.88; font:500 14px var(--font); }
+.pod{ display:flex; gap:10px; align-items:flex-end; justify-content:center; margin:0 0 14px; }
+.pod .p{ flex:1; max-width:220px; background:var(--card); border-radius:var(--r-l); padding:12px 8px 10px; text-align:center; box-shadow:inset 0 0 0 1px var(--sep,rgba(255,255,255,.06)); cursor:pointer; transition:transform .2s var(--spring); } .pod .p:active{ transform:scale(.96); } .pod .p.me{ box-shadow:inset 0 0 0 2px var(--tint); } .pod .p.first{ padding-top:22px; padding-bottom:18px; }
+.pod .medal{ width:34px; height:34px; border-radius:50%; margin:0 auto 6px; display:grid; place-items:center; font:800 15px var(--font); color:#241a05; background:var(--m); box-shadow:0 3px 10px rgba(0,0,0,.25),inset 0 2px 0 rgba(255,255,255,.5); }
+.pod .nm{ font:700 14px var(--font); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .pod .vl{ font:700 13px var(--font); color:var(--label2); margin-top:2px; }
+.rk{ min-width:34px; text-align:center; font:700 15px var(--font); color:var(--label2); } .rk.top{ color:var(--tint); }
+.row.me{ background:var(--tint-dim); } .row.me b{ color:var(--tint); }
+.guest{ display:flex; gap:12px; align-items:center; background:var(--tint-dim); color:var(--tint); border-radius:var(--r-l); padding:12px 14px; margin-bottom:14px; font:500 14px/1.3 var(--font); cursor:pointer; }
+.upd{ text-align:center; margin-top:14px; }
+/* every player's stats */
+.tw{ overflow:auto; max-height:600px; border-radius:var(--r-l); background:var(--card); box-shadow:inset 0 0 0 1px var(--sep,rgba(255,255,255,.08)); }
+table.st{ border-collapse:separate; border-spacing:0; width:100%; font:500 13.5px var(--font); font-variant-numeric:tabular-nums; }
+.st th,.st td{ padding:9px 12px; text-align:right; white-space:nowrap; border-bottom:1px solid var(--sep,rgba(255,255,255,.06)); background:var(--card); }
+.st thead th{ position:sticky; top:0; z-index:2; font:700 11.5px var(--font); letter-spacing:.04em; text-transform:uppercase; color:var(--label2); cursor:pointer; user-select:none; } .st thead th.on{ color:var(--tint); } .st thead th .ar{ margin-left:3px; }
+.st .c1,.st .c2{ position:sticky; z-index:1; text-align:left; } .st .c1{ left:0; width:46px; min-width:46px; text-align:center; color:var(--label2); font-weight:700; } .st .c2{ left:46px; min-width:140px; max-width:170px; overflow:hidden; text-overflow:ellipsis; font-weight:600; box-shadow:1px 0 0 var(--sep,rgba(255,255,255,.08)); }
+.st thead .c1,.st thead .c2{ z-index:3; } .st tbody tr{ cursor:pointer; } .st tbody tr:hover td{ background:var(--fill); } .st tr.me td{ background:var(--tint-dim); color:var(--tint); } .st td.hi{ color:var(--label); font-weight:700; }
+.tiles{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px; margin:12px 0; } .tile{ background:var(--fill); border-radius:var(--r-m); padding:10px 12px; } .tile small{ display:block; color:var(--label2); font:600 11.5px var(--font); text-transform:uppercase; letter-spacing:.04em; } .tile b{ display:block; font:800 18px var(--font); margin-top:2px; } .tile i{ font:600 12px var(--font); color:var(--tint); font-style:normal; }
+.av{ width:52px; height:52px; border-radius:50%; display:grid; place-items:center; background:var(--tint); color:#fff; font:800 22px var(--font); }
+</style></head><body><div id="app"></div>
+<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script><script src="games/manifest.js"></script>
+<script>
+const og = p => p && p.og ? h('span', { title: 'OG player — here from the start', style: { opacity: '.5', fontSize: '.72em', marginLeft: '5px', letterSpacing: '.04em', fontWeight: '800' } }, '★ OG') : '';
+const { h, row, group, money, esc, num } = Kit, LB = OS.leaderboard, CATS = LB.categories(), SHOWN = 50;
+const GB = OS.gameBoards, GMETA = {}; GAME_MANIFEST.forEach(g => { GMETA[g.id] = g; }); const GIDS = ['all'].concat(OS.games.ids().filter(id => GMETA[id]));
+let gcat = 'all', grows = [], gAt = 0;
+let view = 'rank', cat = CATS[0].id, rows = [], allRows = [], loadedAt = 0, allAt = 0, gen = 0, sortKey = 'nw', sortDir = -1;
+const fmt = (c, v) => c.unit === 'money' ? money(v, { compact: Math.abs(v) >= 1e4, dp: 2 }) : c.unit === 'rate' ? (+v || 0).toFixed(1) + '/min' : num(v || 0);
+const full = (c, v) => c.unit === 'money' ? money(v || 0, { dp: 2 }) : c.unit === 'rate' ? (+v || 0).toFixed(1) + ' mol/min' : num(v || 0);
+const medal = ['#f3c64a', '#c9d1db', '#d99a64'];
+const A = Kit.app({ title: 'Leaderboard', right: [{ icon: 'refresh', label: 'Refresh', onClick: () => load(true) }], build: (body) => {
+  const seg = Kit.seg([{ id: 'rank', label: 'Rankings' }, { id: 'games', label: 'Mini-games' }, { id: 'all', label: 'All players' }], view, v => { view = v; paint(); load(false); });
+  const guest = h('div'), cats = h('div', { class: 'cats' }), hero = h('div'), pod = h('div', { class: 'pod' }), list = h('div'), tableBox = h('div'), foot = h('div', { class: 'foot upd' });
+  body.append(seg, h('div', { style: { height: '12px' } }), guest, cats, hero, pod, list, tableBox, foot);
+  const hint = () => { try{ const v = sessionStorage.getItem('westos_lb_view'); if(!v) return; sessionStorage.removeItem('westos_lb_view'); const [vw, id] = v.split(':'); if(vw === 'games'){ view = 'games'; if(GIDS.includes(id)) gcat = id; seg.set('games'); paint(); load(false); } }catch(_){} };
+  OS.on('focus', hint);
+  const me = () => OS.auth.user();
+  const current = () => CATS.find(c => c.id === cat);
+  /* your own row always uses your live numbers (no waiting for the server) */
+  function withMe(src, field){
+    const u = me(), out = src.filter(r => !u || r.uid !== u.uid); if(u){ const live = LB.mine(); if(live.name) out.push(Object.assign({ uid: u.uid }, live)); } return out;
+  }
+  const byField = (arr, f) => arr.slice().sort((a, b) => (b[f] || 0) - (a[f] || 0));
+  function paintCats(){
+    cats.innerHTML = ''; if(view === 'games'){ GIDS.forEach(id => cats.appendChild(h('button', { class: 'cat' + (id === gcat ? ' on' : ''), style: { '--c': '#7a45b8' }, onclick: () => { if(gcat === id) return; gcat = id; paintCats(); load(false); } }, id === 'all' ? 'Overall' : GMETA[id].name))); const on = cats.querySelector('.on'); if(on && on.scrollIntoView) on.scrollIntoView({ inline: 'center', block: 'nearest' }); return; } if(view !== 'rank') return;
+    CATS.forEach(c => cats.appendChild(h('button', { class: 'cat' + (c.id === cat ? ' on' : ''), style: { '--c': c.color }, onclick: () => { if(cat === c.id) return; cat = c.id; paintCats(); load(false); } }, h('span', { class: 'gi', html: Kit.icon(c.glyph, 13, 2.2) }), c.name)));
+    const on = cats.querySelector('.on'); if(on && on.scrollIntoView) on.scrollIntoView({ inline: 'center', block: 'nearest' });
+  }
+  function paintGuest(){
+    guest.innerHTML = ''; const u = me();
+    if(!u) guest.appendChild(h('div', { class: 'guest', onclick: () => OS.open('Settings') }, h('span', { html: Kit.icon('cloudOff', 22, 2) }), h('span', null, 'Sign in and pick a display name to get on the leaderboard.')));
+    else if(!OS.auth.name()) guest.appendChild(h('div', { class: 'guest', onclick: () => OS.open('Settings') }, h('span', { html: Kit.icon('user', 22, 2) }), h('span', null, 'Choose a display name in Settings to appear on the board.')));
+  }
+  /* ---- player detail: every stat, with the player's rank in each ---- */
+  function openPlayer(p){
+    const pool = withMe(allRows.length ? allRows : rows), u = me(), isMe = u && p.uid === u.uid;
+    Kit.sheet({ title: p.name || 'Player', build: (sb) => {
+      const rank = c => { const s = byField(pool, c.field), i = s.findIndex(r => r.uid === p.uid); return i < 0 ? null : i + 1; };
+      sb.append(h('div', { class: 'hstack', style: { gap: '14px', margin: '4px 0 4px' } }, h('div', { class: 'av' }, (p.name || '?')[0].toUpperCase()), h('div', null, h('div', { class: 'fx' }, (p.name || 'Player') + (isMe ? ' (you)' : ''), og(p)), h('small', { class: 'dim' }, p.updatedAt && !isMe ? 'Updated ' + new Date(p.updatedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : (isMe ? 'Live numbers' : '')))));
+      sb.appendChild(h('div', { class: 'tiles' }, ...CATS.map(c => { const r = rank(c); return h('div', { class: 'tile' }, h('small', null, c.name), h('b', { class: 'num' }, full(c, p[c.field])), r ? h('i', null, '#' + r + ' of ' + pool.length) : null); })));
+      sb.appendChild(h('div', { class: 'foot' }, 'Ranks are among the ' + pool.length + ' players loaded. Everything here is the public leaderboard record — nothing private.'));
+    } });
+  }
+  /* ---- rankings ---- */
+  function subline(c, p){
+    const m = v => money(v || 0, { compact: true });
+    return ({ nw: 'Bank ' + m(p.value) + ' · Stocks ' + m(p.stk) + ' · Property ' + m(p.re), cash: 'Net worth ' + m(p.nw), re: (p.props || 0) + ' propert' + (p.props === 1 ? 'y' : 'ies'), stk: 'Net worth ' + m(p.nw), inv: (p.els || 0) + ' different elements', disc: (p.runs || 0) + ' reactions run',
+      runs: (p.disc || 0) + ' discoveries', props: 'Property worth ' + m(p.re), els: (p.disc || 0) + ' compounds discovered', fac: num(p.made || 0) + ' mol made in total', made: (p.fac || 0).toFixed(1) + ' mol/min now' })[c.id] || null;
+  }
+  function paintRank(){
+    const c = current(), all = byField(withMe(rows), c.field).slice(0, SHOWN), u = me(), uid = u ? u.uid : null; hero.innerHTML = ''; pod.innerHTML = ''; list.innerHTML = '';
+    const mineIdx = uid ? all.findIndex(r => r.uid === uid) : -1, live = LB.mine(), named = !!(uid && live.name);
+    hero.appendChild(h('div', { class: 'hero', style: { '--c': c.color } }, h('small', null, c.name + ' · ' + c.desc), h('div', { class: 'big num' }, !named ? '—' : fmt(c, live[c.field] || 0)),
+      h('div', { class: 'sub2' }, !uid ? 'Sign in to see where you stand.' : !named ? 'Pick a display name to join the board.' : mineIdx >= 0 ? 'You’re #' + (mineIdx + 1) + (all.length < SHOWN ? ' of ' + all.length : ' on the board') : 'Just outside the top ' + SHOWN + ' — keep going!')));
+    if(!all.length){ pod.style.display = 'none'; list.appendChild(h('div', { class: 'card empty', style: { padding: '28px' } }, loadedAt ? 'No one is on this board yet.' : 'Loading…')); return; }
+    const pd = (p, i) => h('div', { class: 'p' + (p.uid === uid ? ' me' : '') + (i === 0 ? ' first' : ''), onclick: () => openPlayer(p) }, h('div', { class: 'medal', style: { '--m': medal[i] } }, i + 1), h('div', { class: 'nm' }, p.name || 'Player', og(p)), h('div', { class: 'vl num' }, fmt(c, p[c.field] || 0)));
+    if(all.length >= 3){ pod.style.display = ''; pod.append(pd(all[1], 1), pd(all[0], 0), pd(all[2], 2)); } else pod.style.display = 'none';
+    const off = all.length >= 3 ? 3 : 0, rest = all.slice(off);
+    if(rest.length) list.appendChild(group(rest.map((p, i) => row({ cls: p.uid === uid ? 'me' : '', left: h('span', { class: 'rk' }, '#' + (i + off + 1)), title: h('span', null, p.name || 'Player', og(p)), sub: p.uid === uid ? 'You · ' + (subline(c, p) || '') : subline(c, p), right: h('b', { class: 'num' }, fmt(c, p[c.field] || 0)), onClick: () => openPlayer(p) }))));
+  }
+  /* ---- mini-game boards: one per game + Overall (sum of personal bests) ---- */
+  function paintGames(){
+    const u = me(), uid = u ? u.uid : null, pts = v => num(v || 0) + ' pts', mineB = GB.mine(), mineV = mineB[gcat] || 0, named = !!(uid && OS.auth.name());
+    let all = grows.filter(r => r.uid !== uid); if(named && mineV > 0) all.push({ uid, n: OS.auth.name(), s: mineV }); all.sort((a, b) => b.s - a.s); all = all.slice(0, SHOWN);
+    hero.innerHTML = ''; pod.innerHTML = ''; list.innerHTML = ''; const idx = uid ? all.findIndex(r => r.uid === uid) : -1;
+    hero.appendChild(h('div', { class: 'hero', style: { '--c': '#7a45b8' } }, h('small', null, (gcat === 'all' ? 'Overall · sum of your best scores' : GMETA[gcat].name + ' · best score')), h('div', { class: 'big num' }, mineV ? pts(mineV) : '—'), h('div', { class: 'sub2' }, !uid ? 'Sign in to post scores.' : !named ? 'Pick a display name in Settings to appear on the board.' : idx >= 0 ? 'You’re #' + (idx + 1) : mineV ? 'Just outside the top ' + SHOWN + '.' : 'Play ' + (gcat === 'all' ? 'a game' : 'this game') + ' to get on the board.')));
+    if(!all.length){ pod.style.display = 'none'; return list.appendChild(h('div', { class: 'card empty', style: { padding: '28px' } }, gAt ? 'No scores yet — be the first.' : 'Loading…')); }
+    const pd = (p, i) => h('div', { class: 'p' + (p.uid === uid ? ' me' : '') + (i === 0 ? ' first' : '') }, h('div', { class: 'medal', style: { '--m': medal[i] } }, i + 1), h('div', { class: 'nm' }, p.n || 'Player'), h('div', { class: 'vl num' }, pts(p.s)));
+    if(all.length >= 3){ pod.style.display = ''; pod.append(pd(all[1], 1), pd(all[0], 0), pd(all[2], 2)); } else pod.style.display = 'none';
+    const off = all.length >= 3 ? 3 : 0; if(all.slice(off).length) list.appendChild(group(all.slice(off).map((p, i) => row({ cls: p.uid === uid ? 'me' : '', left: h('span', { class: 'rk' }, '#' + (i + off + 1)), title: p.n || 'Player', sub: p.uid === uid ? 'You' : (p.c ? p.c + ' games' : null), right: h('b', { class: 'num' }, pts(p.s)) }))));
+  }
+  /* ---- every player, every stat ---- */
+  function paintAll(){
+    tableBox.innerHTML = ''; const u = me(), uid = u ? u.uid : null, data = byField(withMe(allRows), sortKey); if(sortDir > 0) data.reverse();
+    if(!data.length) return tableBox.appendChild(h('div', { class: 'card empty', style: { padding: '28px' } }, allAt ? 'No players on the board yet.' : 'Loading…'));
+    const th = (c) => h('th', { class: sortKey === c.field ? 'on' : '', onclick: () => { if(sortKey === c.field) sortDir = -sortDir; else { sortKey = c.field; sortDir = -1; } paintAll(); } }, c.name, h('span', { class: 'ar' }, sortKey === c.field ? (sortDir < 0 ? '↓' : '↑') : ''));
+    const tb = h('tbody'), nwRank = {}; byField(withMe(allRows), 'nw').forEach((r, i) => { nwRank[r.uid] = i + 1; });
+    data.forEach((p, i) => tb.appendChild(h('tr', { class: p.uid === uid ? 'me' : '', onclick: () => openPlayer(p) }, h('td', { class: 'c1' }, String(sortKey === 'nw' && sortDir < 0 ? i + 1 : (nwRank[p.uid] || i + 1))), h('td', { class: 'c2' }, p.name || 'Player', og(p)), ...CATS.map(c => h('td', { class: c.field === sortKey ? 'hi' : '' }, fmt(c, p[c.field] || 0))))));
+    tableBox.appendChild(h('div', { class: 'tw' }, h('table', { class: 'st' }, h('thead', null, h('tr', null, h('th', { class: 'c1' }, '#'), h('th', { class: 'c2' }, 'Player'), ...CATS.map(th))), tb)));
+    tableBox.appendChild(h('div', { class: 'foot', style: { marginTop: '8px' } }, data.length + ' players · click a column to sort, a row for the full profile. # is net-worth rank.'));
+  }
+  function paint(){
+    const isRank = view !== 'all'; cats.style.display = hero.style.display = list.style.display = isRank ? '' : 'none'; tableBox.style.display = isRank ? 'none' : ''; if(!isRank) pod.style.display = 'none';
+    paintCats(); if(view === 'rank') paintRank(); else if(view === 'games') paintGames(); else paintAll();
+  }
+  async function load(force){
+    const my = ++gen; if(force){ LB.refresh(); GB.refresh(); } paint();
+    try{ if(view === 'games'){ const r = await GB.list(gcat, SHOWN); if(my !== gen) return; grows = r; gAt = Date.now(); } else if(view === 'rank'){ const r = await LB.list(cat, SHOWN); if(my !== gen) return; rows = r; loadedAt = Date.now(); } else { const r = await LB.all(); if(my !== gen) return; allRows = r; allAt = Date.now(); } }
+    catch(e){ if(my !== gen) return; OS.debug.error('Leaderboard', e, { view }); if(view === 'games'){ grows = []; gAt = Date.now(); } else if(view === 'rank') { rows = []; loadedAt = Date.now(); } else { allRows = []; allAt = Date.now(); } }
+    paint(); const at = view === 'games' ? gAt : view === 'rank' ? loadedAt : allAt; foot.textContent = at ? 'Updated ' + new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + ' · rankings refresh as players save' : '';
+  }
+  const soft = Kit.debounce(() => { if(loadedAt || allAt) paint(); }, 700);
+  ['cash', 'inv', 'stock', 'props', 'lab', 'factory', 'games'].forEach(e => Kit.live(e, soft));
+  const tick = setInterval(() => { if(!document.hidden && (loadedAt || allAt)) paint(); }, 5000); window.addEventListener('pagehide', () => clearInterval(tick));
+  Kit.live('auth', () => { paintGuest(); load(true); });
+  paintGuest(); hint(); paint(); load(false);
+} });
+</script></body></html>

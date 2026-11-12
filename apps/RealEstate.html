@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Real Estate</title>
+<link rel="stylesheet" href="../os/tokens.css"><link rel="stylesheet" href="../os/app/kit.css">
+<style>.hero{background:linear-gradient(155deg,#8a5a3a,#4b2f1e 70%);color:#fff;border-radius:var(--r-xl);padding:20px 22px;box-shadow:var(--shadow)} .hero small{opacity:.75;font:600 13px var(--font);letter-spacing:.04em;text-transform:uppercase} .hero .bignum{font-size:38px;margin:4px 0}
+.cta{display:block;width:100%;border:0;border-radius:var(--r-l);padding:14px;margin:12px 0;background:var(--tint);color:#fff;font:700 15px var(--font);cursor:pointer}</style></head><body><div id="app"></div>
+<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
+<script>
+const { h, row, group, money } = Kit, H = OS.homes, HOUR = 3600000;
+Kit.app({ title: 'Real Estate', build: (body) => {
+  const box = h('div'); body.append(box);
+  function paint(){
+    box.innerHTML = ''; const cfg = H.cfg(), mine = H.mine(), lv = H.home(), val = mine.reduce((s, x) => s + H.sellValue(x.v), 0);
+    if(!H.ready()){ box.append(h('div', { class: 'card empty' }, 'Sign in (and wait for the economy to start) to own houses.')); return; }
+    box.append(h('div', { class: 'hero' }, h('small', null, 'Property you own'), h('div', { class: 'bignum num' }, money(val, { dp: 0 })), h('div', null, mine.length + ' house' + (mine.length === 1 ? '' : 's') + ' · valued at the city’s buy-back price')));
+    box.append(h('h2', { class: 'sec' }, 'Where you live'));
+    if(lv){ const left = H.rentLeftMs(); box.append(group(row({ title: lv.g.addr, sub: lv.g.typeName + ' · ' + lv.g.district + (lv.owned ? ' · owned' : ' · rented, ' + (left > 0 ? Math.floor(left / HOUR) + 'h of rent left' : 'rent has run out!')) }))); if(!lv.owned) box.append(h('button', { class: 'btn block tinted', onclick: async () => { const r = await H.topUp(24); Kit.toast(r.msg || 'Rent paid', r.ok ? 'good' : 'bad'); paint(); } }, 'Pay 24 more hours of rent')); }
+    else box.append(h('div', { class: 'card' }, h('b', null, 'You are homeless'), h('div', { class: 'sub' }, 'Find a house on WestMap — games pay half and loans are closed until you do.')));
+    box.append(h('button', { class: 'cta', onclick: () => OS.open('WestMap') }, 'Open WestMap'));
+    box.append(h('h2', { class: 'sec' }, 'Your houses'));
+    box.append(mine.length ? group(mine.map(x => row({ title: x.g.addr, sub: x.g.typeName + ' · ' + money(x.v / 100, { dp: 0 }) + (x.t ? ' · rented to ' + (x.tn || 'a tenant') : x.a > 0 ? ' · for sale' : x.rh > 0 ? ' · for rent ' + money(x.rh * 24 / 100, { dp: 2 }) + '/day' : ' · yours to live in'), chev: true, onClick: () => OS.open('WestMap') }))) : h('div', { class: 'card empty' }, 'No houses yet — buy one on WestMap.'));
+    box.append(h('div', { class: 'card' }, h('b', null, 'What owning costs'), h('p', { class: 'sub', style: { margin: '6px 0 0' } }, 'Property tax ' + (cfg.propTaxBpDay / 100).toFixed(2) + '% of value per day, 2% stamp duty when you buy, ' + (cfg.sellBp / 100) + '% of value if you sell straight to the city. Rent your spare houses out — to players or bots — to earn it back.')));
+  }
+  paint(); ['props', 'home', 'cash', 'world'].forEach(e => Kit.live(e, Kit.debounce(paint, 200))); setInterval(paint, 60000);
+} });
+</script></body></html>

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Preview</title>
+<link rel="stylesheet" href="../os/tokens.css"><link rel="stylesheet" href="../os/app/kit.css"><link rel="stylesheet" href="../os/poster.css">
+<style>
+html,body{ height:100%; margin:0; background:#0b0b0d; color:#fff; overflow:hidden; --label:#fff; }
+#pv{ position:absolute; inset:0; display:flex; flex-direction:column; user-select:none; }
+.ptop{ display:flex; align-items:center; gap:10px; padding:8px 14px; background:rgba(255,255,255,.06); border-bottom:1px solid rgba(255,255,255,.08); flex:none; }
+.ptop b{ flex:1; min-width:0; text-align:center; font:600 14px var(--font); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .ptop .ix{ font:500 12.5px var(--font); opacity:.6; min-width:48px; text-align:right; }
+.stage{ flex:1; position:relative; overflow:hidden; display:grid; place-items:center; cursor:grab; touch-action:none; } .stage.drag{ cursor:grabbing; }
+.stage img,.stage video{ max-width:100%; max-height:100%; object-fit:contain; transform-origin:center; will-change:transform; -webkit-user-drag:none; }
+.stage .poster{ width:min(100%,560px); transform-origin:center; will-change:transform; }
+.pbar{ display:flex; justify-content:center; align-items:center; gap:8px; padding:9px 12px; background:rgba(255,255,255,.06); border-top:1px solid rgba(255,255,255,.08); flex:none; flex-wrap:wrap; }
+.vbtn{ height:36px; padding:0 14px; border-radius:18px; background:rgba(255,255,255,.14); color:#fff; font:600 13.5px var(--font); display:inline-flex; align-items:center; gap:6px; } .vbtn:hover{ background:rgba(255,255,255,.22); } .vbtn:active{ transform:scale(.94); } .vbtn.round{ width:36px; padding:0; justify-content:center; } .vbtn[disabled]{ opacity:.3; pointer-events:none; }
+.zl{ font:600 12.5px var(--font); min-width:46px; text-align:center; opacity:.75; }
+.nv{ position:absolute; top:50%; width:44px; height:44px; margin-top:-22px; border-radius:50%; background:rgba(255,255,255,.14); backdrop-filter:blur(10px); display:grid; place-items:center; color:#fff; z-index:3; } .nv.l{ left:12px; } .nv.r{ right:12px; }
+.ring{ width:60px; height:60px; } .ring circle{ fill:none; stroke-width:5; stroke-linecap:round; } .ring .bg{ stroke:rgba(255,255,255,.2); } .ring .fg{ stroke:#fff; stroke-dasharray:176; stroke-dashoffset:176; transform:rotate(-90deg); transform-origin:50% 50%; transition:stroke-dashoffset .2s; }
+.msgbox{ text-align:center; padding:0 26px; max-width:420px; font:500 15px/1.45 var(--font); color:rgba(255,255,255,.85); }
+.empty2{ text-align:center; color:rgba(255,255,255,.7); font:500 15px/1.5 var(--font); } .empty2 .btn{ margin-top:14px; }
+.page{ aspect-ratio:210/297; width:100%; position:relative; box-shadow:0 8px 40px rgba(0,0,0,.5); container-type:inline-size; }
+.page.wp{ padding:7cqw 8cqw; display:flex; flex-direction:column; justify-content:space-between; }
+.page .stamp{ top:5cqw; right:6cqw; font-size:max(8px,1.9cqw); padding:.7cqw 1.4cqw; } .page .eyebrow{ font-size:max(8px,1.8cqw); } .page h1{ font-size:15cqw; margin:1cqw 0; } .page .subject{ font-size:5cqw; } .page .rule{ margin:2.2cqw auto; }
+.page .lbl{ font-size:max(9px,1.9cqw); margin:2.4cqw 0 1cqw; } .page ul{ font-size:max(11px,2.5cqw); line-height:1.5; } .page li b{ font-size:max(10px,2.1cqw); min-width:4.2em; } .page .final{ font-size:max(12px,2.8cqw); margin-top:2.4cqw; }
+.page .foot{ font:600 max(8px,1.6cqw) var(--font); letter-spacing:.2em; text-transform:uppercase; opacity:.6; }
+.page .photo{ width:34cqw; height:34cqw; margin:2cqw auto; border:.5cqw solid rgba(43,29,16,.7); background:repeating-linear-gradient(45deg,rgba(43,29,16,.12) 0 1.2cqw,transparent 1.2cqw 2.4cqw),#d7bf8c; display:grid; place-items:center; font:700 max(10px,2.2cqw) var(--serif); letter-spacing:.2em; color:rgba(43,29,16,.55); }
+.page > *{ position:relative; z-index:1; }
+</style></head><body><div id="pv"></div>
+<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
+<script>
+/* Preview — the photo viewer. Photos, News and the desktop hand it a picture with OS.preview({ kind:'gallery', list, index }) or { kind:'poster' }.
+   It only VIEWS: zoom, pan, flip through, save, wallpaper, info (and rename/delete for the admin). */
+const { h, row, group, esc } = Kit, G = OS.gallery, root = document.getElementById('pv');
+let item = null, list = [], i = 0, gen = 0, z = 1, px = 0, py = 0, kind = 'none';
+const tbar = h('div', { class: 'ptop' }), stage = h('div', { class: 'stage' }), bar = h('div', { class: 'pbar' });
+root.append(tbar, stage, bar);
+const title = h('b'), idx = h('span', { class: 'ix' });
+const zl = h('span', { class: 'zl' }, '100%');
+function target(){ return stage.querySelector('img,video,.poster'); }
+function applyT(){ const t = target(); if(!t) return; t.style.transform = 'translate(' + px + 'px,' + py + 'px) scale(' + z + ')'; zl.textContent = Math.round(z * 100) + '%'; }
+function setZ(n, keep){ z = Math.max(0.25, Math.min(8, n)); if(z <= 1 && !keep){ px = 0; py = 0; } applyT(); }
+function fit(){ z = 1; px = 0; py = 0; applyT(); }
+stage.addEventListener('wheel', e => { if(!target()) return; e.preventDefault(); setZ(z * (e.deltaY < 0 ? 1.15 : 1 / 1.15), true); }, { passive: false });
+let drag = null;
+stage.addEventListener('pointerdown', e => { if(e.target.closest('.nv')) return; drag = { x: e.clientX, y: e.clientY, ox: px, oy: py, moved: false }; stage.classList.add('drag'); stage.setPointerCapture(e.pointerId); });
+stage.addEventListener('pointermove', e => { if(!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if(Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true; if(z > 1){ px = drag.ox + dx; py = drag.oy + dy; applyT(); } });
+stage.addEventListener('pointerup', e => { if(drag && drag.moved && z <= 1 && Math.abs(e.clientX - drag.x) > 70) go(e.clientX < drag.x ? 1 : -1); drag = null; stage.classList.remove('drag'); });
+stage.addEventListener('dblclick', () => { z > 1 ? fit() : setZ(2.5); });
+document.addEventListener('keydown', e => { if(e.key === 'ArrowLeft') go(-1); else if(e.key === 'ArrowRight') go(1); else if(e.key === '+' || e.key === '=') setZ(z * 1.25, true); else if(e.key === '-') setZ(z / 1.25, true); else if(e.key === '0') fit(); });
+const nl = h('button', { class: 'nv l', 'aria-label': 'Previous', html: Kit.icon('chevL', 22, 2.4), onclick: e => { e.stopPropagation(); go(-1); } }), nr = h('button', { class: 'nv r', 'aria-label': 'Next', html: Kit.icon('chevR', 22, 2.4), onclick: e => { e.stopPropagation(); go(1); } });
+function go(d){ if(kind !== 'gallery') return; const n = i + d; if(n < 0 || n >= list.length) return; i = n; showGallery(); }
+
+function empty(){
+  kind = 'none'; title.textContent = 'Preview'; idx.textContent = ''; stage.innerHTML = ''; bar.innerHTML = ''; tbar.innerHTML = ''; tbar.append(h('span', { style: { width: '48px' } }), title, idx);
+  stage.appendChild(h('div', { class: 'empty2' }, h('div', { html: Kit.icon('image', 56, 1.3) }), h('div', null, 'Nothing to preview.', h('br'), 'Open a photo from Photos or News and it shows up here.'), h('button', { class: 'btn', onclick: () => OS.open('Photos') }, 'Open Photos')));
+}
+function chrome(){ tbar.innerHTML = ''; tbar.append(h('span', { style: { width: '48px' } }), title, idx); }
+function zoomButtons(){
+  return [h('button', { class: 'vbtn round', 'aria-label': 'Zoom out', html: Kit.icon('minus', 16, 2.4), onclick: () => setZ(z / 1.25, true) }), zl,
+    h('button', { class: 'vbtn round', 'aria-label': 'Zoom in', html: Kit.icon('plus', 16, 2.4), onclick: () => setZ(z * 1.25, true) }), h('button', { class: 'vbtn', onclick: fit }, 'Fit')];
+}
+/* ---------- the Wanted poster, shown like a printed page ---------- */
+function showPoster(){
+  kind = 'poster'; chrome(); title.textContent = 'WANTED — Colin West'; idx.textContent = ''; z = 1; px = 0; py = 0;
+  const W = OS.data.WANTED_DATA, li = a => '<ul>' + a.map(x => '<li><b>' + esc(x.count) + '</b><span>' + esc(x.text) + '</span></li>').join('') + '</ul>';
+  const pg = h('div', { class: 'poster' }, h('div', { class: 'page wp', html:
+    '<div><div class="stamp">FEDERAL<br>NOTICE</div><div class="eyebrow">By order of the court</div><h1>WANTED</h1><div class="subject">Colin West</div><div class="rule"></div><div class="photo">PHOTO UNAVAILABLE</div>' +
+    '<div class="lbl">Charges</div>' + li(W.charges) + '<div class="lbl">Sentence if apprehended</div>' + li(W.sentence) + '</div>' +
+    '<div><div class="final">Missing for ' + esc(W.missingDays) + ' day' + (W.missingDays === 1 ? '' : 's') + '. Your days are numbered.</div><div class="foot" style="margin-top:2.4cqw;text-align:center">Federal notice · The Mr West Files</div></div>' }));
+  stage.innerHTML = ''; stage.appendChild(pg); bar.innerHTML = ''; bar.append(...zoomButtons());
+}
+/* ---------- gallery photos / GIFs / videos ---------- */
+async function showGallery(){
+  const m = list[i], my = ++gen; kind = 'gallery'; chrome(); title.textContent = m.title || 'Untitled'; idx.textContent = (i + 1) + ' / ' + list.length; z = 1; px = 0; py = 0;
+  nl.style.visibility = i ? '' : 'hidden'; nr.style.visibility = i < list.length - 1 ? '' : 'hidden';
+  stage.innerHTML = '<svg class="ring" viewBox="0 0 64 64"><circle class="bg" cx="32" cy="32" r="28"/><circle class="fg" cx="32" cy="32" r="28"/></svg>'; stage.append(nl, nr); const fg = stage.querySelector('.fg');
+  buttons(m);
+  try{
+    const { url } = await G.view(m, p => { if(my === gen) fg.style.strokeDashoffset = 176 * (1 - p); }); if(my !== gen) return;
+    stage.querySelector('.ring').remove(); const el = m.type === 'video' ? h('video', { src: url, controls: true, playsinline: true, autoplay: true, loop: true }) : h('img', { src: url, alt: m.title || '', draggable: 'false' });
+    stage.prepend(el); applyT(); G.countView(m.id);
+  }catch(e){ if(my !== gen) return; const r = stage.querySelector('.ring'); if(r) r.remove(); stage.prepend(h('div', { class: 'msgbox' }, G.errText(e))); }
+}
+function buttons(m){
+  bar.innerHTML = ''; if(m.type !== 'video') bar.append(...zoomButtons());
+  bar.append(h('button', { class: 'vbtn', html: Kit.icon('share', 16, 2) + 'Save', onclick: () => download(m) }));
+  if(m.type === 'image') bar.append(h('button', { class: 'vbtn', html: Kit.icon('image', 16, 2) + 'Wallpaper', onclick: () => wallpaper(m) }));
+  bar.append(h('button', { class: 'vbtn round', 'aria-label': 'Info', html: Kit.icon('info', 18, 2), onclick: () => infoSheet(m) }));
+  if(OS.auth.isAdmin()){
+    bar.append(h('button', { class: 'vbtn round', 'aria-label': 'Rename', html: Kit.icon('edit', 16, 2), onclick: async () => { const t = prompt('Title', m.title || ''); if(t != null){ await OS.admin.gallery.rename(m.id, t); m.title = t; title.textContent = t; changed(); Kit.toast('Renamed'); } } }));
+    bar.append(h('button', { class: 'vbtn round', style: { background: 'rgba(238,98,89,.55)' }, 'aria-label': 'Delete', html: Kit.icon('trash', 16, 2), onclick: async () => {
+      if(!(await Kit.confirm({ title: 'Delete this ' + (m.type === 'video' ? 'video' : 'photo') + '?', msg: 'It is removed for everyone.', ok: 'Delete', destructive: true }))) return;
+      await OS.admin.gallery.remove(m.id); list.splice(i, 1); changed(); Kit.toast('Deleted'); if(!list.length) return empty(); i = Math.min(i, list.length - 1); showGallery(); } }));
+  }
+}
+const changed = () => { try{ item && item.onChange && item.onChange(); }catch(e){} };
+async function download(m){
+  const cached = await G.isCached((m.type === 'image' && m.fullChunks ? 'full/' : 'view/') + m.id), mb = ((m.type === 'image' && m.fullChunks ? m.size : m.viewSize || m.size) || 0) / 1e6;
+  if(!cached && mb > 3 && !(await Kit.confirm({ title: 'Download original?', msg: 'This file is about ' + mb.toFixed(1) + ' MB. It counts toward the shared monthly data budget.', ok: 'Download' }))) return;
+  try{ const { blob } = await G.full(m); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = m.origName || ((m.title || 'photo') + '.' + ((blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg'))); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); G.countDownload(m.id); Kit.toast('Saved to your device', 'good'); }catch(e){ Kit.toast(G.errText(e), 'bad'); }
+}
+function wallpaper(m){
+  Kit.sheet({ title: 'Use as wallpaper', build: (sb, api) => { const set = modes => { const w = Object.assign({}, OS.prefs.get('wall')); modes.forEach(k => { w[k] = m.id; }); OS.prefs.set('wall', w); api.close(); Kit.toast('Wallpaper set', 'good'); };
+    sb.append(group(row({ glyph: 'sun', color: '#e0a23a', title: 'Light mode', onClick: () => set(['light']) }), row({ glyph: 'moon', color: '#5b58b8', title: 'Dark mode', onClick: () => set(['dark']) }), row({ glyph: 'image', color: '#c0563a', title: 'Both', onClick: () => set(['light', 'dark']) })), h('div', { class: 'foot' }, 'The image is downloaded once and kept on this device.')); } });
+}
+async function infoSheet(m){
+  let s = {}; try{ s = ((await G.stats()) || {})[m.id] || {}; }catch(e){}
+  Kit.sheet({ title: m.title || 'Details', build: (sb) => { sb.appendChild(group(row({ title: 'Type', right: m.type === 'gif' ? 'GIF' : m.type[0].toUpperCase() + m.type.slice(1) }), m.w ? row({ title: 'Dimensions', right: m.w + ' × ' + m.h }) : null, row({ title: 'Size', right: ((m.size || 0) / 1e6).toFixed(2) + ' MB' }), m.createdAt ? row({ title: 'Added', right: new Date(m.createdAt).toLocaleDateString() }) : null, row({ title: 'Views', right: Kit.num(s.views || 0) }), row({ title: 'Downloads', right: Kit.num(s.downloads || 0) }))); } });
+}
+/* ---------- take whatever was just opened ---------- */
+function take(){
+  const p = OS.previewTake(); if(!p){ if(kind === 'none') empty(); return; }
+  item = p; gen++;
+  if(p.kind === 'poster') return showPoster();
+  if(p.kind === 'gallery' && Array.isArray(p.list) && p.list.length){ list = p.list.slice(); i = Math.max(0, Math.min(list.length - 1, p.index || 0)); return showGallery(); }
+  empty();
+}
+Kit.live('preview', take); take();
+</script></body></html>

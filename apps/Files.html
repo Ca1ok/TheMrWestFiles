@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Files</title>
+<link rel="stylesheet" href="../os/tokens.css"><link rel="stylesheet" href="../os/app/kit.css">
+<style>
+.ro{ display:inline-flex; gap:6px; align-items:center; font:700 11px var(--font); letter-spacing:.06em; text-transform:uppercase; color:var(--label2); background:var(--fill); padding:5px 9px; border-radius:8px; }
+.json{ font:13.5px/1.55 var(--mono); background:var(--card); border-radius:var(--r-l); padding:14px 14px 14px 10px; overflow-x:auto; user-select:text; -webkit-user-select:text; }
+.json details{ margin-left:14px; } .json summary{ cursor:pointer; list-style:none; padding:1px 0; } .json summary::-webkit-details-marker{ display:none; } .json summary::before{ content:"▸"; display:inline-block; width:14px; margin-left:-14px; color:var(--label3); transition:transform .2s; } .json details[open]>summary::before{ transform:rotate(90deg); }
+.json .k{ color:var(--tint); } .json .t{ color:var(--label3); margin-left:8px; } .json .leaf{ margin-left:14px; padding:1px 0; word-break:break-all; } .json .s{ color:var(--good); } .json .n{ color:var(--blue); } .json .b{ color:var(--warn); }
+.fold{ width:34px; height:34px; } .meter{ height:10px; border-radius:5px; background:var(--fill2); overflow:hidden; margin:10px 0 6px; } .meter i{ display:block; height:100%; background:linear-gradient(90deg,var(--tint),var(--tint2)); border-radius:5px; }
+</style></head><body><div id="app"></div>
+<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
+<script>
+const { h, row, group, esc, money } = Kit;
+const FOLDERS = [['cash', 'Wallet', 'dollar', '#4e9a63', 'Your cash balance'], ['inv', 'Inventory', 'shop', '#d9a441', 'Elements and compounds you own'], ['lots', 'Shares', 'stocks', '#3a9a6a', '$WEST positions'], ['props', 'Properties', 'home', '#b07a56', 'Real estate you own'], ['bank', 'Bank', 'bank', '#3b5a8c', 'Tax bills and transactions'], ['mail', 'Messages', 'messages', '#4eb85a', 'Your inbox'], ['lab', 'Lab', 'lab', '#2a8f8a', 'Equipment and discoveries'], ['games', 'Games', 'games', '#8a4fc0', 'Daily game progress'], ['shop', 'Shop', 'layers', '#c98f3c', 'Selling-price memory'], ['meta', 'Profile', 'user', '#7b7468', 'Name and account info'], ['prefs', 'Preferences', 'settings', '#6d6a64', 'Your display settings']];
+const sizeOf = v => { try{ return JSON.stringify(v == null ? null : v).length; }catch(e){ return 0; } }, kb = n => n > 1e5 ? (n / 1e6).toFixed(2) + ' MB' : n > 999 ? (n / 1e3).toFixed(1) + ' KB' : n + ' B';
+function tree(v, key, depth){
+  if(v && typeof v === 'object'){ const ks = Object.keys(v), d = h('details', { open: depth < 1 }, h('summary', null, h('span', { class: 'k' }, key), h('span', { class: 't' }, Array.isArray(v) ? '[' + ks.length + ']' : '{' + ks.length + '}'))); ks.slice(0, 200).forEach(k => d.appendChild(tree(v[k], k, depth + 1))); if(ks.length > 200) d.appendChild(h('div', { class: 'leaf dim' }, '… ' + (ks.length - 200) + ' more')); return d; }
+  const cls = typeof v === 'string' ? 's' : typeof v === 'number' ? 'n' : 'b', shown = typeof v === 'string' ? '"' + v + '"' : String(v); return h('div', { class: 'leaf' }, h('span', { class: 'k' }, key + ': '), h('span', { class: cls }, shown));
+}
+const A = Kit.app({ title: 'Files', build: (body) => {
+  const top = h('div'), loc = h('div'), adm = h('div'); body.append(top, loc, adm);
+  let rec = null, loading = false, loaded = false;
+  async function fetchRec(){ if(!OS.auth.signedIn()) return; loading = true; paint(); try{ rec = await OS.files.record(); }catch(e){ rec = null; } loading = false; loaded = true; paint(); }
+  function viewer(title, data, sub, uid, path){
+    A.push({ title, backLabel: uid ? 'Player' : 'Files', right: [{ el: h('span', { class: 'ro', html: Kit.icon('lock', 12, 2.4) + (uid ? 'Admin view' : 'Read only') }) }], build: (b) => {
+      b.append(h('p', { class: 'sub', style: { marginTop: 0 } }, sub + ' · ' + kb(sizeOf(data))), h('div', { class: 'json' }, data === undefined || data === null ? h('span', { class: 'dim' }, 'Nothing stored here yet.') : (typeof data === 'object' ? (() => { const f = h('div'); Object.keys(data).forEach(k => f.appendChild(tree(data[k], k, 1))); return f; })() : tree(data, title.toLowerCase(), 1))));
+      b.appendChild(h('div', { class: 'foot' }, uid ? 'You are viewing this as the administrator.' : 'This is exactly what the server holds for your account. You can’t edit it here — it changes when you play.'));
+      if(uid && path) b.appendChild(h('button', { class: 'btn gray block', style: { marginTop: '12px' }, onclick: () => editField(uid, path, data) }, 'Edit this value…'));
+    } });
+  }
+  function paint(){
+    top.innerHTML = ''; loc.innerHTML = '';
+    if(!OS.auth.signedIn()){
+      top.appendChild(h('div', { class: 'card' }, h('div', { class: 'hstack' }, Kit.ico('cloudOff', '#7b7468', 40), h('div', null, h('b', null, 'Nothing is stored on the server'), h('div', { class: 'sub' }, 'You’re a guest, so your progress lives only in memory and disappears when you close the tab. Sign in and your data will appear here.'))), h('button', { class: 'btn block', style: { marginTop: '14px' }, onclick: () => OS.open('Settings') }, 'Sign in')));
+    } else {
+      const total = rec ? sizeOf(rec) : 0;
+      top.appendChild(h('div', { class: 'card' }, h('div', { class: 'hstack', style: { justifyContent: 'space-between' } }, h('div', null, h('b', { style: { fontSize: '19px' } }, 'My server data'), h('div', { class: 'sub' }, rec ? kb(total) + ' stored for ' + (OS.auth.user().email) : (loading ? 'Loading…' : 'Click refresh to read your data'))), h('span', { class: 'ro', html: Kit.icon('lock', 12, 2.4) + 'Read only' })), h('div', { class: 'meter' }, h('i', { style: { width: Math.max(1, Math.min(100, total / 1e6 * 100 * 20)) + '%' } })), h('div', { class: 'foot', style: { margin: 0 } }, 'Free allowance: your whole account is tiny compared with the 1 GB the project can store.'), h('button', { class: 'btn gray sm', style: { marginTop: '10px' }, onclick: fetchRec }, loading ? 'Loading…' : 'Refresh from server')));
+      loc.appendChild(h('div', { class: 'cap' }, 'On the server'));
+      loc.appendChild(group(FOLDERS.map(([k, name, glyph, color, sub]) => { const val = rec ? rec[k] : undefined; return row({ glyph, color, title: name, sub: rec ? sub + ' · ' + kb(sizeOf(val)) : sub, chev: true, onClick: () => rec ? viewer(name, val, sub) : fetchRec().then(() => viewer(name, rec ? rec[k] : null, sub)) }); })));
+      loc.appendChild(h('div', { class: 'foot' }, 'Saved at ' + (rec && rec.updatedAt ? new Date(rec.updatedAt).toLocaleString() : '—') + '. Your game is saved in batches every ~20 seconds.'));
+    }
+    loc.appendChild(h('div', { class: 'cap' }, 'On this device'));
+    loc.appendChild(group(row({ glyph: 'settings', color: '#6d6a64', title: 'Display settings', sub: 'Theme, wallpaper, layout — not game progress', chev: true, onClick: () => viewer('Display settings', OS.prefs.all(), 'Stored in this browser') }), row({ glyph: 'info', color: '#5aaef5', title: 'This session', sub: 'Data used since you opened WestOS', right: kb(OS.usage().bytes) })));
+  }
+  function paintAdmin(){
+    adm.innerHTML = ''; if(!OS.admin.ok()) return;
+    adm.appendChild(h('div', { class: 'cap' }, 'Administrator')); adm.appendChild(group(row({ glyph: 'user', color: '#c23b3b', title: 'All players', sub: 'Everyone who has a display name', chev: true, onClick: openPlayers })));
+  }
+  async function openPlayers(){
+    A.push({ title: 'Players', backLabel: 'Files', build: async (b) => {
+      b.appendChild(h('div', { class: 'spin', style: { margin: '30px auto' } })); let list = []; try{ list = await OS.admin.players(); }catch(e){ b.innerHTML = ''; return b.appendChild(h('div', { class: 'empty' }, e.message)); } b.innerHTML = '';
+      b.appendChild(h('p', { class: 'sub', style: { marginTop: 0 } }, list.length + ' players (listed from the public ranking).'));
+      b.appendChild(list.length ? group(list.map(p => row({ title: p.name || p.uid, sub: p.uid, right: money(p.value, { compact: true }), chev: true, onClick: () => openPlayer(p) }))) : h('div', { class: 'empty' }, 'Nobody has set a display name yet.'));
+    } });
+  }
+  async function openPlayer(p){
+    A.push({ title: p.name || 'Player', backLabel: 'Players', build: async (b) => {
+      const ctl = h('div'); b.appendChild(ctl); b.appendChild(h('div', { class: 'spin', style: { margin: '30px auto' } })); let data = null; try{ data = await OS.admin.read(p.uid); }catch(e){}
+      b.querySelector('.spin').remove();
+      ctl.appendChild(group(row({ title: 'Cash', right: money((data && data.cash) || 0, { dp: 2 }), chev: true, onClick: () => editField(p.uid, 'cash', data && data.cash, true) }), row({ title: 'Rename player', chev: true, onClick: () => rename(p) }), row({ title: 'Send message', chev: true, onClick: () => msg(p) }), row({ title: 'Reset account', cls: 'down', chev: true, onClick: async () => { if(await Kit.confirm({ title: 'Reset ' + (p.name || 'player') + '?', msg: 'This permanently deletes their progress.', ok: 'Reset', destructive: true })){ await OS.admin.reset(p.uid); Kit.toast('Account reset', 'good'); A.pop(); } } })));
+      b.appendChild(h('div', { class: 'cap' }, 'Server record')); b.appendChild(h('div', { class: 'json' }, data ? (() => { const f = h('div'); Object.keys(data).forEach(k => f.appendChild(tree(data[k], k, 1))); return f; })() : h('span', { class: 'dim' }, 'No record.')));
+    } });
+  }
+  const ask = (title, ph, val) => new Promise(res => { const inp = h('input', { class: 'field', value: val == null ? '' : val, placeholder: ph }); Kit.sheet({ title, build: (sb, api) => { sb.append(inp, h('button', { class: 'btn block', style: { marginTop: '12px' }, onclick: () => { api.close(); res(inp.value); } }, 'Save')); setTimeout(() => inp.focus(), 500); }, onClose: () => res(null) }); });
+  async function editField(uid, path, cur, num){ const v = await ask('Edit ' + path, 'Value', cur); if(v == null) return; try{ const val = num || typeof cur === 'number' ? parseFloat(v) : v; if(num && !(val >= 0)) throw new Error('Enter a number ≥ 0'); await OS.admin.setField(uid, path, val); Kit.toast('Saved', 'good'); }catch(e){ Kit.toast(e.message, 'bad'); } }
+  async function rename(p){ const v = await ask('Rename player', 'New display name', p.name); if(!v) return; try{ await OS.admin.rename(p.uid, v); Kit.toast('Renamed', 'good'); }catch(e){ Kit.toast(e.message, 'bad'); } }
+  async function msg(p){ const v = await ask('Message to ' + (p.name || 'player'), 'Subject'); if(!v) return; const bd = await ask('Message body', 'Body') || ''; try{ await OS.admin.mail(p.uid, v, bd); Kit.toast('Message sent', 'good'); }catch(e){ Kit.toast(e.message, 'bad'); } }
+  paint(); paintAdmin(); fetchRec(); Kit.live('auth', () => { rec = null; paint(); paintAdmin(); fetchRec(); });
+} });
+</script></body></html>

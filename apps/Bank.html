@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bank</title>
+<link rel="stylesheet" href="../os/tokens.css"><link rel="stylesheet" href="../os/app/kit.css">
+<style>.hero{background:linear-gradient(155deg,#2f6f55,#173b30 70%);color:#fff;border-radius:var(--r-xl);padding:20px 22px;box-shadow:var(--shadow)} .hero small{opacity:.75;font:600 13px var(--font);letter-spacing:.04em;text-transform:uppercase} .hero .bignum{font-size:40px;margin:4px 0}
+.split{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font:500 13px var(--font);opacity:.9} .split b{display:block;font-size:15px}
+.plan{display:flex;gap:10px;align-items:center;justify-content:space-between;background:var(--card);border-radius:14px;padding:12px 14px;margin:8px 0} .plan .t b{display:block}
+input[type=number]{background:var(--card);color:var(--label);border:1px solid var(--sep,rgba(255,255,255,.12));border-radius:10px;padding:10px 12px;font:600 15px var(--font);width:100%;box-sizing:border-box}</style></head><body><div id="app"></div>
+<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
+<script>
+const { h, row, group, money } = Kit, B = OS.bank, LN = OS.loans, DAY = 86400000;
+let amount = 10000;
+Kit.app({ title: 'Bank', build: (body) => {
+  const box = h('div'); body.append(box);
+  const toast = (r, ok) => Kit.toast(r.msg || ok, r.ok ? 'good' : 'bad');
+  function paint(){
+    box.innerHTML = ''; const cfg = B.config(), br = B.breakdown(), nw = B.netWorth(), debt = B.debt();
+    box.append(h('div', { class: 'hero' }, h('small', null, 'Cash'), h('div', { class: 'bignum num' }, money(br.cash, { dp: 2 })),
+      h('div', { class: 'split' }, h('span', null, 'Net worth', h('b', null, money(nw - debt, { dp: 0 }))), h('span', null, 'Items', h('b', null, money(br.inventory, { dp: 0 }))), h('span', null, '$WEST', h('b', null, money(br.stock, { dp: 0 }))), h('span', null, 'Property', h('b', null, money(br.property, { dp: 0 }))), debt > 0 ? h('span', null, 'Loans', h('b', null, '−' + money(debt, { dp: 0 }))) : '')));
+    /* bills */
+    const bills = B.bills(); box.append(h('h2', { class: 'sec' }, 'Bills & taxes'));
+    if(!bills.length) box.append(h('div', { class: 'card empty' }, 'Nothing due. Property tax, wealth tax, repairs and hospital bills arrive here and are paid automatically when you can afford them.'));
+    else { box.append(group(bills.map(b => row({ title: b.label + ' — ' + money(b.amt, { dp: 2 }), sub: (b.due > Date.now() ? 'due ' + new Date(b.due).toLocaleDateString() : 'OVERDUE — the city will collect it and may take property') , right: h('button', { class: 'btn small', onclick: async () => { const r = await B.pay(b.id); toast(r, 'Paid'); paint(); } }, 'Pay') })))); }
+    /* loans */
+    box.append(h('h2', { class: 'sec' }, 'Loans'));
+    const loans = LN.list();
+    if(loans.length) box.append(group(loans.map(l => row({ title: l.planName + ' · owe ' + money(l.owed, { dp: 2 }), sub: 'borrowed ' + money(l.principal, { dp: 0 }) + ' · ' + (l.late ? 'LATE — fees are growing and the bank will collect' : 'due ' + new Date(l.due).toLocaleDateString()), right: h('button', { class: 'btn small', onclick: async () => { const r = await LN.repay(l.slot, l.owed); toast(r, 'Repaid'); paint(); } }, 'Repay all') }))));
+    else box.append(h('div', { class: 'card empty' }, 'No loans. The bank lends from its own capital; interest is fixed up front and goes back to the bank.'));
+    if(OS.homes.homeless()) box.append(h('div', { class: 'card' }, h('b', { class: 'bad' }, 'No loans while homeless'), h('div', { class: 'sub' }, 'Find a home in WestMap first.')));
+    else if(loans.length < 3){
+      const inp = h('input', { type: 'number', min: 1000, max: LN.limit(), step: 500, value: amount, oninput: () => { amount = +inp.value || 0; upd(); } }), plansBox = h('div');
+      const upd = () => { plansBox.innerHTML = ''; LN.plans().forEach(p => { const owed = amount * (1 + p.interest); plansBox.append(h('div', { class: 'plan' }, h('div', { class: 't' }, h('b', null, p.name + ' · ' + p.days + ' days'), h('span', { class: 'sub' }, (p.interest * 100).toFixed(0) + '% interest · repay ' + money(owed, { dp: 2 }))), h('button', { class: 'btn small', onclick: async () => { const r = await LN.take(p.id, amount); toast(r, 'Loan paid out'); paint(); } }, 'Borrow'))); }); }; upd();
+      box.append(h('div', { class: 'card' }, h('b', null, 'Borrow up to ' + money(LN.limit(), { dp: 0 })), h('div', { class: 'sub', style: { margin: '4px 0 8px' } }, 'Interest is the total over the whole term. Late loans grow ' + (OS.homes.cfg().lateBpDay / 100) + '% a day; after 3 days the bank takes it from your cash, after 14 days from your houses.'), inp, plansBox));
+    }
+    /* how the economy taxes you */
+    box.append(h('h2', { class: 'sec' }, 'How you are taxed'));
+    box.append(group([row({ title: (cfg.taxRate * 100).toFixed(1) + '% on every trade', sub: 'Shop, $WEST, games, casino payouts: the treasury takes it from each flow with the market pool.' }), row({ title: (cfg.dutyRate * 100).toFixed(1) + '% stamp duty', sub: 'When you buy a house.' }), row({ title: (cfg.propTaxDay * 100).toFixed(2) + '% a day property tax', sub: 'On the value of every house you own.' }), row({ title: 'Wealth tax above ' + money(cfg.threshold, { dp: 0 }), sub: 'Cash over the threshold is taxed daily (0.5% rising to ' + (cfg.maxRate * 100) + '%).' })]));
+    /* activity */
+    const hist = B.history(); box.append(h('h2', { class: 'sec' }, 'Activity'));
+    box.append(hist.length ? group(hist.slice(0, 25).map(x => row({ title: x.n || 'Transaction', sub: Kit.ago(x.t), right: h('b', { class: x.d >= 0 ? 'good' : 'bad' }, (x.d >= 0 ? '+' : '−') + money(Math.abs(x.d), { dp: 2 })) }))) : h('div', { class: 'card empty' }, 'No activity yet.'));
+  }
+  paint(); ['cash', 'bank', 'home', 'eco'].forEach(e => Kit.live(e, Kit.debounce(paint, 250)));
+} });
+</script></body></html>
