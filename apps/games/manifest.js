@@ -104,6 +104,13 @@ const GAME_MANIFEST = [
   "icon": "feather",
   "name": "Flappy Electron",
   "desc": "Hop between charged plates"
+ },
+ {
+  "id": "electronRun",
+  "category": "fun",
+  "icon": "feather",
+  "name": "Electron Run (3D)",
+  "desc": "Dodge nuclei, grab photons"
  }
 ];
 const GAME_CATEGORIES = { educational:'Chemistry & Physics', puzzle:'Puzzles', fun:'Arcade' };

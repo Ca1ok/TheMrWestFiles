@@ -27,6 +27,7 @@
 /* The games ported from the old site read these reference tables by bare name. */
 const { ELEMENTS, BOILING_POINTS, MELTING_POINTS, OXIDATION, RECIPES, WANTED_DATA, COMPOUND_LOOKUP, POLYATOMIC_IONS } = OS.data;
 </script>
+<script src="../os/lib/gl3d.js"></script><script src="../os/lib/gl3d-assets.js"></script>
 <script src="games/manifest.js"></script>
 <script>
 const { h, row, group, esc, money } = Kit; const REG = {}, loading = {};
@@ -52,6 +53,11 @@ const A = Kit.app({ title: 'Games', right: [{ icon: 'star', label: 'Leaderboard'
       let done = false, t0 = performance.now();
       const finish = (resultEl, cls, html) => { done = true; if(resultEl) resultEl.innerHTML = '<div class="game-result ' + cls + '">' + html + '</div>'; content.style.pointerEvents = 'none'; box.appendChild(h('button', { class: 'btn block again', onclick: () => start() }, 'Play again')); paintToday(); paintBar(); paintTop(); };
       const api = {
+        /* 3D: api.gl3d(content, { w:640, h:400, bg:[r,g,b], fog:{color,density} }) → a GL3D engine drawing into a new canvas inside `content`, or null when WebGL isn't available
+           (then show a 2D fallback or api.lose). The loop stops and frees the GPU by itself when the game leaves the page. See apps/games/_template3d.js. */
+        gl3d(host, o){ o = o || {}; if(!window.GL3D || !GL3D.supported()) return null; const W = o.w || 640, H = o.h || 400, cv = document.createElement('canvas'); cv.className = 'gx-cv'; cv.width = W; cv.height = H; cv.style.cssText = 'width:100%;max-width:' + W + 'px;aspect-ratio:' + W + '/' + H + ';height:auto;cursor:default;background:#0a0620';
+          host.appendChild(cv); let low = false; try{ const m = OS.prefs.get('perfMode') || 'auto'; low = m === 'performance' || (m === 'auto' && OS.prefs.get('perfAuto') === true); }catch(_){}
+          const eng = GL3D.create(cv, Object.assign({ quality: low ? 'low' : 'high', maxFps: low ? 30 : 60 }, o)); if(!eng){ cv.remove(); return null; } eng.canvasEl = cv; return eng; },
         elapsed: () => (performance.now() - t0) / 1000,                       // seconds since this round started (for speed bonuses)
         /* score(id, points, resultEl, label): the scored way. Points decide the payout (exponentially) and the high score / leaderboard. */
         score(id, points, resultEl, label){ if(done) return; let r; try{ r = OS.games.submit(id, points); }catch(e){ OS.debug.error('Games', e, { game: id, points }); return finish(resultEl, 'lose', 'Couldn’t record that score — it was logged.'); }

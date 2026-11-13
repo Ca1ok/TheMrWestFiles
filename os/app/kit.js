@@ -122,5 +122,9 @@
   const group = (...rows) => h('div', { class: 'group' }, ...rows.flat().filter(Boolean));
   const debounce = (f, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => f(...a), ms); }; };
   const raf = f => requestAnimationFrame(f);
-  window.Kit = { row, group, OS, $, $$, h, esc, money, num, ago, icon, tile, ico, toast, confirm, alert, sheet, seg, toggle, app, cashChip, spark, live, debounce, raf };
+  /* load the 3D engine on demand:  await Kit.use3D();  then GL3D / GL3DAssets / Arcade3D exist. Safe to call many times. (Apps in apps/ and apps/games/ both resolve the path.) */
+  let p3d = null;
+  const use3D = () => p3d || (p3d = (async () => { if(window.GL3D && window.GL3DAssets) return true; const base = location.pathname.indexOf('/games/') > -1 ? '../../os/lib/' : '../os/lib/';
+    for(const f of ['gl3d.js', 'gl3d-assets.js', 'arcade-3d.js']){ if(f === 'gl3d-assets.js' && window.GL3DAssets) continue; if(f === 'gl3d.js' && window.GL3D) continue; await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = base + f; sc.onload = res; sc.onerror = () => rej(new Error('Couldn’t load ' + f)); document.head.appendChild(sc); }); } return !!window.GL3D.supported(); })());
+  window.Kit = { use3D, row, group, OS, $, $$, h, esc, money, num, ago, icon, tile, ico, toast, confirm, alert, sheet, seg, toggle, app, cashChip, spark, live, debounce, raf };
 })();

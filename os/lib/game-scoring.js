@@ -24,7 +24,8 @@
     colourBlocks:   { par: 900,  min: 150, max: 1000,  unit: 'pts', how: 'Fewer tiles left over' },
     tubeSort:       { par: 800,  min: 100, max: 1000,  unit: 'pts', how: 'More tubes, fewer pours' },
     elementMerge:   { par: 1000, min: 100, max: 20000, unit: 'pts', how: 'Fuse heavier elements' },
-    flappyElectron: { par: 1000, min: 250, max: 6000,  unit: 'pts', how: '50 points per gate' }
+    flappyElectron: { par: 1000, min: 250, max: 6000,  unit: 'pts', how: '50 points per gate' },
+    electronRun:    { par: 1000, min: 250, max: 6000,  unit: 'pts', how: 'Distance + 50 per photon' }
   };
   const DEFAULT_MAX_BASE = 120;
 
