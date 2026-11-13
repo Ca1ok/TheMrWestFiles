@@ -100,7 +100,7 @@
   };
   function table(host, kind, o){
     if(!enabled() || !LAYOUT[kind]) return null; o = o || {}; const LY = LAYOUT[kind];
-    const top = kind !== 'blackjack', eng = make(host, o.aspect || (top ? '1.75/1' : '2.1/1'), { bg: [.03, .02, .07], fog: { color: [.03, .02, .08], density: .012 }, maxH: o.maxH || (top ? 460 : 380) }); if(!eng) return null;
+    const top = true, eng = make(host, o.aspect || (top ? '1.75/1' : '2.1/1'), { bg: [.03, .02, .07], fog: { color: [.03, .02, .08], density: .012 }, maxH: o.maxH || (top ? 460 : 380) }); if(!eng) return null;
     eng.setBackdrop(T.backdrop([[0, '#06030d'], [1, '#1a0a3a']])); neon(eng, { dir: [-.35, -1, -.55] }); eng.camera.fov = 40 * D2R; eng.shadow.y = 0; eng.shadow.alpha = .42;
     eng.add(Mo.table(kind)); if(top) fitBox(eng, 8.8, 5.5, V.norm([0, 1, .06]), [0, 0, .05], 6); else fitWidth(eng, 9.4, V.norm([0, 1.05, .95]), [0, 0, .3], 7);
     const floor = new GL.Node(GL.mesh.plane(60, 60, 1, 1, 20, 20), mat({ map: T.carpet().map, spec: 0 })); floor.pos[1] = -.5; eng.add(floor);
