@@ -27,7 +27,7 @@ A desktop operating system in the browser, built for keyboard and mouse. The who
 │  ├─ tokens.css          ← design tokens (light/dark palette, fonts, easing)
 │  ├─ os.css  poster.css  ← shell styles, the WANTED poster
 │  ├─ shell.js            ← menu bar, desktop edit mode, dock, the window manager, notifications, optional lock screen
-│  ├─ widgets/            ← one file per desktop widget (wanted, stocks, bank, news, map, …)
+│  ├─ widgets/            ← one file per desktop widget (wanted, stocks, bank, news, map, …); os/lib/maprender.js is the shared map renderer
 │  ├─ app/
 │  │  ├─ kit.css          ← the UI kit apps use (lists, buttons, sheets, large titles)
 │  │  └─ kit.js           ← page stack, sheets, alerts, toasts, OS bridge

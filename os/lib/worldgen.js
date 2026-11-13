@@ -46,63 +46,97 @@
   const plotCell = (kind, uid) => { const z = kind === 'l' ? ZONES.uni : ZONES.ind, c = h32(hash(uid), kind === 'l' ? 901 : 902) % (z.cols * z.rows), col = c % z.cols, row = Math.floor(c / z.cols), cw = (z.x1 - z.x0) / z.cols, rh = (z.y1 - z.y0) / z.rows; return { x: z.x0 + (col + 0.5) * cw, y: z.y0 + (row + 0.5) * rh, w: cw * 0.7, h: rh * 0.62, col, row }; };
   const hash = str => { let x = 2166136261; str = String(str); for(let i = 0; i < str.length; i++) x = Math.imul(x ^ str.charCodeAt(i), 16777619) >>> 0; return x >>> 0; };
 
+  /* ---- districts: a grid of connected streets (not isolated clumps) ----
+   * Each district is an AVENUE (the spine, u = -GU..GU) crossed by 4 CROSS STREETS (u = ±S/2, ±3S/2, v = -W..W). Houses sit on the two sides of each cross street, four lots to an arm,
+   * set well apart (about 3× the room per house of the old layout), with a green in the middle blocks. Both avenue ends are gates onto the highway mesh (every district links to its two nearest
+   * older neighbours, so there are loops, not a tree). All of it is a pure function of the district index; the streets bend gently (a warp) so nothing is a ruler-straight grid. */
+  const S = 52, W = 96, GU = 112, SET = 9, ARM = [20, 42, 64, 86], SCALE = 250;
   function district(k){
-    const d = DISTRICTS[k % DISTRICTS.length], rep = Math.floor(k / DISTRICTS.length), r = 200 * Math.sqrt(k + K0), a = k * GA;
+    const d = DISTRICTS[k % DISTRICTS.length], rep = Math.floor(k / DISTRICTS.length), r = SCALE * Math.sqrt(k + K0), a = k * GA;
     return { k, name: rep ? d[0] + ' ' + (rep + 1) : d[0], prestige: d[1], color: d[2], city: d[1] >= CITY_PRESTIGE, theta: f01(k, 50) * Math.PI, cx: Math.round(CORE.x + r * Math.cos(a)), cy: Math.round(CORE.y + r * Math.sin(a) * SPD) };
   }
-  /* one local street: t in [-1,1] along it → {x,y} plus its unit tangent. r = 0..3 are the housing streets, r = 4 is the avenue through the middle. */
-  function streetPt(k, r, t){
-    const d = district(k), c = Math.cos(d.theta), sn = Math.sin(d.theta), off = r === 4 ? 0 : (r - 1.5) * 28, fr = 0.9 + f01(k, 52) * 0.7, ph = f01(k, 51) * 6.28, wob = u => 4.5 * Math.sin(fr * Math.PI * u + ph + 0.35 * (r === 4 ? 1.5 : r)) + 1.2 * Math.sin(2.4 * Math.PI * u + f01(k, 53) * 6.28);
-    const at = u => { const al = u * 56, lat = off + wob(u); return [d.cx + al * c - lat * sn, d.cy + al * sn + lat * c]; };
-    const p = at(t), q = at(Math.min(1, t + 0.02)), q0 = at(Math.max(-1, t - 0.02)); let tx = q[0] - q0[0], ty = q[1] - q0[1]; const L = Math.hypot(tx, ty) || 1; return { x: p[0], y: p[1], tx: tx / L, ty: ty / L };
-  }
-  const streetLine = (k, r, n) => { const out = []; n = n || 16; for(let i = 0; i <= n; i++){ const p = streetPt(k, r, -1 + 2 * i / n); out.push([p.x, p.y]); } return out; };
-  const roads = k => [0, 1, 2, 3, 4].map(r => ({ r, avenue: r === 4, pts: streetLine(k, r) }));
-  function stations(k){ const d = district(k); return [{ t: 'fire', x: d.cx + 66, y: d.cy - 42, d: k }, { t: 'police', x: d.cx + 66, y: d.cy, d: k }, { t: 'ambulance', x: d.cx + 66, y: d.cy + 42, d: k }]; }
+  const DC = new Map(); const dist = k => { let d = DC.get(k); if(!d){ d = district(k); d.c = Math.cos(d.theta); d.s = Math.sin(d.theta); d.ph = [f01(k, 51) * 6.28, f01(k, 52) * 6.28, f01(k, 53) * 6.28, f01(k, 54) * 6.28]; if(DC.size > 400) DC.clear(); DC.set(k, d); } return d; };
+  /* district-local (u along the avenue, v across) → world; a slow sine warp bends every street the same way, so junctions stay exact */
+  function loc(k, u, v){ const d = dist(k), a = u + 5 * Math.sin(v * 0.035 + d.ph[0]) + 2 * Math.sin(v * 0.09 + d.ph[1]), b = v + 5 * Math.sin(u * 0.03 + d.ph[2]) + 2 * Math.sin(u * 0.085 + d.ph[3]); return [d.cx + a * d.c - b * d.s, d.cy + a * d.s + b * d.c]; }
+  const UC = c => (c - 1.5) * S;                               // u of cross street c (0..3)
+  const sampleU = (k, u0, u1, step) => { const out = [], n = Math.max(1, Math.ceil(Math.abs(u1 - u0) / (step || 12))); for(let i = 0; i <= n; i++) out.push(loc(k, u0 + (u1 - u0) * i / n, 0)); return out; };
+  const sampleV = (k, c, v0, v1, step) => { const out = [], n = Math.max(1, Math.ceil(Math.abs(v1 - v0) / (step || 12))); for(let i = 0; i <= n; i++) out.push(loc(k, UC(c), v0 + (v1 - v0) * i / n)); return out; };
+  const roads = k => [0, 1, 2, 3].map(c => ({ r: c, avenue: false, pts: sampleV(k, c, -W, W, 8) })).concat([{ r: 4, avenue: true, pts: sampleU(k, -GU, GU, 8) }]);
+  const roadEnds = k => [0, 1, 2, 3].map(c => [loc(k, UC(c), -W), loc(k, UC(c), W)]);        // cul-de-sac bulbs
+  const parks = k => [-1, 1].map(sg => [[-15, 26 * sg], [15, 26 * sg], [15, 88 * sg], [-15, 88 * sg]].map(q => loc(k, q[0], q[1])));
+  const footprint = k => [[-GU - 14, -W - 16], [GU + 14, -W - 16], [GU + 14, W + 16], [-GU - 14, W + 16]].map(q => loc(k, q[0], q[1]));
+  const streetName = (k, c) => STREETS[(h32(k, 60) + c * 5) % STREETS.length];
+  function stations(k){ return [{ t: 'fire', ...pt(loc(k, -S, 11)), d: k }, { t: 'police', ...pt(loc(k, 0, -11)), d: k }, { t: 'ambulance', ...pt(loc(k, S, 11)), d: k }]; }
+  const pt = p => ({ x: p[0], y: p[1] });
+  const BH = { studio: 5, apartment: 13, townhouse: 8, house: 7, villa: 9, mansion: 12 }, BW = { studio: 8, apartment: 13, townhouse: 10, house: 11, villa: 13, mansion: 15 }, BD = { studio: 8, apartment: 11, townhouse: 9, house: 10, villa: 12, mansion: 15 };
   function house(i){
-    const k = Math.floor(i / PER), s = i % PER, d = district(k), road = s >> 4, j = s & 15, roll = h32(i, SEED) % TW;
+    const k = Math.floor(i / PER), s = i % PER, d = district(k), c = s >> 4, j = s & 15, roll = h32(i, SEED) % TW;
     let acc = 0, ty = TYPES[0]; for(const t of TYPES){ acc += t.w; if(roll < acc){ ty = t; break; } }
     const base = Math.round((ty.lo + (ty.hi - ty.lo) * f01(i, SEED + 1)) * d.prestige / 1000) * 1000;      // whole $10 steps (in cents)
-    const q = j >> 1, side = (j & 1) ? 1 : -1, t = ((q + 0.5) / 8) * 2 - 1, p = streetPt(k, road, t), set = 8 + (f01(i, 3) - 0.5) * 2.4, jit = (f01(i, 4) - 0.5) * 2;
-    return { i, id: 'h' + i, k, district: d.name, type: ty.k, typeName: ty.n, beds: ty.beds, c: ty.c, base, road, city: d.city,
-      x: p.x - p.ty * side * set + p.tx * jit, y: p.y + p.tx * side * set + p.ty * jit, ang: Math.atan2(p.ty, p.tx),
-      addr: (1 + (h32(i, 5) % 98)) + ' ' + pick(STREETS, i, 6) };
+    const q = j >> 1, side = (j & 1) ? 1 : -1, arm = (q >> 2) ? 1 : -1, idx = q & 3, v = arm * (ARM[idx] + (f01(i, 4) - 0.5) * 7), u = UC(c) + side * (SET + (f01(i, 3) - 0.5) * 3 + (BW[ty.k] > 13 ? 4 : 0));
+    const p = loc(k, u, v), p2 = loc(k, u, v + 2), p0 = loc(k, u, v - 2);
+    return { i, id: 'h' + i, k, district: d.name, type: ty.k, typeName: ty.n, beds: ty.beds, c: ty.c, base, road: c, city: d.city,
+      x: p[0], y: p[1], ang: Math.atan2(p2[1] - p0[1], p2[0] - p0[0]) + (side > 0 ? 0 : 0), side, w: BW[ty.k], dp: BD[ty.k], ht: BH[ty.k] * (0.85 + f01(i, 8) * 0.4), cu: UC(c), v, arm,
+      addr: (2 * q + (side > 0 ? 2 : 1)) + ' ' + streetName(k, c) };
   }
+  /* downtown: decorative blocks between the radial streets (buildings, so 3D has a skyline) */
+  let CB = null;
+  function coreBlocks(){ if(CB) return CB; CB = []; const segs = []; Object.keys(POIS).forEach(id => { if(id === 'hub' || !POIS[id]) return; if(['bank', 'exchange', 'shop', 'arcade', 'agency', 'hall', 'park'].includes(id)) segs.push([CORE.x, CORE.y, POIS[id].x, POIS[id].y]); });
+    [[-60, -40, 60, -40], [60, -40, 60, 40], [60, 40, -60, 40], [-60, 40, -60, -40]].forEach(s => segs.push([CORE.x + s[0], CORE.y + s[1], CORE.x + s[2], CORE.y + s[3]]));
+    const dseg = (px, py, s) => { const dx = s[2] - s[0], dy = s[3] - s[1], L2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((px - s[0]) * dx + (py - s[1]) * dy) / L2)); return Math.hypot(px - s[0] - dx * t, py - s[1] - dy * t); };
+    for(let gx = -5; gx <= 5; gx++) for(let gy = -4; gy <= 4; gy++){ const x = CORE.x + gx * 20 + (f01(gx + 9, gy + 13) - 0.5) * 4, y = CORE.y + gy * 22 + (f01(gx + 3, gy + 77) - 0.5) * 4; if(Math.abs(x - CORE.x) > 104 || Math.abs(y - CORE.y) > 98) continue;
+      if(segs.some(s => dseg(x, y, s) < 11) || Object.keys(POIS).some(id => id !== 'hub' && Math.hypot(POIS[id].x - x, POIS[id].y - y) < 18)) continue; const r = f01(gx + 20, gy + 31), near = 1 - Math.hypot(x - CORE.x, y - CORE.y) / 140;
+      CB.push({ x, y, w: 11 + f01(gx, gy + 5) * 6, d: 11 + f01(gx + 7, gy) * 6, h: 10 + Math.max(0, near) * 34 * r + r * 8, tone: f01(gx + 41, gy + 9) }); } return CB; }
+
   const districtCount = n => Math.max(1, Math.ceil(n / PER));
-  const bounds = n => { let x0 = ZONES.uni.x0 - 40, y0 = ZONES.uni.y0 - 60, x1 = ZONES.ind.x1 + 40, y1 = ZONES.ind.y1 + 40; for(let k = 0; k < districtCount(n); k++){ const d = district(k); x0 = Math.min(x0, d.cx - 90); y0 = Math.min(y0, d.cy - 90); x1 = Math.max(x1, d.cx + 110); y1 = Math.max(y1, d.cy + 90); } return { x0, y0, x1, y1 }; };
+  const bounds = n => { let x0 = ZONES.uni.x0 - 40, y0 = ZONES.uni.y0 - 60, x1 = ZONES.ind.x1 + 40, y1 = ZONES.ind.y1 + 40; for(let k = 0; k < districtCount(n); k++){ const d = district(k); x0 = Math.min(x0, d.cx - 150); y0 = Math.min(y0, d.cy - 140); x1 = Math.max(x1, d.cx + 150); y1 = Math.max(y1, d.cy + 140); } return { x0, y0, x1, y1 }; };
 
   /* ---------- highways & routing ---------- */
   const NODE = id => id === 'hub' ? { x: CORE.x, y: CORE.y } : id === 'uni' ? { x: 380, y: 410 } : id === 'ind' ? { x: 1020, y: 640 } : (d => ({ x: d.cx, y: d.cy }))(district(+String(id).slice(1)));
   const nid = k => 'd' + k;
-  /* gate of a district nearest to a point: either end of its avenue */
-  function gate(k, to){ const a = streetPt(k, 4, -1), b = streetPt(k, 4, 1); return (Math.hypot(a.x - to.x, a.y - to.y) <= Math.hypot(b.x - to.x, b.y - to.y)) ? a : b; }
+  /* gate of a district nearest to a point: either end of its avenue → { x, y, u } */
+  function gate(k, to){ const a = loc(k, -GU, 0), b = loc(k, GU, 0), ea = Math.hypot(a[0] - to.x, a[1] - to.y) <= Math.hypot(b[0] - to.x, b[1] - to.y); const p = ea ? a : b; return { x: p[0], y: p[1], u: ea ? -GU : GU }; }
   function curve(a, b, wob, seed){ const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1, off = (f01(seed, 61) - 0.5) * 2 * Math.min(80, L * 0.22) * wob, c1 = { x: mx - dy / L * off + dx * 0.08, y: my + dx / L * off + dy * 0.08 }, pts = [];
     for(let i = 0; i <= 24; i++){ const u = i / 24, v = 1 - u; pts.push([v * v * a.x + 2 * v * u * c1.x + u * u * b.x + 2.5 * Math.sin(u * 9 + seed), v * v * a.y + 2 * v * u * c1.y + u * u * b.y + 2.5 * Math.cos(u * 8 + seed)]); } pts[0] = [a.x, a.y]; pts[24] = [b.x, b.y]; return pts; }
-  function parentOf(k){ const d = district(k); let best = 'hub', bd = Math.hypot(d.cx - CORE.x, d.cy - CORE.y) * 1.25; for(let q = 0; q < k; q++){ const e = district(q), dd = Math.hypot(d.cx - e.cx, d.cy - e.cy); if(dd < bd){ bd = dd; best = nid(q); } } return best; }
+  /* the two nearest OLDER districts (so an edge never changes when the country grows) */
+  function parentsOf(k){ const d = district(k), c = []; for(let q = 0; q < k; q++){ const e = district(q); c.push([Math.hypot(d.cx - e.cx, d.cy - e.cy), nid(q)]); } c.sort((a, b) => a[0] - b[0]); const hd = Math.hypot(d.cx - CORE.x, d.cy - CORE.y) * 1.25, out = [];
+    if(!c.length || hd < c[0][0]) out.push('hub'); else out.push(c[0][1]); if(c[1] && c[1][0] < c[0][0] * 1.45 + 30) out.push(c[1][1]); else if(k > 0 && k < 3 && !out.includes('hub')) out.push('hub'); return out; }
   const HWY_CACHE = new Map();
-  /* every highway: { a, b, express, pts } — the core's two spurs (to the University Quarter and the Industrial Estate), a tree of districts, plus an express road to each city district */
   const HW_N = new Map();
   function highways(n){ let c = HW_N.get(n); if(!c){ c = highwaysRaw(n); if(HW_N.size > 40) HW_N.clear(); HW_N.set(n, c); } return c; }
   function highwaysRaw(n){
     const out = [{ a: 'hub', b: 'uni', express: false, spur: true, pts: curve(NODE('hub'), NODE('uni'), 0.6, 1) }, { a: 'hub', b: 'ind', express: false, spur: true, pts: curve(NODE('hub'), NODE('ind'), 0.6, 2) }];
-    for(let k = 0; k < n; k++){ const key = 'h' + k, c = HWY_CACHE.get(key); if(c){ out.push.apply(out, c); continue; } const es = [], d = district(k), par = parentOf(k), pn = NODE(par), g = gate(k, pn), pg = par === 'hub' ? pn : gate(+par.slice(1), g);
-      es.push({ a: par, b: nid(k), express: false, pts: curve(pg, g, 1, 100 + k) });
-      if(d.city && par !== 'hub'){ const g2 = gate(k, NODE('hub')); es.push({ a: 'hub', b: nid(k), express: true, pts: curve(NODE('hub'), g2, 1.4, 300 + k) }); }
+    for(let k = 0; k < n; k++){ const key = 'h' + k, cc = HWY_CACHE.get(key); if(cc){ out.push.apply(out, cc); continue; } const es = [], d = district(k);
+      parentsOf(k).forEach((par, pi) => { const pn = NODE(par), g = gate(k, pn), pg = par === 'hub' ? pn : gate(+par.slice(1), g); es.push({ a: par, b: nid(k), express: false, link: pi > 0, ua: par === 'hub' ? null : pg.u, ub: g.u, pts: curve(pg, g, 1, 100 + k + pi * 37) }); });
+      if(d.city && !parentsOf(k).includes('hub')){ const g2 = gate(k, NODE('hub')); es.push({ a: 'hub', b: nid(k), express: true, ua: null, ub: g2.u, pts: curve(NODE('hub'), g2, 1.4, 300 + k) }); }
       HWY_CACHE.set(key, es); out.push.apply(out, es); }
     return out;
   }
   const lenOf = pts => { let L = 0; for(let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return L; };
-  /* where something is: { x, y, node } → the node of the road network it joins */
-  const placeOf = (x, y, node) => ({ x, y, node });
+  /* where something is: { x, y, node, hs } → the node of the road network it joins (hs = the house, so a walker leaves by its own street) */
+  const placeOf = (x, y, node, hs) => ({ x, y, node, hs: hs || null });
   function nodeOfHouse(g){ return nid(g.k); }
-  /* shortest path (by hops, express roads included) over the highway graph → polyline of [x,y] from A to B (no stored data: recomputed from n) */
+  /* shortest path by hops (express roads included) over the highway graph → chain of edges */
   const NP_CACHE = new Map();
-  function nodePath(a, b, n){ const key = a + '>' + b + '>' + n, c = NP_CACHE.get(key); if(c) return c; const pts = [];
+  function nodeChain(a, b, n){ const key = a + '>' + b + '>' + n, c = NP_CACHE.get(key); if(c) return c; let chain = [];
     if(a !== b){ const hw = highways(n), adj = {}; hw.forEach((e, i) => { (adj[e.a] = adj[e.a] || []).push([e.b, i, 1]); (adj[e.b] = adj[e.b] || []).push([e.a, i, -1]); });
       const prev = { [a]: null }, q = [a]; while(q.length){ const u = q.shift(); if(u === b) break; (adj[u] || []).forEach(([v, i, dir]) => { if(!(v in prev)){ prev[v] = [u, i, dir]; q.push(v); } }); }
-      if(b in prev){ const chain = []; for(let c2 = b; prev[c2]; c2 = prev[c2][0]) chain.push(prev[c2]); chain.reverse(); chain.forEach(([u, i, dir]) => { const e = hw[i], seg = dir === 1 ? e.pts : e.pts.slice().reverse(); seg.forEach(p => pts.push(p)); }); } }
-    if(NP_CACHE.size > 3000) NP_CACHE.clear(); NP_CACHE.set(key, pts); return pts; }
-  function route(A, B, n){ const pts = [[A.x, A.y]]; nodePath(A.node, B.node, n).forEach(p => pts.push(p)); pts.push([B.x, B.y]); return pts; }
+      if(b in prev){ for(let c2 = b; prev[c2]; c2 = prev[c2][0]) chain.push({ e: hw[prev[c2][1]], dir: prev[c2][2] }); chain.reverse(); } }
+    if(NP_CACHE.size > 3000) NP_CACHE.clear(); NP_CACHE.set(key, chain); return chain; }
+  const push = (pts, seg) => { seg.forEach(p => { const l = pts[pts.length - 1]; if(!l || Math.hypot(l[0] - p[0], l[1] - p[1]) > 0.05) pts.push(p); }); };
+  /* walk a house's own street to the avenue (and back): foot of the lot → along the cross street → the junction */
+  const toAvenue = g => sampleV(g.k, g.road, g.v, 0, 8);
+  function route(A, B, n){ const pts = [[A.x, A.y]], chain = nodeChain(A.node, B.node, n); let cur = null;      // cur = { k, u } where the walker is on a district avenue
+    if(A.hs){ push(pts, toAvenue(A.hs)); cur = { k: A.hs.k, u: A.hs.cu }; }
+    if(!chain.length){
+      if(A.hs && B.hs && A.hs.k === B.hs.k){ const a = A.hs, b = B.hs; pts.length = 1; if(a.road === b.road){ push(pts, sampleV(a.k, a.road, a.v, b.v, 8)); } else { push(pts, toAvenue(a)); push(pts, sampleU(a.k, a.cu, b.cu, 10)); push(pts, sampleV(b.k, b.road, 0, b.v, 8).slice(0)); } }
+      else if(B.hs && cur){ push(pts, sampleU(cur.k, cur.u, B.hs.cu, 10)); push(pts, sampleV(B.hs.k, B.hs.road, 0, B.hs.v, 8)); }
+      pts.push([B.x, B.y]); return pts; }
+    chain.forEach(({ e, dir }) => { const from = dir === 1 ? e.a : e.b, ufrom = dir === 1 ? e.ua : e.ub, uto = dir === 1 ? e.ub : e.ua, to = dir === 1 ? e.b : e.a;
+      if(cur && ufrom != null && cur.k === +String(from).slice(1)) push(pts, sampleU(cur.k, cur.u, ufrom, 10)); push(pts, dir === 1 ? e.pts : e.pts.slice().reverse()); cur = uto != null ? { k: +String(to).slice(1), u: uto } : null; });
+    if(B.hs && cur && cur.k === B.hs.k){ push(pts, sampleU(cur.k, cur.u, B.hs.cu, 10)); push(pts, sampleV(B.hs.k, B.hs.road, 0, B.hs.v, 8)); }
+    pts.push([B.x, B.y]); return pts; }
+
   function posAlong(pts, f){ const tot = lenOf(pts); if(f <= 0 || tot === 0) return { x: pts[0][0], y: pts[0][1], a: 0 }; if(f >= 1) return { x: pts[pts.length - 1][0], y: pts[pts.length - 1][1], a: 0 }; let d = f * tot; for(let i = 1; i < pts.length; i++){ const sl = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); if(d <= sl){ const u = sl ? d / sl : 0; return { x: pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * u, y: pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * u, a: Math.atan2(pts[i][1] - pts[i - 1][1], pts[i][0] - pts[i - 1][0]) }; } d -= sl; } return { x: pts[pts.length - 1][0], y: pts[pts.length - 1][1], a: 0 }; }
 
   /* ---------- where things are ---------- */
@@ -111,7 +145,7 @@
   /* a player's spot for a `place` (home | arcade | bank | …): needs their home house id (or null) */
   function playerPlace(place, uid, homeId){
     if(place === 'lab' || place === 'factory'){ const c = plotCell(place === 'lab' ? 'l' : 'f', uid); return placeOf(c.x, c.y, place === 'lab' ? 'uni' : 'ind'); }
-    if(place === 'home' || !POIS[place]){ if(homeId){ const g = house(+String(homeId).slice(1)); return placeOf(g.x, g.y, nodeOfHouse(g)); } const j = jitterOf(uid, 14); return placeOf(POIS.hub.x + j[0], POIS.hub.y + j[1], 'hub'); }
+    if(place === 'home' || !POIS[place]){ if(homeId){ const g = house(+String(homeId).slice(1)); return placeOf(g.x, g.y, nodeOfHouse(g), g); } const j = jitterOf(uid, 14); return placeOf(POIS.hub.x + j[0], POIS.hub.y + j[1], 'hub'); }
     const p = poiPlace(place), j = jitterOf(uid, 9); return placeOf(p.x + j[0], p.y + j[1], p.node);
   }
 
@@ -122,12 +156,12 @@
   const WHY = { home: 'going home', work: 'heading to work', shop: 'shopping', bank: 'visiting the bank', arcade: 'for a game at the arcade', exchange: 'checking the markets', agency: 'looking at property', park: 'a stroll in the park', visit: 'visiting a neighbour' };
   /* bot n at slot s → where it wants to be: { why, x, y, node, label } */
   function npcPlan(b, s, home, n){
-    const hp = home ? placeOf(home.x, home.y, nodeOfHouse(home)) : placeOf(POIS.hub.x + 20, POIS.hub.y + 20, 'hub'), hl = home ? home.addr : 'Town Square';
+    const hp = home ? placeOf(home.x, home.y, nodeOfHouse(home), home) : placeOf(POIS.hub.x + 20, POIS.hub.y + 20, 'hub'), hl = home ? home.addr : 'Town Square';
     const phase = ((s % DAYSLOTS) + DAYSLOTS) % DAYSLOTS, r = f01(b.n, s * 7 + 3), wk = WORK[b.job] || 'shop', at = (id, why) => Object.assign(poiPlace(id), { why, label: POIS[id].n });
     if(phase < NIGHT) return Object.assign({}, hp, { why: 'home', label: hl });
     if(r < 0.34) return at(wk, 'work'); if(r < 0.44) return at('shop', 'shop'); if(r < 0.50) return at('bank', 'bank'); if(r < 0.50 + 0.10 * (1 - b.thrift) + 0.02) return at('arcade', 'arcade');
     if(r < 0.66 + (b.job === 'trader' || b.job === 'investor' ? 0.08 : 0)) return at('exchange', 'exchange'); if(r < 0.72) return at('agency', 'agency'); if(r < 0.80) return at('park', 'park');
-    if(r < 0.88){ const hi = Math.floor(home ? home.i / PER : 0) * PER + (h32(b.n, s) % PER), g = house(hi); return Object.assign(placeOf(g.x, g.y, nodeOfHouse(g)), { why: 'visit', label: g.addr }); }
+    if(r < 0.88){ const hi = Math.floor(home ? home.i / PER : 0) * PER + (h32(b.n, s) % PER), g = house(hi); return Object.assign(placeOf(g.x, g.y, nodeOfHouse(g), g), { why: 'visit', label: g.addr }); }
     return Object.assign({}, hp, { why: 'home', label: hl });
   }
   const TRIPS = new Map();
@@ -155,5 +189,5 @@
       risk: f01(n, 17), social: f01(n, 18), lifespanDays: life, color: 'hsl(' + (h32(n, 19) % 360) + ',55%,55%)', hobby: HOBBY[h32(n, 20) % HOBBY.length],
       bio: 'A ' + j[0] + ' who ' + HOBBY[h32(n, 20) % HOBBY.length] + '.' };
   }
-  return { PER, DISTRICTS, TYPES, h32, f01, hash, district, stations, house, districtCount, bounds, bot, JOBS, CORE, POIS, ZONES, APP_PLACE, PLACE_NAMES, WHY, SLOT, plotCell, roads, streetPt, highways, route, posAlong, lenOf, playerPlace, poiPlace, npcPlan, npcState };
+  return { PER, DISTRICTS, TYPES, h32, f01, hash, district, stations, house, districtCount, bounds, bot, JOBS, CORE, POIS, ZONES, APP_PLACE, PLACE_NAMES, WHY, SLOT, plotCell, roads, roadEnds, parks, footprint, streetName, coreBlocks, loc, GEO: { S, W, GU, SET, ARM }, highways, route, posAlong, lenOf, playerPlace, poiPlace, npcPlan, npcState };
 });
