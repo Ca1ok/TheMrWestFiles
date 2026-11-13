@@ -13,7 +13,7 @@
 
   /* ================= theme ================= */
   const mq = window.matchMedia('(prefers-color-scheme: dark)');
-  const theme = () => { const t = K.prefs.theme; return t === 'light' || t === 'dark' ? t : (mq.matches ? 'dark' : 'light'); };
+  const theme = () => { const sk = K.skin && K.skin(); if(sk && sk.mode) return sk.mode; const t = K.prefs.theme; return t === 'light' || t === 'dark' ? t : (mq.matches ? 'dark' : 'light'); };
   /* ---- graphics mode: Auto (switches itself to Performance if windows lag) / Quality / Performance ----
    * Performance = no backdrop blur, light shadows, no wallpaper blur/animations; the heavy effects are also switched off for the length of any drag or resize. */
   const perfLow = () => { const m = K.prefs.perfMode || 'auto'; return m === 'performance' || (m === 'auto' && K.prefs.perfAuto === true); };
@@ -27,6 +27,7 @@
   function applyTheme(){
     const root = document.documentElement; root.dataset.theme = theme(); root.classList.toggle('perf-low', perfLow());
     root.classList.toggle('reduce-motion', !!K.prefs.reduceMotion || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)); root.classList.toggle('reduce-transparency', !!K.prefs.reduceTransparency);
+    if(K.applySkin) K.applySkin();                                  // theme colours (tokens), meta theme-color, desktop snow / embers
     paintWall(); K.emit('theme', theme());
   }
   mq.addEventListener && mq.addEventListener('change', () => { if(K.prefs.theme === 'auto') applyTheme(); });
@@ -37,11 +38,11 @@
   let wallLayer = 0, wallKey = '';
   const walls = [$('#wall0'), $('#wall1')];
   async function paintWall(){
-    const t = theme(), id = K.prefs.wall && K.prefs.wall[t], key = t + ':' + id; if(key === wallKey) return; wallKey = key;
-    const next = walls[wallLayer ^ 1], cur = walls[wallLayer]; next.className = 'wall'; next.style.backgroundImage = '';
+    const t = theme(), id = K.prefs.wall && K.prefs.wall[t], sk = K.skin && K.skin(), key = t + ':' + id + ':' + (sk ? sk.key : ''); if(key === wallKey) return; wallKey = key;
+    const next = walls[wallLayer ^ 1], cur = walls[wallLayer]; next.className = 'wall'; next.style.backgroundImage = ''; next.style.background = '';
     let url = null; if(id){ try{ url = await OS.gallery.wallpaper(id); }catch(e){} }
     if(key !== wallKey) return;
-    if(url) next.style.backgroundImage = 'url("' + url + '")'; else next.classList.add(t === 'dark' ? 'def-dark' : 'def-light');
+    if(url) next.style.backgroundImage = 'url("' + url + '")'; else if(sk && sk.wall){ next.classList.add('def-skin'); next.style.background = sk.wall; } else next.classList.add(t === 'dark' ? 'def-dark' : 'def-light');   // a wallpaper the player picked wins; then the theme's own; then the classic default
     requestAnimationFrame(() => { next.classList.add('on'); cur.classList.remove('on'); wallLayer ^= 1; });
   }
 
@@ -528,7 +529,7 @@
   dockZone.addEventListener('pointerenter', () => peek(true)); dockZone.addEventListener('pointerdown', () => peek(true)); dockZone.addEventListener('pointerleave', () => peek(false));       // the strip sits above windows, so it works over a maximized app too
   dockEl.addEventListener('pointerenter', () => peek(true)); dockEl.addEventListener('pointerleave', () => peek(false)); dockEl.addEventListener('focusin', () => peek(true)); dockEl.addEventListener('focusout', () => peek(false));
   dockEl.addEventListener('click', () => { if(dockMode() === 'hide') peek(false); });                                             // after you pick an app the dock tucks away again
-  K.on('prefs', k => { if(k === 'dockMode' || k === '*') applyDockMode(); if(k === 'theme' || k === 'reduceMotion' || k === 'reduceTransparency' || k === 'perfMode' || k === 'perfAuto' || k === '*') applyTheme(); if(k === 'wall' || k === '*'){ wallKey = ''; paintWall(); } if(k === 'iconSize' || k === '*'){ dockEl.dataset.sig = ''; items.forEach(r => { r.cols = -1; }); relayoutHome(true); }
+  K.on('prefs', k => { if(k === 'dockMode' || k === '*') applyDockMode(); if(k === 'theme' || k === 'skin' || k === 'seasonal' || k === 'accent' || k === 'skinFx' || k === 'reduceMotion' || k === 'reduceTransparency' || k === 'perfMode' || k === 'perfAuto' || k === '*') applyTheme(); if(k === 'wall' || k === '*'){ wallKey = ''; paintWall(); } if(k === 'iconSize' || k === '*'){ dockEl.dataset.sig = ''; items.forEach(r => { r.cols = -1; }); relayoutHome(true); }
     if(k === 'dock' || k === '*'){ dockEl.dataset.sig = ''; loadLayout(); relayoutHome(true); } });
   K.on('loaded', () => { applyTheme(); loadLayout(); relayoutHome(false); });
   setEditing(false); measure(); screen.dataset.dock = dockMode(); applyTheme(); loadLayout(); relayoutHome(false); K.emit('screen', { w: S.w, h: S.h });

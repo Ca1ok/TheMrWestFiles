@@ -13,7 +13,11 @@
   const root = document.documentElement, subs = [];
   const $ = (s, r) => (r || document).querySelector(s), $$ = (s, r) => [...(r || document).querySelectorAll(s)];
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  function applyEnv(){ root.dataset.theme = OS.theme(); const sc = OS.screen(); root.style.setProperty('--sat', (sc.sat || 0) + 'px'); root.style.setProperty('--sab', (sc.sab || 0) + 'px'); root.classList.toggle('reduce-motion', !!OS.prefs.get('reduceMotion')); root.classList.toggle('reduce-transparency', !!OS.prefs.get('reduceTransparency')); }
+  /* themes: the shell resolves the active theme (picked by hand or by the calendar); each app applies its colour tokens to its own document */
+  const KIT_SRC = document.currentScript && document.currentScript.src; let skinKeys = [];
+  if(KIT_SRC && !document.querySelector('link[data-skins]')){ const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = new URL('../skins.css', KIT_SRC).href + '?v=20261114a'; l.setAttribute('data-skins', ''); document.head.appendChild(l); }
+  function applySkin(){ let s = null; try{ s = OS.skin ? OS.skin() : null; }catch(e){} skinKeys.forEach(k => root.style.removeProperty(k)); skinKeys = []; root.dataset.skin = s && s.id || ''; if(s) Object.keys(s.vars).forEach(k => { root.style.setProperty(k, s.vars[k]); skinKeys.push(k); }); }
+  function applyEnv(){ applySkin(); root.dataset.theme = OS.theme(); const sc = OS.screen(); root.style.setProperty('--sat', (sc.sat || 0) + 'px'); root.style.setProperty('--sab', (sc.sab || 0) + 'px'); root.classList.toggle('reduce-motion', !!OS.prefs.get('reduceMotion')); root.classList.toggle('reduce-transparency', !!OS.prefs.get('reduceTransparency')); }
   applyEnv();
   const live = (evt, fn) => { const off = OS.on(evt, fn); subs.push(off); return off; };
   live('theme', applyEnv); live('screen', applyEnv); live('prefs', applyEnv);

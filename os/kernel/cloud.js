@@ -152,7 +152,7 @@
 
   /* ---- UI preferences (not progress, so they are kept in localStorage for everyone; signed-in users also sync them) ---- */
   const PREF_KEY = 'westos_ui';
-  const PREF_DEFAULT = { dockMode: 'float', theme: 'auto', wall: { light: null, dark: null }, lock: false, banners: true, reduceMotion: false, reduceTransparency: false, layout: null, dock: [], winGeom: {}, iconSize: 'medium', clock24: false, clockSeconds: false, updateSpeed: 'balanced' };
+  const PREF_DEFAULT = { dockMode: 'float', theme: 'auto', skin: 'auto', seasonal: true, accent: '', skinFx: true, wall: { light: null, dark: null }, lock: false, banners: true, reduceMotion: false, reduceTransparency: false, layout: null, dock: [], winGeom: {}, iconSize: 'medium', clock24: false, clockSeconds: false, updateSpeed: 'balanced' };
   /* Firebase turns arrays into objects (and drops empty ones), so anything read back must be coerced into the shape the shell expects — otherwise
      `prefs.dock.length` / `seenApps.includes` throw ("Cannot read properties of undefined (reading 'length')"). */
   const asArr = v => Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.keys(v).sort((a, b) => a - b).map(k => v[k]) : []);

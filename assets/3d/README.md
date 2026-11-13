@@ -45,3 +45,6 @@ eng.camera.set([0,3,6],[0,0,0]);  eng.node(GL3D.mesh.sphere(1), GL3D.material({ 
 | Motion | `eng.onUpdate = (dt,t) => …`; `await eng.tween(ms, k => …, 'outBack')`; `eng.particles({shape:'glow'\|'square'\|'star'\|'dot'})` |
 | Input | `eng.ray(x,y)`, `eng.pick(x,y)` (set `node.pickable = true`), `eng.rayPlane(ray, y)` |
 | Quality | pass `quality:'low'` (no shadows, dpr 1) — the Games/Arcade helpers already follow Settings → Graphics |
+
+## Themes in 3D
+Every engine is re-coloured by the active WestOS theme automatically (sky / fog / light colours, a backdrop gradient, snow or embers) — see `os/themes/README.md`. Procedural textures and models are untouched. Opt a scene out with `GL3D.create(canvas, { skin:false })`.

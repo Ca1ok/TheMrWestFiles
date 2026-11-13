@@ -204,6 +204,23 @@ void main(){
   function supported(){ if(_supported !== null) return _supported; try{ const c = document.createElement('canvas'); _supported = !!(c.getContext('webgl') || c.getContext('experimental-webgl')); }catch(e){ _supported = false; } return _supported; }
 
   /* ============================== engine ============================== */
+  /* ---------- themes ("skins"): every engine re-colours itself from the active WestOS theme ----------
+   * OS.skin3d() (set up by os/themes/runtime.js; reached through the app's own `OS`, or its parent frame's) returns { k, bg, fog, sky, ground, dir, point, pk, backdrop, fx } or null.
+   * It is read every frame and BLENDED over what the scene set, never written into the scene, so a scene needs no theme code and switching themes is instant.
+   * A scene opts out with GL3D.create(canvas, { skin:false }). Transparent overlays are never re-coloured. */
+  const mixc = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+  const bdCache = new Map();
+  function skinBackdrop(SK){                                    // gradient (+ stars) painted once per theme, shared by every engine in this window
+    if(!SK.backdrop || typeof document === 'undefined') return null; let t = bdCache.get(SK.id); if(t) return t;
+    const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d'); if(!g) return null; const gr = g.createLinearGradient(0, 0, 0, 256); SK.backdrop.forEach(st => gr.addColorStop(st[0], st[1])); g.fillStyle = gr; g.fillRect(0, 0, 256, 256);
+    if(SK.stars){ let sd = 7; const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647; for(let i = 0; i < 70; i++){ const y = r() * 150; g.fillStyle = 'rgba(255,255,255,' + (.25 + r() * .55) + ')'; g.fillRect(Math.floor(r() * 256), Math.floor(y), 1 + (r() < .15 ? 1 : 0), 1 + (r() < .15 ? 1 : 0)); } }
+    t = new Texture(c, { repeat: false, mip: false }); bdCache.set(SK.id, t); return t;
+  }
+  function skinNow(o){
+    if(o.skin === false || o.transparent) return null;
+    try{ const w = root.OS || (root.parent && root.parent !== root && root.parent.OS); return w && w.skin3d ? w.skin3d() : null; }catch(e){ return null; }
+  }
+
   let EID = 0;
   function create(canvas, opt){
     opt = opt || {};
@@ -292,11 +309,13 @@ void main(){
 
     function render(dt){
       if(P.gen !== gen) build();
-      const cam = E.camera, asp = E.w / E.h;
+      const cam = E.camera, asp = E.w / E.h, SK = skinNow(opt);
+      let bg = E.bg, fogC = E.fog.color, skyC = E.lights.sky, gndC = E.lights.ground, dirC = E.lights.dir.color, ptC = null, bdT = E.backdrop;
+      if(SK){ const k = SK.k; if(SK.bg) bg = mixc(bg, SK.bg, k); if(SK.fog) fogC = mixc(fogC, SK.fog, k); if(SK.sky) skyC = mixc(skyC, SK.sky, k * .7); if(SK.ground) gndC = mixc(gndC, SK.ground, k * .7); if(SK.dir) dirC = mixc(dirC, SK.dir, k * .8); if(SK.dirMul !== 1) dirC = dirC.map(v => v * SK.dirMul); if(SK.point) ptC = SK.point; const t = skinBackdrop(SK); if(t) bdT = t; }
       M.persp(E.proj, cam.fov, asp, cam.near, cam.far); M.lookAt(E.view, cam.pos, cam.target, cam.up); M.mul(E.vp, E.proj, E.view);
       const f = V.norm(V.sub(cam.target, cam.pos)), r = V.norm(V.cross(f, cam.up)), u = V.cross(r, f); update(E.scene, null, cam.pos, r, u, V.mul(f, -1));
-      gl.viewport(0, 0, E.w, E.h); gl.clearColor(E.bg[0], E.bg[1], E.bg[2], opt.transparent ? 0 : 1); gl.clearStencil(0); gl.depthMask(true); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
-      if(E.backdrop){ gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.useProgram(P.bg.p); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, gt(E.backdrop)); gl.uniform1i(P.bg.u.uBg, 0); gl.bindBuffer(gl.ARRAY_BUFFER, P.quad); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0); gl.disableVertexAttribArray(1); gl.disableVertexAttribArray(2); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); gl.enableVertexAttribArray(1); gl.enableVertexAttribArray(2); }
+      gl.viewport(0, 0, E.w, E.h); gl.clearColor(bg[0], bg[1], bg[2], opt.transparent ? 0 : 1); gl.clearStencil(0); gl.depthMask(true); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+      if(bdT){ gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.useProgram(P.bg.p); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, gt(bdT)); gl.uniform1i(P.bg.u.uBg, 0); gl.bindBuffer(gl.ARRAY_BUFFER, P.quad); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0); gl.disableVertexAttribArray(1); gl.disableVertexAttribArray(2); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); gl.enableVertexAttribArray(1); gl.enableVertexAttribArray(2); }
       gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
       items.length = 0; collect(E.scene, true);
       const opaque = [], blended = [], added = []; items.forEach(n => { const b = n.mat.blend; (b === 'add' ? added : b === 'blend' ? blended : opaque).push(n); });
@@ -304,9 +323,9 @@ void main(){
       blended.sort((a, b) => (a.order - b.order) || (vz(a) - vz(b))); added.sort((a, b) => (a.order - b.order) || (vz(a) - vz(b))); opaque.sort((a, b) => a.order - b.order);
       /* main pass */
       const U = P.main.u; gl.useProgram(P.main.p); gl.uniformMatrix4fv(U.uVP, false, E.vp); gl.uniform3f(U.uEye, cam.pos[0], cam.pos[1], cam.pos[2]);
-      const L = E.lights, dd = V.norm(L.dir.dir); gl.uniform3f(U.uSky, L.sky[0], L.sky[1], L.sky[2]); gl.uniform3f(U.uGround, L.ground[0], L.ground[1], L.ground[2]); gl.uniform3f(U.uDirD, dd[0], dd[1], dd[2]); gl.uniform3f(U.uDirC, L.dir.color[0], L.dir.color[1], L.dir.color[2]);
-      gl.uniform3f(U.uFogC, E.fog.color[0], E.fog.color[1], E.fog.color[2]); gl.uniform1f(U.uFogD, E.fog.density || 0); gl.uniform1i(U.uMap, 0); gl.uniform1i(U.uBump, 1); gl.uniform1i(U.uEmap, 2);
-      const np = Math.min(4, L.points.length), pp = new Float32Array(16), pc = new Float32Array(12); for(let i = 0; i < np; i++){ const q = L.points[i], k = q.intensity == null ? 1 : q.intensity; pp.set([q.pos[0], q.pos[1], q.pos[2], q.range || 8], i * 4); pc.set([q.color[0] * k, q.color[1] * k, q.color[2] * k], i * 3); }
+      const L = E.lights, dd = V.norm(L.dir.dir); gl.uniform3f(U.uSky, skyC[0], skyC[1], skyC[2]); gl.uniform3f(U.uGround, gndC[0], gndC[1], gndC[2]); gl.uniform3f(U.uDirD, dd[0], dd[1], dd[2]); gl.uniform3f(U.uDirC, dirC[0], dirC[1], dirC[2]);
+      gl.uniform3f(U.uFogC, fogC[0], fogC[1], fogC[2]); gl.uniform1f(U.uFogD, E.fog.density || 0); gl.uniform1i(U.uMap, 0); gl.uniform1i(U.uBump, 1); gl.uniform1i(U.uEmap, 2);
+      const np = Math.min(4, L.points.length), pp = new Float32Array(16), pc = new Float32Array(12); for(let i = 0; i < np; i++){ const q = L.points[i], k = q.intensity == null ? 1 : q.intensity, qc = ptC ? mixc(q.color, ptC, SK.pk) : q.color; pp.set([q.pos[0], q.pos[1], q.pos[2], q.range || 8], i * 4); pc.set([qc[0] * k, qc[1] * k, qc[2] * k], i * 3); }
       gl.uniform1i(U.uNPL, np); gl.uniform4fv(U['uPLp[0]'], pp); gl.uniform3fv(U['uPLc[0]'], pc);
       gl.disable(gl.BLEND); gl.depthMask(true); opaque.forEach(n => drawNode(n, U));
       /* planar shadows */
@@ -329,8 +348,19 @@ void main(){
     }
     E.render = () => render(0);
 
+    /* ambient theme particles (snow, embers) around what the camera is looking at — sized and spread by camera distance, so they suit any scene scale */
+    let fxS = null, fxId = '', fxAcc = 0;
+    function skinFx(dt){
+      const SK = skinNow(opt), fx = SK && SK.fx;
+      if(!fx){ if(fxS){ fxS.dispose(); fxS = null; fxId = ''; } return; }
+      if(!fxS || fxId !== SK.id){ if(fxS) fxS.dispose(); fxS = E.particles({ max: 320, blend: fx.blend, shape: fx.shape, gravity: 0, drag: fx.drag }); fxId = SK.id; }
+      const c = E.camera, tg = c.target, d = Math.max(.6, Math.hypot(c.pos[0] - tg[0], c.pos[1] - tg[1], c.pos[2] - tg[2])), rnd = Math.random;
+      fxAcc += fx.rate * (E.quality === 'low' ? .35 : 1) * dt;
+      while(fxAcc >= 1){ fxAcc--; const dir = fx.dir < 0 ? -1 : 1, vy = dir * fx.fall * d, col = fx.colors[(rnd() * fx.colors.length) | 0];
+        fxS.emit({ pos: [tg[0] + (rnd() - .5) * 2 * d, dir < 0 ? tg[1] + d * (.2 + rnd() * .8) : tg[1] - d * .5 + rnd() * d * .8, tg[2] + (rnd() - .5) * 2 * d], vel: [(rnd() - .5) * d * .06, vy, (rnd() - .5) * d * .06], gravity: vy * fx.drag, color: col, size: fx.size * d * (.6 + rnd() * .8), life: fx.life * (.7 + rnd() * .6), spin: (rnd() - .5) * 2, rot: rnd() * TAU }); }
+    }
     function step(dt){
-      E.time += dt;
+      E.time += dt; try{ skinFx(dt); }catch(e){}
       for(let i = tweens.length - 1; i >= 0; i--){ const T = tweens[i]; T.t += dt; const k = Math.min(1, T.t / T.d); if(T.fn){ try{ T.fn(T.ez(k), k); }catch(e){ } } if(k >= 1){ tweens.splice(i, 1); T.res(); } }
       for(let s = 0; s < systems.length; s++){ const S = systems[s]; for(let i = S.p.length - 1; i >= 0; i--){ const p = S.p[i]; p.age += dt; if(p.age >= p.life){ S.p.splice(i, 1); continue; } const dr = Math.exp(-S.drag * dt); p.vel[0] *= dr; p.vel[2] *= dr; p.vel[1] = p.vel[1] * dr + p.g * dt; p.pos[0] += p.vel[0] * dt; p.pos[1] += p.vel[1] * dt; p.pos[2] += p.vel[2] * dt; p.rot += p.spin * dt; } }
       if(E.onUpdate) try{ E.onUpdate(dt, E.time); }catch(e){ if(root.OS && root.OS.debug) try{ root.OS.debug.error('GL3D.onUpdate', e); }catch(_){} else console.error(e); }

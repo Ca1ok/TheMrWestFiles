@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="os/tokens.css?v=20261105b">
 <link rel="stylesheet" href="os/poster.css?v=20261105b">
 <link rel="stylesheet" href="os/os.css?v=20261105b">
+<link rel="stylesheet" href="os/skins.css?v=20261114a">
 </head>
 <body>
 <div id="screen" class="locked">
@@ -96,6 +97,12 @@
 <script src="os/kernel/gallery.js?v=20261105b"></script>
 <script src="os/kernel/api.js?v=20261110a"></script>
 <script src="os/kernel/minigames.js"></script>
+<!-- themes: engine + one file per theme (add a theme = add a file and a line here — see os/themes/README.md), then the kernel glue -->
+<script src="os/themes/engine.js?v=20261114a"></script>
+<script src="os/themes/christmas.js?v=20261114a"></script>
+<script src="os/themes/gta6.js?v=20261114a"></script>
+<script src="os/themes/manual.js?v=20261114a"></script>
+<script src="os/themes/runtime.js?v=20261114a"></script>
 <!-- desktop widgets: one file each; add a widget by adding a file and a line here -->
 <script src="os/widgets/wanted.js?v=20261105b"></script>
 <script src="os/widgets/stocks.js?v=20261105b"></script>
@@ -108,7 +115,7 @@
 <script src="os/widgets/games.js?v=20261105b"></script>
 <script src="os/lib/maprender.js"></script>
 <script src="os/widgets/map.js"></script>
-<script src="os/shell.js?v=20261107a"></script>
+<script src="os/shell.js?v=20261114a"></script>
 <script src="os/onboarding.js?v=20261110a"></script>
 <script src="os/kernel/boot.js?v=20261110a"></script>
 <script>
