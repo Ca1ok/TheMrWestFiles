@@ -4,10 +4,11 @@
  * One projection does both modes (pitch 0 = flat top-down), so there is a single code path; 3D adds extruded buildings, shadows and haze. Textures are procedural (canvas patterns), nothing is downloaded. */
 (function(root, factory){ if(typeof module === 'object' && module.exports) module.exports = factory(); else root.MapRender = factory(); })(typeof self !== 'undefined' ? self : this, function(){
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), CAM = 1700;
-  const TH = {
-    light: { land: '#f2efe9', hood: '#ebe5d8', road: '#ffffff', edge: '#d6d0c3', hwy: '#fdd38b', hwyE: '#e0a44a', exp: '#f8b363', expE: '#d98a30', park: '#cfe6b8', parkE: '#b2d29a', core: '#e2dfd8', coreE: '#cfcac0', text: '#3b3b3d', sub: '#6b6b70', halo: 'rgba(255,255,255,.9)', roof: '#f3efe6', water: '#a9d3f0', zoneU: '#e0e1f4', zoneI: '#efe0d3', plot: '#d8d2c6' },
-    dark: { land: '#1f2328', hood: '#262b30', road: '#454b53', edge: '#16191d', hwy: '#9a7a34', hwyE: '#4e3b14', exp: '#b3743a', expE: '#59341a', park: '#2a4733', parkE: '#223a2a', core: '#2c3238', coreE: '#3a4149', text: '#ece9e3', sub: '#a4a7ad', halo: 'rgba(24,27,31,.9)', roof: '#59606a', water: '#27506f', zoneU: '#2b2d4a', zoneI: '#3a2c26', plot: '#3a4047' }
+  const TH = {      // warm, like the rest of WestOS (see os/tokens.css)
+    light: { land: '#f3eee2', hood: '#ece4d2', road: '#fffdf7', edge: '#d9cfb9', hwy: '#f4c984', hwyE: '#c98a3c', exp: '#e8924f', expE: '#b6552c', park: '#d3e3b5', parkE: '#b8cf98', core: '#e6dfd0', coreE: '#d3c9b4', text: '#2a2016', sub: 'rgba(42,32,22,.64)', halo: 'rgba(255,250,240,.9)', roof: '#f6efdf', water: '#b4d5e6', zoneU: '#e3e0ef', zoneI: '#f0decb', plot: '#ddd2bb' },
+    dark: { land: '#17120d', hood: '#1e1812', road: '#4a3e31', edge: '#0e0b08', hwy: '#a07a3a', hwyE: '#4f3a18', exp: '#cf7a3c', expE: '#5c2f17', park: '#2a3d29', parkE: '#213220', core: '#251e16', coreE: '#35291d', text: '#f6efdd', sub: 'rgba(246,239,221,.62)', halo: 'rgba(14,11,8,.88)', roof: '#5c4f41', water: '#2c4a5e', zoneU: '#2a2944', zoneI: '#3a2a1c', plot: '#33281e' }
   };
+  const cssTint = (() => { let v = '#e8924f', at = 0; return () => { const n = Date.now(); if(n - at > 2000){ at = n; try{ const c = getComputedStyle(document.documentElement).getPropertyValue('--tint').trim(); if(/^#[0-9a-f]{6}$/i.test(c)) v = c; }catch(e){} } return v; }; })();
   const PC = { bank: ['#4a6fa8', 'B'], exchange: ['#3fae78', 'E'], shop: ['#e0a23a', 'S'], arcade: ['#b36be0', 'A'], agency: ['#d08a5d', 'R'], hall: ['#7d8799', 'C'], park: ['#5aa15c', 'P'], uni: ['#6f7fd0', 'U'], lab: ['#4fb3ae', 'L'], ind: ['#c97b4a', 'F'], plant: ['#8f6e5a', 'W'] };
   const POIH = { bank: 30, exchange: 40, shop: 18, arcade: 22, agency: 20, hall: 28, uni: 24, lab: 22, ind: 16, plant: 26 };
   const KIND = { mine: '#5bd68a', bank: '#b3b9c4', player: '#7fb2f2', bot: '#f2b676' };
@@ -31,7 +32,7 @@
 
   function create(cv, G){
     const g = cv.getContext('2d'), R = { view: { x: 0, y: 0, k: 1, b: 0, p: 0 }, W: 0, H: 0, npcPos: [], pplPos: [], CAM };
-    let cs = 1, sn = 0, cp = 1, sp = 0, vk = 1, vx = 0, vy = 0, th = TH.light, dark = false, tex = null, texDark = null, FC = new Map(), scene = null, t = 0, sel2d = true;
+    let tint = '#e8924f', cs = 1, sn = 0, cp = 1, sp = 0, vk = 1, vx = 0, vy = 0, th = TH.light, dark = false, tex = null, texDark = null, FC = new Map(), scene = null, t = 0, sel2d = true;
     R.resize = (w, h) => { const d = Math.min(2, devicePixelRatio || 1); R.W = w || cv.clientWidth; R.H = h || cv.clientHeight; cv.width = Math.round(R.W * d); cv.height = Math.round(R.H * d); g.setTransform(d, 0, 0, d, 0, 0); };
     const prep = () => { const v = R.view; cs = Math.cos(v.b); sn = Math.sin(v.b); cp = Math.cos(v.p); sp = Math.sin(v.p); vk = v.k; vx = v.x; vy = v.y; sel2d = v.p < 0.035; };
     /* world (x, y, height z) → [screen x, screen y, perspective scale] or null when behind the camera */
@@ -73,11 +74,11 @@
       else { g.moveTo(s * .2, -s); g.lineTo(-s * .55, s * .15); g.lineTo(-s * .05, s * .15); g.lineTo(-s * .2, s); g.lineTo(s * .55, -s * .2); g.lineTo(s * .05, -s * .2); g.closePath(); g.fill(); }
       g.restore(); }
     function pin(x, y, r, col, id, sel, z){ const s = P(x, y, z || 0); if(!s) return; if(z){ const s0 = P(x, y, 0); g.strokeStyle = 'rgba(0,0,0,.25)'; g.lineWidth = 1; g.beginPath(); g.moveTo(s0[0], s0[1]); g.lineTo(s[0], s[1]); g.stroke(); }
-      g.beginPath(); g.arc(s[0], s[1] + 1.5, r + 1, 0, 7); g.fillStyle = 'rgba(0,0,0,.18)'; g.fill(); g.beginPath(); g.arc(s[0], s[1], r, 0, 7); g.fillStyle = col; g.fill(); g.lineWidth = sel ? 3 : 1.6; g.strokeStyle = sel ? '#0a84ff' : '#fff'; g.stroke(); glyph(id, s[0], s[1], r * 0.5); }
+      g.beginPath(); g.arc(s[0], s[1] + 1.5, r + 1, 0, 7); g.fillStyle = 'rgba(0,0,0,.18)'; g.fill(); g.beginPath(); g.arc(s[0], s[1], r, 0, 7); g.fillStyle = col; g.fill(); g.lineWidth = sel ? 3 : 1.6; g.strokeStyle = sel ? tint : '#fff'; g.stroke(); glyph(id, s[0], s[1], r * 0.5); }
 
     /* ---- the frame ---- */
     R.draw = (sc, tt) => {
-      scene = sc; t = tt || 0; dark = !!sc.dark; th = dark ? TH.dark : TH.light; if(!tex || texDark !== dark){ tex = makeTextures(g, dark); texDark = dark; } prep(); FC = new Map();
+      scene = sc; tint = sc.tint || cssTint(); t = tt || 0; dark = !!sc.dark; th = dark ? TH.dark : TH.light; if(!tex || texDark !== dark){ tex = makeTextures(g, dark); texDark = dark; } prep(); FC = new Map();
       const W = R.W, H = R.H, v = R.view, k = vk, n = sc.n || 8, C = G.CORE, GE = G.GEO, flat = sel2d, items = [];
       g.clearRect(0, 0, W, H); g.fillStyle = th.land; g.fillRect(0, 0, W, H);
       try{ const o = flat ? new DOMMatrix().translate(-vx * k + W / 2, -vy * k + H / 2) : new DOMMatrix(); tex.land.setTransform(o); tex.grass.setTransform(o); tex.hatch.setTransform(o); tex.dots.setTransform(o); tex.water.setTransform(o); }catch(e){}
@@ -130,22 +131,22 @@
 
       /* selection under the dynamic things */
       const ring = (x, y, r, col, lw) => { const s = P(x, y, 0); if(!s) return; g.strokeStyle = col; g.lineWidth = lw || 2.4; g.beginPath(); g.ellipse(s[0], s[1], r * s[2], r * s[2] * (flat ? 1 : Math.max(0.35, cp)), 0, 0, 7); g.stroke(); };
-      if(sc.sel){ const e = (sc.houses || []).find(x => x.id === sc.sel); if(e){ const pu = 1 + 0.1 * Math.sin(t / 220); ring(e.g.x, e.g.y, Math.max(11, e.g.w * k * 0.9) * pu, '#0a84ff', 3); } }
-      const X = sc.selX; if(X && X.t === 'poi'){ const p = G.POIS[X.id]; ring(p.x, p.y, 22, '#0a84ff', 3); } if(X && X.t === 'plot'){ const c = G.plotCell(X.kd, X.id); ring(c.x, c.y, 16, '#0a84ff', 3); }
+      if(sc.sel){ const e = (sc.houses || []).find(x => x.id === sc.sel); if(e){ const pu = 1 + 0.1 * Math.sin(t / 220); ring(e.g.x, e.g.y, Math.max(11, e.g.w * k * 0.9) * pu, tint, 3); } }
+      const X = sc.selX; if(X && X.t === 'poi'){ const p = G.POIS[X.id]; ring(p.x, p.y, 22, tint, 3); } if(X && X.t === 'plot'){ const c = G.plotCell(X.kd, X.id); ring(c.x, c.y, 16, tint, 3); }
       /* emergency vehicles */
-      const pn = performance.now(); (sc.vehicles || []).forEach(vh => { const p = Math.min(1, (pn - vh.t0) / vh.dur), x = vh.from.x + (vh.to.x - vh.from.x) * p, y = vh.from.y + (vh.to.y - vh.from.y) * p, s = P(x, y, 2); if(!s) return; const fl = Math.floor(pn / 160) % 2; g.fillStyle = vh.t === 'fire' ? '#ff453a' : vh.t === 'police' ? (fl ? '#0a84ff' : '#ff453a') : '#fff'; g.beginPath(); g.arc(s[0], s[1], Math.max(4, 5 * Math.min(k, 2) * s[2]), 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,.45)'; g.lineWidth = 1; g.stroke(); if(p >= 1){ g.strokeStyle = 'rgba(255,255,255,.7)'; g.beginPath(); g.arc(s[0], s[1], 9 + (pn - vh.t0 - vh.dur) / 90, 0, 7); g.stroke(); } });
+      const pn = performance.now(); (sc.vehicles || []).forEach(vh => { const p = Math.min(1, (pn - vh.t0) / vh.dur), x = vh.from.x + (vh.to.x - vh.from.x) * p, y = vh.from.y + (vh.to.y - vh.from.y) * p, s = P(x, y, 2); if(!s) return; const fl = Math.floor(pn / 160) % 2; g.fillStyle = vh.t === 'fire' ? '#ff453a' : vh.t === 'police' ? (fl ? tint : '#ff453a') : '#fff'; g.beginPath(); g.arc(s[0], s[1], Math.max(4, 5 * Math.min(k, 2) * s[2]), 0, 7); g.fill(); g.strokeStyle = 'rgba(0,0,0,.45)'; g.lineWidth = 1; g.stroke(); if(p >= 1){ g.strokeStyle = 'rgba(255,255,255,.7)'; g.beginPath(); g.arc(s[0], s[1], 9 + (pn - vh.t0 - vh.dur) / 90, 0, 7); g.stroke(); } });
       /* NPCs: one dot each; the chosen one shows its route and destination */
       R.npcPos = []; const nr = clamp(2.2 + k * 0.9, 3.2, 7);
-      if(sc.npcSel){ const ns = sc.npcSel; if(ns.route) line(ns.route, 4, 'rgba(10,132,255,.28)', 3); if(ns.rest) line(ns.rest, 3.6, '#0a84ff', 2.6, [8, 6]); if(ns.to){ ring(ns.to.x, ns.to.y, 10 + Math.sin(t / 200), '#0a84ff', 2.2); const s = P(ns.to.x, ns.to.y, 0); if(s) halo(ns.to.label || '', s[0], s[1] - 18, 11, '#0a84ff', 700); } }
+      if(sc.npcSel){ const ns = sc.npcSel; if(ns.route) line(ns.route, 4, tint + '55', 3); if(ns.rest) line(ns.rest, 3.6, tint, 2.6, [8, 6]); if(ns.to){ ring(ns.to.x, ns.to.y, 10 + Math.sin(t / 200), tint, 2.2); const s = P(ns.to.x, ns.to.y, 0); if(s) halo(ns.to.label || '', s[0], s[1] - 18, 11, tint, 700); } }
       (sc.npcs || []).forEach(o => { R.npcPos.push({ id: o.id, x: o.x, y: o.y }); const s = P(o.x, o.y, flat ? 0 : 1.5); if(!onScreen(s, 12)) return; const r = nr * Math.min(1.3, 0.8 + s[2] * 0.3); if(!flat){ g.fillStyle = 'rgba(0,0,0,.2)'; g.beginPath(); g.ellipse(s[0], s[1] + r * 0.8, r * 0.9, r * 0.4, 0, 0, 7); g.fill(); }
         g.fillStyle = o.c || '#f2a65a'; g.beginPath(); g.arc(s[0], s[1], r, 0, 7); g.fill(); g.lineWidth = o.moving ? 1.8 : 1.1; g.strokeStyle = o.moving ? '#fff' : 'rgba(0,0,0,.45)'; g.stroke();
-        if(X && X.t === 'npc' && X.id === o.id){ g.strokeStyle = '#0a84ff'; g.lineWidth = 2.4; g.beginPath(); g.arc(s[0], s[1], r + 4 + Math.sin(t / 180), 0, 7); g.stroke(); if(o.name) halo(o.name, s[0], s[1] - r - 10, 11.5, th.text, 700); } });
+        if(X && X.t === 'npc' && X.id === o.id){ g.strokeStyle = tint; g.lineWidth = 2.4; g.beginPath(); g.arc(s[0], s[1], r + 4 + Math.sin(t / 180), 0, 7); g.stroke(); if(o.name) halo(o.name, s[0], s[1] - r - 10, 11.5, th.text, 700); } });
       /* players, wherever their front window puts them: Apple-style blue/green pin dot with a name chip */
       R.pplPos = []; (sc.players || []).forEach(o => { R.pplPos.push({ id: o.id, x: o.x, y: o.y }); const s = P(o.x, o.y, flat ? 0 : 3); if(!onScreen(s, 30)) return; const r = clamp(5 + k * 0.9, 6, 10);
-        g.fillStyle = 'rgba(0,0,0,.2)'; g.beginPath(); g.ellipse(s[0], s[1] + r * 0.9, r, r * 0.45, 0, 0, 7); g.fill(); if(o.mine){ g.fillStyle = 'rgba(10,132,255,.18)'; g.beginPath(); g.arc(s[0], s[1], r + 7 + 3 * Math.sin(t / 260), 0, 7); g.fill(); }
-        g.beginPath(); g.arc(s[0], s[1], r + 2.2, 0, 7); g.fillStyle = '#fff'; g.fill(); g.beginPath(); g.arc(s[0], s[1], r, 0, 7); g.fillStyle = o.mine ? '#0a84ff' : '#30b0c7'; g.fill();
-        if(!o.mine || k > 0.9){ const nm = o.name || 'A player'; g.font = '700 11px -apple-system,system-ui,sans-serif'; const tw = g.measureText(nm).width + 12; g.fillStyle = dark ? 'rgba(40,44,50,.92)' : 'rgba(255,255,255,.95)'; g.beginPath(); if(g.roundRect) g.roundRect(s[0] - tw / 2, s[1] - r - 25, tw, 18, 9); else g.rect(s[0] - tw / 2, s[1] - r - 25, tw, 18); g.fill(); g.lineWidth = 1; g.strokeStyle = 'rgba(0,0,0,.12)'; g.stroke(); g.fillStyle = th.text; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(nm, s[0], s[1] - r - 16); g.textBaseline = 'alphabetic'; }
-        if(X && X.t === 'player' && X.id === o.id){ g.strokeStyle = '#0a84ff'; g.lineWidth = 2.4; g.beginPath(); g.arc(s[0], s[1], r + 8 + Math.sin(t / 180), 0, 7); g.stroke(); } });
+        g.fillStyle = 'rgba(0,0,0,.2)'; g.beginPath(); g.ellipse(s[0], s[1] + r * 0.9, r, r * 0.45, 0, 0, 7); g.fill(); if(o.mine){ g.fillStyle = tint + '30'; g.beginPath(); g.arc(s[0], s[1], r + 7 + 3 * Math.sin(t / 260), 0, 7); g.fill(); }
+        g.beginPath(); g.arc(s[0], s[1], r + 2.2, 0, 7); g.fillStyle = '#fff'; g.fill(); g.beginPath(); g.arc(s[0], s[1], r, 0, 7); g.fillStyle = o.mine ? tint : '#3aa6b9'; g.fill();
+        if(!o.mine || k > 0.9){ const nm = o.name || 'A player'; g.font = '700 11px -apple-system,system-ui,sans-serif'; const tw = g.measureText(nm).width + 12; g.fillStyle = dark ? 'rgba(29,23,17,.94)' : 'rgba(255,250,240,.96)'; g.beginPath(); if(g.roundRect) g.roundRect(s[0] - tw / 2, s[1] - r - 25, tw, 18, 9); else g.rect(s[0] - tw / 2, s[1] - r - 25, tw, 18); g.fill(); g.lineWidth = 1; g.strokeStyle = 'rgba(0,0,0,.12)'; g.stroke(); g.fillStyle = th.text; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(nm, s[0], s[1] - r - 16); g.textBaseline = 'alphabetic'; }
+        if(X && X.t === 'player' && X.id === o.id){ g.strokeStyle = tint; g.lineWidth = 2.4; g.beginPath(); g.arc(s[0], s[1], r + 8 + Math.sin(t / 180), 0, 7); g.stroke(); } });
 
       /* labels last, upright, with a halo */
       for(const zid of ['uni', 'ind']){ const zz = G.ZONES[zid]; const s = P((zz.x0 + zz.x1) / 2, zz.y0 - 14, 0); if(s && k < 3.4) halo(zz.n, s[0], s[1], clamp(11 * k * s[2] + 2, 10, 15), th.sub, 700); }
