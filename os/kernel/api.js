@@ -138,7 +138,7 @@
     pay: (to, d) => R(LG.send(to, d, 'pay', '')),
     licence: () => ({ active: LG.licActive(), leftMs: LG.licLeftMs(), fee: LG.cfg.licFee / 100, days: LG.cfg.licDays, markup: LG.cfg.buildMarkupBp / 10000 }), buyLicence: () => R(LG.buyLicence()), build: t => R(LG.build(t)), buildTypes: () => LG.buildTypes(),
     orders: () => Object.keys(LG.orders || {}).sort().map(slot => Object.assign({ slot }, LG.orders[slot])),
-    plot: kind => LG.hasPlot(kind), plotFee: kind => LG.plotFee(kind) / 100, buyPlot: kind => R(LG.buyPlot(kind)), gate: id => LG.gate(id),
+    plot: kind => LG.hasPlot(kind), plotFee: kind => LG.plotFee(kind) / 100, buyPlot: kind => R(LG.buyPlot(kind)), gate: id => (C.isAdmin() && K.prefs.adminBypass === true) ? null : LG.gate(id),   // admin-only 'open without buying' switch (Settings → Administrator)
     watchMap: on => LG.watchMap(!!on), plots: () => LG.plots || {}, locs: () => LG.locs || {}, allHomes: () => LG.homes || {}
   };
   const loans = { list: () => LG.loanList(), plans: () => LG.plans(), limit: () => LG.loanLimit(), owed: () => LG.debt(), take: (plan, d) => R(LG.takeLoan(plan, d)), repay: (slot, d) => R(LG.repay(slot, d)) };

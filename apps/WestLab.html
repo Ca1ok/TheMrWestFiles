@@ -4,8 +4,10 @@
 <style>
 .lab3{ display:grid; gap:14px; grid-template-columns:230px minmax(0,1fr) 250px; align-items:start; } @media (max-width:1000px){ .lab3{ grid-template-columns:1fr; } }
 .col{ display:flex; flex-direction:column; gap:12px; min-width:0; } .col .cap{ margin:0 0 8px; }
-.stage{ position:relative; height:280px; border-radius:var(--r-xl); overflow:hidden; background:radial-gradient(90% 100% at 50% 100%,var(--glow,var(--card3)),var(--card)); transition:background .8s, box-shadow .2s; } .stage.over{ box-shadow:0 0 0 3px var(--tint) inset; }
-.stage canvas{ position:absolute; inset:0; width:100%; height:100%; } .stage .hint{ position:absolute; inset:0; display:grid; place-items:center; text-align:center; color:var(--label2); font:600 15px/1.5 var(--font); pointer-events:none; padding:20px; }
+.stage{ position:relative; height:340px; border-radius:var(--r-xl); overflow:hidden; background:radial-gradient(90% 100% at 50% 100%,var(--glow,var(--card3)),var(--card)); transition:background .8s, box-shadow .2s; } .stage.over{ box-shadow:0 0 0 3px var(--tint) inset; }
+.stage canvas{ position:absolute; inset:0; width:100%; height:100%; } .stage.has3d{ background:#1a2128; } .stage.has3d .flame{ display:none; } .stage.has3d .hint{ place-items:end center; padding-bottom:18px; color:#fff; text-shadow:0 2px 8px rgba(0,0,0,.7); z-index:2; }
+.lens{ position:absolute; right:8px; top:44px; width:31%; height:36%; cursor:zoom-in; border-radius:18px; overflow:hidden; background:rgba(10,14,20,.78); box-shadow:0 8px 28px rgba(0,0,0,.5),inset 0 0 0 1.5px rgba(255,255,255,.18); display:none; z-index:2; backdrop-filter:blur(6px); } .lens.on{ display:block; } .lens.full{ cursor:default; inset:0; width:auto; height:auto; border-radius:inherit; } .stage:not(.has3d) .lens{ right:0; top:0; width:100%; height:100%; border-radius:0; background:none; box-shadow:none; backdrop-filter:none; }
+.lensbtn{ position:absolute; left:10px; bottom:10px; z-index:4; font:700 12px var(--font); padding:5px 11px; border-radius:12px; background:rgba(0,0,0,.55); color:#fff; display:none; } .stage.has3d .lensbtn.on{ display:block; } .stage .tag2{ z-index:4; } .stage .hint{ position:absolute; inset:0; display:grid; place-items:center; text-align:center; color:var(--label2); font:600 15px/1.5 var(--font); pointer-events:none; padding:20px; }
 .stage .flame{ position:absolute; bottom:-6px; left:0; right:0; height:46px; background:radial-gradient(60% 100% at 50% 100%,#ffb347,#e8584f 55%,transparent 75%); opacity:0; filter:blur(5px); transition:opacity .5s; pointer-events:none; } .stage.hot .flame{ opacity:.7; animation:flick .3s infinite alternate; } @keyframes flick{ to{ transform:scaleY(1.2); } }
 .stage .tag2{ position:absolute; top:10px; font:800 12px var(--font); padding:4px 9px; border-radius:12px; background:rgba(0,0,0,.4); color:#fff; font-variant-numeric:tabular-nums; } .stage .t1{ right:12px; } .stage .t2{ left:12px; }
 .itm,.rg{ display:flex; align-items:center; gap:10px; padding:9px 11px; border-radius:14px; background:var(--card2); margin-bottom:7px; cursor:grab; user-select:none; } .itm:active,.rg:active{ cursor:grabbing; } .itm.used{ opacity:.4; } .itm .f,.rg .f{ font:800 18px var(--font); min-width:50px; } .itm .nm,.rg .nm{ flex:1; min-width:0; } .itm .nm b,.rg .nm b{ display:block; font:600 13.5px var(--font); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .itm .nm small,.rg .nm small{ color:var(--label2); font:400 11.5px var(--font); }
@@ -23,7 +25,7 @@
 .win-anim{ width:84px; height:84px; margin:6px auto 12px; display:block; } .win-anim circle{ stroke-dasharray:240; stroke-dashoffset:240; animation:dr .7s .1s ease forwards; } .win-anim path{ stroke-dasharray:60; stroke-dashoffset:60; animation:dr .45s .6s ease forwards; } @keyframes dr{ to{ stroke-dashoffset:0; } }
 .mono{ font-family:var(--font); font-weight:700; } .ex{ display:flex; gap:8px; flex-wrap:wrap; }
 </style></head><body><div id="app"></div>
-<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
+<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script><script src="../os/lib/gl3d.js"></script><script src="../os/lib/gl3d-assets.js"></script><script src="../os/lib/lab3d.js"></script>
 <script>
 const { h, row, group, money, esc } = Kit, L = OS.lab, SH = OS.shop, CH = OS.chem, MOL = OS.mol, COLORS = OS.data.CATEGORY_COLORS, pf = f => CH.prettyFormula(f);
 const CPK = { H: '#f4f4f4', C: '#8d8d8d', N: '#3b57f0', O: '#f04b3b', F: '#8fe04f', Cl: '#27d83a', Br: '#b03030', I: '#9a2aa0', S: '#f0e040', P: '#ff8c1a', Na: '#ab5cf2', K: '#8f40d4', Ca: '#3dff00', Mg: '#8aff00', Fe: '#e06633', Cu: '#c88033', Zn: '#7d80b0', Al: '#bfa6a6', Si: '#f0c8a0', Li: '#cc80ff', Ag: '#c0c0c0', Au: '#ffd123', Pb: '#575961', Hg: '#b8b8d0' };
@@ -56,7 +58,7 @@ function drawScene(c, W, Hh, s, u, ts, T, mode){
 }
 function drawGraph(c, W, Hh, g){ const xs = g.x, ys = g.y, w = Math.max(1, Math.max(...xs) - Math.min(...xs)), hh = Math.max(1, Math.max(...ys) - Math.min(...ys)), L2 = Math.min(40, (W - 70) / w, (Hh - 70) / hh), cx = W / 2, cy = Hh / 2; const X = i => cx + xs[i] * L2, Y = i => cy + ys[i] * L2; (g.links || []).forEach(([i, j]) => { c.setLineDash([4, 4]); bondLine(c, X(i), Y(i), X(j), Y(j), 1, .6, '#ffd36a', 1.4); }); c.setLineDash([]); g.b.forEach(([i, j, o]) => bondLine(c, X(i), Y(i), X(j), Y(j), o, .9, '#e8e8e8', 2.4)); g.a.forEach((el, i) => atomDot(c, X(i), Y(i), el, g.q ? g.q[i] : 0, 1)); }
 
-let tab = 'reactor', reagents = [], amounts = {}, T = 300, P = 1, cat = false, elec = false, ign = true, removal = false, cur = null, busy = false, seq = 0, scn = null, anim = { mode: 'idle', u: 0, t0: 0 }, raf = 0, search = '';
+let L3 = null, tab = 'reactor', reagents = [], amounts = {}, T = 300, P = 1, cat = false, elec = false, ign = true, removal = false, cur = null, busy = false, seq = 0, scn = null, anim = { mode: 'idle', u: 0, t0: 0 }, raf = 0, search = '';
 const A = Kit.app({ title: 'WestLab', build: (body) => {
   const tabs = Kit.seg([{ id: 'reactor', label: 'Reactor' }, { id: 'equip', label: 'Equipment' }, { id: 'found', label: 'Library' }], tab, t => { tab = t; draw(); });
   const main = h('div', { style: { marginTop: '14px' } }); body.append(tabs, main);
@@ -67,7 +69,10 @@ const A = Kit.app({ title: 'WestLab', build: (body) => {
     const grid = h('div', { class: 'lab3' }), cInv = h('div', { class: 'col' }), cMid = h('div', { class: 'col' }), cOut = h('div', { class: 'col' }); grid.append(cInv, cMid, cOut); root.appendChild(grid);
     const invBox = h('div'), srch = h('input', { class: 'field', placeholder: 'Search inventory', value: search }), stage = h('div', { class: 'stage' }), cv = h('canvas'), hint = h('div', { class: 'hint', html: 'Drag reagents from your inventory<br>into the reactor' }), tT = h('span', { class: 'tag2 t1' }), tP = h('span', { class: 'tag2 t2' });
     const rgBox = h('div'), ctlBox = h('div'), resBox = h('div'), predBox = h('div'), trayBox = h('div');
-    stage.append(cv, hint, h('i', { class: 'flame' }), tT, tP);
+    const lens = h('div', { class: 'lens', onclick: () => { if(!lens.classList.contains('full')) lensBtn.click(); } }, cv), lensBtn = h('button', { class: 'lensbtn', title: 'Switch between the bench and the molecule view', onclick: () => { lens.classList.toggle('full'); lensBtn.textContent = lens.classList.contains('full') ? '🧪 Back to bench' : '🔬 Molecules full screen'; setTimeout(() => { if(scn) buildScene(); }, 30); } }, '🔬 Molecules full screen');
+    stage.append(lens, hint, h('i', { class: 'flame' }), tT, tP, lensBtn);
+    Kit.use3D().then(ok => { if(!ok || !window.Lab3D || false) return; let low = false; try{ const m = OS.prefs.get('perfMode') || 'auto'; low = m === 'performance' || (m === 'auto' && OS.prefs.get('perfAuto') === true); }catch(_){} if(OS.prefs.get('lab3d') === false) return;
+      L3 = Lab3D.create(stage, { quality: low ? 'low' : 'high' }); if(L3){ stage.classList.add('has3d'); } });
     cInv.append(h('div', { class: 'card dz', id: 'invdz' }, h('div', { class: 'cap' }, 'Inventory'), srch, h('div', { style: { marginTop: '10px' } }, invBox), h('div', { class: 'foot' }, 'Drag into the reactor, or tap to add. Drag a reagent back here to remove it.')));
     cMid.append(stage, h('div', { class: 'card' }, h('div', { class: 'cap' }, 'In the reactor'), rgBox), h('div', { class: 'card' }, h('div', { class: 'cap' }, 'Conditions'), ctlBox), resBox);
     cOut.append(h('div', { class: 'card' }, h('div', { class: 'cap' }, 'Predicted products'), predBox), h('div', { class: 'card tray' }, h('div', { class: 'hstack', style: { justifyContent: 'space-between', marginBottom: '8px' } }, h('div', { class: 'cap', style: { margin: 0 } }, 'Output tray'), h('button', { class: 'mini', onclick: () => { const r = L.collectAll(); Kit.toast(r.msg, 'good'); } }, 'Add all')), trayBox, h('div', { class: 'foot' }, 'Products land here. Add them to your inventory, or drag them back into the reactor.')));
@@ -106,7 +111,7 @@ const A = Kit.app({ title: 'WestLab', build: (body) => {
     }
 
     /* --- the canvas: molecules, bonds breaking and forming --- */
-    function size(){ const r = devicePixelRatio || 1, w = stage.clientWidth || 600, hh = stage.clientHeight || 280; if(cv.width !== Math.round(w * r)){ cv.width = Math.round(w * r); cv.height = Math.round(hh * r); } return [w, hh, r]; }
+    function size(){ const lz = cv.parentNode || stage, r = devicePixelRatio || 1, w = lz.clientWidth || stage.clientWidth || 600, hh = lz.clientHeight || stage.clientHeight || 280; if(cv.width !== Math.round(w * r)){ cv.width = Math.round(w * r); cv.height = Math.round(hh * r); } return [w, hh, r]; }
     function buildScene(){
       const c = cur && cur.card, [W, Hh] = size(); let card = c && c.ok ? c : null;
       if(!card && !reagents.length){ scn = null; return; }
@@ -116,6 +121,9 @@ const A = Kit.app({ title: 'WestLab', build: (body) => {
     }
     function frame(ts){
       raf = requestAnimationFrame(frame); if(!cv.isConnected){ cancelAnimationFrame(raf); return; }
+      lens.classList.toggle('on', !!scn); lensBtn.classList.toggle('on', !!scn); if(L3){ if(!L3.canvas.isConnected){ L3 = null; stage.classList.remove('has3d'); } else { const ks = reagents, cols = ks.map(colorOfKey), pr = cur && cur.card && cur.card.ok ? cur.card.Pr : null; let col = cols[0] || null; if(cols.length > 1){ const sc = cols.map(x => x), mix = [0, 0, 0]; sc.forEach(x => { const q = Lab3D.rgb(x); mix[0] += q[0]; mix[1] += q[1]; mix[2] += q[2]; }); col = [mix[0] / sc.length, mix[1] / sc.length, mix[2] / sc.length]; }
+        if(pr && pr.length && (anim.mode === 'play' && anim.u > .45 || anim.mode === 'done')) col = colorOfKey(pr[0][0]);
+        L3.set({ heat: Math.min(1, Math.max(0, (T - 295) / 700)), color: col, level: ks.length ? Math.min(1, .38 + ks.length * .14) : 0, running: anim.mode === 'play' }); if(anim.mode === 'done' && !L3.donePulsed){ L3.donePulsed = true; L3.pulse(col); } if(anim.mode !== 'done') L3.donePulsed = false; } }
       const [W, Hh, r] = size(), c = cv.getContext('2d'); c.setTransform(r, 0, 0, r, 0, 0); c.clearRect(0, 0, W, Hh); if(!scn) return;
       if(anim.mode === 'play'){ anim.u = Math.min(1, (ts - anim.t0) / 2800); if(anim.u >= 1) anim.mode = 'done'; } const u = anim.mode === 'idle' ? 0 : anim.u;
       try{ drawScene(c, W, Hh, scn, u, ts, T, anim.mode); }catch(e){}

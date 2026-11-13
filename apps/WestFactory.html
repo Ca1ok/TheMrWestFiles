@@ -25,9 +25,13 @@
 .ctl{ margin:12px 0; } .ctl label{ display:flex; justify-content:space-between; font:600 13px var(--font); color:var(--label2); margin-bottom:6px; } .ctl label b{ color:var(--label); font-variant-numeric:tabular-nums; } .ctl input[type=range]{ width:100%; accent-color:var(--tint); }
 .chance{ height:10px; border-radius:5px; background:var(--fill2); overflow:hidden; } .chance b{ display:block; height:100%; transition:width .2s,background .2s; }
 .row2{ display:flex; gap:8px; margin-top:8px; } .row2>*{ flex:1; } .iss{ margin:8px 0; padding:8px 10px; border-radius:10px; background:#d96b5a1f; color:var(--label); font:500 12.5px/1.35 var(--font); } .iss.good{ background:#3fae781f; }
+.est{ position:relative; height:310px; border-radius:var(--r-xl); overflow:hidden; margin-bottom:12px; background:linear-gradient(#6fa6e3,#d9e8f4); box-shadow:inset 0 0 0 1px var(--sep,rgba(255,255,255,.08)); } .est canvas{ outline:0; }
+.est .stg{ position:absolute; left:12px; top:12px; z-index:2; background:rgba(12,16,22,.72); color:#fff; border-radius:14px; padding:9px 12px; backdrop-filter:blur(6px); min-width:190px; pointer-events:none; } .est .stg b{ display:block; font:800 14px var(--font); } .est .stg small{ display:block; font:500 11.5px var(--font); opacity:.8; margin-top:1px; }
+.est .stg .dots{ display:flex; gap:4px; margin-top:7px; } .est .stg .dots i{ flex:1; height:5px; border-radius:3px; background:rgba(255,255,255,.22); } .est .stg .dots i.on{ background:#4cd08a; } .est .stg .dots i.now{ background:#ffb347; animation:pulse .9s ease-in-out infinite; }
+.est .tip{ position:absolute; right:12px; bottom:10px; z-index:2; color:#fff; font:600 11.5px var(--font); text-shadow:0 1px 4px rgba(0,0,0,.6); pointer-events:none; }
 @media (max-width:900px){ .wrap{ flex-direction:column; } .side{ width:auto; height:auto; } }
 </style></head><body><div id="app"></div>
-<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
+<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script><script src="../os/lib/gl3d.js"></script><script src="../os/lib/gl3d-assets.js"></script><script src="../os/lib/factory3d.js"></script>
 <script>
 const { h, row, group, money, num } = Kit, FA = OS.factory, CH = OS.chem, COLORS = OS.data.CATEGORY_COLORS;
 const pf = f => CH.prettyFormula(f), fm = v => (+v).toFixed(v < 10 && v % 1 ? 1 : 0), m2 = v => money(v, { dp: 2 });
@@ -39,7 +43,8 @@ function sellCap(l){ const e = l.rateEff || 0; if(l.route !== 'shop') return e; 
 
 const A = Kit.app({ title: 'WestFactory', right: [{ icon: 'plus', label: 'Add line', onClick: () => addSheet() }], build: (body) => {
   const kp = h('div', { class: 'kp' }), bar = h('div', { class: 'fbar' }), tabs = h('div', { class: 'tabs' }), tools = h('div', { class: 'tools' }), net = h('div', { class: 'net' }), stage = h('div', { class: 'stage' }), side = h('div', { class: 'side' });
-  net.appendChild(stage); body.append(kp, bar, tabs, tools, h('div', { class: 'wrap' }, net, side), h('div', { class: 'foot' }, 'Build each plant like a factory floor: add Sources (elements or compounds you discovered) and Reactors (recipes), then wire output dots (right) to input dots (left) and finish at the warehouse. Strange loops are fine — a by-product can be wired back as a recycle, but every loop needs a make-up feed. Drag nodes to arrange; click a node or wire to inspect it.'));
+  net.appendChild(stage); const est = h('div', { class: 'est', style: { display: 'none' } }), stg = h('div', { class: 'stg' }), estTip = h('div', { class: 'tip' }, 'Drag to look around · scroll to zoom · click a plot to select it'); est.append(stg, estTip); let F3 = null;
+  body.append(kp, est, bar, tabs, tools, h('div', { class: 'wrap' }, net, side), h('div', { class: 'foot' }, 'Build each plant like a factory floor: add Sources (elements or compounds you discovered) and Reactors (recipes), then wire output dots (right) to input dots (left) and finish at the warehouse. Strange loops are fine — a by-product can be wired back as a recycle, but every loop needs a make-up feed. Drag nodes to arrange; click a node or wire to inspect it.'));
   const curLine = () => ST.lines.find(l => l.id === selLine) || null;
   const addAll = (el, ...a) => el.append(...a.flat().filter(Boolean));
   const put = (...a) => side.append(...a.flat().filter(Boolean));
@@ -230,7 +235,15 @@ const A = Kit.app({ title: 'WestFactory', right: [{ icon: 'plus', label: 'Add li
   }
   function fix(){ if(!ST.lines.some(l => l.id === selLine)) selLine = ST.lines.length ? ST.lines[0].id : null; }
   const safe = (name, fn) => { try{ fn(); }catch(e){ console.error('WestFactory ' + name, e); stage.appendChild(h('div', { style: { position: 'absolute', left: '20px', top: '20px', right: '20px', padding: '12px', borderRadius: '10px', background: '#d96b5a33', color: 'var(--label)', font: '600 13px var(--font)', whiteSpace: 'pre-wrap' } }, 'WestFactory could not draw the ' + name + ': ' + (e && e.message ? e.message : e) + '\n' + String((e && e.stack) || '').split('\n').slice(1, 4).join('\n'))); } };
-  const redraw = keepPanel => { safe('header', drawTop); safe('canvas', drawNet); if(!keepPanel) safe('panel', drawPanel); };
+  function drawPlant(){
+    if(!F3) return; const lines = ST.lines.map(l => { const ns = ((l.g && l.g.nodes) || []).filter(n => n.t === 'src'), nr = ((l.g && l.g.nodes) || []).filter(n => n.t !== 'src'); return { id: l.id, tier: l.tier, ns: ns.length, nr: nr.length, on: !!l.on, running: !!l.on && (l.rateEff || 0) > 0, fill: l.storage ? Math.min(1, (l.stock || 0) / l.storage) : 0, colors: ns.map(n => spColor(n.sp)) }; });
+    F3.update({ slots: ST.slots, maxSlots: ST.maxSlots, sel: selLine, lines });
+    const L = lines.find(q => q.id === selLine), sg = Factory3D.stageOf(L), nm = Factory3D.STAGES;
+    stg.innerHTML = ''; stg.append(h('b', null, L ? 'Plot ' + (lines.indexOf(L) + 1) + ' · ' + nm[sg] : 'No line selected'), h('small', null, L ? (sg < 5 ? 'Next: ' + ['place a source or reactor', 'add a source or reactor (frame goes up)', 'add a reactor (walls & roof)', 'add a source + reactor (equipment)', 'switch the line on and give it a rate'][sg - 1] || '' : 'Running · tier ' + L.tier + ' · warehouse ' + Math.round(L.fill * 100) + '% full') : 'Add a line to start building'), h('div', { class: 'dots' }, ...[1, 2, 3, 4, 5].map(i => h('i', { class: i <= sg ? 'on' : (i === sg + 1 ? 'now' : '') }))));
+  }
+  Kit.use3D().then(ok => { if(!ok || !window.Factory3D || OS.prefs.get('factory3d') === false) return; let low = false; try{ const m = OS.prefs.get('perfMode') || 'auto'; low = m === 'performance' || (m === 'auto' && OS.prefs.get('perfAuto') === true); }catch(_){}
+    est.style.display = ''; F3 = Factory3D.create(est, { quality: low ? 'low' : 'high', onPick: id => { selLine = id; sel = null; wiring = null; refresh(); } }); if(!F3){ est.style.display = 'none'; return; } if(ST) drawPlant(); });
+  const redraw = keepPanel => { safe('header', drawTop); safe('plant', drawPlant); safe('canvas', drawNet); if(!keepPanel) safe('panel', drawPanel); };
   function refresh(keepPanel){ ST = FA.state(); fix(); redraw(keepPanel); }
   Kit.live('factory', Kit.debounce(() => { if(dragging) return; ST = FA.state(); fix(); redraw(side.contains(document.activeElement)); }, 120)); Kit.live('cash', Kit.debounce(drawTop.bind(null), 400));
   setInterval(() => { if(document.hidden || dragging) return; ST = FA.state(); tickPanel(); drawTop(); }, 2000);
