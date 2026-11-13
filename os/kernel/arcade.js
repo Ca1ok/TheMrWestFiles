@@ -23,7 +23,7 @@
   CS.config = () => JSON.parse(JSON.stringify(cfg));
 
   /* ---- ledger: today's net winnings and any stake still at risk ---- */
-  /* the casino bankroll is a system account of the WestEconomy ($15T); stakes are paid INTO it and payouts come OUT of it (os/kernel/ledger.js).
+  /* the casino bankroll is a system account of the WestEconomy ($250B, fed by bot gamblers — see eco-sim daily()); stakes are paid INTO it and payouts come OUT of it (os/kernel/ledger.js).
    * Today's net winnings are tracked by the ledger itself (acct.an), so the daily cap is enforced by the server, not by this file. */
   const led = () => ({ net: K.ledger.arcNetToday(), open: R ? R.total : 0 });
   CS.status = function(){

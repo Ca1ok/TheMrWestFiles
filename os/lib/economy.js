@@ -11,7 +11,7 @@
 (function(root, factory){ if(typeof module === 'object' && module.exports) module.exports = factory(); else root.Economy = factory(); })(typeof self !== 'undefined' ? self : this, function(){
   const SYS = ['pool', 'arcade', 'bank', 'gov', 'city'];
   const SUPPLY = 1e16;                                                  // $100,000,000,000,000 in cents
-  const SEED = { pool: 8.3e15, arcade: 1.5e15, bank: 2e14, gov: 0, city: 0 };   // $83T market reserve · $15T casino bankroll · $2T lending capital · taxes & city start empty
+  const SEED = { pool: 8.3e15, arcade: 2.5e13, bank: 2e14, gov: 1.475e15, city: 0 };   // $83T market reserve · $250B casino bankroll · $2T lending capital · $14.75T treasury (pays public jobs) · city starts empty. Sums to exactly SUPPLY; every seed stays below 2^53 so the audit's derived balances stay exact
   const MAXACCT = 9e15;                                                 // a single balance must stay a safe integer (JS/Firebase numbers are exact to 9.007e15)
   const PLAYER_CAP = 5e15;                                              // no player or bot may hold more than $50 trillion (the wealth tax keeps real balances far below this)
   const DEFAULTS = {

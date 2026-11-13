@@ -29,6 +29,8 @@
   }
   /* keeps `worldW` world units visible across the canvas whatever its shape: moves the camera along a fixed viewing direction */
   function fitWidth(eng, worldW, dir, target, minD){ const apply = () => { const asp = eng.w / eng.h, d = Math.max(minD || 4, (worldW / 2) / (Math.tan(eng.camera.fov / 2) * asp)); eng.camera.pos = [target[0] + dir[0] * d, target[1] + dir[1] * d, target[2] + dir[2] * d]; eng.camBase = eng.camera.pos.slice(); eng.camera.target = target.slice(); }; eng.onResize = apply; apply(); }
+  /* like fitWidth but also keeps `worldH` units visible vertically (for top-down views) */
+  function fitBox(eng, worldW, worldH, dir, target, minD){ const apply = () => { const asp = eng.w / eng.h, t = Math.tan(eng.camera.fov / 2), d = Math.max(minD || 4, (worldW / 2) / (t * asp), (worldH / 2) / t); eng.camera.pos = [target[0] + dir[0] * d, target[1] + dir[1] * d, target[2] + dir[2] * d]; eng.camBase = eng.camera.pos.slice(); eng.camera.target = target.slice(); }; eng.onResize = apply; apply(); }
   function neon(eng, o){ o = o || {}; const L = eng.lights; L.sky = o.sky || [.42, .38, .62]; L.ground = o.ground || [.16, .12, .2]; L.dir.dir = o.dir || [-.4, -1, -.5]; L.dir.color = o.dirColor || [.95, .9, .82];
     L.points = [{ pos: [-3.2, 2.6, 2.4], color: [1, .24, .95], range: 9, intensity: .9 }, { pos: [3.2, 2.6, 2.4], color: [.15, .9, 1], range: 9, intensity: .9 }, { pos: [0, 4, 1], color: [1, .85, .55], range: 9, intensity: .5 }]; }
   const gold = [[1, .85, .3, 1], [1, .7, .15, 1], [1, .95, .6, 1]];
@@ -93,14 +95,14 @@
   /* ========================================================= CARD TABLE ========================================================= */
   const LAYOUT = {
     blackjack: { dealer: { x0: -.75, z: -1.2, dx: .5 }, player: { x0: -.75, z: .95, dx: .5 }, shoe: [3.4, .5, -1.9], chips: { bet: [0, 0, 1.74] } },
-    bus: { stage: { x0: -1.95, z: .05, dx: 1.3, cap: 4, s: 1.12 }, shoe: [3.5, .5, -1.9], chips: { bet: [-3.0, 0, 1.1] } },
+    bus: { stage: { x0: -1.95, z: .05, dx: 1.3, cap: 4, s: 1.12 }, shoe: [3.5, .5, -1.9], chips: { bet: [-2.45, 0, 1.5] } },
     poker: { board: { x0: -1.56, z: -.1, dx: .78, cap: 5 }, h0: { x0: -.3, z: 1.62, dx: .56, cap: 2 }, h1: { x0: -2.7, z: -1.6, dx: .56, cap: 2 }, h2: { x0: -.3, z: -1.6, dx: .56, cap: 2 }, h3: { x0: 2.1, z: -1.6, dx: .56, cap: 2 }, shoe: [3.4, .5, -.9], chips: { pot: [0, 0, .82] } }
   };
   function table(host, kind, o){
     if(!enabled() || !LAYOUT[kind]) return null; o = o || {}; const LY = LAYOUT[kind];
-    const eng = make(host, o.aspect || (kind === 'bus' ? '2.4/1' : '2.1/1'), { bg: [.03, .02, .07], fog: { color: [.03, .02, .08], density: .018 }, maxH: o.maxH || 380 }); if(!eng) return null;
+    const top = kind !== 'blackjack', eng = make(host, o.aspect || (top ? '1.75/1' : '2.1/1'), { bg: [.03, .02, .07], fog: { color: [.03, .02, .08], density: .012 }, maxH: o.maxH || (top ? 460 : 380) }); if(!eng) return null;
     eng.setBackdrop(T.backdrop([[0, '#06030d'], [1, '#1a0a3a']])); neon(eng, { dir: [-.35, -1, -.55] }); eng.camera.fov = 40 * D2R; eng.shadow.y = 0; eng.shadow.alpha = .42;
-    eng.add(Mo.table(kind)); fitWidth(eng, 9.4, V.norm([0, 1.05, .95]), [0, 0, .3], 7);
+    eng.add(Mo.table(kind)); if(top) fitBox(eng, 8.8, 5.5, V.norm([0, 1, .06]), [0, 0, .05], 6); else fitWidth(eng, 9.4, V.norm([0, 1.05, .95]), [0, 0, .3], 7);
     const floor = new GL.Node(GL.mesh.plane(60, 60, 1, 1, 20, 20), mat({ map: T.carpet().map, spec: 0 })); floor.pos[1] = -.5; eng.add(floor);
     const outline = (() => { const [c, g] = A.mk(128, 192); A.roundRect(g, 6, 6, 116, 180, 12); g.lineWidth = 4; g.strokeStyle = 'rgba(255,225,77,.45)'; g.stroke(); g.fillStyle = 'rgba(0,0,0,.18)'; g.fill(); return new GL.Texture(c, { repeat: false }); })();
     const groups = {}, SC = {}, ps = eng.particles({ max: 300, blend: 'blend', shape: 'dot', gravity: -9, drag: .15 }), sp = eng.particles({ max: 120, blend: 'add', shape: 'star', gravity: -1, drag: 1.2 });
@@ -131,11 +133,11 @@
       chips(name, amount){ const at = LY.chips[name]; if(!at) return; const old = X['_c_' + name]; if(old && old.amount === amount) return; if(old){ old.node.dispose(); X['_c_' + name] = null; } if(!(amount >= 1)) return;
         const pile = Mo.chipPile(amount), W = pile.children.length ? 1 : 0; pile.at(at[0] - .25, at[1], at[2]); eng.add(pile); X['_c_' + name] = { node: pile, amount }; eng.tween(eng.calm ? 60 : 260, k => { pile.scaleTo(.4 + .6 * k, .4 + .6 * k, .4 + .6 * k); }, 'outBack'); },
       async payout(name, toPlayer){ const c = X['_c_' + name]; if(!c) return; X['_c_' + name] = null; const n = c.node, f = n.pos.slice(), dz = toPlayer ? 2.6 : -4.6; await eng.tween(eng.calm ? 60 : 520, k => { n.pos = [f[0], f[1] + Math.sin(k * Math.PI) * .4, f[2] + dz * k]; }, 'inOutCubic'); n.dispose(); },
-      labels(name, arr, active){ const l = LY[name]; (X['_l_' + name] || []).forEach(n => n.dispose()); X['_l_' + name] = (arr || []).map((tx, i) => { const n = Mo.labelPlane(tx, 1.2, .3, { w: 512, h: 128, color: i === active ? '#ffe14d' : 'rgba(255,255,255,.5)', glow: i === active ? '#ffe14d' : null, size: 48 }); n.rot[0] = -Math.PI / 2; n.at(l.x0 + i * l.dx, .012, l.z + A.CARD.h * (SC[name]) / 2 + .24); eng.add(n); return n; }); },
+      labels(name, arr, active){ const l = LY[name]; (X['_l_' + name] || []).forEach(n => n.dispose()); X['_l_' + name] = (arr || []).map((tx, i) => { const n = Mo.labelPlane(tx, 1.9, .5, { w: 512, h: 128, color: i === active ? '#ffe14d' : 'rgba(255,255,255,.75)', glow: i === active ? '#ffe14d' : null, size: 64, family: 'system-ui,sans-serif' }); n.rot[0] = -Math.PI / 2; n.at(l.x0 + i * l.dx, .012, l.z + A.CARD.h * (SC[name]) / 2 + .36); eng.add(n); return n; }); },
       celebrate(n){ flash = 1.6; coinShower(ps, [0, .5, .2], Math.min(220, 30 + (n || 3) * 10), 3.8); sp.burst(40, [0, .6, .2], 2.6, { color: [1, .9, .5, 1], size: .3, life: 1, grow: .2 }); },
       lose(){ lose = .9; },
       destroy(){ eng.destroy(); eng.canvasEl.remove(); } };
-    eng.onUpdate = (dt, t) => { flash = Math.max(0, flash - dt); lose = Math.max(0, lose - dt); eng.lights.points[0].intensity = lose > 0 ? .1 : .9 + (flash > 0 ? Math.sin(t * 28) * .4 : 0); eng.lights.points[1].color = lose > 0 ? [1, .1, .1] : [.15, .9, 1]; if(!eng.calm){ const sw = Math.sin(t * .35) * .5; eng.camera.target = [sw * .3, 0, .3]; eng.lights.points[2].pos = [Math.sin(t * .5) * 3, 4, 1]; } };
+    eng.onUpdate = (dt, t) => { flash = Math.max(0, flash - dt); lose = Math.max(0, lose - dt); eng.lights.points[0].intensity = lose > 0 ? .1 : .9 + (flash > 0 ? Math.sin(t * 28) * .4 : 0); eng.lights.points[1].color = lose > 0 ? [1, .1, .1] : [.15, .9, 1]; if(!eng.calm){ eng.lights.points[2].pos = [Math.sin(t * .5) * 3, 4, 1]; if(!top){ const sw = Math.sin(t * .35) * .5; eng.camera.target = [sw * .3, 0, .3]; } } };
     eng.start(); return X;
   }
 

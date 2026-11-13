@@ -138,7 +138,7 @@
     const vg = g.createRadialGradient(W / 2, H / 2, 60, W / 2, H / 2, W * .62); vg.addColorStop(0, 'rgba(255,255,255,.08)'); vg.addColorStop(1, 'rgba(0,0,0,.5)'); g.fillStyle = vg; g.fillRect(0, 0, W, H);
     g.strokeStyle = 'rgba(255,225,77,.75)'; g.fillStyle = 'rgba(255,225,77,.8)'; g.lineWidth = 3; g.textAlign = 'center'; g.font = '800 26px Georgia,serif';
     if(kind === 'blackjack'){ g.beginPath(); g.arc(W / 2, 40, 330, .12 * Math.PI, .88 * Math.PI); g.stroke(); g.fillText('BLACKJACK PAYS 3 TO 2', W / 2, 262); g.font = '600 20px Georgia,serif'; g.fillText('DEALER STANDS ON ALL 17s', W / 2, 292); g.strokeRect(W / 2 - 54, 410, 108, 70); }
-    else if(kind === 'poker'){ g.beginPath(); g.ellipse(W / 2, H / 2, 420, 190, 0, 0, TAU); g.stroke(); g.font = '800 30px Georgia,serif'; g.fillText('TEXAS HOLD’EM', W / 2, 74); }
+    else if(kind === 'poker'){ g.beginPath(); g.ellipse(W / 2, H / 2, 420, 190, 0, 0, TAU); g.stroke(); g.font = '800 30px Georgia,serif'; g.fillText('TEXAS HOLD\'EM', W / 2, 74); }
     else { g.beginPath(); g.ellipse(W / 2, H / 2, 430, 205, 0, 0, TAU); g.stroke(); g.font = '800 30px Georgia,serif'; g.fillText('RIDE THE BUS', W / 2, 70); }
     return tex(c, { repeat: false, mip: true }); }); }
   M3.table = function(kind, o){ o = o || {}; const W = o.w || 8, D = o.d || 4.6, g = new GL.Node(), f = felt('#0b6a3c'), wd = wood('#5a3216'), mt = metal('#caa24a');

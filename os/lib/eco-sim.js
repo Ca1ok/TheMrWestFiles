@@ -6,10 +6,12 @@
  *
  * Time: one step() may cover anything from minutes to hours (GitHub's cron is best-effort). Everything scales with the elapsed time, and the
  * once-a-day jobs catch up (at most 3 days at a time). */
-(function(root, factory){ if(typeof module === 'object' && module.exports){ module.exports = factory(require('./economy.js'), require('./worldgen.js')); } else root.EcoSim = factory(root.Economy, root.WorldGen); })(typeof self !== 'undefined' ? self : this, function(E, W){
+(function(root, factory){ if(typeof module === 'object' && module.exports){ module.exports = factory(require('./economy.js'), require('./worldgen.js'), () => require('./arcade-games.js')); } else root.EcoSim = factory(root.Economy, root.WorldGen, () => root.ArcadeGames); })(typeof self !== 'undefined' ? self : this, function(E, W, getAG){
   const DAY = 86400000, HOUR = 3600000, SYS = E.SYS;
   const INIT_HOUSES = 512, INIT_BOTS = 100, BIRTHS_PER_WEEK = 10;
   const PUBLIC_JOBS = { teacher: 1, nurse: 1, librarian: 1, surveyor: 1 };
+  const CASINO_JOBS = { chef: 1, barista: 1, artist: 1 };                                    // the Arcade's own staff (bar, kitchen, floor shows): paid by the casino bankroll
+  const OWNER_JOBS = { shopkeeper: 1, trader: 1, investor: 1, landlord: 1, developer: 1, architect: 1, baker: 1 };   // run businesses: customers pay them, and they pay other bots' wages
   const WAGE = [0, 3500, 6000, 10000, 18000, 32000];                    // cents per day by job tier (35 … 320 dollars)
 
   function rng(seed){ let a = (seed >>> 0) || 1; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -110,17 +112,36 @@
   /* ---------- daily jobs ---------- */
   function daily(db, now, rand, cfg, mails){
     const own = ownedBy(db), m = db.world.meta;
-    // wages & living costs for bots
-    let govBal = sysBalance(db).gov;
-    Object.keys(db.eco.bots).forEach(id => { const r = db.eco.bots[id], a = db.eco.acct[id]; if(!a) return;
-      const wage = WAGE[r.tier] || 3500, src = PUBLIC_JOBS[r.j] && govBal > wage * 4 ? 'gov' : 'pool';       // teachers, nurses… are paid from the treasury while it can afford them
-      const tax = E.taxOnGross(wage, cfg.taxBp); E.sysMove(db, id, src, -wage); E.sysMove(db, id, 'gov', tax); if(src === 'gov') govBal -= wage - tax;
-      spendToPool(db, id, Math.round(wage * (0.28 + 0.30 * (1 - r.th))), cfg);              // groceries, bills, fun
+    /* wages & living costs for bots — the money goes round in a circle:
+     *   gamblers → casino bankroll → casino staff wages → shops & the market pool → business owners' payroll → workers → gamblers …
+     *   public jobs are paid by the treasury (taxes), private jobs by a business-owner bot when it can afford it (else the pool, the employer of last resort),
+     *   and some of every bot's spending goes to a shop-owner bot instead of the pool. Every move is a ledger move, so the supply can't change. */
+    const cas = m.cas = Object.assign({ n: 0, staked: 0, paid: 0, wages: 0, div: 0, emp: 0, shop: 0 }, m.cas || {}), base = E.SEED.arcade, RESERVE = Math.floor(cfg.botGrant * 0.25);
+    let govBal = sysBalance(db).gov, arcBal = sysBalance(db).arcade; const ids = Object.keys(db.eco.bots).filter(id => db.eco.acct[id]), owners = ids.filter(id => OWNER_JOBS[db.eco.bots[id].j]);
+    ids.forEach(id => { const r = db.eco.bots[id], a = db.eco.acct[id]; if(!a) return;
+      const wage = WAGE[r.tier] || 3500, tax = E.taxOnGross(wage, cfg.taxBp);
+      if(PUBLIC_JOBS[r.j] && govBal > wage * 4){ E.sysMove(db, id, 'gov', -wage); E.sysMove(db, id, 'gov', tax); govBal -= wage - tax; }              // teachers, nurses… are paid from the treasury while it can afford them
+      else if(CASINO_JOBS[r.j] && arcBal > base * 0.5){ E.sysMove(db, id, 'arcade', -wage); E.sysMove(db, id, 'gov', tax); arcBal -= wage - tax; cas.wages += wage; }   // casino staff
+      else { const emp = owners.length ? owners[Math.floor(rand() * owners.length)] : '', ea = emp && db.eco.acct[emp];
+        if(emp && emp !== id && ea && ea.b > RESERVE + wage && E.send(db, emp, id, wage - tax, 'wage', 'd' + m.day, now)){ E.sysMove(db, emp, 'gov', tax); cas.emp += wage; }   // a business owner pays the wage (and the wage tax)
+        else { E.sysMove(db, id, 'pool', -wage); E.sysMove(db, id, 'gov', tax); } }                                                                          // the market pool employs everybody else
+      const spend = Math.round(wage * (0.28 + 0.30 * (1 - r.th))), toShop = Math.floor(spend * 0.5); let rest = spend;                                      // groceries, bills, fun
+      if(toShop > 0 && owners.length){ const sh = owners[Math.floor(rand() * owners.length)]; if(sh !== id && E.send(db, id, sh, toShop, 'shop', 'd' + m.day, now)){ rest -= toShop; cas.shop += toShop; } }
+      spendToPool(db, id, rest, cfg);
       // property + wealth tax, taken straight away from bots
       let pt = 0; (own[id] || []).forEach(h => { pt += Math.ceil(db.world.own[h].v * cfg.propTaxBpDay / 10000); });
       if(pt > 0) E.sysMove(db, id, 'gov', Math.min(pt, a.b));
       const wt = E.wealthTax(a.b, cfg); if(wt > 0) E.sysMove(db, id, 'gov', Math.min(wt, a.b));
     });
+    /* bots with an address play the slots (the real paytable, the real 4% payout tax). Risk-takers go more often and stake more. They only play while the bankroll can cover a win. */
+    const AG = getAG && getAG();
+    if(AG) ids.forEach(id => { const r = db.eco.bots[id], a = db.eco.acct[id]; if(!a || !r.h || rand() > 0.15 + 0.6 * r.ri) return;
+      const stake = Math.min(cfg.arcStake, Math.floor(a.b * (0.004 + 0.02 * r.ri))); if(stake < 100) return;
+      const reels = [0, 1, 2].map(() => Math.floor(rand() * 6)), gross = stake * AG.slotsPay(reels).mult; if(arcBal < gross * 2 + stake) return;
+      if(!E.sysMove(db, id, 'arcade', stake)) return; arcBal += stake; cas.n++; cas.staked += stake;
+      if(gross > 0){ E.sysMove(db, id, 'arcade', -gross); E.sysMove(db, id, 'gov', Math.min(E.taxOnGross(gross, cfg.taxBp), db.eco.acct[id].b)); arcBal -= gross; cas.paid += gross; } });
+    /* the casino is a business with a base bankroll: profit above 105% of it is paid out to the market (shareholders spending it) at 2% a day, so it can't grow without limit */
+    { const excess = arcBal - Math.floor(base * 1.05); if(excess > 0){ const d = Math.floor(excess * 0.02); if(d > 0){ sysTransfer(db, 'arcade', 'pool', d); cas.div += d; } } }
     // bills & taxes for players (the browser pays them; the bank enforces)
     Object.keys(db.eco.acct).forEach(id => { if(isBot(id) || id === '_sys') return; const a = db.eco.acct[id];
       let pt = 0; (own[id] || []).forEach(h => { pt += Math.ceil(db.world.own[h].v * cfg.propTaxBpDay / 10000); });
@@ -224,7 +245,7 @@
     const avgBot = bots.length ? cash / bots.length / 100 : 0, pi = db.world.meta.pi / 10000;
     const health = 1 + 0.12 * Math.tanh(avgBot / 50000 - 1) + 0.08 * Math.tanh(pi - 0.8) + 0.05 * Math.tanh((housed / Math.max(1, bots.length)) * 2 - 1.6) - 0.1 * Math.tanh(unpaid / Math.max(1, billed || 1));
     const flags = []; Object.keys(db.eco.acct).forEach(id => { const a = db.eco.acct[id]; if(isBot(id) || id === '_sys' || !a.c0) return; const allow = E.allowance(E.cfgOf(db), a.c0, now), used = -(a.sys.pool || 0); if(used > allow * 0.85) flags.push({ u: id, r: Math.round(used / allow * 100) / 100 }); });
-    db.eco.stats = { t: now, flags: flags.slice(0, 10), sys: A.sys, held: A.held, flight: A.flight, ok: A.ok, players: Object.keys(db.eco.acct).filter(i => !isBot(i) && i !== '_sys').length, bots: bots.length, housed, houses: houses.length, vacant, pi: db.world.meta.pi, avgBot: Math.round(avgBot), health: Math.round(health * 1000) / 1000, died: db.world.meta.died || 0, built: db.world.meta.built || 0 };
+    db.eco.stats = { t: now, flags: flags.slice(0, 10), sys: A.sys, held: A.held, flight: A.flight, ok: A.ok, players: Object.keys(db.eco.acct).filter(i => !isBot(i) && i !== '_sys').length, bots: bots.length, housed, houses: houses.length, vacant, pi: db.world.meta.pi, avgBot: Math.round(avgBot), health: Math.round(health * 1000) / 1000, cas: db.world.meta.cas || null, died: db.world.meta.died || 0, built: db.world.meta.built || 0 };
     return db.eco.stats;
   }
 
