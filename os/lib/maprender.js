@@ -15,7 +15,8 @@
   const POIH = { bank: 30, exchange: 40, shop: 18, arcade: 22, agency: 20, hall: 28, uni: 24, lab: 22, ind: 16, plant: 26 };
   const KIND = { mine: '#5bd68a', bank: '#b3b9c4', player: '#7fb2f2', bot: '#f2b676' };
   const cacheRGB = new Map();
-  function rgb(hex){ let c = cacheRGB.get(hex); if(!c){ const h = hex.replace('#', ''), n = h.length === 3 ? h.split('').map(x => x + x).join('') : h; c = [parseInt(n.slice(0, 2), 16), parseInt(n.slice(2, 4), 16), parseInt(n.slice(4, 6), 16)]; cacheRGB.set(hex, c); } return c; }
+  function rgb(hex){ let c = cacheRGB.get(hex); if(!c && hex.charCodeAt(0) === 114){ const m = /rgba?\(\s*([\d.]+)[ ,]+([\d.]+)[ ,]+([\d.]+)/.exec(hex); c = m ? [+m[1], +m[2], +m[3]] : [204, 204, 204]; cacheRGB.set(hex, c); }   // mix()/shade() return 'rgb(r,g,b)' and box() shades them again: parsing only #hex gave rgb(NaN,…), which canvas ignores, so the walls took whatever fill came before (white / see-through)
+    if(!c){ const h = hex.replace('#', ''), n = h.length === 3 ? h.split('').map(x => x + x).join('') : h; c = [parseInt(n.slice(0, 2), 16), parseInt(n.slice(2, 4), 16), parseInt(n.slice(4, 6), 16)]; cacheRGB.set(hex, c); } return c; }
   const mix = (a, b, t) => { const x = rgb(a), y = rgb(b); return 'rgb(' + Math.round(x[0] + (y[0] - x[0]) * t) + ',' + Math.round(x[1] + (y[1] - x[1]) * t) + ',' + Math.round(x[2] + (y[2] - x[2]) * t) + ')'; };
   const shade = (hex, f) => { const x = rgb(hex); return 'rgb(' + Math.round(clamp(x[0] * f, 0, 255)) + ',' + Math.round(clamp(x[1] * f, 0, 255)) + ',' + Math.round(clamp(x[2] * f, 0, 255)) + ')'; };
 
@@ -25,7 +26,7 @@
    *   sprite px < 36     the real shape baked ONCE into an atlas page, then 1 drawImage. Keyed by shape, (house angle + bearing) in 32 steps, pitch in 7, zoom in half-octaves.
    *                      Baked a few ms per frame, biggest first; until then (or if baking is off) the building shows as a box or a neighbouring angle/zoom, so a crowded view appears at once and the detail streams in
    *   mesh   px >= 30    the real shape, face by face; windows and doors only when very close (px > 60) */
-  const LOD = { DOT: 3.2, BOX: 6.5, SPRITE: 36, SPMIN: 4, DETAIL: 60, AB: 32, PB: 7, PSTEP: 0.16, MINPITCH: 0.035, PAGE: 1024, MAXPAGES: 3, MAXW: 96, MAXH: 128 };
+  const LOD = { DOT: 3.2, BOX: 6.5, SPRITE: 36, SPMIN: 4, DETAIL: 60, AB: 32, PB: 7, PSTEP: 0.16, MINPITCH: 0.035, PAGE: 1024, PAGE2: 1536, MAXPAGES: 3, MAXW: 96, MAXH: 128 };
   const TAU = Math.PI * 2, GOVL = [1, 1.35, 1.8, 2.5];
   const angBucket = a => { const u = a / TAU; return Math.floor((u - Math.floor(u)) * LOD.AB + 0.5) % LOD.AB; }, angOf = b => b * TAU / LOD.AB;
   const pitchBucket = p => clamp(Math.round(p / LOD.PSTEP), 0, LOD.PB), pitchOf = b => b * LOD.PSTEP;
@@ -44,7 +45,9 @@
       for(const pg of A.pages){ const r = place(pg, w, h); if(r){ pg.f = A.frame; return r; } }
       let pg;
       if(A.pages.length < LOD.MAXPAGES){ const c = mk(PG, PG); pg = { cv: c.cv, g: c.g, shelves: [], nextY: 0, f: A.frame }; A.pages.push(pg); }
-      else { pg = A.pages[0]; for(const q of A.pages) if(q.f < pg.f) pg = q; pg.shelves = []; pg.nextY = 0; pg.f = A.frame; A.wipes++; for(const [key, e] of A.map) if(e.pg === pg) A.map.delete(key); }
+      else { const lim = A.frame - 45, live = new Map(); for(const q of A.pages) live.set(q, 0); for(const e of A.map.values()) if(e.u >= lim) live.set(e.pg, live.get(e.pg) + 1);
+        pg = A.pages[0]; for(const q of A.pages){ const a = live.get(q), b = live.get(pg); if(a < b || (a === b && q.f < pg.f)) pg = q; }   // wipe the page that costs the fewest sprites in use (not just the one hit longest ago: stand-ins never refreshed that, so the busy page was wiped and every house fell back to a box)
+        pg.shelves = []; pg.nextY = 0; pg.f = A.frame; A.wipes++; for(const [key, e] of A.map) if(e.pg === pg) A.map.delete(key); }
       return place(pg, w, h); };
     return A;
   }
@@ -139,13 +142,13 @@
       g = pos.pg.g; g.save(); g.setTransform(1, 0, 0, 1, pos.x, pos.y); g.beginPath(); g.rect(0, 0, w, h); g.clip(); g.clearRect(0, 0, w, h);
       R.W = w; R.H = 2 * up; vk = kd; vx = 0; vy = 0; cs = 1; sn = 0; cp = cpp; sp = spp; sel2d = false;
       try{ drawShape(S, 0, 0, ang, side, o); } finally { g.restore(); g = sv[0]; R.W = sv[1]; R.H = sv[2]; vk = sv[3]; vx = sv[4]; vy = sv[5]; cs = sv[6]; sn = sv[7]; cp = sv[8]; sp = sv[9]; sel2d = sv[10]; }
-      const e = { pg: pos.pg, x: pos.x, y: pos.y, w, h, ax: hw, ay: up, kb, sh: S.h }; ATL.map.set(key, e); return e; }
+      const e = { pg: pos.pg, x: pos.x, y: pos.y, w, h, ax: hw, ay: up, kb, sh: S.h, u: ATL.frame }; ATL.map.set(key, e); return e; }
     /* draw a baked sprite so its anchor (the footprint centre) lands on screen point s0; f = perspective scale / baked scale */
     function blit(e, s0, f){ const D = ATL.D, ax = e.ax / D, ay = e.ay / D, dw = e.w / D, dh = e.h / D; if(Math.abs(f - 1) < 0.03){ g.drawImage(e.pg.cv, e.x, e.y, e.w, e.h, Math.round((s0[0] - ax) * D) / D, Math.round((s0[1] - ay) * D) / D, dw, dh); } else g.drawImage(e.pg.cv, e.x, e.y, e.w, e.h, s0[0] - ax * f, s0[1] - ay * f, dw * f, dh * f); }
     /* while the exact variant is still waiting to be baked, a neighbouring angle / zoom / pitch of the same shape is a good stand-in */
-    const DN = [0, 1, -1], DS = [0, -1, 1];
-    function nearSprite(sid, side, ab, pb, sb, ci){ const m = ATL.map, dk = dark ? 1 : 0;
-      for(let i = 0; i < 3; i++){ const a = (ab + DN[i] + LOD.AB) % LOD.AB; for(let j = 0; j < 3; j++){ const e = m.get(spriteKey(sid, side, a, pb, sb + DS[j], ci, dk)); if(e) return e; } }
+    const DN = [0, 1, -1, 2, -2], DS = [0, -1, 1];
+    function nearSprite(sid, side, ab, pb, sb, ci, wide){ const m = ATL.map, dk = dark ? 1 : 0, na = wide ? 5 : 3;   // wide: while the camera moves, a sprite up to two angle steps (22°) off is a better stand-in than a flat box
+      for(let i = 0; i < na; i++){ const a = (ab + DN[i] + LOD.AB) % LOD.AB; for(let j = 0; j < 3; j++){ const e = m.get(spriteKey(sid, side, a, pb, sb + DS[j], ci, dk)); if(e) return e; } }
       for(let i = 1; i < 3; i++){ const p2 = pb + DS[i]; if(p2 < 1 || p2 > LOD.PB) continue; const e = m.get(spriteKey(sid, side, ab, p2, sb, ci, dk)); if(e) return e; }
       return null; }
 
@@ -167,7 +170,7 @@
     /* ---- the frame ---- */
     const drawFrame = (sc, tt) => {
       scene = sc; tint = sc.tint || cssTint(); t = tt || 0; dark = !!sc.dark; th = dark ? TH.dark : TH.light; if(!tex || texDark !== dark){ tex = makeTextures(g, dark); texDark = dark; } prep(); FC = new Map();
-      const T0 = performance.now(), LODS = R.lod; const D = Math.max(1, Math.round(cv.width / Math.max(1, R.W) * 100) / 100); if(!ATL || ATL.D !== D){ const fr = ATL ? ATL.frame : 0; ATL = makeAtlas((w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return { cv: c, g: c.getContext('2d') }; }, D > 1 ? 1536 : LOD.PAGE); ATL.D = D; ATL.frame = fr; } ATL.frame++;   // sprites are baked at device resolution (D = pixel ratio)
+      const T0 = performance.now(), LODS = R.lod; const D = Math.max(1, Math.round(cv.width / Math.max(1, R.W) * 100) / 100); if(!ATL || ATL.D !== D){ const fr = ATL ? ATL.frame : 0; ATL = makeAtlas((w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return { cv: c, g: c.getContext('2d') }; }, D > 1 ? LOD.PAGE2 : LOD.PAGE); ATL.D = D; ATL.frame = fr; } ATL.frame++;   // sprites are baked at device resolution (D = pixel ratio)
       { const u = R.view; if(Math.abs(u.x - pv.x) + Math.abs(u.y - pv.y) > 0.4 / Math.max(0.05, u.k) || Math.abs(u.k / pv.k - 1) > 0.003 || Math.abs(u.b - pv.b) > 0.003 || Math.abs(u.p - pv.p) > 0.003) motionAt = T0; pv = { x: u.x, y: u.y, k: u.k, b: u.b, p: u.p }; }
       if(T0 - perfLowAt > 2000){ perfLowAt = T0; try{ perfLow = document.documentElement.classList.contains('perf-low') || (parent !== self && parent.document.documentElement.classList.contains('perf-low')); }catch(e){ perfLow = false; } }
       const moving = T0 - motionAt < 180, bias = Math.max(0.5, LODS.bias || 1) * (LODS.on === false ? 1 : gov) * (perfLow ? 1.5 : 1);
@@ -244,6 +247,8 @@
       };
       const houseBox = (gg, c8, bank, col, hh) => { const roof = roofC[c8] || (roofC[c8] = bank ? mix(th.roof, col, 0.55) : mix(th.roof, col, dark ? 0.55 : 0.78));
         if(flat) box(gg.x, gg.y, gg.w, gg.dp, gg.ang, 1, roof, edgeC[c8] || (edgeC[c8] = shade(col, 0.72))); else box(gg.x, gg.y, gg.w, gg.dp, gg.ang, hh, roof, wallC[c8] || (wallC[c8] = shade(dark ? mix('#6a717b', col, .5) : mix('#e8e2d6', col, .5), dark ? 0.9 : 0.95))); };
+      /* a sprite that is not baked yet (new on screen, or a fast camera) used to show as a flat pale box = the white flashes. Draw its real shape for now (undetailed, a limited number per frame); the box is only the overflow. */
+      let fbLeft = LODS.fbMesh != null ? LODS.fbMesh : 250; const fbHouse = (gg, hv, c8, bank, col, hh0, px) => { if(fbLeft > 0 && BG && performance.now() - T0 < 50){ fbLeft--; const S = BG.shape(gg); drawShape(S, gg.x, gg.y, gg.ang, gg.side, { tint: col, rm: bank ? 0.62 : 0.7, wm: 0.2, px, detail: false }); extras(gg, hv, S.h); } else { ST.fbBox = (ST.fbBox || 0) + 1; houseBox(gg, c8, bank, col, hh0); extras(gg, hv, hh0); } };
       for(const q of vdh){ const arr = dIdx.get(q); if(!arr) continue;
         for(let ei = 0; ei < arr.length; ei++){ const e = arr[ei], gg = e.g, s0 = P(gg.x, gg.y, 0); if(!s0) continue; const hm = hMax(gg); if(!onScreen(s0, 40 + hm * k * 1.2)) continue; ST.houses++;
           const hv = e.h; if(hv.f && hv.dm > 0) animFlag = true; const on = !sc.shown || sc.shown(e), kd = kindOf(hv), bank = hv.o === 'bank', ci = CIK[kd] != null ? CIK[kd] : 0, c8 = ci * 2 + (bank ? 1 : 0), col = KIND[kd] || KIND.bot, px = Math.max(gg.w, gg.dp) * k * s0[2], eff = px / bias, hh0 = hm - 5;
@@ -251,8 +256,8 @@
           if(eff < (spOK ? LOD.SPMIN : LOD.BOX) || !BG){ ST.box++; add(gg.x, gg.y, () => { g.globalAlpha = on ? 1 : 0.18; houseBox(gg, c8, bank, col, hh0); extras(gg, hv, hh0); g.globalAlpha = 1; }); continue; }
           const sb = scaleBucket(k * s0[2]);
           if(spOK && eff < LOD.SPRITE && spriteFits(hm, gg.w, gg.dp, sb)){ ST.sprite++; const side = gg.side > 0 ? 0 : 1, ab = angBucket(gg.ang + v.b), key = spriteKey(gg.i, side, ab, pbk, sb, c8, dkb);
-            if(!ATL.map.has(key)) bakeQ.push({ key, px, h: gg, sb, ab, side, col, bank });
-            add(gg.x, gg.y, () => { g.globalAlpha = on ? 1 : 0.18; const en = ATL.map.get(key) || nearSprite(gg.i, side, ab, pbk, sb, c8); if(en){ ATL.map.has(key) && (en.pg.f = ATL.frame); blit(en, s0, k * s0[2] / en.kb); extras(gg, hv, en.sh); } else { ST.fallback++; houseBox(gg, c8, bank, col, hh0); extras(gg, hv, hh0); } g.globalAlpha = 1; }); continue; }
+            if(!ATL.map.has(key) && !(moving && nearSprite(gg.i, side, ab, pbk, sb, c8, true))) bakeQ.push({ key, px, h: gg, sb, ab, side, col, bank });   // while moving, only bake what has no stand-in: baking every bucket crossing (≈50 sprites a frame) overran the budget and thrashed the atlas
+            add(gg.x, gg.y, () => { g.globalAlpha = on ? 1 : 0.18; const en = ATL.map.get(key) || nearSprite(gg.i, side, ab, pbk, sb, c8, moving); if(en){ en.u = en.pg.f = ATL.frame; blit(en, s0, k * s0[2] / en.kb); extras(gg, hv, en.sh); } else { ST.fallback++; fbHouse(gg, hv, c8, bank, col, hh0, px); } g.globalAlpha = 1; }); continue; }
           ST.mesh++; const S = BG.shape(gg);
           add(gg.x, gg.y, () => { g.globalAlpha = on ? 1 : 0.18; drawShape(S, gg.x, gg.y, gg.ang, gg.side, { tint: col, rm: bank ? 0.62 : 0.7, wm: 0.2, px, detail: px > LOD.DETAIL }); extras(gg, hv, S.h); g.globalAlpha = 1; }); } }
       /* scenery between the districts: the same tiers, heights following the skyline field, so the city fades smoothly from downtown and the "city" districts down to the suburbs */
@@ -261,8 +266,8 @@
           if(eff < (spOK ? LOD.SPMIN : LOD.BOX)){ add(b.x, b.y, boxIt); return; }
           const sb = scaleBucket(k * s0[2]);
           if(spOK && eff < LOD.SPRITE && spriteFits(hm, b.w, b.d, sb)){ ST.scnSprite++; const sid = b._sid || (b._sid = protoId(b)), ab = angBucket(b.a + v.b), key = spriteKey(sid, 0, ab, pbk, sb, 0, dkb);
-            if(!ATL.map.has(key)) bakeQ.push({ key, px, b, sb, ab, side: 0, col: null, bank: false });
-            add(b.x, b.y, () => { const en = ATL.map.get(key) || nearSprite(sid, 0, ab, pbk, sb, 0); if(en){ ATL.map.has(key) && (en.pg.f = ATL.frame); blit(en, s0, k * s0[2] / en.kb); } else { ST.fallback++; boxIt(); } }); return; }
+            if(!ATL.map.has(key) && !(moving && nearSprite(sid, 0, ab, pbk, sb, 0, true))) bakeQ.push({ key, px, b, sb, ab, side: 0, col: null, bank: false });
+            add(b.x, b.y, () => { const en = ATL.map.get(key) || nearSprite(sid, 0, ab, pbk, sb, 0, moving); if(en){ en.u = en.pg.f = ATL.frame; blit(en, s0, k * s0[2] / en.kb); } else { ST.fallback++; if(fbLeft > 0 && performance.now() - T0 < 50){ fbLeft--; drawShape(BG.protoOf(b), b.x, b.y, b.a, 1, { px, detail: false, tint: null }); } else { ST.fbBox = (ST.fbBox || 0) + 1; boxIt(); } } }); return; }
           ST.scnMesh++; const S = BG.protoOf(b); add(b.x, b.y, () => drawShape(S, b.x, b.y, b.a, 1, { px, detail: px > 70, tint: null })); });
         if(k > 1.2) T.tr.forEach(q => { const s0 = P(q[0], q[1], 0); if(!onScreen(s0, 30)) return; const r0 = Math.max(2, 3.6 * q[2] * k * s0[2]);
           if(r0 < 6){ treeDots.push(s0[0], s0[1] - (flat ? 0 : 6 * q[2] * k * s0[2] * sp), r0); return; }   // small trees: a canopy dot in one batch, no trunk

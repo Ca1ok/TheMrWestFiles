@@ -11,8 +11,8 @@ const seen = new Set(); for(const sid of [0, 1, 4194303, 8388608 + 77]) for(cons
 // 4. atlas: shelf packing never overlaps, stays inside the page, and wipes the stalest page when full
 const mk = () => ({ cv: {}, g: {} }), A = L.makeAtlas(mk), boxes = []; let wiped = false;
 for(let i = 0; i < 6000; i++){ A.frame = i; const w = 12 + (i * 7) % 60, h = 14 + (i * 13) % 100, r = A.alloc(w, h); assert.ok(r, 'alloc'); assert.ok(r.x >= 0 && r.y >= 0 && r.x + w <= 1024 && r.y + h <= 1024, 'inside page');
-  A.map.set(i, { pg: r.pg, x: r.x, y: r.y, w, h }); if(A.wipes && !wiped){ wiped = true; assert.ok(A.pages.length === 3); } }
-assert.ok(A.pages.length <= 3 && A.wipes > 0, 'pages are capped and recycled (' + A.wipes + ' wipes)');
+  A.map.set(i, { pg: r.pg, x: r.x, y: r.y, w, h }); if(A.wipes && !wiped){ wiped = true; assert.ok(A.pages.length === L.LOD.MAXPAGES); } }
+assert.ok(A.pages.length <= L.LOD.MAXPAGES && A.wipes > 0, 'pages are capped and recycled (' + A.wipes + ' wipes)');
 const live = [...A.map.values()]; for(let i = 0; i < live.length; i += 7) for(let j = i + 1; j < Math.min(live.length, i + 200); j++){ const a = live[i], b = live[j]; if(a.pg !== b.pg) continue; assert.ok(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y, 'live sprites never overlap'); }
 // 5. heightOf is a true upper bound of the mesh and never needs it; protoPal matches what proto() builds
 let worst = 0, slack = 0; for(let i = 0; i < 64 * 40; i++){ const g = G.house(i), est = B.heightOf(g), real = B.shape(g).h; assert.ok(est >= real, 'bound holds for house ' + i); slack = Math.max(slack, est - real); worst = Math.max(worst, real); }
