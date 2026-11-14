@@ -86,7 +86,8 @@
     const dseg = (px, py, s) => { const dx = s[2] - s[0], dy = s[3] - s[1], L2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((px - s[0]) * dx + (py - s[1]) * dy) / L2)); return Math.hypot(px - s[0] - dx * t, py - s[1] - dy * t); };
     for(let gx = -5; gx <= 5; gx++) for(let gy = -4; gy <= 4; gy++){ const x = CORE.x + gx * 20 + (f01(gx + 9, gy + 13) - 0.5) * 4, y = CORE.y + gy * 22 + (f01(gx + 3, gy + 77) - 0.5) * 4; if(Math.abs(x - CORE.x) > 104 || Math.abs(y - CORE.y) > 98) continue;
       if(segs.some(s => dseg(x, y, s) < 11) || Object.keys(POIS).some(id => id !== 'hub' && Math.hypot(POIS[id].x - x, POIS[id].y - y) < 18)) continue; const r = f01(gx + 20, gy + 31), near = 1 - Math.hypot(x - CORE.x, y - CORE.y) / 140;
-      CB.push({ x, y, w: 11 + f01(gx, gy + 5) * 6, d: 11 + f01(gx + 7, gy) * 6, h: 10 + Math.max(0, near) * 34 * r + r * 8, tone: f01(gx + 41, gy + 9) }); } return CB; }
+      const u = Math.exp(-(((x - CORE.x) ** 2 + (y - CORE.y) ** 2) / (330 * 330))), r2 = f01(gx + 59, gy + 3), fl = Math.max(3, Math.round((3 + 26 * Math.pow(u, 1.3) * (0.45 + 0.55 * r)) * (0.85 + 0.3 * r2)));   // the skyline: the same field as BuildGen.urban, so downtown towers fade into the districts' mid-rise
+      CB.push({ x, y, w: 11 + f01(gx, gy + 5) * 5, d: 11 + f01(gx + 7, gy) * 5, fl, kind: r > 0.18 || u < 0.5 ? (r2 < 0.78 ? 'office' : 'apartment') : 'shop', v: Math.floor(f01(gx + 11, gy + 17) * 997), h: fl * 3.1 + 2, tone: f01(gx + 41, gy + 9) }); } return CB; }
 
   const districtCount = n => Math.max(1, Math.ceil(n / PER));
   const bounds = n => { let x0 = ZONES.uni.x0 - 40, y0 = ZONES.uni.y0 - 60, x1 = ZONES.ind.x1 + 40, y1 = ZONES.ind.y1 + 40; for(let k = 0; k < districtCount(n); k++){ const d = district(k); x0 = Math.min(x0, d.cx - 150); y0 = Math.min(y0, d.cy - 140); x1 = Math.max(x1, d.cx + 150); y1 = Math.max(y1, d.cy + 140); } return { x0, y0, x1, y1 }; };

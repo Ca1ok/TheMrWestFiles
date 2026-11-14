@@ -5,8 +5,8 @@
 (function(root, factory){ if(typeof module === 'object' && module.exports) module.exports = factory(); else root.MapRender = factory(); })(typeof self !== 'undefined' ? self : this, function(){
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), CAM = 1700;
   const TH = {      // warm, like the rest of WestOS (see os/tokens.css)
-    light: { land: '#f3eee2', hood: '#ece4d2', road: '#fffdf7', edge: '#d9cfb9', hwy: '#f4c984', hwyE: '#c98a3c', exp: '#e8924f', expE: '#b6552c', park: '#d3e3b5', parkE: '#b8cf98', core: '#e6dfd0', coreE: '#d3c9b4', text: '#2a2016', sub: 'rgba(42,32,22,.64)', halo: 'rgba(255,250,240,.9)', roof: '#f6efdf', water: '#b4d5e6', zoneU: '#e3e0ef', zoneI: '#f0decb', plot: '#ddd2bb' },
-    dark: { land: '#17120d', hood: '#1e1812', road: '#4a3e31', edge: '#0e0b08', hwy: '#a07a3a', hwyE: '#4f3a18', exp: '#cf7a3c', expE: '#5c2f17', park: '#2a3d29', parkE: '#213220', core: '#251e16', coreE: '#35291d', text: '#f6efdd', sub: 'rgba(246,239,221,.62)', halo: 'rgba(14,11,8,.88)', roof: '#5c4f41', water: '#2c4a5e', zoneU: '#2a2944', zoneI: '#3a2a1c', plot: '#33281e' }
+    light: { land: '#f3eee2', hood: '#ece4d2', road: '#fffdf7', edge: '#d9cfb9', hwy: '#f4c984', hwyE: '#c98a3c', exp: '#e8924f', expE: '#b6552c', park: '#d3e3b5', parkE: '#b8cf98', core: '#e6dfd0', coreE: '#d3c9b4', text: '#2a2016', sub: 'rgba(42,32,22,.64)', halo: 'rgba(255,250,240,.9)', roof: '#f6efdf', water: '#b4d5e6', zoneU: '#e3e0ef', zoneI: '#f0decb', plot: '#ddd2bb', uLo: '#efe8d8', uHi: '#d7d0c1' },
+    dark: { land: '#17120d', hood: '#1e1812', road: '#4a3e31', edge: '#0e0b08', hwy: '#a07a3a', hwyE: '#4f3a18', exp: '#cf7a3c', expE: '#5c2f17', park: '#2a3d29', parkE: '#213220', core: '#251e16', coreE: '#35291d', text: '#f6efdd', sub: 'rgba(246,239,221,.62)', halo: 'rgba(14,11,8,.88)', roof: '#5c4f41', water: '#2c4a5e', zoneU: '#2a2944', zoneI: '#3a2a1c', plot: '#33281e', uLo: '#1d1711', uHi: '#30281e' }
   };
   const cssTint = (() => { let v = '#e8924f', at = 0; return () => { const n = Date.now(); if(n - at > 2000){ at = n; try{ const c = getComputedStyle(document.documentElement).getPropertyValue('--tint').trim(); if(/^#[0-9a-f]{6}$/i.test(c)) v = c; }catch(e){} } return v; }; })();
   const PC = { bank: ['#4a6fa8', 'B'], exchange: ['#3fae78', 'E'], shop: ['#e0a23a', 'S'], arcade: ['#b36be0', 'A'], agency: ['#d08a5d', 'R'], hall: ['#7d8799', 'C'], park: ['#5aa15c', 'P'], uni: ['#6f7fd0', 'U'], lab: ['#4fb3ae', 'L'], ind: ['#c97b4a', 'F'], plant: ['#8f6e5a', 'W'] };
@@ -31,7 +31,7 @@
   }
 
   function create(cv, G){
-    const g = cv.getContext('2d'), R = { view: { x: 0, y: 0, k: 1, b: 0, p: 0 }, W: 0, H: 0, npcPos: [], pplPos: [], CAM };
+    const BG = G.BuildGen || null, g = cv.getContext('2d'), R = { view: { x: 0, y: 0, k: 1, b: 0, p: 0 }, W: 0, H: 0, npcPos: [], pplPos: [], CAM };
     let tint = '#e8924f', cs = 1, sn = 0, cp = 1, sp = 0, vk = 1, vx = 0, vy = 0, th = TH.light, dark = false, tex = null, texDark = null, FC = new Map(), scene = null, t = 0, sel2d = true;
     R.resize = (w, h) => { const d = Math.min(2, devicePixelRatio || 1); R.W = w || cv.clientWidth; R.H = h || cv.clientHeight; cv.width = Math.round(R.W * d); cv.height = Math.round(R.H * d); g.setTransform(d, 0, 0, d, 0, 0); };
     const prep = () => { const v = R.view; cs = Math.cos(v.b); sn = Math.sin(v.b); cp = Math.cos(v.p); sp = Math.sin(v.p); vk = v.k; vx = v.x; vy = v.y; sel2d = v.p < 0.035; };
@@ -61,6 +61,31 @@
         if(vis > 0) faces.push({ i, j, d: depth(mx, my), f: 0.72 + 0.2 * (-nX * 0.6 - nY * 0.4) }); }
       faces.sort((p, q) => p.d - q.d); faces.forEach(f => { g.beginPath(); g.moveTo(b[f.i][0], b[f.i][1]); g.lineTo(b[f.j][0], b[f.j][1]); g.lineTo(t2[f.j][0], t2[f.j][1]); g.lineTo(t2[f.i][0], t2[f.i][1]); g.closePath(); g.fillStyle = shade(wall, clamp(f.f, 0.55, 1.05)); g.fill(); });
       g.beginPath(); t2.forEach((o, i) => i ? g.lineTo(o[0], o[1]) : g.moveTo(o[0], o[1])); g.closePath(); g.fillStyle = roof; g.fill(); g.lineWidth = 0.8; g.strokeStyle = 'rgba(0,0,0,.12)'; g.stroke(); }
+
+    /* ---- buildings: every house (and the downtown, the scenery between the districts, the landmarks) is a real 3D shape from BuildGen, drawn face by face ---- */
+    const mixC = new Map(), shC = new Map(), LX = -0.4, LY = 0.3, LZ = 0.86;
+    function mixHex(a, b, t){ const key = a + b + ((t * 50) | 0); let v = mixC.get(key); if(!v){ const x = rgb(a), y = rgb(b), f = i => ('0' + Math.round(x[i] + (y[i] - x[i]) * t).toString(16)).slice(-2); v = '#' + f(0) + f(1) + f(2); if(mixC.size > 5000) mixC.clear(); mixC.set(key, v); } return v; }
+    function sh(hex, f){ let a = shC.get(hex); if(!a){ if(shC.size > 4000) shC.clear(); a = new Array(48); shC.set(hex, a); } const i = f <= 0 ? 0 : f >= 1.5 ? 47 : (f * 31.9) | 0; return a[i] || (a[i] = shade(hex, i / 31.9)); }
+    let PX = new Float32Array(256), PY = new Float32Array(256), QX = new Float32Array(256), QY = new Float32Array(256), QZ = new Float32Array(256), OK = new Uint8Array(256), FI = new Int32Array(128), FK = new Float32Array(128), FS = new Float32Array(128);
+    const SLOTS = ['wall', 'roof', 'trim', 'glass', 'door', 'yard', 'water', 'wall2', 'roof2'], slotCol = new Array(9);
+    /* draw shape s standing at world (X, Y), turned by `ang`, front on side `side`. o: tint (owner colour), rm/wm (how much of it the roofs/walls take), detail (windows & doors), px (footprint in screen px) */
+    function drawShape(s, X, Y, ang, side, o){
+      const V = s.V, nv = V.length / 3, F = s.F, pal = s.pal; if(PX.length < nv){ const m = nv + 64; PX = new Float32Array(m); PY = new Float32Array(m); QX = new Float32Array(m); QY = new Float32Array(m); QZ = new Float32Array(m); OK = new Uint8Array(m); }
+      if(FI.length < F.length){ const m = F.length + 32; FI = new Int32Array(m); FK = new Float32Array(m); FS = new Float32Array(m); }
+      const c0 = Math.cos(ang), s0 = Math.sin(ang), sd = side > 0 ? 1 : -1, fl = sel2d, W2 = R.W / 2, H2 = R.H / 2, Ey = CAM * sp, Ez = CAM * cp, k = vk, dk = dark ? 0.74 : 1;
+      for(let i = 0; i < nv; i++){ const lx = V[3 * i], ly = V[3 * i + 1] * sd, lz = fl ? 0 : V[3 * i + 2], wx = X + lx * c0 - ly * s0, wy = Y + lx * s0 + ly * c0, dx = wx - vx, dy = wy - vy, xs = (dx * cs - dy * sn) * k, ys = (dx * sn + dy * cs) * k, zs = lz * k, den = CAM - (ys * sp + zs * cp);
+        if(den < CAM * 0.3){ OK[i] = 0; continue; } OK[i] = 1; const p = CAM / den; PX[i] = W2 + xs * p; PY[i] = H2 + (ys * cp - zs * sp) * p; QX[i] = xs; QY[i] = ys; QZ[i] = zs; }
+      for(let c = 0; c < 9; c++){ let hx = pal[SLOTS[c]] || '#cccccc'; if(o.tint){ if(c === 1 || c === 8) hx = mixHex(hx, o.tint, o.rm); else if(c === 0 || c === 7) hx = mixHex(hx, o.tint, o.wm); } slotCol[c] = hx; }
+      let cnt = 0;
+      for(let fi = 0; fi < F.length; fi++){ const f = F[fi], n = f.n, vi = f.v[0]; if(!OK[vi]) continue; const nx = n[0] * c0 - n[1] * sd * s0, ny = n[0] * s0 + n[1] * sd * c0, nz = n[2], nX = nx * cs - ny * sn, nY = nx * sn + ny * cs; let key;
+        if(fl){ if(nz < 0.05) continue; key = V[3 * vi + 2] + V[3 * f.v[f.v.length >> 1] + 2]; }
+        else { if(nX * (0 - QX[vi]) + nY * (Ey - QY[vi]) + nz * (Ez - QZ[vi]) <= 0) continue; const vj = f.v[f.v.length >> 1], ax = (QX[vi] + QX[vj]) * 0.5, ay = (Ey - (QY[vi] + QY[vj]) * 0.5), az = (Ez - (QZ[vi] + QZ[vj]) * 0.5); key = -(ax * ax + ay * ay + az * az); }
+        let j = cnt++; const sv = 0.56 + 0.52 * Math.max(0, nX * LX + nY * LY + nz * LZ); while(j > 0 && FK[j - 1] > key){ FK[j] = FK[j - 1]; FI[j] = FI[j - 1]; FS[j] = FS[j - 1]; j--; } FK[j] = key; FI[j] = fi; FS[j] = sv; }
+      const edge = o.px > 16 ? 'rgba(0,0,0,.2)' : null;
+      for(let q = 0; q < cnt; q++){ const f = F[FI[q]], sv = FS[q] * dk, vs = f.v; g.beginPath(); g.moveTo(PX[vs[0]], PY[vs[0]]); for(let i = 1; i < vs.length; i++) g.lineTo(PX[vs[i]], PY[vs[i]]); g.closePath(); g.fillStyle = sh(slotCol[f.c], sv); g.fill(); if(edge){ g.lineWidth = 0.6; g.strokeStyle = edge; g.stroke(); }
+        if(f.b && !fl && o.px > 9){ g.strokeStyle = 'rgba(0,0,0,.17)'; g.lineWidth = 0.7; g.beginPath(); const a = vs[0], b = vs[1], c2 = vs[2], d = vs[3], nb = Math.min(f.b, 18); for(let t = 1; t < nb; t++){ const u = t / nb; g.moveTo(PX[a] + (PX[d] - PX[a]) * u, PY[a] + (PY[d] - PY[a]) * u); g.lineTo(PX[b] + (PX[c2] - PX[b]) * u, PY[b] + (PY[c2] - PY[b]) * u); } g.stroke(); }
+        if(o.detail && f.k && !fl) for(let i = 0; i < f.k.length; i++){ const kd = f.k[i], kv = kd.v; let ok = true; for(let z = 0; z < kv.length; z++) if(!OK[kv[z]]){ ok = false; break; } if(!ok) continue; g.beginPath(); g.moveTo(PX[kv[0]], PY[kv[0]]); for(let z = 1; z < kv.length; z++) g.lineTo(PX[kv[z]], PY[kv[z]]); g.closePath(); g.fillStyle = sh(slotCol[kd.c], kd.c === 3 ? sv + 0.18 : sv); g.fill(); } }
+    }
     function glyph(id, cx, cy, s){ g.save(); g.translate(cx, cy); g.fillStyle = '#fff'; g.strokeStyle = '#fff'; g.lineWidth = Math.max(1.2, s * 0.16); g.lineCap = 'round'; g.lineJoin = 'round'; g.beginPath();
       if(id === 'bank' || id === 'hall'){ g.moveTo(-s, -s * .3); g.lineTo(0, -s * .95); g.lineTo(s, -s * .3); g.closePath(); g.fill(); for(const x of [-.62, 0, .62]) g.fillRect(x * s - s * .12, -s * .1, s * .24, s * .8); g.fillRect(-s, s * .8, s * 2, s * .18); }
       else if(id === 'exchange'){ g.moveTo(-s, s * .6); g.lineTo(-s * .3, -s * .05); g.lineTo(s * .2, s * .35); g.lineTo(s, -s * .65); g.stroke(); g.beginPath(); g.moveTo(s * .45, -s * .7); g.lineTo(s, -s * .65); g.lineTo(s * .92, -s * .15); g.stroke(); }
@@ -83,7 +108,7 @@
       g.clearRect(0, 0, W, H); g.fillStyle = th.land; g.fillRect(0, 0, W, H);
       try{ const o = flat ? new DOMMatrix().translate(-vx * k + W / 2, -vy * k + H / 2) : new DOMMatrix(); tex.land.setTransform(o); tex.grass.setTransform(o); tex.hatch.setTransform(o); tex.dots.setTransform(o); tex.water.setTransform(o); }catch(e){}
       g.fillStyle = tex.land; g.fillRect(0, 0, W, H);
-      const near = (x, y, r) => { const s = P(x, y, 0); return s && s[0] > -r * k * s[2] - 40 && s[1] > -r * k * s[2] - 40 && s[0] < W + r * k * s[2] + 40 && s[1] < H + r * k * s[2] + 40; };
+      const near0 = 0, near = (x, y, r) => { const s = P(x, y, 0); return s && s[0] > -r * k * s[2] - 40 && s[1] > -r * k * s[2] - 40 && s[0] < W + r * k * s[2] + 40 && s[1] < H + r * k * s[2] + 40; };
       /* land use: neighbourhoods, greens, the downtown, the two campuses */
       const vd = []; for(let q = 0; q < n; q++){ const D = G.district(q); if(near(D.cx, D.cy, 170)) vd.push(q); }
       vd.forEach(q => { const fp = G.footprint(q), D = G.district(q), pts = fp.map(a => P(a[0], a[1], 0)); if(pts.some(a => !a)) return; g.beginPath(); pts.forEach((a, i) => i ? g.lineTo(a[0], a[1]) : g.moveTo(a[0], a[1])); g.closePath(); const rad = 14 * k * pts[0][2];
@@ -93,10 +118,17 @@
       { const pp = G.POIS.park; poly(rect(pp.x, pp.y, 96, 62, 0), th.park, th.parkE, 1.4, tex.grass, 1); poly(rect(pp.x + 18, pp.y + 6, 30, 18, 0.3), th.water, 'rgba(60,120,170,.4)', 1.2, tex.water, 1); }
       for(const zid of ['uni', 'ind']){ const zz = G.ZONES[zid], r = [[zz.x0 - 8, zz.y0 - 8], [zz.x1 + 8, zz.y0 - 8], [zz.x1 + 8, zz.y1 + 8], [zz.x0 - 8, zz.y1 + 8]]; poly(r, zid === 'uni' ? th.zoneU : th.zoneI, zz.c + '88', 1.2, zid === 'uni' ? tex.dots : tex.hatch, 1); }
 
+      /* the city between the districts: ground, local streets, trees and scenery buildings, generated per 156-unit tile (BuildGen.infill) */
+      let tiles = [], poiH = id => { const L = BG && BG.landmark(id); return L ? L.h : (POIH[id] || 18); };
+      if(BG && sc.infill !== false){ let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for(const fx of [0, 0.5, 1]) for(const fy of [0, 0.5, 1]){ const q = R.unproject(fx * W, fy * H); if(!q) continue; x0 = Math.min(x0, q[0]); y0 = Math.min(y0, q[1]); x1 = Math.max(x1, q[0]); y1 = Math.max(y1, q[1]); }
+        if(x0 < x1){ const m = 50 + (flat ? 0 : 130 * Math.min(1.6, Math.tan(v.p))); tiles = BG.tilesIn(x0 - 50, y0 - m, x1 + 50, y1 + m); if(tiles.length > 900) tiles = []; } }
+      const gcol = []; for(let i = 0; i <= 20; i++) gcol.push(mixHex(th.uLo, th.uHi, i / 20)); const tdata = tiles.map(t => BG.infill(t[0], t[1], n));
+      tdata.forEach(T => T.gr.forEach(c => { const q = P(c[0], c[1], 0); if(!q) return; g.fillStyle = c[3] ? th.park : gcol[Math.min(20, (Math.pow(c[2], 0.6) * 20) | 0)]; if(flat){ const hw = BG.CS * 0.5 * k * q[2] + 0.6; g.fillRect(q[0] - hw, q[1] - hw, hw * 2, hw * 2); } else { const r = rect(c[0], c[1], BG.CS + 1, BG.CS + 1, 0), a = r.map(o => P(o[0], o[1], 0)); if(a.some(o => !o)) return; g.beginPath(); a.forEach((o, i) => i ? g.lineTo(o[0], o[1]) : g.moveTo(o[0], o[1])); g.closePath(); g.fill(); } }));
       /* roads: every casing first, then every fill, so junctions merge like a real map */
       const loc = [], hw = G.highways(n), lw = { loc: 4.2, ave: 6 }; const ringPts = [[C.x - 60, C.y - 40], [C.x + 60, C.y - 40], [C.x + 60, C.y + 40], [C.x - 60, C.y + 40], [C.x - 60, C.y - 40]];
       loc.push({ pts: ringPts, w: 4 }); ['bank', 'exchange', 'shop', 'arcade', 'agency', 'hall', 'park'].forEach(id => { const p = G.POIS[id]; loc.push({ pts: [[C.x, C.y], [p.x, p.y]], w: 4 }); });
       vd.forEach(q => { G.roads(q).forEach(r => loc.push({ pts: r.pts, w: r.avenue ? lw.ave : lw.loc })); });
+      if(BG){ tdata.forEach(T => T.rd.forEach(r => loc.push({ pts: r.pts || (r.pts = [r.a, r.b]), w: r.U > 0.4 ? 4.6 : 3.8 }))); BG.links(n).forEach(l => { if(near(l.pts[0][0], l.pts[0][1], 120)) loc.push({ pts: l.pts, w: lw.loc }); }); }
       const hws = hw.map(e => ({ pts: e.pts, w: e.spur ? 4.6 : e.express ? 7 : e.link ? 5 : 6, e }));
       loc.forEach(r => line(r.pts, r.w + 1.8, th.edge, 2.2)); loc.forEach(r => line(r.pts, r.w, th.road, 1.2));
       vd.forEach(q => G.roadEnds(q).forEach(pair => pair.forEach(e => { const s = P(e[0], e[1], 0); if(!s) return; const rr = 4.2 * k * s[2]; g.beginPath(); g.arc(s[0], s[1], Math.max(2.2, rr * 0.5 + 1.6), 0, 7); g.fillStyle = th.edge; g.fill(); g.beginPath(); g.arc(s[0], s[1], Math.max(1.4, rr * 0.5 + 0.2), 0, 7); g.fillStyle = th.road; g.fill(); })));
@@ -108,12 +140,13 @@
 
       /* things that stand on the map: depth-sorted so 3D overlaps correctly */
       const add = (x, y, fn) => items.push({ d: depth(x, y), fn });
-      const cb = G.coreBlocks(); cb.forEach(b => { if(!near(b.x, b.y, 20)) return; add(b.x, b.y, () => { const base = dark ? '#5d646e' : mix('#e6e2da', '#cfd3da', b.tone); box(b.x, b.y, b.w, b.d, 0, b.h, base, shade(base, 0.86)); }); });
-      const hs = sc.houses || []; const hz = Math.max(3.4, 0), kindOf = sc.kind || (() => 'bot');
-      hs.forEach(e => { const gg = e.g, s = P(gg.x, gg.y, 0); if(!onScreen(s, 40)) return; const hv = e.h, on = !sc.shown || sc.shown(e), col = KIND[kindOf(hv)] || KIND.bot;
-        add(gg.x, gg.y, () => { g.globalAlpha = on ? 1 : 0.18; const roof = hv.o === 'bank' ? mix(th.roof, col, 0.55) : mix(th.roof, col, dark ? 0.55 : 0.78), wall = shade(dark ? mix('#6a717b', col, .5) : mix('#e8e2d6', col, .5), dark ? 0.9 : 0.95), hh = gg.ht * (hv.v > 6e7 ? 1.25 : 1);
-          if(flat){ const sz = Math.max(3.2, 0), ww = Math.max(gg.w * k, 4), dd = Math.max(gg.dp * k, 4); if(gg.w * k < 4){ const c = P(gg.x, gg.y, 0); g.fillStyle = col; g.fillRect(c[0] - 2.2, c[1] - 2.2, 4.4, 4.4); } else box(gg.x, gg.y, gg.w, gg.dp, gg.ang, 1, roof, shade(col, 0.72)); }
-          else box(gg.x, gg.y, gg.w, gg.dp, gg.ang, hh, roof, wall);
+      const cb = G.coreBlocks(); cb.forEach(b => { const S = BG ? BG.proto(b.kind || 'office', b.w, b.d, b.fl || 8, b.v || 1) : null; if(!near(b.x, b.y, 20 + (S ? S.h : b.h))) return; add(b.x, b.y, () => { const px = Math.max(b.w, b.d) * k; if(S && px > 6.5) drawShape(S, b.x, b.y, 0, 1, { px, detail: px > 70, tint: null }); else { const base = dark ? '#5d646e' : mix('#e6e2da', '#cfd3da', b.tone); box(b.x, b.y, b.w, b.d, 0, b.h, base, shade(base, 0.86)); } }); });
+      const hs = sc.houses || [], kindOf = sc.kind || (() => 'bot');
+      hs.forEach(e => { const gg = e.g, S = BG ? BG.shape(gg) : null, H0 = S ? S.h : gg.ht, s0 = P(gg.x, gg.y, 0); if(!onScreen(s0, 40 + H0 * k * 1.2)) return; const hv = e.h, on = !sc.shown || sc.shown(e), col = KIND[kindOf(hv)] || KIND.bot;
+        add(gg.x, gg.y, () => { g.globalAlpha = on ? 1 : 0.18; const roof = hv.o === 'bank' ? mix(th.roof, col, 0.55) : mix(th.roof, col, dark ? 0.55 : 0.78), wall = shade(dark ? mix('#6a717b', col, .5) : mix('#e8e2d6', col, .5), dark ? 0.9 : 0.95), hh = S ? H0 : gg.ht * (hv.v > 6e7 ? 1.25 : 1), px = Math.max(gg.w, gg.dp) * k;
+          if(px < 3.2){ const c = P(gg.x, gg.y, 0); g.fillStyle = col; g.fillRect(c[0] - 2.2, c[1] - 2.2, 4.4, 4.4); }
+          else if(!S || px < 6.5){ if(flat) box(gg.x, gg.y, gg.w, gg.dp, gg.ang, 1, roof, shade(col, 0.72)); else box(gg.x, gg.y, gg.w, gg.dp, gg.ang, hh, roof, wall); }
+          else drawShape(S, gg.x, gg.y, gg.ang, gg.side, { tint: col, rm: hv.o === 'bank' ? 0.62 : 0.7, wm: 0.2, px, detail: px > 60 });
           if(hv.dm > 0){ const c = P(gg.x, gg.y, flat ? 0 : hh); if(c){ g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(c[0] - 4, c[1] - 4, 8, 8 * hv.dm / 100); } }
           const top = P(gg.x, gg.y, flat ? 0 : hh + 2); if(top && k * top[2] > 0.9){ if(hv.o === sc.me){ g.strokeStyle = '#5bd68a'; g.lineWidth = 2; g.beginPath(); g.arc(top[0], top[1], Math.max(5, gg.w * k * top[2] * 0.75), 0, 7); g.stroke(); }
             if(hv.t){ g.fillStyle = '#fff'; g.beginPath(); g.arc(top[0], top[1], Math.max(1.4, 2 * top[2]), 0, 7); g.fill(); }
@@ -121,10 +154,13 @@
             if(hv.rh > 0 && !hv.t && k > 1.4){ g.fillStyle = '#34c759'; g.strokeStyle = '#fff'; g.lineWidth = 1.2; g.beginPath(); g.arc(top[0] - 4, top[1] - (flat ? 3 : 8), 2.6, 0, 7); g.fill(); g.stroke(); }
             if(hv.f && hv.dm > 0){ const p2 = 0.6 + 0.4 * Math.sin(t / 130 + gg.i); g.fillStyle = 'rgba(255,' + Math.round(90 + 70 * p2) + ',30,.95)'; g.beginPath(); g.moveTo(top[0], top[1] - 14 * (0.8 + 0.3 * p2)); g.lineTo(top[0] + 5, top[1] - 2); g.lineTo(top[0] - 5, top[1] - 2); g.fill(); } }
           g.globalAlpha = 1; }); });
+      /* scenery between the districts: the same shapes, heights following the skyline field, so the city fades smoothly from downtown and the "city" districts down to the suburbs */
+      tdata.forEach(T => { T.b.forEach(b => { const px = Math.max(b.w, b.d) * k; if(px < 3.4) return; const S = BG.protoOf(b); if(!onScreen(P(b.x, b.y, 0), 40 + S.h * k * 1.2)) return; add(b.x, b.y, () => { if(px < 6.5){ const base = mixHex(S.pal.wall, '#8a8f98', 0.4); if(flat) box(b.x, b.y, b.w, b.d, b.a, 1, base, shade(base, 0.8)); else box(b.x, b.y, b.w, b.d, b.a, S.h * 0.85, base, shade(base, 0.82), false); } else drawShape(S, b.x, b.y, b.a, 1, { px, detail: px > 70, tint: null }); }); });
+        if(k > 1.2) T.tr.forEach(q => add(q[0], q[1], () => { const s0 = P(q[0], q[1], 0), s1 = P(q[0], q[1], flat ? 0 : 6 * q[2]); if(!s0 || !s1) return; const r = Math.max(2, 3.6 * q[2] * k * s1[2]); if(!flat){ g.strokeStyle = dark ? '#3a2d22' : '#7b5b3a'; g.lineWidth = Math.max(1, 1.1 * k); g.beginPath(); g.moveTo(s0[0], s0[1]); g.lineTo(s1[0], s1[1]); g.stroke(); } g.beginPath(); g.arc(s1[0], s1[1], r, 0, 7); g.fillStyle = dark ? '#3f7a52' : '#7fba6a'; g.fill(); })); });
       /* trees in the greens */
       if(k > 1.0) vd.forEach(q => G.parks(q).forEach((pk, pi) => { for(let a = 0; a < 3; a++) for(let b = 0; b < 4; b++){ const u = -9 + a * 9 + ((q * 7 + a * 3 + b) % 5 - 2), vv = (26 + b * 15 + ((q * 3 + b * 5 + a) % 4)) * (pi ? 1 : -1), p = G.loc(q, u, vv); add(p[0], p[1], () => { const s0 = P(p[0], p[1], 0), s1 = P(p[0], p[1], flat ? 0 : 7); if(!s0 || !s1) return; const r = Math.max(2.4, 4.2 * k * s1[2]); if(!flat){ g.strokeStyle = dark ? '#3a2d22' : '#7b5b3a'; g.lineWidth = Math.max(1, 1.2 * k); g.beginPath(); g.moveTo(s0[0], s0[1]); g.lineTo(s1[0], s1[1]); g.stroke(); } g.beginPath(); g.arc(s1[0], s1[1], r, 0, 7); g.fillStyle = dark ? '#3f7a52' : '#7fba6a'; g.fill(); g.lineWidth = 0.8; g.strokeStyle = dark ? '#2b5539' : '#5d9a52'; g.stroke(); }); } }));
       /* downtown buildings, the two campuses */
-      for(const id in G.POIS){ if(id === 'hub' || id === 'park') continue; const p = G.POIS[id]; if(!near(p.x, p.y, 40)) continue; const hh = POIH[id] || 18, col = PC[id][0]; add(p.x, p.y, () => { box(p.x, p.y, 24, 18, 0, hh, mix(th.roof, col, 0.35), mix('#e8e4da', col, 0.3)); }); }
+      for(const id in G.POIS){ if(id === 'hub' || id === 'park') continue; const p = G.POIS[id]; if(!near(p.x, p.y, 40)) continue; const hh = poiH(id), col = PC[id][0], S = BG && BG.landmark(id); add(p.x, p.y, () => { if(S && 24 * k > 6.5) drawShape(S, p.x, p.y, 0, 1, { px: 24 * k, detail: 24 * k > 70, tint: null }); else box(p.x, p.y, 24, 18, 0, hh, mix(th.roof, col, 0.35), mix('#e8e4da', col, 0.3)); }); }
       const plots = sc.plots || {}; for(const uid in plots) for(const kd of ['f', 'l']){ if(!plots[uid][kd]) continue; const c = G.plotCell(kd, uid); if(!near(c.x, c.y, 30)) continue; const mine = uid === sc.me, zc = kd === 'f' ? G.ZONES.ind.c : G.ZONES.uni.c; add(c.x, c.y, () => { box(c.x, c.y, c.w * 0.86, c.h * 0.8, 0, kd === 'f' ? 11 : 8, mine ? '#8fe0ad' : mix(th.roof, zc, 0.55), mine ? '#4fb87a' : mix('#e4dfd5', zc, 0.45)); }); }
       for(let q of vd) G.stations(q).forEach(s => { if(k < 1.1) return; add(s.x, s.y, () => { const c = s.t === 'fire' ? '#e5484d' : s.t === 'police' ? '#3a6fd8' : '#f4f4f4'; box(s.x, s.y, 12, 9, 0, 7, c, shade(c, 0.8)); }); });
       items.sort((a, b) => a.d - b.d); items.forEach(i => i.fn());
@@ -152,7 +188,7 @@
       for(const zid of ['uni', 'ind']){ const zz = G.ZONES[zid]; const s = P((zz.x0 + zz.x1) / 2, zz.y0 - 14, 0); if(s && k < 3.4) halo(zz.n, s[0], s[1], clamp(11 * k * s[2] + 2, 10, 15), th.sub, 700); }
       if(k < 3.4){ const s = P(C.x, C.y - 116, 0); if(s) halo('Downtown', s[0], s[1], clamp(11 * k * s[2] + 2, 10, 16), th.sub, 700); }
       vd.forEach(q => { if(k > 3.0) return; const D = G.district(q), s = P(D.cx, D.cy - 112, 0); if(!s) return; halo(D.name, s[0], s[1], clamp(11 * k * s[2] + 3, 10.5, 18), th.text, 700); if(D.city && k < 1.6){ halo('CITY', s[0], s[1] + 13, 9, D.color, 800); } });
-      for(const id in G.POIS){ if(id === 'hub') continue; const p = G.POIS[id], hh = POIH[id] || 0; const s = P(p.x, p.y, flat ? 0 : hh + 10); if(!onScreen(s, 40)) continue; const r = clamp(5.5 + k * 3.4, 7, 15);
+      for(const id in G.POIS){ if(id === 'hub') continue; const p = G.POIS[id], hh = poiH(id); const s = P(p.x, p.y, flat ? 0 : hh + 10); if(!onScreen(s, 40)) continue; const r = clamp(5.5 + k * 3.4, 7, 15);
         if(id === 'park'){ halo(p.n, s[0], s[1] - 18, 11, '#3e7d3a', 700); pin(p.x, p.y, r * 0.85, PC[id][0], id, X && X.t === 'poi' && X.id === id); continue; }
         pin(p.x, p.y, r, PC[id][0], id, X && X.t === 'poi' && X.id === id, flat ? 0 : hh + 10); if(k > 0.9) halo(p.n, s[0], s[1] + r + 9, 10.5, th.text, 600); }
       /* haze toward the horizon in 3D */

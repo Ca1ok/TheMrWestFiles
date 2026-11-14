@@ -20,7 +20,7 @@ h3{margin:0 0 4px;font:800 18px var(--font);letter-spacing:-.01em} .sub{color:va
 #zoom button.on{background:var(--tint);color:#fff;border-color:transparent} #b3d{font:800 12.5px var(--font)!important} #zoom svg{width:18px;height:18px;vertical-align:middle;transition:transform .15s} #head{padding:8px 8px 0}
 </style></head><body><div id="wm"><canvas id="cv"></canvas><div id="bar"></div><div id="zoom"><button id="b3d" title="Switch between 2D and 3D">3D</button><button id="bcomp" title="Point north"><svg viewBox="0 0 24 24"><path d="M12 3l4.2 9H7.8z" fill="#e5484d"/><path d="M12 21l-4.2-9h8.4z" fill="currentColor" opacity=".45"/></svg></button><button id="bloc" title="Show my location"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M20 4 4 11l7 2 2 7z"/></svg></button><button data-z="1">+</button><button data-z="-1">−</button><button data-z="0" title="Fit">⌂</button></div><div id="legend"></div><div id="tip"></div>
 <div id="side"><div id="head"><input id="q" type="search" placeholder="Search houses, places, people" autocomplete="off"></div><div id="tabs"></div><div id="pane"></div></div></div></div>
-<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script><script src="../os/lib/maprender.js"></script>
+<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script><script src="../os/lib/maprender.js"></script><script src="../os/lib/house3d.js"></script>
 <script>
 const H = OS.homes, G = H.gen, { h, money, esc } = Kit, $ = s => document.querySelector(s);
 const cv = $('#cv'), DAY = 86400000, HOUR = 3600000, MIN = 60000;
@@ -40,7 +40,7 @@ const POI_INFO = { bank: 'Deposits, loans and your tax bills.', exchange: 'Where
 function rebuild(){
   world = H.world(); const ids = Object.keys(world); owners = {};
   list = ids.map(id => { let e = byId[id]; if(!e){ e = byId[id] = { id, g: H.house(id) }; } e.h = world[id]; if(e.h.o && !isBot(e.h.o) && e.h.o !== 'bank' && e.h.on) owners[e.h.o] = e.h.on; return e; }).filter(e => e.h); need = true;
-  if(!fitted && list.length){ fit(); fitted = true; } if(sel && !world[sel]) sel = null; mapData(); paintSide();
+  if(!fitted && list.length){ fit(); fitted = true; } if(pendingFocus && byId[pendingFocus]){ const f = pendingFocus; pendingFocus = null; setTimeout(() => focus(f), 0); } if(sel && !world[sel]) sel = null; mapData(); paintSide();
 }
 function events(){ const ev = H.events(); Object.keys(ev).forEach(k => { if(seenEv.has(k)) return; seenEv.add(k); const e = ev[k]; if(!firstEv && Date.now() - e.t < 15 * 60000) launch(e); }); firstEv = false; }
 const nameOf = uid => uid === me ? 'You' : (locs[uid] && locs[uid].n) || owners[uid] || 'A player';
@@ -82,14 +82,14 @@ cv.addEventListener('pointerup', e => { pts.delete(e.pointerId); cv.classList.re
 cv.addEventListener('wheel', e => { e.preventDefault(); if(e.shiftKey){ V.b += e.deltaY * 0.004; V.p = clamp(V.p + e.deltaX * 0.004, 0, MAXP); paint3d(); return; } zoomAt(e.deltaY < 0 ? 1.18 : 1 / 1.18, e.offsetX, e.offsetY); }, { passive: false });
 document.querySelectorAll('#zoom button[data-z]').forEach(b => b.onclick = () => { const z = +b.dataset.z; follow = null; if(!z) fit(); else zoomAt(z > 0 ? 1.4 : 1 / 1.4, cv.clientWidth / 2, cv.clientHeight / 2); });
 /* what is under the pointer: a person first, then a building, then a plot, then a house (everything is projected, so it works tilted and rotated) */
-const lift = z => flat() ? 0 : z;
-function pickHouse(px, py){ let best = null, bd = Math.max(8, 6 * V.k) ** 2; for(const e of list){ const s = R.project(e.g.x, e.g.y, lift(e.g.ht * 0.6)); if(!s) continue; const dx = s[0] - px, dy = s[1] - py, d = dx * dx + dy * dy; if(d < bd){ bd = d; best = e.id; } } return best; }
+const lift = z => flat() ? 0 : z, BG = G.BuildGen || null, hOf = g => BG ? BG.shape(g).h : g.ht, poiH = id => { const L = BG && BG.landmark(id); return L ? L.h : (POIH[id] || 0); };
+function pickHouse(px, py){ let best = null, bd = Math.max(8, 6 * V.k) ** 2; for(const e of list){ const s = R.project(e.g.x, e.g.y, lift(hOf(e.g) * 0.6)); if(!s) continue; const dx = s[0] - px, dy = s[1] - py, d = dx * dx + dy * dy; if(d < bd){ bd = d; best = e.id; } } return best; }
 function hit(px, py){
   let best = null, bd = 120;
   for(const p of pplPos){ const s = R.project(p.x, p.y, lift(3)); if(!s) continue; const d = (s[0] - px) ** 2 + (s[1] - py) ** 2; if(d < bd + 40){ bd = d; best = { t: 'player', id: p.id }; } }
   if(!best) for(const p of npcPos){ const s = R.project(p.x, p.y, lift(1.5)); if(!s) continue; const d = (s[0] - px) ** 2 + (s[1] - py) ** 2; if(d < bd){ bd = d; best = { t: 'npc', id: p.id }; } }
   if(best) return best;
-  for(const id in G.POIS){ if(id === 'hub') continue; const p = G.POIS[id], s = R.project(p.x, p.y, lift((POIH[id] || 0) + 10)); if(s && Math.hypot(s[0] - px, s[1] - py) < 17) return { t: 'poi', id }; }
+  for(const id in G.POIS){ if(id === 'hub') continue; const p = G.POIS[id], s = R.project(p.x, p.y, lift(poiH(id) + 10)); if(s && Math.hypot(s[0] - px, s[1] - py) < 17) return { t: 'poi', id }; }
   for(const uid in plots){ for(const kd of ['f', 'l']){ if(!plots[uid][kd]) continue; const c = G.plotCell(kd, uid), s = R.project(c.x, c.y, 0); if(s && Math.abs(s[0] - px) < c.w * V.k * s[2] / 2 + 3 && Math.abs(s[1] - py) < c.h * V.k * s[2] / 2 + 3) return { t: 'plot', id: uid, kd }; } }
   const hs = pickHouse(px, py); return hs ? { t: 'house', id: hs } : null;
 }
@@ -123,7 +123,8 @@ function paintTabs(){ const t = $('#tabs'); t.innerHTML = ''; TABS.forEach(([id,
 function paintBar(){ const b = $('#bar'); b.innerHTML = ''; [['mine', 'My houses'], ['sale', 'For sale'], ['rent', 'To rent'], ['fire', 'Damaged']].forEach(([k, l]) => b.appendChild(h('button', { class: 'chip' + (filter[k] ? ' on' : ''), onclick: () => { filter[k] = filter[k] ? 0 : 1; paintBar(); } }, l)));
   [['ppl', 'Players'], ['npc', 'NPCs']].forEach(([k, l]) => b.appendChild(h('button', { class: 'chip' + (layers[k] ? ' on' : ''), onclick: () => { layers[k] = layers[k] ? 0 : 1; paintBar(); } }, l)));
   $('#legend').innerHTML = [['mine', 'You'], ['bank', 'City'], ['player', 'Players'], ['bot', 'Bots']].map(([k, l]) => '<span><i style="background:' + COL[k] + '"></i>' + l + '</span>').join('') + '<span><i style="background:#ffd24a"></i>for sale</span><span><i style="background:#fdd38b;border:1px solid #e0a44a"></i>highway</span><span><i style="background:#f8b363"></i>express to a city</span>'; }
-function paintSide(){ paintTabs(); const p = $('#pane'); p.innerHTML = ''; const qv = ($('#q').value || '').trim(); if(qv){ paintSearch(p, qv); return; } ({ info: paintInfo, places: paintPlaces, me: paintMe, eco: paintEco, feed: paintFeed })[tab](p); }
+let h3 = null;
+function paintSide(){ if(h3){ h3.destroy(); h3 = null; } paintTabs(); const p = $('#pane'); p.innerHTML = ''; const qv = ($('#q').value || '').trim(); if(qv){ paintSearch(p, qv); return; } ({ info: paintInfo, places: paintPlaces, me: paintMe, eco: paintEco, feed: paintFeed })[tab](p); }
 /* search: places, districts, streets/addresses, people and NPCs */
 function paintSearch(p, qv){ const s = qv.toLowerCase(), out = [], row = (ico, col, t, sub, go) => out.push(h('div', { class: 'ev', onclick: go }, h('div', { class: 'dot', style: { background: col } }, ico), h('div', null, h('b', null, t), h('div', { class: 'sub' }, sub))));
   Object.keys(G.POIS).filter(id => id !== 'hub' && G.POIS[id].n.toLowerCase().includes(s)).forEach(id => row(PC[id][1], PC[id][0], G.POIS[id].n, 'Place', () => { selX = { t: 'poi', id }; sel = null; focusXY(G.POIS[id].x, G.POIS[id].y, 3); tab = 'info'; $('#q').value = ''; paintSide(); }));
@@ -192,6 +193,8 @@ function paintHouse(p){
   const e = sel && byId[sel]; if(!e){ p.append(h('h3', null, 'WestCountry'), h('div', { class: 'sub' }, 'Tap a house, a person, a building or a plot. Green is yours, grey belongs to the city, blue to other players, orange to bots. Money never appears or disappears here — houses just change hands.'), h('div', { class: 'card' }, h('b', null, list.length + ' houses'), h('div', { class: 'sub' }, list.filter(x => x.h.o === 'bank' && !x.h.t).length + ' vacant city houses · ' + list.filter(x => x.h.a > 0 && x.h.o !== 'bank').length + ' for sale by owners'))); return; }
   const hs = e.h, g = e.g, mine = hs.o === me, cfg = H.cfg(), v = hs.v / 100, live = H.home() && H.home().id === e.id, bot = isBot(hs.o) ? bots[hs.o] : null;
   p.append(h('h3', null, g.addr), h('div', { class: 'sub' }, g.typeName + (g.beds ? ' · ' + g.beds + ' bed' : '') + ' · ' + g.district), h('div', { style: { margin: '8px 0' } }, mine ? h('span', { class: 'tag good' }, 'Yours') : '', live ? h('span', { class: 'tag' }, 'You live here') : '', hs.a > 0 ? h('span', { class: 'tag warnc' }, 'For sale') : '', hs.rh > 0 && !hs.t ? h('span', { class: 'tag good' }, 'To rent') : '', hs.dm > 0 ? h('span', { class: 'tag bad' }, 'Damaged ' + hs.dm + '%') : ''));
+  if(BG && window.House3D){ const cvs = h('canvas', { style: { width: '100%', height: '210px', borderRadius: '12px', display: 'block', background: '#9cc7ec' } }); p.append(h('div', { class: 'card', style: { padding: '6px' } }, cvs, h('div', { class: 'sub', style: { textAlign: 'center', margin: '4px 0 2px' } }, BG.shape(g).fl + ' floor' + (BG.shape(g).fl === 1 ? '' : 's') + ' · drag to turn, scroll to zoom')));
+    h3 = House3D.create(cvs, BG.shape(g), { dark }); h3.set({ forSale: hs.a > 0 || (hs.o === 'bank' && !hs.t), mine, fire: !!hs.f && hs.dm > 0, damage: hs.dm || 0, tint: COL[kind(hs)] }); }
   const kv = [['Value', fmt0(v)], ['Owner', who(hs)], ['Tenant', hs.t ? (hs.tn || 'Resident') : 'Vacant'], ['Rent', hs.rh > 0 ? fmt2(hs.rh * 24 / 100) + ' / day' : '—'], ['Property tax', fmt2(hs.v * cfg.propTaxBpDay / 10000 / 100) + ' / day']]; if(hs.t) kv.push(['Rent paid until', new Date(hs.ts + hs.th * HOUR).toLocaleString()]);
   const k = h('div', { class: 'kv' }); kv.forEach(([a, b]) => k.append(h('span', null, a), h('span', null, b))); p.append(k);
   if(bot) p.append(h('div', { class: 'card' }, h('b', null, bot.n + ' · ' + bot.j), h('div', { class: 'sub' }, bot.bio + ' Has about ' + fmt0(bot.cash || 0) + ' in the bank.')));
@@ -245,6 +248,8 @@ function paintFeed(p){
   ids.slice(0, 40).forEach(id => { const e = ev[id], c = e.k === 'fire' ? '#e5484d' : e.k === 'police' ? '#3a6fd8' : '#2f9e6e', t = e.k === 'fire' ? 'Fire at ' + e.a + ' — ' + e.dm + '% damage, crew in ' + e.resp + ' min' : e.k === 'police' ? 'Break-in at ' + e.a + ' — police in ' + e.resp + ' min' + (e.caught ? ', thief caught' : ', thief got away') : 'Ambulance to ' + e.a + ' — arrived in ' + e.resp + ' min';
     p.append(h('div', { class: 'ev', onclick: () => focus(e.h) }, h('div', { class: 'dot', style: { background: c } }, e.k === 'fire' ? '▲' : e.k === 'police' ? '★' : '+'), h('div', null, h('b', null, t), h('div', { class: 'sub' }, e.d + ' · ' + Kit.ago(e.t))))); });
 }
-(async function init(){ me = H.uid(); resize(); paintBar(); paintSide(); H.watch(); H.watchMap(true); rebuild(); events(); loadBots(); setInterval(loadBots, 180000); setInterval(() => { need = true; mapData(); if(tab === 'me') paintSide(); }, 30000); OS.on('auth', () => { me = H.uid(); rebuild(); });
+function takeFocus(){ try{ const id = localStorage.getItem('westmap_focus'); if(id){ localStorage.removeItem('westmap_focus'); if(byId[id]) focus(id); else { pendingFocus = id; } } }catch(e){} }
+let pendingFocus = null; addEventListener('storage', e => { if(e.key === 'westmap_focus') takeFocus(); });
+(async function init(){ me = H.uid(); resize(); paintBar(); paintSide(); H.watch(); H.watchMap(true); rebuild(); events(); takeFocus(); loadBots(); setInterval(loadBots, 180000); setInterval(() => { need = true; mapData(); if(tab === 'me') paintSide(); }, 30000); OS.on('auth', () => { me = H.uid(); rebuild(); });
   const off = () => { try{ H.watchMap(false); }catch(e){} }; addEventListener('pagehide', off); addEventListener('beforeunload', off); })();
 </script></body></html>
