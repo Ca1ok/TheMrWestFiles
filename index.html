@@ -18,6 +18,7 @@
 
   <div id="menubar">
     <div class="l">
+      <button class="mbtn mb-close" id="rwExit" title="Close WestOS and go outside" aria-label="Close WestOS and go outside"><svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 3l6 6M9 3l-6 6"/></svg></button>
       <div class="mb-brand"><img src="assets/icons/WestOS.png" alt=""><span>WestOS</span></div>
       <button class="mbtn" id="editBtn"></button>
       <button class="mbtn" id="reportBtn" title="Report a bug or suggest a feature"><svg class="gl" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 7.5V7a3 3 0 0 1 6 0v.5M7 10h10v4a5 5 0 0 1-10 0v-4zM12 10v9M3 12h4M17 12h4M4 6.5l3 2.5M20 6.5l-3 2.5M4 19l3-2.5M20 19l-3-2.5"/></svg><span>Report a bug</span></button>
@@ -118,6 +119,8 @@
 <script src="os/widgets/map.js"></script>
 <script src="os/shell.js?v=20261114a"></script>
 <script src="os/onboarding.js?v=20261110a"></script>
+<!-- the real world (3D first-person WestCountry): only this tiny loader ships with WestOS; the engine in os/realworld/ is fetched on first use -->
+<script src="os/realworld/boot.js"></script>
 <script src="os/kernel/boot.js?v=20261110a"></script>
 <script>
 /* last-resort boot failsafe, independent of every other script: if the boot screen is still up after 15 s, let the person in */

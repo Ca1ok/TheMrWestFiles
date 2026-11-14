@@ -250,3 +250,8 @@ html.reduce-motion #screen[data-dock=hide] .dock{ transition:none; }
 #screen[data-dock=hide] #dockZone{ display:block; } #screen[data-dock=hide] .dock.peek ~ #dockZone{ pointer-events:none; } #screen.locked #dockZone{ display:none !important; }
 /* a logged script error lights the "Report a bug" button */
 #reportBtn.has-err{ color:#ff8a80; } #reportBtn.has-err::after{ content:""; width:7px; height:7px; border-radius:50%; background:#ee6259; box-shadow:0 0 0 2px rgba(238,98,89,.28); }
+
+/* ---------- the real world: close button (✕) left of the WestOS name in the menu bar ---------- */
+.mbtn.mb-close{ width:20px; height:20px; padding:0; border-radius:50%; margin:0 4px 0 2px; display:inline-grid; place-items:center; background:#ff5f57; color:rgba(80,10,6,0); min-width:0; height:20px; border:0; box-shadow:inset 0 0 0 .5px rgba(0,0,0,.25); transition:color .12s,transform .2s var(--spring),filter .15s; }
+.mbtn.mb-close:hover{ background:#ff5f57; color:rgba(80,10,6,.85); filter:brightness(1.08); } .mbtn.mb-close:active{ transform:scale(.9); } .mb-close.busy{ opacity:.5; cursor:progress; }
+.mb-close svg{ display:block; }

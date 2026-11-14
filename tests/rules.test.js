@@ -179,5 +179,13 @@ const apply = r => r.tree;
   no(loc(t0, 'u1', { p: 'arcade', t: NOW - 5000, n: lb }), 'a back-dated location'); no(loc(t0, 'u1', { p: 'arcade', t: NOW, n: 'Mallory' }), 'a location under a fake name');
   no(loc(t0, 'u1', { p: 'Arcade!', t: NOW, n: lb }), 'a location with junk characters'); no(loc(t0, 'u1', { p: 'arcade', t: NOW, n: lb, x: 1 }), 'a location with extra fields'); no(H.update(t0, { 'world/loc/u2': { p: 'arcade', t: NOW, n: 'Bob' } }, NOW, U), 'writing another player\u2019s location without being them');
   const tl = apply(loc(t0, 'u1', { p: 'bank', t: NOW, n: lb })); no(loc(tl, 'u1', { p: 'arcade', t: NOW + 1000, n: lb }, NOW + 1000), 'moving twice within 4 seconds'); ok(loc(tl, 'u1', { p: 'arcade', t: NOW + 4000, n: lb }, NOW + 4000), 'moving again after 4 seconds');
-  ok(loc(tl, 'u1', null), 'removing my own location (onDisconnect)'); }
+  ok(loc(tl, 'u1', null), 'removing my own location (onDisconnect)');
+  // world/rt — walking positions in the real world
+    const rt = (tree, who, cell, v, now) => H.update(tree, { ['world/rt/' + cell + '/' + who]: v }, now === undefined ? NOW : now, who === 'u1' ? U : V), rec = (o) => Object.assign({ x: 700.5, z: 540.2, a: 1.2, m: 1, i: 0, t: NOW, n: lb }, o || {});
+    ok(rt(t0, 'u1', '5x4', rec()), 'writing my walking position'); no(rt(t0, 'u1', '5x4', rec({ n: 'Mallory' })), 'a position under a fake name'); no(rt(t0, 'u1', '5x4', rec({ t: NOW - 5000 })), 'a back-dated position');
+    no(rt(t0, 'u1', '5x4', rec({ x: 'far' })), 'a non-numeric position'); no(rt(t0, 'u1', '5x4', rec({ x: 999999 })), 'a position outside the map'); no(rt(t0, 'u1', '5x4', rec({ m: 7 })), 'a junk move state'); no(rt(t0, 'u1', '5x4', rec({ extra: 1 })), 'extra fields in a position');
+    no(rt(t0, 'u1', 'x5', rec()), 'a malformed cell name'); no(H.update(t0, { 'world/rt/5x4/u2': rec() }, NOW, U), "writing somebody else's position");
+    const tr = apply(rt(t0, 'u1', '5x4', rec())); no(rt(tr, 'u1', '5x4', rec({ t: NOW + 300 }), NOW + 300), 'two positions within 0.9 s'); ok(rt(tr, 'u1', '5x4', rec({ t: NOW + 1000 }), NOW + 1000), 'a position a second later');
+    ok(rt(tr, 'u1', '5x4', null), 'removing my own position (leaving / onDisconnect)'); ok(H.update(tr, { 'world/rt/5x4/u1': null, 'world/rt/6x4/u1': rec({ t: NOW + 1000 }) }, NOW + 1000, U), 'moving to the next cell');
+  }
 console.log('rules ok');
