@@ -64,7 +64,8 @@ addEventListener('resize', resize); new ResizeObserver(resize).observe(cv);
 function fit(){ R.fit(G.bounds(list.length || 512)); goal = null; paint3d(); need = true; }
 function focusXY(x, y, k){ follow = null; V.k = Math.max(V.k, k || 3.4); V.x = x; V.y = y; need = true; }
 function focus(id){ const e = byId[id]; if(!e) return; sel = id; selX = null; focusXY(e.g.x, e.g.y); tab = 'info'; paintSide(); }
-function zoomAt(f, px, py){ const w0 = R.unproject(px, py); V.k = clamp(V.k * f, 0.16, 9); const w1 = R.unproject(px, py); if(w0 && w1){ V.x += w0[0] - w1[0]; V.y += w0[1] - w1[1]; } need = true; }
+function zoomAt(f, px, py){ if(follow){ px = cv.clientWidth / 2; py = cv.clientHeight / 2; }   // following = the target stays centred: zooming about the cursor shifted the camera and follow pulled it straight back (rubber-banding)
+  const w0 = R.unproject(px, py); V.k = clamp(V.k * f, 0.16, 9); const w1 = R.unproject(px, py); if(w0 && w1){ V.x += w0[0] - w1[0]; V.y += w0[1] - w1[1]; } R.unproject(px, py); need = true; }   // last call refreshes the renderer's cached camera so hit-testing before the next frame sees the new view
 /* 3D: a tween of the pitch (and bearing); the buttons, the compass and right-drag all drive the same view */
 let goal = null; const flat = () => V.p < 0.035;
 function set3D(on){ goal = { p: on ? 0.95 : 0, b: on ? V.b : 0 }; }
@@ -79,14 +80,14 @@ cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); pts
 cv.addEventListener('pointermove', e => { if(!pts.has(e.pointerId)){ hover(e); return; } const prev = pts.get(e.pointerId); pts.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
   if(pts.size === 2 && drag){ drag.moved = 99; const c = [...pts.values()], d = dist2(), a = ang2(), mx = (c[0].x + c[1].x) / 2, my = (c[0].y + c[1].y) / 2, L = drag.pl; drag.pl = { d, a, mx, my };
     if(!L || !(L.d > 0) || !(d > 0)) return;   // first sample of the gesture: just remember it
-    const w0 = R.unproject(L.mx, L.my); V.k = clamp(V.k * d / L.d, 0.16, 9);   // zoom by the change since the last sample, so nothing accumulates or jumps
+    const fx = follow ? cv.clientWidth / 2 : null, fy = follow ? cv.clientHeight / 2 : null, w0 = R.unproject(follow ? fx : L.mx, follow ? fy : L.my); V.k = clamp(V.k * d / L.d, 0.16, 9);   // zoom by the change since the last sample, so nothing accumulates or jumps
     let da = a - L.a; da -= Math.round(da / (2 * Math.PI)) * 2 * Math.PI;   // unwrap the atan2 branch cut (±π) that used to spin the map
     if(!drag.rot){ drag.tw = (drag.tw || 0) + da; if(Math.abs(drag.tw) > 0.14){ drag.rot = true; da = drag.tw; } else da = 0; }   // a pure pinch must not twist the map; rotate only once the fingers clearly twist
-    V.b += da; const w1 = R.unproject(mx, my); if(w0 && w1){ V.x += w0[0] - w1[0]; V.y += w0[1] - w1[1]; }   // keep the point that was under the fingers under them (zoom + pan + twist around the fingers)
-    follow = null; paint3d(); need = true; return; }
+    V.b += da; const w1 = R.unproject(follow ? fx : mx, follow ? fy : my); if(w0 && w1){ V.x += w0[0] - w1[0]; V.y += w0[1] - w1[1]; } R.unproject(0, 0);   // keep the point that was under the fingers under them (zoom + pan + twist around the fingers)
+    paint3d(); need = true; return; }
   if(!drag) return; const dx = e.offsetX - prev.x, dy = e.offsetY - prev.y; drag.moved += Math.abs(dx) + Math.abs(dy);
   if(drag.mode === 'rot'){ V.b += dx * 0.008; V.p = clamp(V.p - dy * 0.006, 0, MAXP); paint3d(); need = true; return; }
-  if(drag.moved > 6) follow = null; const a = R.unproject(prev.x, prev.y), b = R.unproject(e.offsetX, e.offsetY); if(a && b){ V.x += a[0] - b[0]; V.y += a[1] - b[1]; } need = true; });
+  if(drag.moved > 6) follow = null; const a = R.unproject(prev.x, prev.y), b = R.unproject(e.offsetX, e.offsetY); if(a && b){ V.x += a[0] - b[0]; V.y += a[1] - b[1]; R.unproject(0, 0); } need = true; });
 cv.addEventListener('pointerup', e => { pts.delete(e.pointerId); cv.classList.remove('drag'); if(drag && drag.moved < 6 && pts.size === 0 && drag.mode === 'pan'){ const r = hit(e.offsetX, e.offsetY); if(r && r.t === 'house'){ sel = r.id; selX = null; } else if(r){ selX = r; } else { sel = null; selX = null; } tab = 'info'; need = true; paintSide(); } if(!pts.size) drag = null; });
 const endPtr = e => { pts.delete(e.pointerId); if(!pts.size){ drag = null; cv.classList.remove('drag'); } };
 cv.addEventListener('pointercancel', endPtr); addEventListener('blur', () => { pts.clear(); drag = null; cv.classList.remove('drag'); });   // a cancelled/lost touch used to stay in `pts` and leave the map stuck in pinch mode
@@ -126,9 +127,9 @@ function drawScene(t){ const now = Date.now(), pn = performance.now();
 function launch(ev){ const types = ev.k === 'fire' ? ['fire'] : ev.k === 'police' ? ['police'] : ['ambulance'], e = byId[ev.h]; if(!e) return; const nd = G.districtCount(list.length); let best = null, bd = 1e12;
   for(let k = 0; k < nd; k++){ const s = G.stations(k).find(q => q.t === types[0]), dd = (s.x - e.g.x) ** 2 + (s.y - e.g.y) ** 2; if(dd < bd){ bd = dd; best = s; } }
   if(best) vehicles.push({ t: types[0], from: best, to: e.g, t0: performance.now(), dur: 5000 + Math.min(4000, Math.sqrt(bd) * 18), label: ev.k === 'fire' ? 'Fire crew' : ev.k === 'police' ? 'Police' : 'Ambulance' }); need = true; }
-let lastDraw = 0, lastFrame = 0;
+let lastDraw = 0, lastFrame = 0, lastFollowT = 0;
 (function loop(t){ requestAnimationFrame(loop); if(document.hidden || t - lastDraw < 28) return; lastDraw = t; tween(); if(need){ R.invalidate(); need = false; }   // static layer (terrain, roads, buildings) is cached while the camera holds still; anything that sets `need` repaints it
-  if(follow){ let p = null; if(follow.t === 'npc'){ const nb = botList.find(q => q.id === follow.id); if(nb) p = npcAt(nb, Date.now()); } else if(follow.t === 'player') p = playerXY(follow.id, performance.now()); if(p){ V.x += (p.x - V.x) * 0.18; V.y += (p.y - V.y) * 0.18; } }
+  if(follow){ let p = null; if(follow.t === 'npc'){ const nb = botList.find(q => q.id === follow.id); if(nb) p = npcAt(nb, Date.now()); } else if(follow.t === 'player') p = playerXY(follow.id, performance.now()); if(p){ const ff = 1 - Math.pow(1 - 0.18, Math.min(100, t - (lastFollowT || t)) / 33); V.x += (p.x - V.x) * ff; V.y += (p.y - V.y) * ff; } lastFollowT = t; } else lastFollowT = 0;
   drawScene(t); if(perfOn && t - perfAt > 400){ perfAt = t; paintPerf(); } })(0);
 /* LOD stats overlay: Shift+P (remembered). Shows what the last frame drew and how the governor is steering. */
 let perfOn = false, perfAt = 0; try{ perfOn = localStorage.getItem('westmap_perf') === '1'; }catch(e){} $('#perf').hidden = !perfOn;
