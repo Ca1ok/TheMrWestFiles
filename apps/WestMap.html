@@ -58,7 +58,7 @@ const paintSideSoon = Kit.debounce(() => paintSide(), 250);
 async function loadBots(){ try{ bots = await H.bots(); botList = Object.keys(bots).map(id => { const r = bots[id]; return { id, n: +id.slice(1), rec: r, b: { n: +id.slice(1), job: r.j || 'baker', thrift: typeof r.th === 'number' ? r.th : 0.5 }, home: r.h ? G.house(+String(r.h).slice(1)) : null }; }); need = true; if(tab === 'info' || tab === 'eco') paintSide(); }catch(e){} }
 
 /* ---------- view ---------- */
-const R = MapRender.create(cv, G), V = R.view, MAXP = 1.12, POIH = { bank: 30, exchange: 40, shop: 18, arcade: 22, agency: 20, hall: 28, uni: 24, lab: 22, ind: 16, plant: 26 };
+const R = MapRender.create(cv, G), V = R.view, _lod = (R.lod.cache = true), MAXP = 1.12, POIH = { bank: 30, exchange: 40, shop: 18, arcade: 22, agency: 20, hall: 28, uni: 24, lab: 22, ind: 16, plant: 26 };
 function resize(){ R.resize(); need = true; }
 addEventListener('resize', resize); new ResizeObserver(resize).observe(cv);
 function fit(){ R.fit(G.bounds(list.length || 512)); goal = null; paint3d(); need = true; }
@@ -114,18 +114,18 @@ function launch(ev){ const types = ev.k === 'fire' ? ['fire'] : ev.k === 'police
   for(let k = 0; k < nd; k++){ const s = G.stations(k).find(q => q.t === types[0]), dd = (s.x - e.g.x) ** 2 + (s.y - e.g.y) ** 2; if(dd < bd){ bd = dd; best = s; } }
   if(best) vehicles.push({ t: types[0], from: best, to: e.g, t0: performance.now(), dur: 5000 + Math.min(4000, Math.sqrt(bd) * 18), label: ev.k === 'fire' ? 'Fire crew' : ev.k === 'police' ? 'Police' : 'Ambulance' }); need = true; }
 let lastDraw = 0, lastFrame = 0;
-(function loop(t){ requestAnimationFrame(loop); if(document.hidden || t - lastDraw < 28) return; lastDraw = t; tween();
+(function loop(t){ requestAnimationFrame(loop); if(document.hidden || t - lastDraw < 28) return; lastDraw = t; tween(); if(need){ R.invalidate(); need = false; }   // static layer (terrain, roads, buildings) is cached while the camera holds still; anything that sets `need` repaints it
   if(follow){ let p = null; if(follow.t === 'npc'){ const nb = botList.find(q => q.id === follow.id); if(nb) p = npcAt(nb, Date.now()); } else if(follow.t === 'player') p = playerXY(follow.id, performance.now()); if(p){ V.x += (p.x - V.x) * 0.18; V.y += (p.y - V.y) * 0.18; } }
   drawScene(t); if(perfOn && t - perfAt > 400){ perfAt = t; paintPerf(); } })(0);
 /* LOD stats overlay: Shift+P (remembered). Shows what the last frame drew and how the governor is steering. */
 let perfOn = false, perfAt = 0; try{ perfOn = localStorage.getItem('westmap_perf') === '1'; }catch(e){} $('#perf').hidden = !perfOn;
-function paintPerf(){ const s = R.stats || {}, a = s.atlas || {}, f = n => (n || 0); $('#perf').textContent = 'draw ' + f(s.ms).toFixed(1) + ' ms · ' + list.length + ' houses (' + f(s.houses) + ' on screen)\ndot ' + f(s.dot) + ' · box ' + f(s.box) + ' · sprite ' + f(s.sprite) + ' · mesh ' + f(s.mesh) + '\nscenery ' + f(s.scn) + ' (sprite ' + f(s.scnSprite) + ', mesh ' + f(s.scnMesh) + ') · tiles ' + f(s.tiles) + '\nbaked ' + f(s.bakes) + ' (+' + f(s.queued) + ' queued) · atlas ' + f(a.entries) + ' in ' + f(a.pages) + ' pages\nLOD bias x' + (s.bias || 1).toFixed(2) + (s.moving ? ' · moving' : ''); }
+function paintPerf(){ const s = R.stats || {}, a = s.atlas || {}, f = n => (n || 0); $('#perf').textContent = 'draw ' + f(s.ms).toFixed(1) + ' ms · ' + list.length + ' houses (' + f(s.houses) + ' on screen)\ndot ' + f(s.dot) + ' · box ' + f(s.box) + ' · sprite ' + f(s.sprite) + ' · mesh ' + f(s.mesh) + '\nscenery ' + f(s.scn) + ' (sprite ' + f(s.scnSprite) + ', mesh ' + f(s.scnMesh) + ') · tiles ' + f(s.tiles) + '\nbaked ' + f(s.bakes) + ' (+' + f(s.queued) + ' queued) · atlas ' + f(a.entries) + ' in ' + f(a.pages) + ' pages\nLOD bias x' + (s.bias || 1).toFixed(2) + (s.moving ? ' · moving' : '') + (s.cache === 2 ? ' · static layer cached' : ''); }
 addEventListener('keydown', e => { if(e.shiftKey && e.key === 'P' && !/INPUT|TEXTAREA|SELECT/.test((e.target || {}).tagName || '')){ perfOn = !perfOn; $('#perf').hidden = !perfOn; try{ localStorage.setItem('westmap_perf', perfOn ? '1' : '0'); }catch(x){} } });
 
 /* ---------- side panel ---------- */
 const TABS = [['info', 'Info'], ['places', 'Places'], ['me', 'Me'], ['eco', 'Economy'], ['feed', 'Events']];
 function paintTabs(){ const t = $('#tabs'); t.innerHTML = ''; TABS.forEach(([id, l]) => t.appendChild(h('button', { class: tab === id ? 'on' : '', onclick: () => { tab = id; paintSide(); } }, l))); }
-function paintBar(){ const b = $('#bar'); b.innerHTML = ''; [['mine', 'My houses'], ['sale', 'For sale'], ['rent', 'To rent'], ['fire', 'Damaged']].forEach(([k, l]) => b.appendChild(h('button', { class: 'chip' + (filter[k] ? ' on' : ''), onclick: () => { filter[k] = filter[k] ? 0 : 1; paintBar(); } }, l)));
+function paintBar(){ const b = $('#bar'); b.innerHTML = ''; [['mine', 'My houses'], ['sale', 'For sale'], ['rent', 'To rent'], ['fire', 'Damaged']].forEach(([k, l]) => b.appendChild(h('button', { class: 'chip' + (filter[k] ? ' on' : ''), onclick: () => { filter[k] = filter[k] ? 0 : 1; need = true; paintBar(); } }, l)));
   [['ppl', 'Players'], ['npc', 'NPCs']].forEach(([k, l]) => b.appendChild(h('button', { class: 'chip' + (layers[k] ? ' on' : ''), onclick: () => { layers[k] = layers[k] ? 0 : 1; paintBar(); } }, l)));
   $('#legend').innerHTML = [['mine', 'You'], ['bank', 'City'], ['player', 'Players'], ['bot', 'Bots']].map(([k, l]) => '<span><i style="background:' + COL[k] + '"></i>' + l + '</span>').join('') + '<span><i style="background:#ffd24a"></i>for sale</span><span><i style="background:#fdd38b;border:1px solid #e0a44a"></i>highway</span><span><i style="background:#f8b363"></i>express to a city</span>'; }
 let h3 = null;

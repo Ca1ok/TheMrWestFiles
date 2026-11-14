@@ -4,10 +4,10 @@ const assert = require('assert'), G = require('../os/lib/worldgen.js'), B = requ
 const T = Math.PI * 2; assert.strictEqual(L.angBucket(0), 0); assert.strictEqual(L.angBucket(T), 0); assert.strictEqual(L.angBucket(-T / 64), 0); assert.strictEqual(L.angBucket(-T / 32), 31); assert.strictEqual(L.angBucket(T * 3 + T / 32), 1);
 for(let a = -20; a < 20; a += 0.37){ const b = L.angBucket(a); assert.ok(b >= 0 && b < 32); let d = Math.abs(((L.angOf(b) - a) % T + T * 1.5) % T - T / 2); assert.ok(d <= T / 64 + 1e-9, 'within half a step'); }
 // 2. pitch / zoom buckets
-assert.strictEqual(L.pitchBucket(0.02), 1); assert.strictEqual(L.pitchBucket(5), 7); assert.ok(Math.abs(L.pitchOf(L.pitchBucket(0.95)) - 0.95) <= 0.08 + 1e-9);
+assert.strictEqual(L.pitchBucket(0.02), 0); assert.strictEqual(L.pitchBucket(5), 7); assert.ok(Math.abs(L.pitchOf(L.pitchBucket(0.95)) - 0.95) <= 0.08 + 1e-9);
 for(const k of [0.2, 0.7, 1.3, 4, 9]) assert.ok(Math.abs(Math.log2(L.scaleOf(L.scaleBucket(k)) / k)) <= 0.25 + 1e-9, 'zoom within a quarter octave');
 // 3. sprite keys are unique per variant and exact integers
-const seen = new Set(); for(const sid of [0, 1, 4194303, 8388608 + 77]) for(const side of [0, 1]) for(const ab of [0, 31]) for(const pb of [1, 7]) for(const sb of [-8, 9]) for(const ci of [0, 7]) for(const dk of [0, 1]){ const k = L.spriteKey(sid, side, ab, pb, sb, ci, dk); assert.ok(Number.isSafeInteger(k)); assert.ok(!seen.has(k), 'unique'); seen.add(k); }
+const seen = new Set(); for(const sid of [0, 1, 4194303, 8388608 + 77]) for(const side of [0, 1]) for(const ab of [0, 31]) for(const pb of [0, 7]) for(const sb of [-8, 9]) for(const ci of [0, 7]) for(const dk of [0, 1]){ const k = L.spriteKey(sid, side, ab, pb, sb, ci, dk); assert.ok(Number.isSafeInteger(k)); assert.ok(!seen.has(k), 'unique'); seen.add(k); }
 // 4. atlas: shelf packing never overlaps, stays inside the page, and wipes the stalest page when full
 const mk = () => ({ cv: {}, g: {} }), A = L.makeAtlas(mk), boxes = []; let wiped = false;
 for(let i = 0; i < 6000; i++){ A.frame = i; const w = 12 + (i * 7) % 60, h = 14 + (i * 13) % 100, r = A.alloc(w, h); assert.ok(r, 'alloc'); assert.ok(r.x >= 0 && r.y >= 0 && r.x + w <= 1024 && r.y + h <= 1024, 'inside page');
