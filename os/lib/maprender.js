@@ -67,7 +67,9 @@
     R.invalidate = () => { SC.valid = false; };   // the caller says the static layer (houses, plots, filters …) changed
     let g = g0, ATL = null, motionAt = 0, gov = 1, emaMs = 8, pv = { x: 0, y: 0, k: 1, b: 0, p: 0 }, dIdx = new Map(), dIdxA = null, dIdxN = -1, dIdx0 = null, dIdx1 = null, perfLow = false, perfLowAt = -1e9, bakeT = 0, lastT0 = 0, emaDt = 33, govAt = 0, govI = 0, animFlag = false, NULLG = null, SC = { cv: null, g: null, key: '', valid: false, anim: false, hs: null, plots: null, me: null, shown: null };
     let tint = '#e8924f', cs = 1, sn = 0, cp = 1, sp = 0, vk = 1, vx = 0, vy = 0, th = TH.light, dark = false, tex = null, texDark = null, FC = new Map(), scene = null, t = 0, sel2d = true;
-    R.resize = (w, h) => { const d = Math.min(2, devicePixelRatio || 1); R.W = w || cv.clientWidth; R.H = h || cv.clientHeight; cv.width = Math.round(R.W * d); cv.height = Math.round(R.H * d); g.setTransform(d, 0, 0, d, 0, 0); };
+    R.resize = (w, h) => { const d = Math.min(2, devicePixelRatio || 1), nw = w || cv.clientWidth, nh = h || cv.clientHeight, pw = Math.round(nw * d), ph = Math.round(nh * d);
+      if(pw === cv.width && ph === cv.height && nw === R.W && nh === R.H) return false;   // assigning canvas.width clears it (a white flash until the next frame), so only touch it when the size really changed
+      R.W = nw; R.H = nh; cv.width = pw; cv.height = ph; g0.setTransform(d, 0, 0, d, 0, 0); SC.valid = false; return true; };
     const prep = () => { const v = R.view; cs = Math.cos(v.b); sn = Math.sin(v.b); cp = Math.cos(v.p); sp = Math.sin(v.p); vk = v.k; vx = v.x; vy = v.y; sel2d = v.p < 0.035; };
     /* world (x, y, height z) → [screen x, screen y, perspective scale] or null when behind the camera */
     function P(x, y, z){ const dx = x - vx, dy = y - vy, X = (dx * cs - dy * sn) * vk, Y = (dx * sn + dy * cs) * vk, Z = (z || 0) * vk, Zp = Y * sp + Z * cp, den = CAM - Zp; if(den < CAM * 0.3) return null; const p = CAM / den; return [R.W / 2 + X * p, R.H / 2 + (Y * cp - Z * sp) * p, p]; }
@@ -163,7 +165,7 @@
       g.beginPath(); g.arc(s[0], s[1] + 1.5, r + 1, 0, 7); g.fillStyle = 'rgba(0,0,0,.18)'; g.fill(); g.beginPath(); g.arc(s[0], s[1], r, 0, 7); g.fillStyle = col; g.fill(); g.lineWidth = sel ? 3 : 1.6; g.strokeStyle = sel ? tint : '#fff'; g.stroke(); glyph(id, s[0], s[1], r * 0.5); }
 
     /* ---- the frame ---- */
-    R.draw = (sc, tt) => {
+    const drawFrame = (sc, tt) => {
       scene = sc; tint = sc.tint || cssTint(); t = tt || 0; dark = !!sc.dark; th = dark ? TH.dark : TH.light; if(!tex || texDark !== dark){ tex = makeTextures(g, dark); texDark = dark; } prep(); FC = new Map();
       const T0 = performance.now(), LODS = R.lod; const D = Math.max(1, Math.round(cv.width / Math.max(1, R.W) * 100) / 100); if(!ATL || ATL.D !== D){ const fr = ATL ? ATL.frame : 0; ATL = makeAtlas((w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return { cv: c, g: c.getContext('2d') }; }, D > 1 ? 1536 : LOD.PAGE); ATL.D = D; ATL.frame = fr; } ATL.frame++;   // sprites are baked at device resolution (D = pixel ratio)
       { const u = R.view; if(Math.abs(u.x - pv.x) + Math.abs(u.y - pv.y) > 0.4 / Math.max(0.05, u.k) || Math.abs(u.k / pv.k - 1) > 0.003 || Math.abs(u.b - pv.b) > 0.003 || Math.abs(u.p - pv.p) > 0.003) motionAt = T0; pv = { x: u.x, y: u.y, k: u.k, b: u.b, p: u.p }; }
@@ -181,7 +183,7 @@
         else if(cacheMode === 2){ if(!NULLG){ NULLG = {}; const pr = CanvasRenderingContext2D.prototype; for(const nm of Object.getOwnPropertyNames(pr)){ const d = Object.getOwnPropertyDescriptor(pr, nm); if(d && typeof d.value === 'function') NULLG[nm] = () => {}; } NULLG.measureText = () => ({ width: 40 }); NULLG.createLinearGradient = () => ({ addColorStop(){} }); } g = NULLG; } }
       ST.cache = cacheMode;
       g.clearRect(0, 0, W, H); g.fillStyle = th.land; g.fillRect(0, 0, W, H);
-      try{ const o = flat ? new DOMMatrix().translate(-vx * k + W / 2, -vy * k + H / 2) : new DOMMatrix(); tex.land.setTransform(o); tex.grass.setTransform(o); tex.hatch.setTransform(o); tex.dots.setTransform(o); tex.water.setTransform(o); }catch(e){}
+      try{ const so = P(0, 0, 0), o = so ? new DOMMatrix().translate(so[0], so[1]).scale(1, flat ? 1 : cp).rotate(v.b * 180 / Math.PI) : new DOMMatrix(); tex.land.setTransform(o); tex.grass.setTransform(o); tex.hatch.setTransform(o); tex.dots.setTransform(o); tex.water.setTransform(o); }catch(e){}
       g.fillStyle = tex.land; g.fillRect(0, 0, W, H); mark('land');
       const near0 = 0, near = (x, y, r) => { const s = P(x, y, 0); return s && s[0] > -r * k * s[2] - 40 && s[1] > -r * k * s[2] - 40 && s[0] < W + r * k * s[2] + 40 && s[1] < H + r * k * s[2] + 40; };
       /* land use: neighbourhoods, greens, the downtown, the two campuses */
@@ -317,6 +319,8 @@
       if(!perfLow && T0 - govAt > 1500){ if(emaDt > 56 && govI < 3){ govI++; govAt = T0; } else if(emaDt < 38 && govI > 0){ govI--; govAt = T0; } } gov = GOVL[govI];
       ST.ms = ms; ST.gov = gov; ST.atlas = { pages: ATL.pages.length, entries: ATL.map.size, wipes: ATL.wipes };
     };
+    /* a frame that throws half way must not leave `g` pointing at the cache layer or the no-op context (every later frame would then draw nowhere = a blank canvas) */
+    R.draw = (sc, tt) => { g = g0; try{ drawFrame(sc, tt); } catch(e){ SC.valid = false; SC.anim = false; throw e; } finally { g = g0; } };
     return R;
   }
   return { create, PC, TH, POIH, KIND, LOD: { LOD, angBucket, angOf, pitchBucket, pitchOf, scaleBucket, scaleOf, spriteKey, makeAtlas, protoId } };
