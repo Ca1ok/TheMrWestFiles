@@ -302,8 +302,17 @@
   A.players = async () => { need(); return C.leaderboard(200); };
   A.read = async uid => { need(); const s = await C.db.ref('players/' + uid).once('value'); count(s); return s.val(); };
   A.setField = async (uid, path, v) => { need(); await C.db.ref('players/' + uid + '/' + path).set(v); };
-  A.reset = async uid => { need(); await C.db.ref('players/' + uid).remove(); await C.db.ref('leaderboard/' + uid).remove(); await C.db.ref('eco/acct/' + uid).remove(); await C.db.ref('eco/inbox/' + uid).remove(); await C.db.ref('eco/bill/' + uid).remove(); await C.db.ref('eco/loan/' + uid).remove(); await C.db.ref('world/home/' + uid).remove();
-    const hs = (await C.db.ref('world/own').orderByChild('o').equalTo(uid).once('value')).val() || {}; for(const id of Object.keys(hs)){ const h = hs[id]; await C.db.ref('world/own/' + id).update({ o: 'bank', on: 'City', a: 0, rh: 0, t: '', tn: '', ts: 0, th: 0 }); } };       // their money returns to the pool (the pool balance is derived), their houses to the city
+  A.reset = async uid => { need();
+    /* the account is RETIRED, never just deleted: deleting eco/acct/<uid> or eco/inbox/<uid> destroys its s/r/sys counters and any money in flight and breaks the ledger audit
+     * (the world server then refuses to run). Economy.retire() claims the inbox, pays the cash back into the pool and folds the counters into eco/dead — all in ONE update. */
+    const db = C.db, [as, is, ds] = await Promise.all(['eco/acct/' + uid, 'eco/inbox/' + uid, 'eco/dead'].map(p => db.ref(p).once('value')));
+    const upd = { ['players/' + uid]: null, ['leaderboard/' + uid]: null, ['eco/acct/' + uid]: null, ['eco/inbox/' + uid]: null, ['eco/bill/' + uid]: null, ['eco/loan/' + uid]: null,
+      ['world/home/' + uid]: null, ['world/plot/' + uid]: null, ['world/lic/' + uid]: null, ['world/build/' + uid]: null, ['world/loc/' + uid]: null };
+    if(as.val()){ const tmp = { eco: { acct: { [uid]: as.val() }, inbox: is.val() ? { [uid]: is.val() } : {}, dead: ds.val() || { sys: {}, s: 0, r: 0 } } }; Economy.retire(tmp, uid);
+      upd['eco/dead/sys'] = tmp.eco.dead.sys; upd['eco/dead/s'] = tmp.eco.dead.s; upd['eco/dead/r'] = tmp.eco.dead.r; }
+    else if(is.val()){ throw new Error('That player has money waiting in an inbox but no account — fix the ledger first (the world server repairs it on its next run).'); }
+    await db.ref().update(upd);
+    const hs = (await db.ref('world/own').orderByChild('o').equalTo(uid).once('value')).val() || {}; for(const id of Object.keys(hs)){ await db.ref('world/own/' + id).update({ o: 'bank', on: 'City', a: 0, rh: 0, t: '', tn: '', ts: 0, th: 0 }); } };       // their money returns to the pool, their houses to the city
 
   /* ---------- the WestEconomy: start / reset, settings, audit (see os/lib/economy.js, os/lib/eco-sim.js) ---------- */
   A.ecoStatus = async () => { need(); const [st, cfg, ep] = await Promise.all(['eco/stats', 'eco/cfg', 'eco/epoch'].map(p => C.db.ref(p).once('value'))); return { stats: st.val(), cfg: Economy.cfgOf({ eco: { cfg: cfg.val() || {} } }), epoch: ep.val() }; };

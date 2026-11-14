@@ -19,6 +19,7 @@
     price: key => K.buyPrice(key), sellPrice: key => K.sellPrice(key), quote: (key, n) => K.sellQuote(key, n), qty: (t, k) => K.qty(t, k),
     buy(key, n){
       n = Math.floor(n); if(!(n >= 1) || n > 100000) return no('Choose a quantity between 1 and 100,000.');
+      if(K.ledger.guest) return no(K.ledger.guestMsg());      // visitors have no wallet: say so instead of "you need $…"
       const type = ELSYM.has(key) ? 'element' : (knownCompound(key) ? 'compound' : null); if(!type) return no('Not for sale.');
       const k = type === 'compound' ? Chem.speciesOf(key).key : key, cost = K.round2(K.buyPrice(k) * n);
       if(!K.spend(cost, 'Bought ' + k)) return no('You need ' + fmt(cost) + '.');

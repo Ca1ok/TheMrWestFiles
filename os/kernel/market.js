@@ -129,6 +129,7 @@
     q = r4(q); if(!(q > 0) || !isFinite(q)) return { ok: false, msg: 'Enter a quantity.' };
     if(!mk.ready) return { ok: false, msg: 'Syncing the market — try again in a moment.' };
     const cost = K.round2(q * price); if(cost < 0.01) return { ok: false, msg: 'Too small.' };
+    if(K.ledger.guest) return { ok: false, msg: K.ledger.guestMsg() };
     if(!K.spend(cost, 'Bought $WEST')) return { ok: false, msg: 'Not enough cash.' };
     K.S.lots.push({ id: K.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36), q, p: price, t: K.now() }); K.touch('lots'); K.emit('stock');
     return { ok: true, msg: 'Bought ' + q + ' $WEST for $' + cost.toFixed(2), cost };

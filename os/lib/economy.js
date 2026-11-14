@@ -92,5 +92,39 @@
   function send(db, from, to, amt, kind, ref, now){ const a = acctOf(db, from); if(!isInt(amt) || amt <= 0 || a.b < amt) return null; a.b -= amt; a.s += amt; a.rev = (a.rev || 0) + 1; db.eco.inbox = db.eco.inbox || {}; const box = db.eco.inbox[to] = db.eco.inbox[to] || {}; const id = 'x' + (now || 0).toString(36) + (TX++).toString(36) + from.slice(0, 4); box[id] = { f: from, a: amt, k: kind || 'pay', t: now || 0, ref: ref || '' }; return id; }
   function claimAll(db, id){ const box = db.eco && db.eco.inbox && db.eco.inbox[id]; if(!box) return 0; const a = acctOf(db, id); let n = 0; Object.keys(box).forEach(k => { const e = box[k]; a.b += e.a; a.r += e.a; n += e.a; delete box[k]; }); if(n) a.rev = (a.rev || 0) + 1; if(!Object.keys(box).length) delete db.eco.inbox[id]; return n; }
 
-  return { SYS, SUPPLY, SEED, MAXACCT, PLAYER_CAP, wealthTax, allowance, DEFAULTS, cfgOf, newAcct, sysSum, invariant, isInt, taxOnGross, splitInclusive, duty, sellPrice, owedFor, toCents, toDollars, audit, acctOf, sysMove, send, claimAll };
+  /* retire an account for good (admin "reset player", a bot's death): claim whatever is waiting in its inbox, pay its cash back into the pool, then fold its
+   * counters into the `dead` bucket and delete it. Just deleting eco/acct/<id> or eco/inbox/<id> would destroy its s/r/sys numbers (and money in flight) and
+   * break the audit — this keeps every total exact. Pure: works on a plain db object; the caller writes the result. */
+  function retire(db, id){
+    const a = db.eco && db.eco.acct && db.eco.acct[id]; if(!a) return false;
+    a.sys = Object.assign({ pool: 0, arcade: 0, bank: 0, gov: 0, city: 0 }, a.sys); a.b = a.b || 0; a.s = a.s || 0; a.r = a.r || 0;
+    claimAll(db, id);
+    if(a.b > 0){ a.sys.pool += a.b; a.b = 0; }
+    const d = db.eco.dead = db.eco.dead || { sys: {}, s: 0, r: 0 }; d.sys = Object.assign({ pool: 0, arcade: 0, bank: 0, gov: 0, city: 0 }, d.sys);
+    SYS.forEach(k => { d.sys[k] += a.sys[k] || 0; }); d.s = (d.s || 0) + a.s; d.r = (d.r || 0) + a.r;
+    delete db.eco.acct[id]; if(db.eco.inbox) delete db.eco.inbox[id];
+    return true;
+  }
+
+  /* repair: bring a ledger that is ALREADY out of balance (by an old admin reset that deleted accounts/inboxes, a hand edit in the console, …) back to exact balance
+   * without touching anybody's cash. Three steps, each only when needed, and the leak always ends up in (or is taken from) the market pool:
+   *   1. an account whose b + Σsys + s − r ≠ 0 gets its sys.pool corrected by the difference (its cash b is never changed);
+   *   2. Σs − Σr must equal what sits in inboxes: the difference is booked into the dead bucket's s/r;
+   *   3. total money must equal SUPPLY: the remaining gap is booked into dead.sys.pool.
+   * Returns what it changed and the audit afterwards. */
+  function repair(db){
+    db.eco = db.eco || {}; const acct = db.eco.acct = db.eco.acct || {}; db.eco.inbox = db.eco.inbox || {};
+    const dead = db.eco.dead = db.eco.dead || { sys: {}, s: 0, r: 0 }; dead.sys = Object.assign({ pool: 0, arcade: 0, bank: 0, gov: 0, city: 0 }, dead.sys); dead.s = dead.s || 0; dead.r = dead.r || 0;
+    const log = { accounts: [], flightGap: 0, supplyGap: 0 };
+    Object.keys(acct).forEach(id => { const a = acct[id]; if(!a) return; a.sys = Object.assign({ pool: 0, arcade: 0, bank: 0, gov: 0, city: 0 }, a.sys); a.b = a.b || 0; a.s = a.s || 0; a.r = a.r || 0;
+      const inv = invariant(a); if(inv !== 0){ a.sys.pool -= inv; a.rev = (a.rev || 0) + 1; log.accounts.push({ id, off: inv }); } });
+    let S = BigInt(dead.s), R = BigInt(dead.r), flight = 0n; Object.keys(acct).forEach(id => { S += BigInt(acct[id].s || 0); R += BigInt(acct[id].r || 0); });
+    Object.keys(db.eco.inbox).forEach(u => Object.keys(db.eco.inbox[u] || {}).forEach(t => { flight += BigInt((db.eco.inbox[u][t] && db.eco.inbox[u][t].a) || 0); }));
+    const g = S - R - flight; if(g > 0n) dead.r += Number(g); else if(g < 0n) dead.s += Number(-g); log.flightGap = Number(g);
+    const A = audit(db), gap = SYS.reduce((t, k) => t + BigInt(A.sys[k]), 0n) + BigInt(A.held) + BigInt(A.flight) - BigInt(SUPPLY);
+    if(gap !== 0n) dead.sys.pool -= Number(gap); log.supplyGap = Number(gap);
+    log.audit = audit(db); return log;
+  }
+
+  return { SYS, SUPPLY, SEED, MAXACCT, PLAYER_CAP, wealthTax, allowance, DEFAULTS, cfgOf, newAcct, sysSum, invariant, isInt, taxOnGross, splitInclusive, duty, sellPrice, owedFor, toCents, toDollars, audit, acctOf, sysMove, send, claimAll, retire, repair };
 });

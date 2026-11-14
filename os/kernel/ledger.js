@@ -100,10 +100,12 @@
   L.stop = function(){ if(!C.db) return; ['eco/cfg', 'eco/epoch', 'eco/stats', 'world/meta', 'world/own', 'world/ev'].forEach(p => { try{ C.db.ref(p).off(); }catch(e){} }); if(C.user){ ['eco/bill/', 'eco/loan/', 'eco/inbox/', 'world/home/'].forEach(p => { try{ C.db.ref(p + C.user.uid).off(); }catch(e){} }); try{ C.db.ref('world/own').orderByChild('o').equalTo(C.user.uid).off(); }catch(e){} try{ C.db.ref('world/plot/' + C.user.uid).off(); }catch(e){} try{ L.clearLoc(); }catch(e){} } try{ L.watchMap(false); }catch(e){} L.myPlot = null; L.started = false; L.world = null; L.mine = {}; L.bills = {}; L.loans = {}; L.home = null; L.homeHouse = null; L.initGuest(); };
 
   /* ---------- atomic operations: save pending state first, then ONE update the rules check against the ledger ---------- */
+  /* what a guest is told: signed-out visitors → sign in; a signed-in player while the economy hasn't been started → ask the admin */
+  L.guestMsg = () => (C.signedIn() && L.offline) ? 'The new economy has not been started yet — ask the admin.' : 'Sign in to do that.';
   let chain = Promise.resolve();
   L.exec = function(fn, undo){ const run = chain.then(() => doExec(fn, undo)); chain = run.catch(() => {}); return run; };
   async function doExec(fn, undo){
-    if(L.guest) return { ok: false, msg: L.offline ? 'The new economy has not been started yet — ask the admin.' : 'Sign in to do that.' };
+    if(L.guest) return { ok: false, msg: L.guestMsg() };
     if(!(await C.flushNow())) return { ok: false, msg: 'Your account is still saving — try again in a moment.' };
     const snap = L.snapshot(), keep = { cl: L.acct.cl, si: L.acct.si, bp: L.acct.bp, lop: L.acct.lop, hop: L.acct.hop }; let extra;
     try{ extra = await fn(); }catch(e){ L.restore(snap); if(undo) undo(); return { ok: false, msg: String(e && e.message || e) }; }
