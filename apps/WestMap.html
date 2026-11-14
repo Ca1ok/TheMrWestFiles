@@ -18,7 +18,8 @@ h3{margin:0 0 4px;font:800 18px var(--font);letter-spacing:-.01em} .sub{color:va
 @media (max-width:760px){#wm{flex-direction:column}#side{width:auto;max-width:none;height:46%;border-left:0}#bar{max-width:calc(100% - 20px)}}
 .chip.on{background:var(--tint);color:#fff;border-color:transparent} .btn.mini{width:auto;padding:6px 10px;font-size:12.5px;margin:2px 4px 2px 0;display:inline-block} .who{display:flex;gap:8px;align-items:center;margin:2px 0} .who i{width:10px;height:10px;border-radius:50%;flex:none} #tip{position:absolute;pointer-events:none;background:var(--material,var(--card));backdrop-filter:blur(10px);border:1px solid var(--sep,rgba(255,255,255,.12));border-radius:9px;padding:5px 9px;font:700 12px var(--font);display:none;max-width:240px;z-index:3}
 #zoom button.on{background:var(--tint);color:#fff;border-color:transparent} #b3d{font:800 12.5px var(--font)!important} #zoom svg{width:18px;height:18px;vertical-align:middle;transition:transform .15s} #head{padding:8px 8px 0}
-</style></head><body><div id="wm"><canvas id="cv"></canvas><div id="bar"></div><div id="zoom"><button id="b3d" title="Switch between 2D and 3D">3D</button><button id="bcomp" title="Point north"><svg viewBox="0 0 24 24"><path d="M12 3l4.2 9H7.8z" fill="#e5484d"/><path d="M12 21l-4.2-9h8.4z" fill="currentColor" opacity=".45"/></svg></button><button id="bloc" title="Show my location"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M20 4 4 11l7 2 2 7z"/></svg></button><button data-z="1">+</button><button data-z="-1">−</button><button data-z="0" title="Fit">⌂</button></div><div id="legend"></div><div id="tip"></div>
+#perf{position:absolute;right:calc(340px + 14px);top:10px;font:11px/1.45 ui-monospace,Menlo,monospace;white-space:pre;background:rgba(0,0,0,.62);color:#e8f5e9;padding:7px 9px;border-radius:8px;pointer-events:none}
+</style></head><body><div id="wm"><canvas id="cv"></canvas><div id="bar"></div><div id="perf" hidden></div><div id="zoom"><button id="b3d" title="Switch between 2D and 3D">3D</button><button id="bcomp" title="Point north"><svg viewBox="0 0 24 24"><path d="M12 3l4.2 9H7.8z" fill="#e5484d"/><path d="M12 21l-4.2-9h8.4z" fill="currentColor" opacity=".45"/></svg></button><button id="bloc" title="Show my location"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M20 4 4 11l7 2 2 7z"/></svg></button><button data-z="1">+</button><button data-z="-1">−</button><button data-z="0" title="Fit">⌂</button></div><div id="legend"></div><div id="tip"></div>
 <div id="side"><div id="head"><input id="q" type="search" placeholder="Search houses, places, people" autocomplete="off"></div><div id="tabs"></div><div id="pane"></div></div></div></div>
 <script src="../os/icons.js"></script><script src="../os/app/kit.js"></script><script src="../os/lib/maprender.js"></script><script src="../os/lib/house3d.js"></script>
 <script>
@@ -82,7 +83,7 @@ cv.addEventListener('pointerup', e => { pts.delete(e.pointerId); cv.classList.re
 cv.addEventListener('wheel', e => { e.preventDefault(); if(e.shiftKey){ V.b += e.deltaY * 0.004; V.p = clamp(V.p + e.deltaX * 0.004, 0, MAXP); paint3d(); return; } zoomAt(e.deltaY < 0 ? 1.18 : 1 / 1.18, e.offsetX, e.offsetY); }, { passive: false });
 document.querySelectorAll('#zoom button[data-z]').forEach(b => b.onclick = () => { const z = +b.dataset.z; follow = null; if(!z) fit(); else zoomAt(z > 0 ? 1.4 : 1 / 1.4, cv.clientWidth / 2, cv.clientHeight / 2); });
 /* what is under the pointer: a person first, then a building, then a plot, then a house (everything is projected, so it works tilted and rotated) */
-const lift = z => flat() ? 0 : z, BG = G.BuildGen || null, hOf = g => BG ? BG.shape(g).h : g.ht, poiH = id => { const L = BG && BG.landmark(id); return L ? L.h : (POIH[id] || 0); };
+const lift = z => flat() ? 0 : z, BG = G.BuildGen || null, hOf = g => BG && BG.heightOf ? BG.heightOf(g) - 4 : g.ht,   /* no mesh built per house per mouse-move */ poiH = id => { const L = BG && BG.landmark(id); return L ? L.h : (POIH[id] || 0); };
 function pickHouse(px, py){ let best = null, bd = Math.max(8, 6 * V.k) ** 2; for(const e of list){ const s = R.project(e.g.x, e.g.y, lift(hOf(e.g) * 0.6)); if(!s) continue; const dx = s[0] - px, dy = s[1] - py, d = dx * dx + dy * dy; if(d < bd){ bd = d; best = e.id; } } return best; }
 function hit(px, py){
   let best = null, bd = 120;
@@ -115,7 +116,11 @@ function launch(ev){ const types = ev.k === 'fire' ? ['fire'] : ev.k === 'police
 let lastDraw = 0, lastFrame = 0;
 (function loop(t){ requestAnimationFrame(loop); if(document.hidden || t - lastDraw < 28) return; lastDraw = t; tween();
   if(follow){ let p = null; if(follow.t === 'npc'){ const nb = botList.find(q => q.id === follow.id); if(nb) p = npcAt(nb, Date.now()); } else if(follow.t === 'player') p = playerXY(follow.id, performance.now()); if(p){ V.x += (p.x - V.x) * 0.18; V.y += (p.y - V.y) * 0.18; } }
-  drawScene(t); })(0);
+  drawScene(t); if(perfOn && t - perfAt > 400){ perfAt = t; paintPerf(); } })(0);
+/* LOD stats overlay: Shift+P (remembered). Shows what the last frame drew and how the governor is steering. */
+let perfOn = false, perfAt = 0; try{ perfOn = localStorage.getItem('westmap_perf') === '1'; }catch(e){} $('#perf').hidden = !perfOn;
+function paintPerf(){ const s = R.stats || {}, a = s.atlas || {}, f = n => (n || 0); $('#perf').textContent = 'draw ' + f(s.ms).toFixed(1) + ' ms · ' + list.length + ' houses (' + f(s.houses) + ' on screen)\ndot ' + f(s.dot) + ' · box ' + f(s.box) + ' · sprite ' + f(s.sprite) + ' · mesh ' + f(s.mesh) + '\nscenery ' + f(s.scn) + ' (sprite ' + f(s.scnSprite) + ', mesh ' + f(s.scnMesh) + ') · tiles ' + f(s.tiles) + '\nbaked ' + f(s.bakes) + ' (+' + f(s.queued) + ' queued) · atlas ' + f(a.entries) + ' in ' + f(a.pages) + ' pages\nLOD bias x' + (s.bias || 1).toFixed(2) + (s.moving ? ' · moving' : ''); }
+addEventListener('keydown', e => { if(e.shiftKey && e.key === 'P' && !/INPUT|TEXTAREA|SELECT/.test((e.target || {}).tagName || '')){ perfOn = !perfOn; $('#perf').hidden = !perfOn; try{ localStorage.setItem('westmap_perf', perfOn ? '1' : '0'); }catch(x){} } });
 
 /* ---------- side panel ---------- */
 const TABS = [['info', 'Info'], ['places', 'Places'], ['me', 'Me'], ['eco', 'Economy'], ['feed', 'Events']];

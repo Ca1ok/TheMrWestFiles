@@ -150,11 +150,18 @@
   /* kind + footprint + floors + a variant number → a shape (scenery uses this too; cache by the caller) */
   function build(kind, w, d, fl, seed, pal){ const m = newMesh(), R = j => f01(seed, 300 + j), p = palette(kind, fl, R); if(kind === 'office'){ p.wall = GLASSW[(R(1) * GLASSW.length) | 0]; } if(pal) Object.assign(p, pal); (BUILD[BNAME(kind, fl)] || BUILD.house)({ m, w, d, fl, R, pal: p, kind }); const s = finish(m, w, d, p); s.kind = kind; s.fl = fl; return s; }
   const PC = new Map(), PK = new Map();
-  function proto(kind, w, d, fl, v){ const key = kind + '|' + Math.round(w) + '|' + Math.round(d) + '|' + fl + '|' + v; let s = PC.get(key); if(!s){ s = build(kind, Math.round(w), Math.round(d), fl, v * 7919 + fl, null); if(PC.size > 1500) PC.clear(); PC.set(key, s); } return s; }
+  /* a full cache drops its oldest quarter. (A plain clear() made every mesh rebuild at once, every frame, as soon as a country had more houses than the cap.) */
+  const evict = (m, cap) => { if(m.size <= cap) return; let n = Math.ceil(cap / 4); for(const k of m.keys()){ m.delete(k); if(--n <= 0) break; } };
+  function proto(kind, w, d, fl, v){ const key = kind + '|' + Math.round(w) + '|' + Math.round(d) + '|' + fl + '|' + v; let s = PC.get(key); if(!s){ s = build(kind, Math.round(w), Math.round(d), fl, v * 7919 + fl, null); evict(PC, 1500); PC.set(key, s); } return s; }
   /* house i's own shape (cached; the cache is only an optimisation) */
   const HC = new Map();
   function shape(g){ let s = HC.get(g.i); if(!s){ const U = uHouse(g), cap = { house: 5, villa: 5, mansion: 8 }[g.type] || 60, fl = Math.min(cap, floorsFor(g.type, U, f01(g.i, 9)));
-      s = build(g.type, g.w, g.dp, fl, g.i + 77, null); s.U = U; s.i = g.i; if(HC.size > 2500) HC.clear(); HC.set(g.i, s); } return s; }
+      s = build(g.type, g.w, g.dp, fl, g.i + 77, null); s.U = U; s.i = g.i; evict(HC, 1500); HC.set(g.i, s); } return s; }
+  /* an UPPER BOUND on house g's height without building its mesh: floors x floor height + roof/spire headroom (measured worst overshoot 8.8, see tests/maprender-lod.test.js). For culling, LOD choice and hit-testing. */
+  const HT = new Map();
+  function heightOf(g){ let h = HT.get(g.i); if(h === undefined){ const U = uHouse(g), cap = { house: 5, villa: 5, mansion: 8 }[g.type] || 60; h = Math.min(cap, floorsFor(g.type, U, f01(g.i, 9))) * FH + 9; if(HT.size > 40000) HT.clear(); HT.set(g.i, h); } return h; }
+  /* the palette a scenery building (kind, fl, v) gets, without building it: the same recipe as build()/proto() */
+  function protoPal(kind, fl, v){ const R = j => f01(v * 7919 + fl, 300 + j), p = palette(kind, fl, R); if(kind === 'office') p.wall = GLASSW[(R(1) * GLASSW.length) | 0]; return p; }
 
   /* ================= landmarks: the downtown buildings and the two campuses ================= */
   const LM = {
@@ -218,6 +225,6 @@
   const tilesIn = (x0, y0, x1, y1) => { const out = []; for(let tx = Math.floor(x0 / TILE); tx <= Math.floor(x1 / TILE); tx++) for(let ty = Math.floor(y0 / TILE); ty <= Math.floor(y1 / TILE); ty++) out.push([tx, ty]); return out; };
   const protoOf = b => b.s || (b.s = proto(b.k, b.w, b.d, b.fl, b.v));
 
-  const api = { FH, SLOT, CS, BS, TS, TILE, urban, uHouse, floorsFor, shape, proto, build, landmark, LM, infill, links, occ, tilesIn, protoOf, nodeAt, warp, tower, palette, box, newMesh, face, gable, hip, finish, WALL, ROOF, GLASSW, CORE_R, SIG, dst, hill };
+  const api = { FH, SLOT, CS, BS, TS, TILE, urban, uHouse, floorsFor, shape, heightOf, protoPal, proto, build, landmark, LM, infill, links, occ, tilesIn, protoOf, nodeAt, warp, tower, palette, box, newMesh, face, gable, hip, finish, WALL, ROOF, GLASSW, CORE_R, SIG, dst, hill };
   G.BuildGen = api; return api;
 });
