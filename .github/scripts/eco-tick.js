@@ -31,8 +31,15 @@ function diff(prefix, a, b, depth, out){
     return { d, adj: adj ? Object.keys(adj).map(k => Object.assign({ id: k }, adj[k])) : [] }; };
   const { d: db0, adj } = await load(); const before = clone(db0), A0 = E.audit(db0);
   console.log('before: audit', A0.ok ? 'OK' : 'BROKEN', JSON.stringify({ players: A0.players, bots: A0.bots, held: A0.held, flight: A0.flight }));
-  if(!A0.ok){ console.error('The ledger is already out of balance — refusing to touch it. bad accounts:', A0.bad.join(',') || '(totals)', 'sent-claimed', A0.sentMinusClaimed, 'flight', A0.flight); process.exit(2); }
-  const now = Date.now(), res = S.step(db0, now, Math.floor(now / 1000)), A1 = E.audit(db0);
+  const now = Date.now(); let repaired = null;
+  if(!A0.ok){   // the ledger was broken by something outside the rules (an old admin reset that deleted accounts/inboxes, a hand edit in the console): heal it instead of stalling forever
+    console.warn('The ledger is out of balance — repairing. bad accounts:', A0.bad.join(',') || '(totals)', 'sent-claimed', A0.sentMinusClaimed, 'flight', A0.flight, 'total-SUPPLY', A0.total - E.SUPPLY);
+    const rep = E.repair(db0);
+    if(!rep.audit.ok || rep.audit.total !== E.SUPPLY){ console.error('Repair could not balance the ledger — nothing written. bad accounts:', rep.audit.bad.join(',') || '(totals)', 'sent-claimed', rep.audit.sentMinusClaimed, 'flight', rep.audit.flight); process.exit(2); }
+    repaired = { t: now, accounts: rep.accounts.slice(0, 50), flightGap: rep.flightGap, supplyGap: rep.supplyGap };
+    console.log('repaired: fixed', rep.accounts.length, 'account(s), in-flight gap', rep.flightGap, 'cents, supply gap', rep.supplyGap, 'cents (booked to the market pool)');
+  }
+  const res = S.step(db0, now, Math.floor(now / 1000)), A1 = E.audit(db0);
   if(!A1.ok || A1.total !== E.SUPPLY){ console.error('AUDIT FAILED after the step — nothing written.', JSON.stringify(A1.bad)); process.exit(3); }
   // the stock market follows the economy's health: a small permanent step when it has moved noticeably (at most every 6 hours)
   let adjust = null; const m = db0.world.meta, h = db0.eco.stats.health;
@@ -46,6 +53,7 @@ function diff(prefix, a, b, depth, out){
   diff('world/own', before.world.own, db0.world.own, 1, upd); diff('world/home', before.world.home, db0.world.home, 1, upd); diff('world/ev', before.world.ev, db0.world.ev, 1, upd); diff('world/meta', before.world.meta, db0.world.meta, 1, upd); diff('world/build', before.world.build, db0.world.build, 2, upd);
   diff('market/listings', before.market.listings, db0.market.listings, 2, upd);
   if(db0.world.req && !before.world.req) upd['world/req'] = null; else if(before.world.req && !db0.world.req) upd['world/req'] = null;
+  if(repaired) upd['eco/repairs/' + now] = repaired;   // a record for the admin: what was out of balance and how much went back to / came out of the pool
   if(adjust){ const { id, ...rest } = adjust; upd['marketAdjustments/' + id] = rest; }
   const perUser = {}; res.mails.forEach(x => { perUser[x.uid] = (perUser[x.uid] || 0) + 1; if(perUser[x.uid] > 3) return; const k = db.ref('mailbox/' + x.uid).push().key; upd['mailbox/' + x.uid + '/' + k] = { from: 'City Hall', subj: String(x.subj).slice(0, 120), body: String(x.body).slice(0, 1000), t: now }; });
   const n = Object.keys(upd).length; console.log('changes:', n, 'paths · mails', res.mails.length, '· stats', JSON.stringify(db0.eco.stats), adjust ? '· stock adjust ' + adjust.delta : '');
