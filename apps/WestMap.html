@@ -58,7 +58,7 @@ const paintSideSoon = Kit.debounce(() => paintSide(), 250);
 async function loadBots(){ try{ bots = await H.bots(); botList = Object.keys(bots).map(id => { const r = bots[id]; return { id, n: +id.slice(1), rec: r, b: { n: +id.slice(1), job: r.j || 'baker', thrift: typeof r.th === 'number' ? r.th : 0.5 }, home: r.h ? G.house(+String(r.h).slice(1)) : null }; }); need = true; if(tab === 'info' || tab === 'eco') paintSide(); }catch(e){} }
 
 /* ---------- view ---------- */
-const R = MapRender.create(cv, G), V = R.view, _lod = (R.lod.cache = true), MAXP = 1.12, POIH = { bank: 30, exchange: 40, shop: 18, arcade: 22, agency: 20, hall: 28, uni: 24, lab: 22, ind: 16, plant: 26 };
+const R = MapRender.create(cv, G), V = R.view, MAXP = 1.12, POIH = { bank: 30, exchange: 40, shop: 18, arcade: 22, agency: 20, hall: 28, uni: 24, lab: 22, ind: 16, plant: 26 };
 function resize(){ if(!R.resize()) return; need = true; try{ drawScene(performance.now()); }catch(e){} }   // a resize clears the canvas: repaint in the same task so no blank frame is ever presented
 addEventListener('resize', resize); new ResizeObserver(resize).observe(cv);
 function fit(){ R.fit(G.bounds(list.length || 512)); goal = null; zt = null; paint3d(); need = true; }
@@ -144,7 +144,7 @@ function launch(ev){ const types = ev.k === 'fire' ? ['fire'] : ev.k === 'police
   for(let k = 0; k < nd; k++){ const s = G.stations(k).find(q => q.t === types[0]), dd = (s.x - e.g.x) ** 2 + (s.y - e.g.y) ** 2; if(dd < bd){ bd = dd; best = s; } }
   if(best) vehicles.push({ t: types[0], from: best, to: e.g, t0: performance.now(), dur: 5000 + Math.min(4000, Math.sqrt(bd) * 18), label: ev.k === 'fire' ? 'Fire crew' : ev.k === 'police' ? 'Police' : 'Ambulance' }); need = true; }
 let lastDraw = 0, lastFrame = 0, lastFollowT = 0;
-(function loop(t){ requestAnimationFrame(loop); if(document.hidden || t - lastDraw < 28) return; lastDraw = t; tween(); zoomStep(t); if(need){ R.invalidate(); need = false; }   // static layer (terrain, roads, buildings) is cached while the camera holds still; anything that sets `need` repaints it
+(function loop(t){ requestAnimationFrame(loop); if(document.hidden || t - lastDraw < 28) return; lastDraw = t; tween(); zoomStep(t); need = false;   /* every frame is drawn live: there is no cached layer to invalidate */
   if(follow){ let p = null; if(follow.t === 'npc'){ const nb = botList.find(q => q.id === follow.id); if(nb) p = npcAt(nb, Date.now()); } else if(follow.t === 'player') p = playerXY(follow.id, performance.now()); if(p){ const ff = 1 - Math.pow(1 - 0.18, Math.min(100, t - (lastFollowT || t)) / 33); V.x += (p.x - V.x) * ff; V.y += (p.y - V.y) * ff; } lastFollowT = t; } else lastFollowT = 0;
   drawScene(t); if(perfOn && t - perfAt > 400){ perfAt = t; paintPerf(); } })(0);
 /* LOD stats overlay: Shift+P (remembered). Shows what the last frame drew and how the governor is steering. */

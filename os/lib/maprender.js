@@ -3,7 +3,7 @@
  *   R.draw(scene, t)   scene = { dark, n, houses:[{id,g,h}], plots, npcs:[{id,x,y,moving,c}], players:[{id,x,y,mine,name}], vehicles, sel, selX, npcSel, shown(e), kind(h), me, nameOf(uid), layers }
  * One projection does both modes (pitch 0 = flat top-down), so there is a single code path; 3D adds extruded buildings, shadows and haze. Textures are procedural (canvas patterns), nothing is downloaded.
  * LOD: every building picks dot / box / baked sprite / mesh from its size on screen, meshes are only built when needed, draw calls are batched, and a governor coarsens everything when frames get slow.
- *   R.lod = { on, sprites, bias, bakeMs, cache, profile } tunes it; cache:true renders the static world (land → buildings) into an offscreen layer once the view holds still, and each frame only blits it and redraws NPCs / players / vehicles / selection / labels (call R.invalidate() when houses, plots or filters change) (on:false = no sprites, no governor bias); R.stats = what the last frame did (tiers, bakes, ms, atlas). */
+ *   R.lod = { on, sprites, bias, bakeMs, profile } tunes it (on:false = no sprites, no governor bias); R.stats = what the last frame did (tiers, bakes, ms, atlas). */
 (function(root, factory){ if(typeof module === 'object' && module.exports) module.exports = factory(); else root.MapRender = factory(); })(typeof self !== 'undefined' ? self : this, function(){
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), CAM = 1700;
   const TH = {      // warm, like the rest of WestOS (see os/tokens.css)
@@ -66,13 +66,12 @@
   }
 
   function create(cv, G){
-    const BG = G.BuildGen || null, g0 = cv.getContext('2d'), R = { view: { x: 0, y: 0, k: 1, b: 0, p: 0 }, W: 0, H: 0, npcPos: [], pplPos: [], CAM, lod: { on: true, sprites: true, bias: 1, bakeMs: 3, cache: false, profile: false }, stats: {} };
-    R.invalidate = () => { SC.valid = false; };   // the caller says the static layer (houses, plots, filters …) changed
-    let g = g0, ATL = null, motionAt = 0, gov = 1, emaMs = 8, pv = { x: 0, y: 0, k: 1, b: 0, p: 0 }, dIdx = new Map(), dIdxA = null, dIdxN = -1, dIdx0 = null, dIdx1 = null, perfLow = false, perfLowAt = -1e9, bakeT = 0, lastT0 = 0, emaDt = 33, govAt = 0, govI = 0, animFlag = false, NULLG = null, SC = { cv: null, g: null, key: '', valid: false, anim: false, hs: null, plots: null, me: null, shown: null };
+    const BG = G.BuildGen || null, g0 = cv.getContext('2d'), R = { view: { x: 0, y: 0, k: 1, b: 0, p: 0 }, W: 0, H: 0, npcPos: [], pplPos: [], CAM, lod: { on: true, sprites: true, bias: 1, bakeMs: 3, profile: false }, stats: {} };
+    let g = g0, ATL = null, motionAt = 0, gov = 1, emaMs = 8, pv = { x: 0, y: 0, k: 1, b: 0, p: 0 }, dIdx = new Map(), dIdxA = null, dIdxN = -1, dIdx0 = null, dIdx1 = null, perfLow = false, perfLowAt = -1e9, bakeT = 0, lastT0 = 0, emaDt = 33, govAt = 0, govI = 0;
     let tint = '#e8924f', cs = 1, sn = 0, cp = 1, sp = 0, vk = 1, vx = 0, vy = 0, th = TH.light, dark = false, tex = null, texDark = null, FC = new Map(), scene = null, t = 0, sel2d = true;
     R.resize = (w, h) => { const d = Math.min(2, devicePixelRatio || 1), nw = w || cv.clientWidth, nh = h || cv.clientHeight, pw = Math.round(nw * d), ph = Math.round(nh * d);
       if(pw === cv.width && ph === cv.height && nw === R.W && nh === R.H) return false;   // assigning canvas.width clears it (a white flash until the next frame), so only touch it when the size really changed
-      R.W = nw; R.H = nh; cv.width = pw; cv.height = ph; g0.setTransform(d, 0, 0, d, 0, 0); SC.valid = false; return true; };
+      R.W = nw; R.H = nh; cv.width = pw; cv.height = ph; g0.setTransform(d, 0, 0, d, 0, 0); return true; };
     const prep = () => { const v = R.view; cs = Math.cos(v.b); sn = Math.sin(v.b); cp = Math.cos(v.p); sp = Math.sin(v.p); vk = v.k; vx = v.x; vy = v.y; sel2d = v.p < 0.035; };
     /* world (x, y, height z) → [screen x, screen y, perspective scale] or null when behind the camera */
     function P(x, y, z){ const dx = x - vx, dy = y - vy, X = (dx * cs - dy * sn) * vk, Y = (dx * sn + dy * cs) * vk, Z = (z || 0) * vk, Zp = Y * sp + Z * cp, den = CAM - Zp; if(den < CAM * 0.3) return null; const p = CAM / den; return [R.W / 2 + X * p, R.H / 2 + (Y * cp - Z * sp) * p, p]; }
@@ -177,14 +176,6 @@
       let tm = T0; const mark = nm => { if(LODS.profile){ g.getImageData(0, 0, 1, 1); const nw = performance.now(); ST.sec[nm] = (ST.sec[nm] || 0) + nw - tm; tm = nw; } };   // opt-in: R.lod.profile = true times each section (forces a raster flush, so only for measuring)
       const ST = R.stats = { sec: {}, houses: 0, dot: 0, box: 0, sprite: 0, mesh: 0, fallback: 0, scn: 0, scnSprite: 0, scnMesh: 0, bakes: 0, queued: 0, tiles: 0, bias, moving, ms: 0, atlas: null };
       const W = R.W, H = R.H, v = R.view, k = vk, n = sc.n || 8, C = G.CORE, GE = G.GEO, flat = sel2d, items = [];
-      /* static-layer cache: same view as last frame → draw the world into SC once (kept while nothing changes); while it is valid the drawing code below runs against a no-op context, so only the cheap bookkeeping is paid */
-      animFlag = false; let cacheMode = 0;   // 0 draw straight to the screen, 1 draw into SC, 2 SC is valid (draw nothing)
-      if(LODS.cache === true && !LODS.profile){ const u = v, ckey = [u.x, u.y, u.k, u.b, u.p, W, H, D, dark ? 1 : 0, tint, bias, LODS.on, LODS.sprites, sc.infill, sc.n, (sc.houses || []).length].join('|');
-        const same = ckey === SC.key && sc.houses === SC.hs && sc.plots === SC.plots && sc.me === SC.me && sc.shown === SC.shown; if(!same){ SC.valid = false; SC.anim = false; } SC.key = ckey; SC.hs = sc.houses; SC.plots = sc.plots; SC.me = sc.me; SC.shown = sc.shown;
-        if(same && SC.valid && !SC.anim) cacheMode = 2; else if(same && !SC.anim) cacheMode = 1;
-        if(cacheMode === 1){ if(!SC.cv || SC.cv.width !== cv.width || SC.cv.height !== cv.height){ SC.cv = document.createElement('canvas'); SC.cv.width = cv.width; SC.cv.height = cv.height; SC.g = SC.cv.getContext('2d'); } SC.g.setTransform(D, 0, 0, D, 0, 0); g = SC.g; }
-        else if(cacheMode === 2){ if(!NULLG){ NULLG = {}; const pr = CanvasRenderingContext2D.prototype; for(const nm of Object.getOwnPropertyNames(pr)){ const d = Object.getOwnPropertyDescriptor(pr, nm); if(d && typeof d.value === 'function') NULLG[nm] = () => {}; } NULLG.measureText = () => ({ width: 40 }); NULLG.createLinearGradient = () => ({ addColorStop(){} }); } g = NULLG; } }
-      ST.cache = cacheMode;
       g.clearRect(0, 0, W, H); g.fillStyle = th.land; g.fillRect(0, 0, W, H);
       try{ const so = P(0, 0, 0), o = so ? new DOMMatrix().translate(so[0], so[1]).scale(1, flat ? 1 : cp).rotate(v.b * 180 / Math.PI) : new DOMMatrix(); tex.land.setTransform(o); tex.grass.setTransform(o); tex.hatch.setTransform(o); tex.dots.setTransform(o); tex.water.setTransform(o); }catch(e){}
       g.fillStyle = tex.land; g.fillRect(0, 0, W, H); mark('land');
@@ -251,7 +242,7 @@
       let fbLeft = LODS.fbMesh != null ? LODS.fbMesh : 250; const fbHouse = (gg, hv, c8, bank, col, hh0, px) => { if(fbLeft > 0 && BG && performance.now() - T0 < 50){ fbLeft--; const S = BG.shape(gg); drawShape(S, gg.x, gg.y, gg.ang, gg.side, { tint: col, rm: bank ? 0.62 : 0.7, wm: 0.2, px, detail: false }); extras(gg, hv, S.h); } else { ST.fbBox = (ST.fbBox || 0) + 1; houseBox(gg, c8, bank, col, hh0); extras(gg, hv, hh0); } };
       for(const q of vdh){ const arr = dIdx.get(q); if(!arr) continue;
         for(let ei = 0; ei < arr.length; ei++){ const e = arr[ei], gg = e.g, s0 = P(gg.x, gg.y, 0); if(!s0) continue; const hm = hMax(gg); if(!onScreen(s0, 40 + hm * k * 1.2)) continue; ST.houses++;
-          const hv = e.h; if(hv.f && hv.dm > 0) animFlag = true; const on = !sc.shown || sc.shown(e), kd = kindOf(hv), bank = hv.o === 'bank', ci = CIK[kd] != null ? CIK[kd] : 0, c8 = ci * 2 + (bank ? 1 : 0), col = KIND[kd] || KIND.bot, px = Math.max(gg.w, gg.dp) * k * s0[2], eff = px / bias, hh0 = hm - 5;
+          const hv = e.h; const on = !sc.shown || sc.shown(e), kd = kindOf(hv), bank = hv.o === 'bank', ci = CIK[kd] != null ? CIK[kd] : 0, c8 = ci * 2 + (bank ? 1 : 0), col = KIND[kd] || KIND.bot, px = Math.max(gg.w, gg.dp) * k * s0[2], eff = px / bias, hh0 = hm - 5;
           if(eff < LOD.DOT){ ST.dot++; (on ? dots : dotsOff)[ci].push(s0[0], s0[1]); if(hv.dm > 0 || k * s0[2] > 0.9){ g.globalAlpha = on ? 1 : 0.18; extras(gg, hv, hh0); g.globalAlpha = 1; } continue; }
           if(eff < (spOK ? LOD.SPMIN : LOD.BOX) || !BG){ ST.box++; add(gg.x, gg.y, () => { g.globalAlpha = on ? 1 : 0.18; houseBox(gg, c8, bank, col, hh0); extras(gg, hv, hh0); g.globalAlpha = 1; }); continue; }
           const sb = scaleBucket(k * s0[2]);
@@ -287,7 +278,6 @@
       const plots = sc.plots || {}; for(const uid in plots) for(const kd of ['f', 'l']){ if(!plots[uid][kd]) continue; const c = G.plotCell(kd, uid); if(!near(c.x, c.y, 30)) continue; const mine = uid === sc.me, zc = kd === 'f' ? G.ZONES.ind.c : G.ZONES.uni.c; add(c.x, c.y, () => { box(c.x, c.y, c.w * 0.86, c.h * 0.8, 0, kd === 'f' ? 11 : 8, mine ? '#8fe0ad' : mix(th.roof, zc, 0.55), mine ? '#4fb87a' : mix('#e4dfd5', zc, 0.45)); }); }
       for(let q of vd) G.stations(q).forEach(s => { if(k < 1.1) return; add(s.x, s.y, () => { const c = s.t === 'fire' ? '#e5484d' : s.t === 'police' ? '#3a6fd8' : '#f4f4f4'; box(s.x, s.y, 12, 9, 0, 7, c, shade(c, 0.8)); }); });
       mark('collect'); farPass(); mark('far'); items.sort((a, b) => a.d - b.d); items.forEach(i => i.fn()); mark('items');
-      if(cacheMode){ if(cacheMode === 1) SC.valid = ST.bakes === 0 && ST.fallback === 0 && ST.queued === 0 && !animFlag; else if(animFlag) SC.valid = false; SC.anim = animFlag; g = g0; g.drawImage(SC.cv, 0, 0, SC.cv.width, SC.cv.height, 0, 0, W, H); }   // an unfinished layer (sprites still baking) is not kept
 
       /* selection under the dynamic things */
       const ring = (x, y, r, col, lw) => { const s = P(x, y, 0); if(!s) return; g.strokeStyle = col; g.lineWidth = lw || 2.4; g.beginPath(); g.ellipse(s[0], s[1], r * s[2], r * s[2] * (flat ? 1 : Math.max(0.35, cp)), 0, 0, 7); g.stroke(); };
@@ -325,7 +315,7 @@
       ST.ms = ms; ST.gov = gov; ST.atlas = { pages: ATL.pages.length, entries: ATL.map.size, wipes: ATL.wipes };
     };
     /* a frame that throws half way must not leave `g` pointing at the cache layer or the no-op context (every later frame would then draw nowhere = a blank canvas) */
-    R.draw = (sc, tt) => { g = g0; try{ drawFrame(sc, tt); } catch(e){ SC.valid = false; SC.anim = false; throw e; } finally { g = g0; } };
+    R.draw = (sc, tt) => { g = g0; try{ drawFrame(sc, tt); } finally { g = g0; } };   /* a frame that throws half way must not leave `g` pointing at an atlas page */
     return R;
   }
   return { create, PC, TH, POIH, KIND, LOD: { LOD, angBucket, angOf, pitchBucket, pitchOf, scaleBucket, scaleOf, spriteKey, makeAtlas, protoId } };
