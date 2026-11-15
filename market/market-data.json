@@ -1,14 +1,14 @@
 {
   "model": 2,
-  "tickIndex": 30008399,
+  "tickIndex": 30064799,
   "state": {
-    "fairValue": 1.141514829112356,
-    "momentum": -0.0008802085850691567,
-    "vol": 0.0013094469214907879,
-    "spike": 1.9491987054052812e-14,
-    "price": 1.1405100579598098
+    "fairValue": 1.0942681662206726,
+    "momentum": 0.000892987457278471,
+    "vol": 0.00126066259298734,
+    "spike": 0.000030439811380523805,
+    "price": 1.0952786730293884
   },
-  "t": 1794772606821,
+  "t": 1794786733908,
   "adjustments": [
     {
       "tickIndex": 8662345,
@@ -125,11 +125,17 @@
       "delta": 4.5,
       "at": 1794725823779,
       "id": "ecomwhhf0gz"
+    },
+    {
+      "tickIndex": 30065070,
+      "delta": -0.83,
+      "at": 1794786667648,
+      "id": "ecomwihn3wg"
     }
   ],
-  "lastAdjKey": "ecomwhhf0gz",
+  "lastAdjKey": "ecomwihn3wg",
   "dayAgo": {
-    "tickIndex": 29662800,
-    "n": 1.0186
+    "tickIndex": 29719200,
+    "n": 1.0239
   }
 }
