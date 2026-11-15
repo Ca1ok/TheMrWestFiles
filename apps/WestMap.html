@@ -3,7 +3,7 @@
 <link rel="stylesheet" href="../os/tokens.css"><link rel="stylesheet" href="../os/app/kit.css">
 <style>
 html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--label);font-family:var(--font)}
-#wm{display:flex;height:100%;position:relative} #cv{flex:1;min-width:0;display:block;touch-action:none;cursor:grab;outline:0} #cv.drag{cursor:grabbing}
+#wm{display:flex;height:100%;position:relative} #cv{flex:1;min-width:0;display:block;touch-action:none;cursor:grab;outline:0;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none} #cv.drag{cursor:grabbing}
 #side{width:340px;max-width:44%;display:flex;flex-direction:column;background:var(--bg2);border-left:1px solid var(--sep,rgba(255,255,255,.08))}
 #tabs{display:flex;gap:4px;padding:8px;border-bottom:1px solid var(--sep,rgba(255,255,255,.08))} #tabs button{flex:1;border:0;background:transparent;color:var(--label2);font:700 13px var(--font);padding:8px 4px;border-radius:9px;cursor:pointer} #tabs button.on{background:var(--tint-dim);color:var(--tint2)}
 #pane{flex:1;overflow:auto;padding:12px 14px 18px}
@@ -61,12 +61,20 @@ async function loadBots(){ try{ bots = await H.bots(); botList = Object.keys(bot
 const R = MapRender.create(cv, G), V = R.view, _lod = (R.lod.cache = true), MAXP = 1.12, POIH = { bank: 30, exchange: 40, shop: 18, arcade: 22, agency: 20, hall: 28, uni: 24, lab: 22, ind: 16, plant: 26 };
 function resize(){ if(!R.resize()) return; need = true; try{ drawScene(performance.now()); }catch(e){} }   // a resize clears the canvas: repaint in the same task so no blank frame is ever presented
 addEventListener('resize', resize); new ResizeObserver(resize).observe(cv);
-function fit(){ R.fit(G.bounds(list.length || 512)); goal = null; paint3d(); need = true; }
-function focusXY(x, y, k){ follow = null; V.k = Math.max(V.k, k || 3.4); V.x = x; V.y = y; need = true; }
+function fit(){ R.fit(G.bounds(list.length || 512)); goal = null; zt = null; paint3d(); need = true; }
+function focusXY(x, y, k){ follow = null; zt = null; V.k = Math.max(V.k, k || 3.4); V.x = x; V.y = y; need = true; }
 function focus(id){ const e = byId[id]; if(!e) return; sel = id; selX = null; focusXY(e.g.x, e.g.y); tab = 'info'; paintSide(); }
+/* pointer position in canvas CSS px from clientX/Y + the canvas rect: independent of which element is the event target and of any transform on an ancestor (offsetX/Y is not) */
+function lp(e){ const r = cv.getBoundingClientRect(), sx = r.width ? cv.clientWidth / r.width : 1, sy = r.height ? cv.clientHeight / r.height : 1; return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy }; }
 function zoomAt(f, px, py){ if(follow){ px = cv.clientWidth / 2; py = cv.clientHeight / 2; }   // following = the target stays centred: zooming about the cursor shifted the camera and follow pulled it straight back (rubber-banding)
   const w0 = R.unproject(px, py); V.k = clamp(V.k * f, 0.16, 9); const w1 = R.unproject(px, py); if(w0 && w1){ V.x += w0[0] - w1[0]; V.y += w0[1] - w1[1]; } R.unproject(px, py); need = true; }   // last call refreshes the renderer's cached camera so hit-testing before the next frame sees the new view
 /* 3D: a tween of the pitch (and bearing); the buttons, the compass and right-drag all drive the same view */
+/* wheel / +- zoom glides toward its target instead of jumping a full step per event; the point under the cursor stays locked while it glides */
+let zt = null, zAt = 0;
+function zoomSmooth(f, px, py){ const base = zt ? zt.k : V.k; zt = { k: clamp(base * f, 0.16, 9), px, py }; }
+function zoomStep(t){ if(!zt){ zAt = 0; return; } const dt = zAt ? Math.min(100, t - zAt) : 16; zAt = t; const px = zt.px, py = zt.py, tk = zt.k;
+  let kn = V.k * Math.pow(tk / V.k, 1 - Math.exp(-dt / 70)); if(Math.abs(Math.log(tk / kn)) < 0.003){ kn = tk; zt = null; }
+  if(kn !== V.k) zoomAt(kn / V.k, px, py); }
 let goal = null; const flat = () => V.p < 0.035;
 function set3D(on){ goal = { p: on ? 0.95 : 0, b: on ? V.b : 0 }; }
 function paint3d(){ const b = $('#b3d'); b.textContent = goal ? (goal.p > 0 ? '2D' : '3D') : (V.p > 0.1 ? '2D' : '3D'); b.classList.toggle('on', goal ? goal.p > 0 : V.p > 0.1); $('#bcomp svg').style.transform = 'rotate(' + V.b + 'rad)'; }
@@ -76,8 +84,8 @@ function tween(){ if(!goal){ tweenAt = 0; return; } const now = performance.now(
 $('#b3d').onclick = () => set3D(goal ? !(goal.p > 0) : V.p < 0.1); $('#bcomp').onclick = () => { goal = { p: V.p, b: Math.round(V.b / (2 * Math.PI)) * 2 * Math.PI }; }; $('#bloc').onclick = () => { const p = playerXY(me, performance.now()); if(p){ focusXY(p.x, p.y, 3.2); follow = { t: 'player', id: me }; return; } const hid = homesAll[me] && homesAll[me].h; if(hid && byId[hid]) return focus(hid); focusXY(G.CORE.x, G.CORE.y, 2.4); };
 let drag = null; const pts = new Map(); const dist2 = () => { const p = [...pts.values()]; return Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y); }, ang2 = () => { const p = [...pts.values()]; return Math.atan2(p[1].y - p[0].y, p[1].x - p[0].x); };
 cv.addEventListener('contextmenu', e => e.preventDefault());
-cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.offsetX, y: e.offsetY }); goal = null; drag = { x: e.offsetX, y: e.offsetY, moved: 0, mode: (e.button === 2 || e.shiftKey || e.altKey || e.ctrlKey) ? 'rot' : 'pan', pl: null, rot: false, tw: 0 }; if(pts.size === 2){ const c = [...pts.values()]; drag.pl = { d: dist2(), a: ang2(), mx: (c[0].x + c[1].x) / 2, my: (c[0].y + c[1].y) / 2 }; } /* pinch baseline = where the second finger landed, so no part of the gesture is lost */ cv.classList.add('drag'); });
-cv.addEventListener('pointermove', e => { if(!pts.has(e.pointerId)){ hover(e); return; } const prev = pts.get(e.pointerId); pts.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: lp(e).x, y: lp(e).y }); goal = null; zt = null; drag = { x: lp(e).x, y: lp(e).y, moved: 0, mode: (e.button === 2 || e.shiftKey || e.altKey || e.ctrlKey) ? 'rot' : 'pan', pl: null, rot: false, tw: 0 }; if(pts.size === 2){ const c = [...pts.values()]; drag.pl = { d: dist2(), a: ang2(), mx: (c[0].x + c[1].x) / 2, my: (c[0].y + c[1].y) / 2 }; } /* pinch baseline = where the second finger landed, so no part of the gesture is lost */ cv.classList.add('drag'); });
+cv.addEventListener('pointermove', e => { if(!pts.has(e.pointerId)){ hover(e); return; } const prev = pts.get(e.pointerId); pts.set(e.pointerId, { x: lp(e).x, y: lp(e).y });
   if(pts.size === 2 && drag){ drag.moved = 99; const c = [...pts.values()], d = dist2(), a = ang2(), mx = (c[0].x + c[1].x) / 2, my = (c[0].y + c[1].y) / 2, L = drag.pl; drag.pl = { d, a, mx, my };
     if(!L || !(L.d > 0) || !(d > 0)) return;   // first sample of the gesture: just remember it
     const fx = follow ? cv.clientWidth / 2 : null, fy = follow ? cv.clientHeight / 2 : null, w0 = R.unproject(follow ? fx : L.mx, follow ? fy : L.my); V.k = clamp(V.k * d / L.d, 0.16, 9);   // zoom by the change since the last sample, so nothing accumulates or jumps
@@ -85,17 +93,17 @@ cv.addEventListener('pointermove', e => { if(!pts.has(e.pointerId)){ hover(e); r
     if(!drag.rot){ drag.tw = (drag.tw || 0) + da; if(Math.abs(drag.tw) > 0.14){ drag.rot = true; da = drag.tw; } else da = 0; }   // a pure pinch must not twist the map; rotate only once the fingers clearly twist
     V.b += da; const w1 = R.unproject(follow ? fx : mx, follow ? fy : my); if(w0 && w1){ V.x += w0[0] - w1[0]; V.y += w0[1] - w1[1]; } R.unproject(0, 0);   // keep the point that was under the fingers under them (zoom + pan + twist around the fingers)
     paint3d(); need = true; return; }
-  if(!drag) return; const dx = e.offsetX - prev.x, dy = e.offsetY - prev.y; drag.moved += Math.abs(dx) + Math.abs(dy);
+  if(!drag) return; const dx = lp(e).x - prev.x, dy = lp(e).y - prev.y; drag.moved += Math.abs(dx) + Math.abs(dy);
   if(drag.mode === 'rot'){ V.b += dx * 0.008; V.p = clamp(V.p - dy * 0.006, 0, MAXP); paint3d(); need = true; return; }
-  if(drag.moved > 6) follow = null; const a = R.unproject(prev.x, prev.y), b = R.unproject(e.offsetX, e.offsetY); if(a && b){ V.x += a[0] - b[0]; V.y += a[1] - b[1]; R.unproject(0, 0); } need = true; });
-cv.addEventListener('pointerup', e => { pts.delete(e.pointerId); cv.classList.remove('drag'); if(drag && drag.moved < 6 && pts.size === 0 && drag.mode === 'pan'){ const r = hit(e.offsetX, e.offsetY); if(r && r.t === 'house'){ sel = r.id; selX = null; } else if(r){ selX = r; } else { sel = null; selX = null; } tab = 'info'; need = true; paintSide(); } if(!pts.size) drag = null; });
+  if(drag.moved > 6) follow = null; const a = R.unproject(prev.x, prev.y), b = R.unproject(lp(e).x, lp(e).y); if(a && b){ V.x += a[0] - b[0]; V.y += a[1] - b[1]; R.unproject(0, 0); } need = true; });
+cv.addEventListener('pointerup', e => { pts.delete(e.pointerId); cv.classList.remove('drag'); if(drag && drag.moved < 6 && pts.size === 0 && drag.mode === 'pan'){ const r = hit(lp(e).x, lp(e).y); if(r && r.t === 'house'){ sel = r.id; selX = null; } else if(r){ selX = r; } else { sel = null; selX = null; } tab = 'info'; need = true; paintSide(); } if(!pts.size) drag = null; });
 const endPtr = e => { pts.delete(e.pointerId); if(!pts.size){ drag = null; cv.classList.remove('drag'); } };
 cv.addEventListener('pointercancel', endPtr); addEventListener('blur', () => { pts.clear(); drag = null; cv.classList.remove('drag'); });   // a cancelled/lost touch used to stay in `pts` and leave the map stuck in pinch mode
 cv.addEventListener('wheel', e => { e.preventDefault(); let dx = e.deltaX, dy = e.deltaY; if(e.deltaMode === 1){ dx *= 33; dy *= 33; } else if(e.deltaMode === 2){ dx *= cv.clientHeight; dy *= cv.clientHeight; }
   if(e.shiftKey){ goal = null; if(!dy && dx) V.b += dx * 0.004; else { V.b += dy * 0.004; V.p = clamp(V.p + dx * 0.004, 0, MAXP); } paint3d(); return; }   // browsers swap the wheel axis when Shift is held, so a lone deltaX is the rotate gesture
   const f = Math.exp(-dy * (e.ctrlKey ? 0.01 : 0.0016));   // zoom follows how far the wheel/trackpad moved (a trackpad pinch sends many tiny ctrl+wheel events; each used to zoom a full 18%)
-  if(Math.abs(f - 1) > 1e-4) zoomAt(clamp(f, 1 / 1.5, 1.5), e.offsetX, e.offsetY); }, { passive: false });
-document.querySelectorAll('#zoom button[data-z]').forEach(b => b.onclick = () => { const z = +b.dataset.z; follow = null; if(!z) fit(); else zoomAt(z > 0 ? 1.4 : 1 / 1.4, cv.clientWidth / 2, cv.clientHeight / 2); });
+  if(Math.abs(f - 1) > 1e-4) { const q = lp(e); zoomSmooth(clamp(f, 1 / 1.5, 1.5), q.x, q.y); } }, { passive: false });
+document.querySelectorAll('#zoom button[data-z]').forEach(b => b.onclick = () => { const z = +b.dataset.z; follow = null; if(!z) fit(); else zoomSmooth(z > 0 ? 1.4 : 1 / 1.4, cv.clientWidth / 2, cv.clientHeight / 2); });
 /* what is under the pointer: a person first, then a building, then a plot, then a house (everything is projected, so it works tilted and rotated) */
 const lift = z => flat() ? 0 : z, BG = G.BuildGen || null, hOf = g => BG && BG.heightOf ? BG.heightOf(g) - 4 : g.ht,   /* no mesh built per house per mouse-move */ poiH = id => { const L = BG && BG.landmark(id); return L ? L.h : (POIH[id] || 0); };
 function pickHouse(px, py){ let best = null, bd = Math.max(8, 6 * V.k) ** 2; for(const e of list){ const s = R.project(e.g.x, e.g.y, lift(hOf(e.g) * 0.6)); if(!s) continue; const dx = s[0] - px, dy = s[1] - py, d = dx * dx + dy * dy; if(d < bd){ bd = d; best = e.id; } } return best; }
@@ -109,9 +117,9 @@ function hit(px, py){
   const hs = pickHouse(px, py); return hs ? { t: 'house', id: hs } : null;
 }
 const tip = $('#tip');
-function hover(e){ const r = hit(e.offsetX, e.offsetY); cv.style.cursor = r ? 'pointer' : 'grab'; let txt = '';
+function hover(e){ const r = hit(lp(e).x, lp(e).y); cv.style.cursor = r ? 'pointer' : 'grab'; let txt = '';
   if(r){ if(r.t === 'npc'){ const b = bots[r.id]; txt = b ? b.n + ' · ' + b.j : ''; } else if(r.t === 'player') txt = nameOf(r.id); else if(r.t === 'poi') txt = G.POIS[r.id].n; else if(r.t === 'plot') txt = (r.kd === 'f' ? 'Factory plot · ' : 'Laboratory · ') + nameOf(r.id); else if(r.t === 'house'){ const e2 = byId[r.id]; txt = e2 ? e2.g.addr + ' · ' + e2.g.typeName : ''; } }
-  if(txt){ tip.textContent = txt; tip.style.display = 'block'; tip.style.left = Math.min(cv.clientWidth - 200, e.offsetX + 14) + 'px'; tip.style.top = (e.offsetY + 14) + 'px'; } else tip.style.display = 'none'; }
+  if(txt){ tip.textContent = txt; tip.style.display = 'block'; tip.style.left = Math.min(cv.clientWidth - 200, lp(e).x + 14) + 'px'; tip.style.top = (lp(e).y + 14) + 'px'; } else tip.style.display = 'none'; }
 cv.addEventListener('pointerleave', () => { tip.style.display = 'none'; });
 
 function shown(e){ const hs = e.h; if(filter.mine && hs.o !== me) return false; if(filter.sale && !(hs.a > 0 || hs.o === 'bank')) return false; if(filter.rent && !(hs.rh > 0 && !hs.t)) return false; if(filter.fire && !(hs.dm > 0)) return false; return true; }
@@ -128,7 +136,7 @@ function launch(ev){ const types = ev.k === 'fire' ? ['fire'] : ev.k === 'police
   for(let k = 0; k < nd; k++){ const s = G.stations(k).find(q => q.t === types[0]), dd = (s.x - e.g.x) ** 2 + (s.y - e.g.y) ** 2; if(dd < bd){ bd = dd; best = s; } }
   if(best) vehicles.push({ t: types[0], from: best, to: e.g, t0: performance.now(), dur: 5000 + Math.min(4000, Math.sqrt(bd) * 18), label: ev.k === 'fire' ? 'Fire crew' : ev.k === 'police' ? 'Police' : 'Ambulance' }); need = true; }
 let lastDraw = 0, lastFrame = 0, lastFollowT = 0;
-(function loop(t){ requestAnimationFrame(loop); if(document.hidden || t - lastDraw < 28) return; lastDraw = t; tween(); if(need){ R.invalidate(); need = false; }   // static layer (terrain, roads, buildings) is cached while the camera holds still; anything that sets `need` repaints it
+(function loop(t){ requestAnimationFrame(loop); if(document.hidden || t - lastDraw < 28) return; lastDraw = t; tween(); zoomStep(t); if(need){ R.invalidate(); need = false; }   // static layer (terrain, roads, buildings) is cached while the camera holds still; anything that sets `need` repaints it
   if(follow){ let p = null; if(follow.t === 'npc'){ const nb = botList.find(q => q.id === follow.id); if(nb) p = npcAt(nb, Date.now()); } else if(follow.t === 'player') p = playerXY(follow.id, performance.now()); if(p){ const ff = 1 - Math.pow(1 - 0.18, Math.min(100, t - (lastFollowT || t)) / 33); V.x += (p.x - V.x) * ff; V.y += (p.y - V.y) * ff; } lastFollowT = t; } else lastFollowT = 0;
   drawScene(t); if(perfOn && t - perfAt > 400){ perfAt = t; paintPerf(); } })(0);
 /* LOD stats overlay: Shift+P (remembered). Shows what the last frame drew and how the governor is steering. */
