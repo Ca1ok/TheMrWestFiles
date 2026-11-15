@@ -4,7 +4,7 @@ Close WestOS with the red ✕ left of "WestOS" in the menu bar and you are stand
 Phone button / `P` brings WestOS back as your phone; ✕ again returns to the street. `M` = travel menu. `E` = use / open doors. Touch screens get a stick + buttons.
 
 ## Why it is cheap
-* **Nothing is downloaded.** No models, no textures. Every building, street, tree and hill is generated from the same pure functions as the 2D map (`os/lib/worldgen.js`, `os/lib/buildgen.js`) + `terrain.js`.
+* **Nothing is downloaded.** No models, no textures. Every street, building, tree and hill is generated: the street plan by `layout.js`, building shapes by `os/lib/buildgen.js`, the roster/timetable by `os/lib/worldgen.js`. (The 3D street layout is independent of the 2D map; the map is meant to follow it later.)
 * **Only `boot.js` (~2 KB) ships with WestOS.** The engine (~110 KB JS+CSS) is fetched the first time someone steps outside, then cached.
 * **Network**: other players are one ~60-byte record each, written ≤1×/s, sharded in 256 m cells (`world/rt/<cell>/<uid>`), you only listen to the 3×3 cells around you. NPCs are never networked (pure timetable).
 * **CPU + GPU**: chunk meshes are built in Web Workers (1–3, `worker.js`) while the main thread only uploads (≤2 per frame) and draws; people/cars are instanced (1 draw call each, walk cycle in the vertex shader); each chunk is ONE draw call, frustum-culled.
@@ -14,20 +14,24 @@ Phone button / `P` brings WestOS back as your phone; ✕ again returns to the st
 | file | job |
 |---|---|
 | `boot.js` | OSM module: ✕ button, `OS.realworld`, lazy loader |
-| `terrain.js` | `height(x,z)`: rolling hills with a flat terrace under every district/downtown/campus (pure) |
+| `layout.js` | THE STREET PLAN: lattice of blocks bent by one smooth warp; streets, lots, houses, landmarks, plots, trees, lamps, street routing (pure) |
+| `terrain.js` | `height(x,z)`: rolling hills, with the city on a flat plateau (pure) |
 | `mesh.js` | vertex-colour mesh builder (box/cyl/cone/ribbon/poly), glow flag |
 | `chunkgen.js` | one 128 m chunk → mesh + colliders + doors, per LOD (pure; used by worker, Node tests, fallback) |
 | `worker.js` | runs `chunkgen` off the main thread |
 | `streamer.js` | which chunks, which LOD, worker queue, uploads, fades |
 | `gfx.js` | WebGL 2: world/actor/sky/particle shaders, culling |
 | `env.js` | sky/sun/fog from the world clock (night = the NPCs' sleeping hours), graded by the active theme |
-| `interiors.js` | the rooms (registry of builders + tiny Room DSL) |
+| `interiors.js` | the rooms (registry of builders + tiny Room DSL): clerks (`npc` with services) and wall screens |
+| `screens.js` | live information screens on walls (canvas → texture): prices, news, balance, leaderboard… |
+| `npcs.js` | townspeople routes along the streets from the shared timetable |
 | `net.js` | other players (presence) |
 | `game.js` | player, collisions, doors, interiors, NPCs, HUD, input, travel, loop |
 | `realworld.css` | styles (loaded with the engine) |
 
 ## Extending
-* **New enterable landmark**: add it to `BUILDINGS` in `game.js` (landmark id → interior kind) and `RealWorld.Interiors.register('kind', c => { const r = new Room(w, d, h, {...}); r.terminal(x, z, 'n', 'Label', 'AppId'); return r; })`. A terminal opens a WestOS app with `OS.open`.
+* **New enterable landmark**: add its block to `POI_BLOCK` in `layout.js`, a line to `BUILDINGS` in `game.js`, and `RealWorld.Interiors.register('kind', c => { const r = new Room(w, d, h, {...}); r.npc(x, z, yaw, 'Name', 'greeting', shirt, pants, [{ label: 'Open the shop', app: 'WestShop' }]); r.screen('news', x, y, z, w, h, 'e'); return r; })`. Apps are reached through clerks (E → dialogue → option → `OS.open`); wall screens are read-only (`screens.js`).
+* **Street plan / look of the city**: `SU`, `SV`, the warp, `POI_BLOCK`, `ZONE_BLOCKS` in `layout.js`. Anything placed through the lattice keeps its margins from the streets, so it cannot clip (`tests/realworld.test.js` checks this at 512 and 3000 houses).
 * **New LOD / longer view**: `RES`, `RAISE`, `SK` in `chunkgen.js` + `LOD_AT` in `streamer.js`; `RealWorld.config.radius`.
 * **Look**: `env.js` (palette), `COMMON` shader in `gfx.js` (lighting/fog/glass), colours in `chunkgen.js` (`C`).
 * **Movement feel**: `RealWorld.config` (walk, run, jump, sens, fov).

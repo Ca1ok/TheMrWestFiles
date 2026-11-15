@@ -69,6 +69,11 @@ void main(){ vec3 q = fract(aS.xyz + vec3(sin(uTime * 0.3 + aS.w * 20.0) * 0.02,
   const PT_FS = `#version 300 es
 precision mediump float; in float vA; uniform vec4 uCol; out vec4 oCol; void main(){ float d = length(gl_PointCoord - 0.5) * 2.0; float a = (1.0 - smoothstep(0.4, 1.0, d)) * vA; if(a < 0.02) discard; oCol = vec4(uCol.rgb, uCol.a * a); }`;
 
+  const SCR_VS = `#version 300 es
+layout(location=0) in vec3 aPos; layout(location=1) in vec2 aUV; uniform mat4 uVP; out vec2 vUV; void main(){ vUV = aUV; gl_Position = uVP * vec4(aPos, 1.0); }`;
+  const SCR_FS = `#version 300 es
+precision mediump float; in vec2 vUV; uniform sampler2D uTex; out vec4 oCol; void main(){ vec3 c = texture(uTex, vUV).rgb; float scan = 0.96 + 0.04 * sin(vUV.y * 540.0); oCol = vec4(c * scan * 1.08, 1.0); }`;
+
   /* ---------------- people & cars (built once, drawn instanced) ---------------- */
   function actorMeshes(){
     const mk = () => ({ p: [], n: [], m: [], i: [] });
@@ -92,8 +97,8 @@ precision mediump float; in float vA; uniform vec4 uCol; out vec4 oCol; void mai
     const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){ const m = gl.getShaderInfoLog(s); gl.deleteShader(s); throw new Error('shader: ' + m); } return s; };
     const prog = (vs, fs, names) => { const p = gl.createProgram(); gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if(!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(p)); const u = {}; names.split(' ').forEach(n => { u[n] = gl.getUniformLocation(p, n); }); p.u = u; return p; };
     const ENV = 'uCam uSunDir uSunCol uSky uGround uFogCol uFogD uNight uTime';
-    let pW, pA, pS, pP;
-    function compile(){ pW = prog(WORLD_VS, WORLD_FS, 'uVP uFade uFadeDir ' + ENV); pA = prog(ACT_VS, ACT_FS, 'uVP ' + ENV); pS = prog(SKY_VS, SKY_FS, 'uF uR uU uCam uSunDir uZen uHor uSunCol uTan uAsp uNight uTime uCloud'); pP = prog(PT_VS, PT_FS, 'uVP uCam uTime uFall uSize uScale uSpread uCol'); }
+    let pW, pA, pS, pP, pT;
+    function compile(){ pW = prog(WORLD_VS, WORLD_FS, 'uVP uFade uFadeDir ' + ENV); pA = prog(ACT_VS, ACT_FS, 'uVP ' + ENV); pS = prog(SKY_VS, SKY_FS, 'uF uR uU uCam uSunDir uZen uHor uSunCol uTan uAsp uNight uTime uCloud'); pP = prog(PT_VS, PT_FS, 'uVP uCam uTime uFall uSize uScale uSpread uCol'); pT = prog(SCR_VS, SCR_FS, 'uVP uTex'); }
     compile();
     const emptyVAO = gl.createVertexArray();
     function setEnv(p){ const e = G.env, u = p.u; gl.uniform3fv(u.uCam, G.cam); gl.uniform3fv(u.uSunDir, e.sunDir); gl.uniform3fv(u.uSunCol, e.sunCol); gl.uniform3fv(u.uSky, e.sky); gl.uniform3fv(u.uGround, e.ground); gl.uniform3fv(u.uFogCol, e.fog); gl.uniform1f(u.uFogD, e.fogD); gl.uniform1f(u.uNight, e.night); gl.uniform1f(u.uTime, G.time); }
@@ -137,6 +142,13 @@ precision mediump float; in float vA; uniform vec4 uCol; out vec4 oCol; void mai
     G.particles = function(fx, scale){ if(!ptVAO){ const a = new Float32Array(PTN * 4); for(let i = 0; i < a.length; i++) a[i] = Math.random(); ptVAO = gl.createVertexArray(); ptBuf = gl.createBuffer(); gl.bindVertexArray(ptVAO); gl.bindBuffer(gl.ARRAY_BUFFER, ptBuf); gl.bufferData(gl.ARRAY_BUFFER, a, gl.STATIC_DRAW); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 16, 0); gl.bindVertexArray(null); }
       const c = fx.colors && fx.colors[0] || [1, 1, 1, 0.9]; gl.useProgram(pP); const u = pP.u; gl.uniformMatrix4fv(u.uVP, false, G.vp); gl.uniform3fv(u.uCam, G.cam); gl.uniform1f(u.uTime, G.time); gl.uniform1f(u.uFall, (fx.dir || -1) * -1 * 60 * Math.max(0.2, (fx.fall || 0.15) * 4)); gl.uniform1f(u.uSize, 0.35 + (fx.size || 0.012) * 40); gl.uniform1f(u.uScale, scale || 900); gl.uniform1f(u.uSpread, 46); gl.uniform4f(u.uCol, c[0], c[1], c[2], c[3]);
       gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, fx.blend === 'add' ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false); gl.bindVertexArray(ptVAO); gl.drawArrays(gl.POINTS, 0, PTN); gl.depthMask(true); gl.disable(gl.BLEND); };
+    /* ---- wall screens: a textured quad whose picture is a 2D canvas (painted by RealWorld.Screens), re-uploaded only when its content changes ---- */
+    G.screenMake = function(canvas, c){ const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      const v = new Float32Array([c[0][0], c[0][1], c[0][2], 0, 0, c[1][0], c[1][1], c[1][2], 1, 0, c[2][0], c[2][1], c[2][2], 1, 1, c[3][0], c[3][1], c[3][2], 0, 1]), vao = gl.createVertexArray(), vb = gl.createBuffer(), ib = gl.createBuffer(); gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, v, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 20, 0); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 20, 12); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 1, 2, 0, 2, 3]), gl.STATIC_DRAW); gl.bindVertexArray(null); return { tex, vao, vb, ib, canvas }; };
+    G.screenUpdate = function(s){ gl.bindTexture(gl.TEXTURE_2D, s.tex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, s.canvas); };
+    G.screenFree = function(s){ gl.deleteTexture(s.tex); gl.deleteVertexArray(s.vao); gl.deleteBuffer(s.vb); gl.deleteBuffer(s.ib); };
+    G.screensDraw = function(list){ if(!list.length) return; gl.useProgram(pT); gl.uniformMatrix4fv(pT.u.uVP, false, G.vp); gl.uniform1i(pT.u.uTex, 0); gl.activeTexture(gl.TEXTURE0); gl.disable(gl.CULL_FACE); list.forEach(s => { gl.bindTexture(gl.TEXTURE_2D, s.tex); gl.bindVertexArray(s.vao); gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0); G.calls++; }); gl.enable(gl.CULL_FACE); };
     G.lost = false; canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); G.lost = true; });
     canvas.addEventListener('webglcontextrestored', () => { G.lost = false; for(const k in meshes) delete meshes[k]; ptVAO = null; compile(); if(G.onRestore) G.onRestore(); });
     G.destroy = function(){ try{ const x = gl.getExtension('WEBGL_lose_context'); if(x) x.loseContext(); }catch(e){} };

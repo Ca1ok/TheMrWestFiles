@@ -44,3 +44,8 @@ html.perf-low .rw-btn,html.perf-low .rw-chip,html.perf-low #rwTravelMenu,html.pe
 #rwTouch button{position:absolute;right:16px;width:58px;height:58px;border-radius:50%;border:2px solid rgba(255,255,255,.4);background:rgba(20,16,12,.5);color:#fff;font-weight:800;font-size:17px;pointer-events:auto}
 #rwBtnE{bottom:96px}#rwBtnJ{bottom:28px;right:88px}#rwBtnR{bottom:28px;font-size:12px}#rwBtnR.on{background:#e8924f}
 @media (max-width:700px){#rwMap{width:120px;height:120px}.rw-top{right:140px}}
+#rwDlg{position:absolute;left:50%;bottom:clamp(40px,9vh,100px);transform:translate(-50%,12px);width:min(460px,92vw);display:none;flex-direction:column;gap:8px;padding:16px;border-radius:20px;background:rgba(22,17,12,.86);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.16);pointer-events:auto;text-shadow:none;opacity:0;transition:opacity .2s,transform .2s}
+#rwDlg.show{display:flex;opacity:1;transform:translate(-50%,0)}
+#rwDlg .n{font-weight:800;font-size:15px;color:#ffd24a}#rwDlg .l{font-size:15px;line-height:1.45;margin-bottom:4px}
+#rwDlg button{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.14);color:#fff;padding:11px 14px;border-radius:12px;font-weight:600;font-size:14px;text-align:left;cursor:pointer}
+#rwDlg button:hover{background:rgba(255,255,255,.2)}#rwDlg button.bye{background:none;border-color:transparent;opacity:.7}

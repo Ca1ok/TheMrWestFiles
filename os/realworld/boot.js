@@ -2,7 +2,7 @@
  * The engine (≈110 KB of JS + CSS) is fetched the first time somebody actually steps outside, then cached by the browser; nothing is downloaded for players who stay in WestOS.
  * Read os/realworld/README.md before changing anything. */
 (window.__OSM = window.__OSM || []).push(function(K){
-  const OS = K.facade, FILES = ['terrain', 'mesh', 'chunkgen', 'env', 'gfx', 'interiors', 'net', 'streamer', 'game'].map(f => 'os/realworld/' + f + '.js');
+  const OS = K.facade, FILES = ['terrain', 'mesh', 'layout', 'chunkgen', 'env', 'gfx', 'screens', 'interiors', 'npcs', 'net', 'streamer', 'game'].map(f => 'os/realworld/' + f + '.js');
   let api = null, loading = null; const btn = document.getElementById('rwExit'), screen = document.getElementById('screen');
   const add = (tag, attrs) => new Promise((res, rej) => { const e = document.createElement(tag); Object.assign(e, attrs); e.onload = res; e.onerror = () => rej(new Error('Could not load ' + (attrs.src || attrs.href))); document.head.appendChild(e); });
   function ensure(){
