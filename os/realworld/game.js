@@ -1,9 +1,9 @@
-/* REALWORLD · game — the first-person controller: player, collisions, doors and interiors, people & cars, HUD, input, travel, the render loop.
- * Everything heavy lives elsewhere (chunkgen/worker = geometry, gfx = GPU, streamer = what is loaded, net = other players, interiors = rooms, env = sky).
+/* REALWORLD · game — the first-person controller: player, physics, doors and in-place interiors, people & cars, HUD, input, travel, the render loop.
+ * Everything heavy lives elsewhere (chunkgen/worker = geometry, gfx = GPU, streamer = what is loaded, phys = collision world, cells = the insides of buildings, props = instanced scenery, net = other players, interiors = rooms, env = sky).
  * EXTEND HERE: BUILDINGS (a landmark → an interior kind), RealWorld.Interiors.register(kind, fn), RealWorld.config (speeds, view distance, field of view), TRAVEL list in travelItems().
  * RealWorld.start(K) is called once by boot.js the first time the player steps outside; it returns the public API (enter / exit / phone / travel …). */
 (function(root){
-  const RW = root.RealWorld, G = root.WorldGen, BG = root.BuildGen, T = root.RWTerrain, M = root.RWMesh, L = root.RWLayout;
+  const RW = root.RealWorld, Phys = RW.Phys, G = root.WorldGen, BG = root.BuildGen, T = root.RWTerrain, M = root.RWMesh, L = root.RWLayout;
   const cfg = RW.config = Object.assign({ radius: 8, perfRadius: 5, fov: 72, walk: 4.4, run: 8.4, jump: 5.6, grav: 17, eye: 1.65, pr: 0.38, sens: 0.0022, far: 1700, npcRange: 230, carRange: 480, minScale: 0.55 }, RW.config || {});
   /* landmark id (WorldGen.POIS) → the interior to build when you walk in. Add a line + RealWorld.Interiors.register('<kind>', …) for a new public building. */
   const BUILDINGS = RW.buildings = { bank: { kind: 'bank', name: 'Bank' }, exchange: { kind: 'exchange', name: 'Stock Exchange' }, shop: { kind: 'shop', name: 'WestShop' }, arcade: { kind: 'arcade', name: 'Arcade' }, agency: { kind: 'agency', name: 'Estate Agency' }, hall: { kind: 'hall', name: 'Council Hall' },
@@ -19,16 +19,16 @@
     rootEl.innerHTML = `<canvas id="rwc" tabindex="0"></canvas><div id="rwHud">
       <div class="rw-top"><button class="rw-btn" id="rwPhone" title="Open WestOS (P)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><span>Phone</span></button><button class="rw-btn" id="rwTravel" title="Travel (M)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></svg><span>Travel</span></button><span class="rw-chip" id="rwClock"></span><span class="rw-chip" id="rwCash"></span></div>
       <div id="rwLoc"></div><div id="rwCross"></div><div id="rwTip"></div><div id="rwPrompt"></div><canvas id="rwMap" width="168" height="168"></canvas><div id="rwLabels"></div>
-      <div id="rwDlg"></div><div id="rwHelp"><div><b>W A S D</b> walk</div><div><b>Shift</b> run &nbsp; <b>Space</b> jump</div><div><b>Mouse</b> look (click to capture)</div><div><b>E</b> open a door / talk to someone</div><div><b>M</b> travel &nbsp; <b>P</b> phone (WestOS)</div><div><b>Esc</b> release the mouse</div></div><div id="rwTravelMenu"></div><div id="rwPause">Click to look around</div>
+      <div id="rwDlg"></div><div id="rwHelp"><div><b>W A S D</b> walk</div><div><b>Shift</b> run &nbsp; <b>Space</b> jump</div><div><b>Mouse</b> look (click to capture)</div><div><b>E</b> open a door / talk to someone</div><div><b>M</b> map &nbsp; <b>P</b> phone (WestOS)</div><div><b>Esc</b> release the mouse</div></div><div id="rwPause">Click to look around</div>
       <div id="rwTouch"><div id="rwStick"><i></i></div><button id="rwBtnE">E</button><button id="rwBtnJ">⤒</button><button id="rwBtnR">Run</button></div>
       <div id="rwLoad"><div class="t">Stepping outside…</div><div class="bar"><i></i></div></div><div id="rwFade"></div></div>`;
     screen.insertBefore(rootEl, document.getElementById('menubar'));
-    const cv = $('#rwc'), S = { running: false, phone: false, mode: 'world', nh: 64, nd: 1, scale: 1, fps: 60, travelOpen: false, loading: true, t0: 0 };
-    let gfx = null, st = null, net = null, scr = null, npcs = null, dlg = null, raf = 0, last = 0, room = null, roomH = null, exitDoor = null, cooldown = 0, toastT = 0, helpShown = false;
-    const P = { x: 700, y: 0, z: 560, vx: 0, vz: 0, vy: 0, yaw: 0, pitch: 0, mv: 0, bob: 0, inside: false };
+    const cv = $('#rwc'), S = { running: false, phone: false, mode: 'world', nh: 64, nd: 1, scale: 1, fps: 60, holdUntil: 0, loading: true, t0: 0 };
+    let gfx = null, st = null, net = null, scr = null, npcs = null, dlg = null, raf = 0, last = 0, cells = null, cooldown = 0, toastT = 0, helpShown = false;
+    const P = { x: 700, y: 0, z: 560, vx: 0, vz: 0, vy: 0, yaw: 0, pitch: 0, mv: 0, bob: 0, inside: false, grounded: true, cy: 0 };
     const keys = {}, touch = { on: false, mx: 0, mz: 0, run: false, jump: false, look: null, stick: null };
-    let env = null, envAt = 0, grade = null, dyn = { plots: null, marks: null, sig: '' }, dynCols = [], dynDoors = [], botList = [], botsAt = 0, npcAt = 0, labelsEl = $('#rwLabels'), labelPool = [];
-    let actorBuf = new Float32Array(8 * 256), carBuf = new Float32Array(8 * 128), sunTick = 0, frames = 0, fpsT = 0, adaptT = 0, lookNpc = null, curDoor = null, curNpc = null;
+    let env = null, envAt = 0, grade = null, dyn = { plots: null, marks: null, sig: '' }, dynCols = [], dynColsA = null, dynDoors = [], botList = [], botsAt = 0, npcAt = 0, labelsEl = $('#rwLabels'), labelPool = [];
+    let inBuf = new Float32Array(8 * 16), actorBuf = new Float32Array(8 * 256), carBuf = new Float32Array(8 * 128), sunTick = 0, frames = 0, fpsT = 0, adaptT = 0, lookNpc = null, curDoor = null, curNpc = null;
     const toast = m => { try{ OS.toast(m); }catch(e){} };
     const perfLow = () => document.documentElement.classList.contains('perf-low');
     const nh = () => { const w = OS.homes.world && OS.homes.world(); const n = w ? Object.keys(w).length : 0; return Math.max(64, n || 512); };
@@ -39,26 +39,19 @@
     function gpuUp(){
       if(gfx) return true; gfx = RW.GFX.create(cv, { aa: !perfLow() }); if(!gfx) return false; S.nh = nh(); S.nd = G.districtCount(S.nh); L.setup(S.nh); T.setup(L.radius()); scr = RW.Screens.manager(gfx); npcs = RW.NPC.create(G, L);
       st = RW.Streamer.create(gfx, { nh: S.nh, radius: perfLow() ? cfg.perfRadius : cfg.radius, base: 'os/realworld/' }); gfx.onRestore = () => { st.free(); st = RW.Streamer.create(gfx, { nh: S.nh, radius: cfg.radius }); };
-      net = RW.Net.create(K); return true;
+      net = RW.Net.create(K); cells = RW.Cells.create(gfx); if(RW.Assets && !RW.Assets.tried){ RW.Assets.tried = true; RW.Assets.load('assets/world/').catch(() => {}); } return true;
     }
-    function gpuDown(){ if(!gfx) return; try{ if(net) net.stop(); if(st) st.free(); if(scr) scr.clear(); if(roomH) gfx.free(roomH); if(dyn.plots) gfx.free(dyn.plots); if(dyn.marks) gfx.free(dyn.marks); gfx.destroy(); }catch(e){} gfx = st = net = scr = npcs = null; roomH = null; closeDialog(true); dyn = { plots: null, marks: null, sig: '' }; const c2 = cv.cloneNode(false); cv.replaceWith(c2); }
+    function gpuDown(){ if(!gfx) return; try{ if(net) net.stop(); if(st) st.free(); if(scr) scr.clear(); if(cells) cells.clear(); if(dyn.plots) gfx.free(dyn.plots); if(dyn.marks) gfx.free(dyn.marks); gfx.destroy(); }catch(e){} gfx = st = net = scr = npcs = cells = null; S.cell = null; P.inside = false; closeDialog(true); dyn = { plots: null, marks: null, sig: '' }; const c2 = cv.cloneNode(false); cv.replaceWith(c2); }
 
     /* ---------------- spawn / travel ---------------- */
-    const frontOf = h => { const sd = h.g.side > 0 ? 1 : -1, s0 = Math.sin(h.g.ang), c0 = Math.cos(h.g.ang); return [-sd * s0, sd * c0]; };
-    const homePose = () => { const h = OS.homes.home && OS.homes.home(); if(!h || !h.g) return null; const p = L.house(+String(h.id).slice(1)); if(!p) return null; const f = frontOf(p), d = p.g.dp / 2 + 5; return { n: 'Home · ' + p.g.addr, x: p.g.x + f[0] * d, z: p.g.y + f[1] * d, yaw: Math.atan2(f[0], -f[1]) }; };
+    const homePose = () => { const h = OS.homes.home && OS.homes.home(); if(!h || !h.g) return null; const p = RW.Nav.housePose(+String(h.id).slice(1)); return p ? Object.assign({ n: 'Home · ' + p.name }, p) : null; };
     function spawnPoint(){
       const sp = OS.prefs && OS.prefs.get && OS.prefs.get('rwPos'); if(sp && isFinite(sp.x) && isFinite(sp.z) && Math.hypot(sp.x, sp.z) < L.radius() + 200) return { x: sp.x, z: sp.z, yaw: sp.yaw || 0 };
       const h = homePose(); if(h) return h; return plazaPose();
     }
-    const plazaPose = () => { const c = L.content(0, 0); return { n: 'Town Square', x: c.cx, z: c.cz + 14, yaw: 0 }; };
-    const poiFront = id => { const p = L.poi(id); if(!p) return plazaPose(); return { x: p.x + p.front[0] * 17, z: p.z + p.front[1] * 17, yaw: Math.atan2(-p.front[0], p.front[1]) }; };
+    const plazaPose = () => Object.assign({ n: 'Town Square' }, RW.Nav.plazaPose());
     const poiName = id => (G.POIS[id] && G.POIS[id].n) || id;
-    function travelItems(){
-      const items = [], h = homePose(); if(h) items.push(h); items.push(plazaPose()); Object.keys(BUILDINGS).forEach(id => { const f = poiFront(id); items.push({ n: poiName(id), x: f.x, z: f.z, yaw: f.yaw }); }); { const f = poiFront('park'); items.push({ n: poiName('park') || 'Central Park', x: f.x, z: f.z, yaw: f.yaw }); }
-      const pl = (OS.homes.plots && OS.homes.plots()) || {}, mine = pl[me()] || {}; ['l', 'f'].forEach(k => { if(mine[k]){ const p = L.plotLot(k, me()); if(p) items.push({ n: k === 'l' ? 'My laboratory' : 'My factory', x: p.x + p.front[0] * (p.d / 2 + 6), z: p.z + p.front[1] * (p.d / 2 + 6), yaw: Math.atan2(-p.front[0], p.front[1]) }); } });
-      ['l', 'f'].forEach(k => { const bl = L.ZONE_BLOCKS[k][4], c = L.content(bl[0], bl[1]); items.push({ n: L.ZONE_NAME[k], x: c.cx, z: c.cz + 36, yaw: 0, sub: 'district' }); }); return items;
-    }
-    async function teleport(x, z, yaw){ if(S.mode === 'interior') await leave(true); fade(true); await sleep(280); P.x = x; P.z = z; P.yaw = yaw || 0; P.vx = P.vz = P.vy = 0; P.y = T.height(x, z); if(st) st.update(P.x, P.z); const t0 = performance.now(); while(!ringReady() && performance.now() - t0 < 4500){ await sleep(60); if(st) st.update(P.x, P.z); st && st.upload(3); } fade(false); }
+    async function teleport(x, z, yaw){ fade(true); await sleep(280); if(!st) return; P.x = x; P.z = z; P.yaw = yaw || 0; P.vx = P.vz = P.vy = 0; P.y = P.cy = T.height(x, z); P.grounded = true; if(st) st.update(P.x, P.z); const t0 = performance.now(); while(!ringReady() && performance.now() - t0 < 4500){ await sleep(60); if(st) st.update(P.x, P.z); st && st.upload(3); } fade(false); }
     function ringReady(){ if(!st) return false; let n = 0, ok = 0; for(let i = -1; i <= 1; i++) for(let j = -1; j <= 1; j++){ n++; const c = st.chunks.get((Math.floor(P.x / 128) + i) + ',' + (Math.floor(P.z / 128) + j)); if(c && c.cur && c.lod <= 1) ok++; } return ok >= 8; }
     const fade = on => { $('#rwFade').classList.toggle('on', !!on); };
 
@@ -66,45 +59,43 @@
     function rebuildDyn(){
       const w = (OS.homes.world && OS.homes.world()) || {}, pl = (OS.homes.plots && OS.homes.plots()) || {}, my = me(); let sig = Object.keys(pl).map(u => u + (pl[u].l ? 'l' : '') + (pl[u].f ? 'f' : '')).join() + '|';
       const marks = []; st.chunks.forEach(c => c.doors.forEach(d => { if(d.k !== 'house') return; const r = w[d.id]; if(!r) return; const mine = r.o === my || r.t === my, sale = r.o === 'bank' || (r.a > 0 && r.o !== my); if(mine || sale){ marks.push({ d, mine }); sig += d.id + (mine ? 'm' : 's') + ','; } }));
-      if(sig === dyn.sig) return; dyn.sig = sig; if(dyn.plots) gfx.free(dyn.plots); if(dyn.marks) gfx.free(dyn.marks); dyn.plots = dyn.marks = null; dynCols = []; dynDoors = [];
+      if(sig === dyn.sig) return; dyn.sig = sig; if(dyn.plots) gfx.free(dyn.plots); if(dyn.marks) gfx.free(dyn.marks); dyn.plots = dyn.marks = null; dynCols = []; dynColsA = null; dynDoors = [];
       const mb = new M.MB(2048); let any = false;
       Object.keys(pl).forEach(uid => ['l', 'f'].forEach(k => { if(!pl[uid][k]) return; const c = L.plotLot(k, uid); if(!c) return; any = true; const y = T.height(c.x, c.z) + 0.12, lab = k === 'l', h = lab ? 6 : 8, wall = lab ? '#bfe5e3' : '#dcc3ad', roof = lab ? '#4fb3ae' : '#8f6e5a', f = c.front, rx = -f[1], rz = f[0];
         mb.boxR(c.x, c.z, c.w / 2, c.d / 2, c.ang, y - 1, y + h, wall, roof); const dx = c.x + f[0] * (c.d / 2), dz = c.z + f[1] * (c.d / 2); mb.boxR(dx + f[0] * 0.04, dz + f[1] * 0.04, 1.1, 0.06, Math.atan2(f[1], f[0]) + Math.PI / 2, y, y + 2.6, '#3b3f48', '#3b3f48'); mb.boxR(dx + f[0] * 0.06, dz + f[1] * 0.06, 2.5, 0.06, Math.atan2(f[1], f[0]) + Math.PI / 2, y + h - 1.6, y + h - 0.6, lab ? [90, 230, 210] : [255, 170, 80], lab ? [90, 230, 210] : [255, 170, 80], 128);
-        dynCols.push(0, c.x, c.z, c.w / 2 + 0.3, c.d / 2 + 0.3, Math.cos(c.ang), Math.sin(c.ang), y + h); dynDoors.push({ k: 'plot', kind: k, uid, x: c.x + f[0] * (c.d / 2 + 1.7), z: c.z + f[1] * (c.d / 2 + 1.7), nx: f[0], nz: f[1], y }); }));
+        dynCols.push(0, c.x, c.z, c.w / 2 + 0.3, c.d / 2 + 0.3, Math.cos(c.ang), Math.sin(c.ang), y + h); dynDoors.push({ k: 'plot', kind: k, uid, x: c.x + f[0] * (c.d / 2 + 1.7), z: c.z + f[1] * (c.d / 2 + 1.7), nx: f[0], nz: f[1], y, bx: c.x, bz: c.z, rw: c.w, rd: c.d, bh: h }); }));
+      dynColsA = dynCols.length ? Float32Array.from(dynCols) : null;
       if(any) dyn.plots = gfx.upload(mb.finish());
       if(marks.length){ const m2 = new M.MB(512); marks.forEach(({ d, mine }) => { const px = -d.nz, pz = d.nx, x = d.x + px * 2.4 + d.nx * 0.8, z = d.z + pz * 2.4 + d.nz * 0.8, y = d.y; m2.boxAA(x - 0.05, y, z - 0.05, x + 0.05, y + 3.6, z + 0.05, '#d8d8d8'); const c2 = mine ? [60, 210, 110] : [255, 210, 70]; m2.boxAA(x - 0.5, y + 2.2, z - 0.04, x + 0.5, y + 3.5, z + 0.04, c2, c2, 128); }); dyn.marks = gfx.upload(m2.finish()); }
     }
     const allDoorsNear = (x, z, r) => st.doorsNear(x, z, r).concat(dynDoors.filter(d => Math.hypot(d.x - x, d.z - z) < r));
-    function doorInfo(d){
+    /* may the player walk into this door? → { key, kind, ctx } (landmarks: always; homes: yours or rented; plots: your own) */
+    function cellSpec(d){
       const my = me();
-      if(d.k === 'poi'){ const b = BUILDINGS[d.id]; return b ? { label: 'Enter ' + (d.name || b.name), auto: true, go: () => enterRoom(b.kind, { name: d.name || b.name }, d) } : null; }
-      if(d.k === 'house'){ const r = homeRec(d.id); if(r.o === my || r.t === my) return { label: 'Go inside · ' + d.addr + (r.o === my ? ' (yours)' : ' (rented)'), auto: true, go: () => enterRoom('home', { w: d.w, dp: d.dp, beds: d.beds, type: d.type, name: d.addr }, d) };
-        const sale = r.o === 'bank' || r.a > 0, who = r.o === 'bank' ? 'City-owned' : r.on ? 'Owned by ' + r.on : 'Private'; return { label: d.addr + ' · ' + d.type + ' · ' + who + (sale ? ' · for sale — E to view' : ' · locked'), go: () => sale ? OS.open('RealEstate') : toast('This home is private.') }; }
-      if(d.k === 'plot'){ const lab = d.kind === 'l'; if(d.uid === my) return { label: 'Enter your ' + (lab ? 'laboratory' : 'factory'), auto: true, go: () => enterRoom(lab ? 'plot-lab' : 'plot-factory', {}, d) }; return { label: 'Private ' + (lab ? 'laboratory' : 'factory'), go: () => toast('Only the owner can go in.') }; }
+      if(d.k === 'poi'){ const b = BUILDINGS[d.id]; return b ? { key: 'p:' + d.id, kind: b.kind, ctx: { name: d.name || b.name } } : null; }
+      if(d.k === 'house'){ const r = homeRec(d.id); return (r.o === my || r.t === my) ? { key: 'h:' + d.id, kind: 'home', ctx: { w: d.w, dp: d.dp, beds: d.beds, type: d.type, name: d.addr, fl: d.fl }, own: r.o === my } : null; }
+      if(d.k === 'plot' && d.uid === my){ const lab = d.kind === 'l'; return { key: 'x:' + d.kind, kind: lab ? 'plot-lab' : 'plot-factory', ctx: {}, name: lab ? 'laboratory' : 'factory' }; }
+      return null;
+    }
+    function doorInfo(d){
+      const sp = cellSpec(d); if(sp) return { label: d.k === 'poi' ? (d.name || (BUILDINGS[d.id] || {}).name) + ' · walk in' : d.k === 'house' ? d.addr + (sp.own ? ' (yours)' : ' (rented)') + ' · walk in' : 'Your ' + sp.name + ' · walk in', enter: true, spec: sp };
+      if(d.k === 'house'){ const r = homeRec(d.id), sale = r.o === 'bank' || r.a > 0, who = r.o === 'bank' ? 'City-owned' : r.on ? 'Owned by ' + r.on : 'Private'; return { label: d.addr + ' · ' + d.type + ' · ' + who + (sale ? ' · for sale — E to view' : ' · locked'), go: () => sale ? OS.open('RealEstate') : toast('This home is private.') }; }
+      if(d.k === 'plot'){ const lab = d.kind === 'l'; return { label: 'Private ' + (lab ? 'laboratory' : 'factory'), go: () => toast('Only the owner can go in.') }; }
       return null;
     }
 
-    /* ---------------- interiors ---------------- */
-    async function enterRoom(kind, ctx, door){
-      if(S.mode === 'interior' || cooldown > 0) return; cooldown = 2; fade(true); await sleep(260);
-      try{ room = RW.Interiors.build(kind, ctx); }catch(e){ console.warn('[realworld] interior failed', e); fade(false); return; }
-      roomH = gfx.upload(room.mesh); scr.set(room.screens); exitDoor = door; S.mode = 'interior'; P.inside = true; P.x = room.spawn.x; P.z = room.spawn.z; P.yaw = 0; P.pitch = 0; P.vx = P.vz = P.vy = 0; P.y = 0; env = RW.Env.INDOOR; curDoor = null;
-      const nm = $('#rwLoc'); nm.textContent = room.name; nm.classList.add('show'); fade(false);
+    /* ---------------- interiors: seamless cells (see cells.js) ---------------- */
+    /* build the inside of every enterable building within ~32 m (one per tick, so a frame never stalls), drop the ones you left (> 62 m). A closed building far away costs nothing. */
+    let cellAt = 0;
+    function cellsUpdate(t){
+      if(t - cellAt < 150 || !cells) return; cellAt = t; const want = new Map(); allDoorsNear(P.x, P.z, 32).forEach(d => { const sp = cellSpec(d); if(sp) want.set(sp.key, { sp, d }); });
+      for(const [k, v] of want){ if(!cells.cells.has(k)){ cells.ensure(k, v.sp.kind, v.sp.ctx, v.d); break; } }
+      [...cells.cells.keys()].forEach(k => { const c = cells.cells.get(k); if(!want.has(k) && Math.hypot(c.door.x - P.x, c.door.z - P.z) > 62) cells.drop(k); });
+      const c = cells.inside(P.x, P.y, P.z); if(c !== S.cell){ S.cell = c; P.inside = !!c; closeDialog(true); scr.set(c ? c.screens : []); if(c){ const nm = $('#rwLoc'); nm.textContent = c.name; nm.classList.add('show'); clearTimeout(nm._t); nm._t = setTimeout(() => nm.classList.remove('show'), 2600); } hudLoc = ''; }
     }
-    async function leave(instant){ if(S.mode !== 'interior') return; closeDialog(true); if(!instant){ fade(true); await sleep(260); } scr.clear(); gfx.free(roomH); roomH = null; room = null; S.mode = 'world'; P.inside = false; cooldown = 2.2; const d = exitDoor; if(d){ P.x = d.x + d.nx * 1.1; P.z = d.z + d.nz * 1.1; P.yaw = Math.atan2(d.nx, -d.nz); P.y = T.height(P.x, P.z); } P.vx = P.vz = 0; env = null; if(!instant) fade(false); }
 
-    /* ---------------- collisions ---------------- */
-    const out = { x: 0, z: 0 };
-    function pushOBB(c, i, py){ const top = c[i + 7]; if(top > 0 && py > top - 0.25) return; const r = cfg.pr, co = c[i + 5], si = c[i + 6], dx = out.x - c[i + 1], dz = out.z - c[i + 2];
-      if(c[i] === 1){ const d = Math.hypot(dx, dz), R = c[i + 3] + r; if(d < R && d > 1e-6){ out.x += dx / d * (R - d); out.z += dz / d * (R - d); } return; }
-      const hx = c[i + 3], hz = c[i + 4], lx = dx * co + dz * si, lz = -dx * si + dz * co, qx = clamp(lx, -hx, hx), qz = clamp(lz, -hz, hz), ex = lx - qx, ez = lz - qz, d2 = ex * ex + ez * ez; if(d2 >= r * r) return; let nx, nz, pen;
-      if(d2 > 1e-9){ const d = Math.sqrt(d2); nx = ex / d; nz = ez / d; pen = r - d; } else { const a = hx - Math.abs(lx), b = hz - Math.abs(lz); if(a < b){ nx = lx < 0 ? -1 : 1; nz = 0; pen = a + r; } else { nx = 0; nz = lz < 0 ? -1 : 1; pen = b + r; } }
-      out.x += (nx * co - nz * si) * pen; out.z += (nx * si + nz * co) * pen; }
-    function collide(x, z){
-      out.x = x; out.z = z; const r = cfg.pr;
-      if(S.mode === 'interior'){ for(let pass = 0; pass < 2; pass++) room.cols.forEach(b => { const qx = clamp(out.x, b[0], b[2]), qz = clamp(out.z, b[1], b[3]), dx = out.x - qx, dz = out.z - qz, d2 = dx * dx + dz * dz; if(d2 >= r * r) return; if(d2 > 1e-9){ const d = Math.sqrt(d2); out.x += dx / d * (r - d); out.z += dz / d * (r - d); } else { const l = out.x - b[0], rr = b[2] - out.x, u = out.z - b[1], dn = b[3] - out.z, m = Math.min(l, rr, u, dn); if(m === l) out.x = b[0] - r; else if(m === rr) out.x = b[2] + r; else if(m === u) out.z = b[1] - r; else out.z = b[3] + r; } }); return; }
-      for(let pass = 0; pass < 2; pass++){ st.nearCols(out.x, out.z, c => { for(let i = 0; i < c.length; i += 8) pushOBB(c, i, P.y); }); if(dynCols.length) for(let i = 0; i < dynCols.length; i += 8) pushOBB(dynCols, i, P.y); }
-    }
+    /* ---------------- collisions: see phys.js (boxes with a height, stairs, floors, ceilings) ---------------- */
+    const collSets = () => { const sets = []; st.nearCols(P.x, P.z, c => sets.push({ a: c, st: 8 })); if(dynColsA) sets.push({ a: dynColsA, st: 8 }); const cs = cells.sets(); for(let i = 0; i < cs.length; i++) sets.push(cs[i]); return sets; };
 
     /* ---------------- people & cars ---------------- */
     async function loadBots(){ try{ const m = await (RW.botSource ? RW.botSource() : OS.homes.bots()); botList = Object.keys(m || {}).map(id => { const r = m[id], n = +id.slice(1); return { id, n, b: { n, job: r.j || 'baker', thrift: typeof r.th === 'number' ? r.th : 0.5 }, home: r.h ? G.house(+String(r.h).slice(1)) : null, shirt: pack(hsl(G.h32(n, 19) % 360, 55, 52)), pants: pack(hsl(G.h32(n, 21) % 360, 30, 24)), init: 0, x: 0, z: 0, tx: 0, tz: 0, vx: 0, vz: 0, yaw: 0, ph: 0, mv: 0, vis: false, t: 0 }; }); }catch(e){} }
@@ -117,7 +108,6 @@
     function fillActors(){
       let np = 0, nc = 0; const px = P.x, pz = P.z, put = (buf, i, x, y, z, yaw, ph, mv, sh, pa) => { const o = i * 8; buf[o] = x; buf[o + 1] = y; buf[o + 2] = z; buf[o + 3] = yaw; buf[o + 4] = ph; buf[o + 5] = mv; buf[o + 6] = sh; buf[o + 7] = pa; };
       const grow = (buf, n) => (n * 8 + 8 > buf.length) ? (() => { const b = new Float32Array(buf.length * 2); b.set(buf); return b; })() : buf;
-      if(S.mode === 'interior'){ room.npcs.forEach(n => { actorBuf = grow(actorBuf, np); put(actorBuf, np++, n.x, 0, n.z, n.yaw, 0, 0, pack(M.rgb(n.shirt)), pack(M.rgb(n.pants))); }); return [np, 0]; }
       lookNpc = null; let best = 0.985; const fx = Math.sin(P.yaw) * Math.cos(P.pitch), fz = -Math.cos(P.yaw) * Math.cos(P.pitch), fy = Math.sin(P.pitch);
       for(const q of botList){ if(!q.vis) continue; const dx = q.x - px, dz = q.z - pz, d2 = dx * dx + dz * dz, car = q.sp > 8; if(d2 > (car ? cfg.carRange : cfg.npcRange) ** 2) continue; const y = T.height(q.x, q.z) + (car ? 0.1 : 0);
         if(car){ carBuf = grow(carBuf, nc); put(carBuf, nc++, q.x, y, q.z, q.yaw, 0, 0, q.shirt, q.pants); } else { actorBuf = grow(actorBuf, np); put(actorBuf, np++, q.x, y, q.z, q.yaw, q.ph, q.mv, q.shirt, q.pants); }
@@ -125,6 +115,8 @@
       if(net) net.others.forEach(o => { if(o.inside) return; const dx = o.x - px, dz = o.z - pz; if(dx * dx + dz * dz > cfg.npcRange ** 2) return; const h = G.h32(G.hash(o.uid), 5) % 360; actorBuf = grow(actorBuf, np); put(actorBuf, np++, o.x, T.height(o.x, o.z), o.z, o.yaw, o.ph, o.mv, pack(hsl(h, 70, 50)), pack(hsl(h, 20, 25))); });
       return [np, nc];
     }
+    /* the clerks of the cell you are standing in (drawn with indoor lighting) */
+    function fillInside(){ let n = 0; if(S.cell) S.cell.npcs.forEach(q => { if(n * 8 + 8 > inBuf.length){ const b = new Float32Array(inBuf.length * 2); b.set(inBuf); inBuf = b; } const o = n++ * 8; inBuf[o] = q.x; inBuf[o + 1] = q.y; inBuf[o + 2] = q.z; inBuf[o + 3] = q.yaw; inBuf[o + 4] = 0; inBuf[o + 5] = 0; inBuf[o + 6] = pack(M.rgb(q.shirt)); inBuf[o + 7] = pack(M.rgb(q.pants)); }); return n; }
 
     /* ---------------- HUD ---------------- */
     function project(x, y, z){ const m = gfx.vp, cx = m[0] * x + m[4] * y + m[8] * z + m[12], cy = m[1] * x + m[5] * y + m[9] * z + m[13], cw = m[3] * x + m[7] * y + m[11] * z + m[15]; if(cw < 0.3) return null; return [(cx / cw * 0.5 + 0.5) * cv.clientWidth, (1 - (cy / cw * 0.5 + 0.5)) * cv.clientHeight, cw]; }
@@ -142,11 +134,8 @@
         c.fillStyle = '#ff9a4a'; for(const q of botList){ if(!q.vis) continue; const dx = q.x - P.x, dz = q.z - P.z; if(dx * dx + dz * dz < 14000){ c.beginPath(); c.arc(dx, dz, 2.6, 0, TAU); c.fill(); } } c.fillStyle = '#5aa0ff'; if(net) net.others.forEach(o => { const dx = o.x - P.x, dz = o.z - P.z; if(!o.inside && dx * dx + dz * dz < 14000){ c.beginPath(); c.arc(dx, dz, 3.4, 0, TAU); c.fill(); } }); }
       c.restore(); c.save(); c.translate(84, 84); c.fillStyle = '#fff'; c.beginPath(); c.moveTo(0, -8); c.lineTo(5, 6); c.lineTo(0, 3); c.lineTo(-5, 6); c.closePath(); c.fill(); c.restore(); c.strokeStyle = 'rgba(255,255,255,.35)'; c.lineWidth = 2; c.beginPath(); c.arc(84, 84, 82, 0, TAU); c.stroke(); c.fillStyle = '#fff'; c.font = '700 11px system-ui'; c.fillText('N', 80 + Math.sin(P.yaw) * 70 - 0, 88 - Math.cos(P.yaw) * 70);
     }
-    function districtName(){
-      if(S.mode === 'interior') return room.name; let u = P.x, v = P.z; for(let q = 0; q < 3; q++){ const w = L.warp(u, v); u -= w[0] - P.x; v -= w[1] - P.z; } const i = Math.round(u / L.SU), j = Math.round(v / L.SV), r = L.roleOf(i, j);
-      if(Math.hypot(P.x, P.z) > L.radius() + 80) return 'Countryside'; if(!r) return 'Outskirts'; if(r.role === 'zone') return L.ZONE_NAME[r.kind]; if(Math.abs(i) <= 1 && Math.abs(j) <= 1) return 'Downtown'; if(r.role === 'poi' && (r.id === 'uni' || r.id === 'lab')) return 'University Quarter'; if(r.role === 'poi' && (r.id === 'ind' || r.id === 'plant')) return 'Industrial Estate';
-      return G.district(G.h32(Math.floor((i + 1) / 3) * 31 + 7, Math.floor((j + 1) / 3) * 17 + 3) % 12).name; }
-    function clockText(){ const e = env && S.mode === 'world' ? env : RW.Env.state(OS.now() + (RW.timeShift || 0), null), ph = e.phase, NF = RW.Env.NF, hr = ph >= NF ? 6 + (ph - NF) / (1 - NF) * 16 : (22 + ph / NF * 8) % 24, h = Math.floor(hr), m = Math.floor((hr - h) * 60); return ('0' + h).slice(-2) + ':' + ('0' + m).slice(-2); }
+    const districtName = () => S.cell ? S.cell.name : RW.Nav.districtAt(P.x, P.z);
+    function clockText(){ const e = env ? env : RW.Env.state(OS.now() + (RW.timeShift || 0), null), ph = e.phase, NF = RW.Env.NF, hr = ph >= NF ? 6 + (ph - NF) / (1 - NF) * 16 : (22 + ph / NF * 8) % 24, h = Math.floor(hr), m = Math.floor((hr - h) * 60); return ('0' + h).slice(-2) + ':' + ('0' + m).slice(-2); }
     function setPrompt(txt, sub){ const e = $('#rwPrompt'); if(!txt){ e.classList.remove('show'); return; } e.innerHTML = (touch.on ? '' : '<kbd>E</kbd>') + '<span>' + esc(txt) + '</span>' + (sub ? '<small>' + esc(sub) + '</small>' : ''); e.classList.add('show'); }
     let hudT = 0, hudLoc = '', lastTip = '';
     function hud(t){
@@ -156,9 +145,9 @@
     }
 
     /* ---------------- input ---------------- */
-    const uiOpen = () => S.phone || S.travelOpen || S.loading || !!S.dialog || !!document.querySelector('#windows .win:not(.hidden)');
+    const uiOpen = () => S.phone || S.loading || !!S.dialog || !!document.querySelector('#windows .win:not(.hidden)');
     const locked = () => document.pointerLockElement === cv;
-    const onKey = (e, d) => { if(!S.running || S.phone) return; const k = e.code; if(d && k === 'Escape' && S.dialog){ closeDialog(); return; } if(d && k === 'Escape' && S.travelOpen){ travelMenu(false); return; } if(d && (k === 'KeyM') && !uiOpen()){ travelMenu(true); e.preventDefault(); return; } if(d && k === 'KeyP' && !e.ctrlKey && !e.metaKey){ phone(true); e.preventDefault(); return; }
+    const onKey = (e, d) => { if(!S.running || S.phone) return; const k = e.code; if(d && k === 'Escape' && S.dialog){ closeDialog(); return; } if(d && (k === 'KeyM') && !uiOpen()){ openMap(); e.preventDefault(); return; } if(d && k === 'KeyP' && !e.ctrlKey && !e.metaKey){ phone(true); e.preventDefault(); return; }
       if(uiOpen()) return; if(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyE', 'Enter'].includes(k)){ keys[k] = d; e.preventDefault(); if(d && (k === 'KeyE' || k === 'Enter')) interact(); } };
     window.addEventListener('keydown', e => onKey(e, true)); window.addEventListener('keyup', e => { keys[e.code] = false; onKey(e, false); });
     window.addEventListener('blur', () => { for(const k in keys) keys[k] = false; });
@@ -172,7 +161,7 @@
     const tend = e => { for(const c of e.changedTouches){ if(touch.stick && c.identifier === touch.stick.id){ touch.stick = null; touch.mx = touch.mz = 0; stick.style.display = 'none'; knob.style.transform = ''; } if(touch.look && c.identifier === touch.look.id) touch.look = null; } };
     cv.addEventListener('touchend', tend); cv.addEventListener('touchcancel', tend);
     $('#rwBtnE').addEventListener('touchstart', e => { e.preventDefault(); interact(); }, { passive: false }); $('#rwBtnJ').addEventListener('touchstart', e => { e.preventDefault(); touch.jump = true; }, { passive: false }); $('#rwBtnR').addEventListener('touchstart', e => { e.preventDefault(); touch.run = !touch.run; $('#rwBtnR').classList.toggle('on', touch.run); }, { passive: false });
-    $('#rwPhone').onclick = () => phone(true); $('#rwTravel').onclick = () => travelMenu(!S.travelOpen);
+    $('#rwPhone').onclick = () => phone(true); $('#rwTravel').onclick = () => openMap();
     $('#rwHelp').onclick = () => $('#rwHelp').classList.remove('show');
     /* a conversation: the clerk's line + one button per service (each opens a WestOS app) + Goodbye. The mouse is released while it is open. */
     function openDialog(n){
@@ -182,17 +171,17 @@
       d.querySelector('.bye').onclick = () => { closeDialog(); if(!touch.on){ try{ cv.requestPointerLock(); }catch(e){} } };
     }
     function closeDialog(){ S.dialog = null; const d = rootEl && rootEl.querySelector('#rwDlg'); if(d) d.classList.remove('show'); }
-    function travelMenu(on){ S.travelOpen = on; const m = $('#rwTravelMenu'); m.classList.toggle('show', on); if(on){ document.exitPointerLock && document.exitPointerLock(); const it = travelItems(); m.innerHTML = '<div class="h">Travel <button class="x">×</button></div>' + it.map((x, i) => `<button data-i="${i}">${esc(x.n)}${x.sub ? '<small>' + x.sub + '</small>' : ''}</button>`).join(''); m.querySelector('.x').onclick = () => travelMenu(false); m.querySelectorAll('button[data-i]').forEach(b => { b.onclick = () => { const x = it[+b.dataset.i]; travelMenu(false); teleport(x.x, x.z, x.yaw); }; }); } }
+    /* M / the Map button: WestMap (the same engine, seen from above) — pick a spot, click again, you are there */
+    function openMap(){ if(!S.running || S.loading) return; if(locked()) document.exitPointerLock(); closeDialog(true); try{ OS.open('WestMap'); }catch(e){} }
 
     /* ---------------- interaction ---------------- */
-    function interact(){ if(!S.running || S.loading || S.dialog) return; if(uiOpen()) return; if(curNpc){ openDialog(curNpc); return; } if(curDoor && curDoor.info) curDoor.info.go(); }
+    function interact(){ if(!S.running || S.loading || S.dialog) return; if(uiOpen()) return; if(curNpc){ openDialog(curNpc); return; } if(curDoor && curDoor.info && curDoor.info.go) curDoor.info.go(); }
     function findInteraction(){
       curNpc = null; curDoor = null; const fx = Math.sin(P.yaw), fz = -Math.cos(P.yaw);
-      if(S.mode === 'interior'){ let bd = 3.4; room.npcs.forEach(n => { const dx = n.x - P.x, dz = n.z - P.z, d = Math.hypot(dx, dz); if(d < bd && (dx * fx + dz * fz) / (d || 1) > 0.25){ bd = d; curNpc = n; } }); if(curNpc) setPrompt('Talk to ' + curNpc.name, curNpc.opts.length ? curNpc.opts.map(o => o.label.split(' · ')[0]).join(' · ') : ''); else setPrompt(null);
-        if(cooldown <= 0 && P.z > room.d - 0.55 && Math.abs(P.x - room.w / 2) < 1.4) leave(false); return; }
+      if(S.cell){ let bd = 3.4; S.cell.npcs.forEach(n => { if(Math.abs(n.y - P.y) > 2.4) return; const dx = n.x - P.x, dz = n.z - P.z, d = Math.hypot(dx, dz); if(d < bd && (dx * fx + dz * fz) / (d || 1) > 0.25){ bd = d; curNpc = n; } }); if(curNpc) setPrompt('Talk to ' + curNpc.name, curNpc.opts.length ? curNpc.opts.map(o => o.label.split(' · ')[0]).join(' · ') : ''); else setPrompt(null); return; }
       if(lookNpc && Math.hypot(lookNpc.x - P.x, lookNpc.z - P.z) < 5){ curNpc = { name: G.bot(lookNpc.n).name, line: outLine(lookNpc), opts: [], bot: lookNpc }; }
       let bd = 3.2; allDoorsNear(P.x, P.z, 3.4).forEach(d => { const dist = Math.hypot(d.x - P.x, d.z - P.z); if(dist < bd){ const i = doorInfo(d); if(i){ bd = dist; curDoor = { d, info: i, dist }; } } });
-      if(curDoor){ curNpc = null; setPrompt(curDoor.info.label); const sp = Math.hypot(P.vx, P.vz), face = fx * -curDoor.d.nx + fz * -curDoor.d.nz; if(curDoor.info.auto && cooldown <= 0 && curDoor.dist < 1.5 && sp > 1.5 && face > 0.4) curDoor.info.go(); } else if(curNpc) setPrompt('Talk to ' + curNpc.name); else setPrompt(null);
+      if(curDoor){ curNpc = null; setPrompt(curDoor.info.label); } else if(curNpc) setPrompt('Talk to ' + curNpc.name); else setPrompt(null);
     }
 
     /* ---------------- per-frame update ---------------- */
@@ -200,37 +189,36 @@
       cooldown = Math.max(0, cooldown - dt); if(locked() && uiOpen()) document.exitPointerLock(); const busy = uiOpen() || S.loading; let ix = 0, iz = 0, run = false;
       if(!busy){ ix = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0); iz = (keys.KeyS || keys.ArrowDown ? 1 : 0) - (keys.KeyW || keys.ArrowUp ? 1 : 0); run = !!(keys.ShiftLeft || keys.ShiftRight) || touch.run; if(touch.on){ ix += touch.mx; iz += touch.mz; } const l = Math.hypot(ix, iz); if(l > 1){ ix /= l; iz /= l; } if(keys.ArrowLeft && keys.ShiftLeft){ } }
       if(!busy && (keys.ArrowLeft || keys.ArrowRight) && false) P.yaw += 0;
-      const sp = (run ? cfg.run : cfg.walk) * (S.mode === 'interior' ? 0.8 : 1), fx = Math.sin(P.yaw), fz = -Math.cos(P.yaw), rx = Math.cos(P.yaw), rz = Math.sin(P.yaw), tvx = (rx * ix - fx * iz) * sp, tvz = (rz * ix - fz * iz) * sp, a = Math.min(1, dt * (Math.hypot(tvx, tvz) > 0.1 ? 11 : 9));
+      const sp = (run ? cfg.run : cfg.walk) * (S.cell ? 0.8 : 1), fx = Math.sin(P.yaw), fz = -Math.cos(P.yaw), rx = Math.cos(P.yaw), rz = Math.sin(P.yaw), tvx = (rx * ix - fx * iz) * sp, tvz = (rz * ix - fz * iz) * sp, a = Math.min(1, dt * (Math.hypot(tvx, tvz) > 0.1 ? 11 : 9));
       P.vx += (tvx - P.vx) * a; P.vz += (tvz - P.vz) * a;
-      const steps = Math.max(1, Math.ceil(Math.hypot(P.vx, P.vz) * dt / 0.25)), sdt = dt / steps; for(let i = 0; i < steps; i++){ collide(P.x + P.vx * sdt, P.z + P.vz * sdt); P.x = out.x; P.z = out.z; }
-      if(S.mode === 'world'){ const d = Math.hypot(P.x, P.z), mx = L.radius() + 450; if(d > mx){ P.x *= mx / d; P.z *= mx / d; P.vx = P.vz = 0; } }
-      const gy = S.mode === 'interior' ? 0 : T.height(P.x, P.z), onG = P.y <= gy + 0.02; if(onG && P.vy <= 0 && (keys.Space || touch.jump) && !busy){ P.vy = cfg.jump; } touch.jump = false;
-      P.vy -= cfg.grav * dt; P.y += P.vy * dt; if(P.y <= gy){ P.y = gy; P.vy = 0; } else if(P.vy <= 0 && P.y < gy + 0.25 && onG){ P.y = gy; }
-      const spd = Math.hypot(P.vx, P.vz); P.mv = clamp(spd / cfg.run, 0, 1.2); P.bob += dt * spd * 1.9; if(S.mode === 'world') findInteractionThrottled(t);
-      else findInteraction();
-      if(net && S.mode === 'world') net.tick({ x: P.x, z: P.z, yaw: P.yaw, mv: spd / cfg.run, inside: false }, dt); else if(net && S.mode === 'interior') net.tick({ x: P.x, z: P.z, yaw: P.yaw, mv: 0, inside: true }, dt);
+      const jump = (keys.Space || touch.jump) && !busy ? cfg.jump : 0; touch.jump = false;
+      Phys.step(P, dt, { sets: collSets(), disabled: cells.disabled(), ground: T.height, grav: cfg.grav, jump });
+      { const d = Math.hypot(P.x, P.z), mx = L.radius() + 450; if(d > mx){ P.x *= mx / d; P.z *= mx / d; P.vx = P.vz = 0; } }
+      const dy = P.y - P.cy; P.cy = Math.abs(dy) > 1.2 ? P.y : P.cy + dy * Math.min(1, dt * 16);   // stairs and kerbs glide instead of snapping
+      const spd = Math.hypot(P.vx, P.vz); P.mv = clamp(spd / cfg.run, 0, 1.2); P.bob += dt * spd * 1.9; cellsUpdate(t); findInteractionThrottled(t);
+      if(net) net.tick({ x: P.x, z: P.z, yaw: P.yaw, mv: P.inside ? 0 : spd / cfg.run, inside: P.inside }, dt);
     }
     let fiAt = 0; const findInteractionThrottled = t => { if(t - fiAt > 60){ fiAt = t; findInteraction(); } };
 
     /* ---------------- render ---------------- */
     function render(dt, t){
       const dpr = Math.min(window.devicePixelRatio || 1, perfLow() ? 1 : 1.5) * S.scale; gfx.resize(cv.clientWidth, cv.clientHeight, dpr);
-      if(S.mode === 'world'){
-        if(!env || t - envAt > 250){ envAt = t; grade = K.skin && K.skin(); env = RW.Env.state(OS.now() + (RW.timeShift || 0), grade && grade.three); S.env = env; }
-        st.update(P.x, P.z); st.upload(2); st.step(dt);
-        if(t - sunTick > 2000){ sunTick = t; const n2 = nh(); if(n2 !== S.nh){ S.nh = n2; S.nd = G.districtCount(n2); L.setup(n2); T.setup(L.radius()); st.setNH(n2); } if(S.nh) rebuildDyn(); }
-        if(t - botsAt > 90000){ botsAt = t; loadBots(); } stepNPCs(t, dt);
-      }
-      const e = env || RW.Env.INDOOR, bob = Math.sin(P.bob * 2.2) * 0.03 * P.mv, cam = { pos: [P.x, P.y + cfg.eye + bob, P.z], yaw: P.yaw, pitch: P.pitch, fov: cfg.fov * Math.PI / 180, near: 0.25, far: cfg.far };
+      if(!env || t - envAt > 250){ envAt = t; grade = K.skin && K.skin(); env = RW.Env.state(OS.now() + (RW.timeShift || 0), grade && grade.three); S.env = env; }
+      st.update(P.x, P.z); st.upload(2); st.step(dt);
+      if(t - sunTick > 2000){ sunTick = t; const n2 = nh(); if(n2 !== S.nh){ S.nh = n2; S.nd = G.districtCount(n2); L.setup(n2); T.setup(L.radius()); st.setNH(n2); } if(S.nh) rebuildDyn(); }
+      if(t - botsAt > 90000){ botsAt = t; loadBots(); } stepNPCs(t, dt);
+      const e = env, bob = Math.sin(P.bob * 2.2) * 0.03 * P.mv, cam = { pos: [P.x, P.cy + cfg.eye + bob, P.z], yaw: P.yaw, pitch: P.pitch, fov: cfg.fov * Math.PI / 180, near: 0.25, far: cfg.far };
       gfx.begin(cam, e, t / 1000);
-      if(S.mode === 'world'){ gfx.sky(e.cloud); gfx.startWorld(); S.drawn = st.draw(P.x, P.z, cfg.far); if(dyn.plots) gfx.draw(dyn.plots, 1, 1); if(dyn.marks) gfx.draw(dyn.marks, 1, 1); }
-      else { gfx.startWorld(); gfx.draw(roomH, 1, 1); scr.tick(P.x, P.z, t); scr.draw(); }
+      gfx.sky(e.cloud); gfx.startWorld(); S.drawn = st.draw(P.x, P.z, cfg.far); if(dyn.plots) gfx.draw(dyn.plots, 1, 1); if(dyn.marks) gfx.draw(dyn.marks, 1, 1);
+      S.props = st.drawProps(perfLow() ? 260 : 430, perfLow() ? 380 : 570);                      // trees, lamps, benches: one instanced call per kind
+      if(cells.cells.size){ gfx.env = RW.Env.INDOOR; gfx.startWorld(); cells.draw(); gfx.env = e; if(S.cell){ scr.tick(P.x, P.z, t); scr.draw(); } }   // insides: only loaded ones, indoor light
       const [np, nc] = fillActors(); gfx.actors('person', actorBuf, np); if(nc) gfx.actors('car', carBuf, nc);
-      const fx = grade && grade.fx; if(fx && S.mode === 'world' && (fx.kind === 'snow' || fx.kind === 'embers')) gfx.particles(fx, cv.height * 0.9);
+      if(S.cell){ const ni = fillInside(); if(ni){ gfx.env = RW.Env.INDOOR; gfx.actors('person', inBuf, ni); gfx.env = e; } }
+      const fx = grade && grade.fx; if(fx && !P.inside && (fx.kind === 'snow' || fx.kind === 'embers')) gfx.particles(fx, cv.height * 0.9);
       labels(); minimap(t); hud(t);
     }
     function loop(t){
-      raf = requestAnimationFrame(loop); if(!S.running) return; if(document.hidden || S.phone){ last = t; return; } if(gfx.lost){ last = t; return; }
+      raf = requestAnimationFrame(loop); if(!S.running) return; if(document.hidden || S.phone || performance.now() < S.holdUntil){ last = t; return; } if(gfx.lost){ last = t; return; }
       const dt = Math.min(0.05, (t - last) / 1000 || 0.016); last = t; try{ update(dt, t); render(dt, t); }catch(err){ if(!S.err){ S.err = 1; console.error('[realworld]', err); if(K.diag) K.diag.error('realworld.frame', err); } }
       frames++; if(t - fpsT > 1000){ S.fps = frames * 1000 / (t - fpsT); frames = 0; fpsT = t; adapt(t); }
       if(S.loading){ const ok = ringReady() || t - S.t0 > 14000; $('#rwLoad i').style.width = Math.round(Math.min(1, (st.built || 0) / 12) * 100) + '%'; if(ok){ S.loading = false; $('#rwLoad').classList.add('gone'); $('#rwPause').classList.toggle('show', !touch.on); if(!helpShown){ helpShown = true; $('#rwHelp').classList.add('show'); setTimeout(() => $('#rwHelp').classList.remove('show'), 9000); } } }
@@ -241,15 +229,19 @@
     /* ---------------- public ---------------- */
     function enter(){
       if(S.running) return true; if(!gpuUp()){ toast('The real world needs WebGL 2, which this browser does not have.'); return false; }
-      const sp = spawnPoint(); P.x = sp.x; P.z = sp.z; P.yaw = sp.yaw; P.pitch = 0; P.vx = P.vz = P.vy = 0; P.y = T.height(P.x, P.z); S.mode = 'world'; room = null; S.running = true; S.loading = true; S.phone = false; S.t0 = performance.now(); S.scale = 1; env = null;
+      const sp = spawnPoint(); P.x = sp.x; P.z = sp.z; P.yaw = sp.yaw; P.pitch = 0; P.vx = P.vz = P.vy = 0; P.y = T.height(P.x, P.z); S.mode = 'world'; S.cell = null; P.inside = false; P.cy = P.y; P.grounded = true; S.running = true; S.loading = true; S.phone = false; S.t0 = performance.now(); S.scale = 1; env = null;
       screen.classList.add('rw-on'); screen.classList.remove('rw-phone'); $('#rwLoad').classList.remove('gone'); $('#rwFade').classList.remove('on'); try{ OS.homes.watch(); OS.homes.watchMap(true); }catch(e){} loadBots(); botsAt = performance.now();
       if(net) net.start(P.x, P.z); last = performance.now(); fpsT = last; raf = requestAnimationFrame(loop); setTimeout(() => { if(net && !net.on && S.running) net.start(P.x, P.z); }, 4000); return true;
     }
     function exit(){
-      if(!S.running) return; S.running = false; cancelAnimationFrame(raf); document.exitPointerLock && document.exitPointerLock(); try{ OS.prefs.set('rwPos', S.mode === 'world' ? { x: Math.round(P.x), z: Math.round(P.z), yaw: Math.round(P.yaw * 100) / 100 } : null); }catch(e){}
-      if(S.mode === 'interior'){ S.mode = 'world'; P.inside = false; } screen.classList.remove('rw-on', 'rw-phone'); S.phone = false; S.travelOpen = false; $('#rwTravelMenu').classList.remove('show'); try{ OS.homes.watchMap(false); }catch(e){} gpuDown();
+      if(!S.running) return; S.running = false; cancelAnimationFrame(raf); document.exitPointerLock && document.exitPointerLock(); try{ OS.prefs.set('rwPos', { x: Math.round(P.x), z: Math.round(P.z), yaw: Math.round(P.yaw * 100) / 100 }); }catch(e){}
+      screen.classList.remove('rw-on', 'rw-phone'); S.phone = false; try{ OS.homes.watchMap(false); }catch(e){} gpuDown();
     }
     function phone(on){ if(!S.running) return; S.phone = on; screen.classList.toggle('rw-phone', on); if(on){ document.exitPointerLock && document.exitPointerLock(); $('#rwPause').classList.remove('show'); } else { last = performance.now(); $('#rwPause').classList.toggle('show', !touch.on); } }
-    return { enter, exit, phone, active: () => S.running, inPhone: () => S.phone, teleport, state: () => ({ x: P.x, y: P.y, z: P.z, yaw: P.yaw, mode: S.mode, fps: S.fps, scale: S.scale, radius: st && st.radius, chunks: st && st.chunks.size, calls: gfx && gfx.calls, tris: gfx && Math.round(gfx.tris), built: st && st.built, bots: botList.length, others: net ? net.others.size : 0, loading: S.loading, drawn: S.drawn }), _P: P, _S: S, _enterRoom: enterRoom, _leave: leave, _st: () => st };
+    /* fast travel from the map: leave the phone, close nothing else, fade, wait for the streets under the player, fade in */
+    function travelTo(x, z, yaw){ if(!S.running) return false; if(S.phone) phone(false); return teleport(x, z, yaw); }
+    /* WestMap calls this about once a second while it is open: the world stops drawing under it (no second 3-D scene burning the GPU) */
+    const hold = on => { S.holdUntil = on === false ? 0 : performance.now() + 2500; };
+    return { enter, exit, phone, active: () => S.running, inPhone: () => S.phone, teleport, travelTo, hold, openMap, state: () => ({ x: P.x, y: P.y, z: P.z, yaw: P.yaw, mode: S.mode, fps: S.fps, scale: S.scale, radius: st && st.radius, chunks: st && st.chunks.size, calls: gfx && gfx.calls, tris: gfx && Math.round(gfx.tris), built: st && st.built, bots: botList.length, others: net ? net.others.size : 0, loading: S.loading, drawn: S.drawn, props: S.props, inside: S.cell ? S.cell.name : null, cells: cells ? cells.cells.size : 0, nh: S.nh }), _P: P, _S: S, _st: () => st, _cells: () => cells };
   };
 })(typeof self !== 'undefined' ? self : this);

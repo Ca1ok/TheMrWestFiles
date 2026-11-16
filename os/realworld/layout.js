@@ -38,10 +38,11 @@
   const mkTree = (u, v, s, seed, h) => { const p = warp(u, v); return [p[0], p[1], s, seed, h === undefined ? -1 : h]; };
   function content(i, j){
     const key = K(i, j); let c = CACHE.get(key); if(c) return c; const r = roleOf(i, j); if(!r) return null; const B = inner(i, j), cu = (B.uL + B.uR) / 2, cv = (B.vT + B.vB) / 2;
-    c = { i, j, role: r.role, id: r.id, houses: [], pois: [], fillers: [], plots: [], trees: [], lamps: [], greens: [], paved: [], ponds: [], B }; const fr0 = frame(cu, cv); c.cx = fr0.x; c.cz = fr0.z;
+    c = { i, j, role: r.role, id: r.id, houses: [], pois: [], fillers: [], plots: [], trees: [], lamps: [], benches: [], greens: [], paved: [], ponds: [], B }; const fr0 = frame(cu, cv); c.cx = fr0.x; c.cz = fr0.z;
     const quad = (u0, v0, u1, v1) => [warp(u0, v0), warp(u1, v0), warp(u1, v1), warp(u0, v1)];
     const verge = (skipU) => { for(let u = B.uL + 9, n = 0; u < B.uR - 4; u += 18, n++){ c.trees.push(mkTree(u, B.vT + 1.5, 0.95 + f01(i * 31 + n, j) * 0.4, i * 7 + n)); c.trees.push(mkTree(u + 9, B.vB - 1.5, 0.95 + f01(i + n, j * 17) * 0.4, j * 5 + n)); }
       if(!skipU) for(let v = B.vT + 12, n = 0; v < B.vB - 8; v += 18, n++){ c.trees.push(mkTree(B.uL + 1.5, v, 1, n + i)); c.trees.push(mkTree(B.uR - 1.5, v + 5, 1, n + j)); } };
+    const ring = (u0, v0, rad, n, off) => { const c0 = warp(u0, v0); for(let q = 0; q < n; q++){ const a = off + q / n * TAU, p = warp(u0 + Math.cos(a) * rad, v0 + Math.sin(a) * rad * 0.8); c.benches.push([p[0], p[1], Math.atan2(c0[0] - p[0], -(c0[1] - p[1]))]); } };
     const lamps = () => { for(let u = B.uL + 14, n = 0; u < B.uR; u += 30, n++){ c.lamps.push(warp(u, B.vT - 0.6)); c.lamps.push(warp(u + 14, B.vB + 0.6)); } };
     if(r.role === 'res'){
       const nl = 4, lw = (B.uR - B.uL - 6) / nl, mid = (B.vT + B.vB) / 2;
@@ -51,10 +52,10 @@
         const back = row ? v - g.dp / 2 - 2.6 - f01(idx, 3) * 2 : v + g.dp / 2 + 2.6 + f01(idx, 3) * 2; if(Math.abs(back - mid) > 3.2) c.trees.push(mkTree(u + (f01(idx, 4) - 0.5) * (lw - 10), back, 0.9 + f01(idx, 5) * 0.5, idx, idx));
         if(s % 2 === 0) c.trees.push(mkTree(u + (f01(idx, 6) - 0.5) * 4, row ? B.vB - 1.4 : B.vT + 1.4, 0.9 + f01(idx, 7) * 0.4, idx + 3, idx)); }
       lamps();
-    } else if(r.role === 'plaza'){ c.paved.push(quad(B.uL + 2, B.vT + 2, B.uR - 2, B.vB - 2)); c.fountain = warp(cu, cv); [[-30, -18], [30, -18], [-30, 18], [30, 18]].forEach((o, n) => c.trees.push(mkTree(cu + o[0], cv + o[1], 1.1, n))); verge(true); lamps(); }
+    } else if(r.role === 'plaza'){ c.paved.push(quad(B.uL + 2, B.vT + 2, B.uR - 2, B.vB - 2)); c.fountain = warp(cu, cv); ring(cu, cv, 11, 8, 0.2); [[-30, -18], [30, -18], [-30, 18], [30, 18]].forEach((o, n) => c.trees.push(mkTree(cu + o[0], cv + o[1], 1.1, n))); verge(true); lamps(); }
     else if(r.role === 'poi' || r.role === 'park'){
       const [bi, bj] = [i, j], du = Math.abs(bi) >= Math.abs(bj) ? -Math.sign(bi) : 0, dv = du ? 0 : -Math.sign(bj), fr = frame(cu, cv), f = dirOf(fr, du, dv);
-      if(r.role === 'park'){ c.greens.push(quad(B.uL, B.vT, B.uR, B.vB)); c.park = { x: fr.x, z: fr.z }; c.ponds.push({ x: fr.x, z: fr.z, r: 8 }); for(let q = 0; q < 30; q++){ const u = B.uL + 6 + f01(q, 31) * (B.uR - B.uL - 12), v = B.vT + 6 + f01(q, 32) * (B.vB - B.vT - 12); if(Math.hypot(u - cu, (v - cv) * 1.2) > 13) c.trees.push(mkTree(u, v, 1 + f01(q, 33) * 0.5, q)); } c.street = streetPt(i, j, du || 0, dv || 1, cu, cv); }
+      if(r.role === 'park'){ c.greens.push(quad(B.uL, B.vT, B.uR, B.vB)); c.park = { x: fr.x, z: fr.z }; c.ponds.push({ x: fr.x, z: fr.z, r: 8 }); ring(cu, cv, 13, 6, 0.5); for(let q = 0; q < 30; q++){ const u = B.uL + 6 + f01(q, 31) * (B.uR - B.uL - 12), v = B.vT + 6 + f01(q, 32) * (B.vB - B.vT - 12); if(Math.hypot(u - cu, (v - cv) * 1.2) > 13) c.trees.push(mkTree(u, v, 1 + f01(q, 33) * 0.5, q)); } c.street = streetPt(i, j, du || 0, dv || 1, cu, cv); }
       else { c.pois.push({ id: r.id, x: fr.x, z: fr.z, ang: Math.atan2(-f[0], f[1]), side: 1, front: f, street: streetPt(i, j, du, dv, cu, cv) });
         for(const sgn of [-1, 1]){ const p = frame(cu + sgn * 24, cv), q = (f01(i + 5, j + 9 + sgn) * 7) | 0, fl = 5 + ((f01(i * 3 + sgn, j + 2) * 9) | 0); c.fillers.push({ x: p.x, z: p.z, ang: p.ang, side: j > 0 ? -1 : 1, w: 13 + f01(i, sgn + 8) * 2, d: 14 + f01(sgn, j + 4) * 2, fl, kind: q % 3 === 0 ? 'apartment' : 'office', v: Math.floor(f01(i + sgn * 7, j + 3) * 997), street: streetPt(i, j, 0, j > 0 ? -1 : 1, cu + sgn * 24, cv) }); } }
       verge(true); lamps();

@@ -3,6 +3,6 @@
 importScripts('../lib/worldgen.js', '../lib/buildgen.js', 'terrain.js', 'mesh.js', 'layout.js', 'chunkgen.js');
 self.onmessage = function(e){
   const m = e.data; if(m.t !== 'chunk') return;
-  try{ const r = RWChunk.build(m.cx, m.cz, m.lod, m.nh); self.postMessage({ t: 'chunk', id: m.id, cx: m.cx, cz: m.cz, lod: m.lod, mesh: r.mesh, cols: r.cols, doors: r.doors, stats: r.stats }, [r.mesh.vb, r.mesh.ib.buffer, r.cols.buffer]); }
+  try{ const r = RWChunk.build(m.cx, m.cz, m.lod, m.nh); self.postMessage({ t: 'chunk', id: m.id, cx: m.cx, cz: m.cz, lod: m.lod, mesh: r.mesh, cols: r.cols, doors: r.doors, props: r.props, stats: r.stats }, [r.mesh.vb, r.mesh.ib.buffer, r.cols.buffer, r.props.buffer]); }
   catch(err){ self.postMessage({ t: 'error', id: m.id, cx: m.cx, cz: m.cz, lod: m.lod, msg: String(err && err.stack || err) }); }
 };

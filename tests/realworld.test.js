@@ -36,3 +36,12 @@ const N = RealWorld.NPC.create(G, L), now = 1.7e12; let moving = 0; for(let n = 
 assert.deepStrictEqual(N.state({ n: 3, job: 'baker', thrift: 0.5 }, G.house(9), now, NH), N.state({ n: 3, job: 'baker', thrift: 0.5 }, G.house(9), now, NH));
 const E = RealWorld.Env; assert(E.state(E.DAY * 0.05).night > 0.95 && E.state(E.DAY * 0.6).night < 0.05);
 console.log('realworld ok · slope ' + maxSlope.toFixed(3) + ' · tris/LOD ' + tris.map(Math.round).join('/') + ' · radius ' + Math.round(L.radius()) + ' m');
+/* ---- added with the open-world pass: the map level (LOD 4), instanced props, door data for in-place interiors ---- */
+{ const a = C.build(0, 0, 0, 512), m = C.build(0, 0, 4, 512), f = C.build(-1, 0, 2, 512);
+  assert(m.mesh.vb.byteLength + m.mesh.ib.byteLength < 40e3, 'a map-level chunk stays tiny: ' + (m.mesh.vb.byteLength + m.mesh.ib.byteLength));
+  assert(m.props.length === 0 && f.props.length === 0, 'no props beyond LOD 1');
+  assert(a.props.length > 0 && a.props.length % 8 === 0, 'LOD 0 emits instanced props (8 floats each)');
+  for(let i = 0; i < a.props.length; i += 8) assert(a.props[i] >= 0 && a.props[i] <= 2 && isFinite(a.props[i + 1]) && a.props[i + 5] > 0, 'prop row ' + i / 8);
+  const withDoor = []; for(let cx = -3; cx <= 3; cx++) for(let cz = -3; cz <= 3; cz++) C.build(cx, cz, 0, 512).doors.forEach(d => withDoor.push(d));
+  assert(withDoor.length > 20 && withDoor.every(d => isFinite(d.bx) && isFinite(d.bz) && d.rw > 3 && d.rd > 3 && d.bh > 3), 'every door carries its building footprint');
+  console.log('realworld map-level + props ok · LOD4 chunk ' + ((m.mesh.vb.byteLength + m.mesh.ib.byteLength) / 1024).toFixed(1) + ' KB, ' + a.props.length / 8 + ' instanced props in the centre chunk'); }

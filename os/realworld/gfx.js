@@ -36,6 +36,22 @@ in vec3 vN; in vec4 vC; in vec3 vWP; uniform float uFade, uFadeDir; out vec4 oCo
 float bayer(vec2 p){ ivec2 q = ivec2(mod(p, 4.0)); int i = q.x + q.y * 4; float m[16] = float[16](0.,8.,2.,10.,12.,4.,14.,6.,3.,11.,1.,9.,15.,7.,13.,5.); return (m[i] + 0.5) / 16.0; }
 void main(){ if(uFade < 1.0){ float b = bayer(gl_FragCoord.xy); if(uFadeDir > 0.5 ? b >= uFade : b < uFade) discard; }
   oCol = vec4(outc(shadeIt(lin(vC.rgb), normalize(vN), vWP, vC.a < 0.9 ? 1.0 : 0.0)), 1.0); }`;
+
+  /* instanced props (trees, lamps, benches): per-instance x y z yaw | scale tint(packed rgb) seed 0. Foliage (vertex alpha 250) takes the instance's colour and sways in the wind; the far edge dissolves by distance (no pop). */
+  const PROP_VS = `#version 300 es
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec4 aCol; layout(location=3) in vec4 iPos; layout(location=4) in vec4 iEx;
+uniform mat4 uVP; uniform float uTime; out vec3 vN; out vec4 vC; out vec3 vWP; out vec3 vT;
+vec3 unpackC(float p){ return vec3(floor(p / 65536.0), floor(mod(p, 65536.0) / 256.0), mod(p, 256.0)) / 255.0; }
+void main(){ vec3 p = aPos * iEx.x, n = aNrm; float fol = (aCol.a > 0.95 && aCol.a < 0.995) ? 1.0 : 0.0;
+  p.x += fol * sin(uTime * 1.3 + iPos.x * 0.37 + iPos.z * 0.21) * 0.028 * p.y; p.z += fol * cos(uTime * 1.1 + iPos.z * 0.33) * 0.02 * p.y;
+  float th = -iPos.w, ct = cos(th), st = sin(th); p = vec3(p.x * ct + p.z * st, p.y, -p.x * st + p.z * ct); n = vec3(n.x * ct + n.z * st, n.y, -n.x * st + n.z * ct);
+  vN = n; vC = aCol; vT = unpackC(iEx.y); vWP = p + iPos.xyz; gl_Position = uVP * vec4(vWP, 1.0); }`;
+  const PROP_FS = COMMON + `
+in vec3 vN; in vec4 vC; in vec3 vWP; in vec3 vT; uniform vec2 uFar; out vec4 oCol;
+float bayer(vec2 p){ ivec2 q = ivec2(mod(p, 4.0)); int i = q.x + q.y * 4; float m[16] = float[16](0.,8.,2.,10.,12.,4.,14.,6.,3.,11.,1.,9.,15.,7.,13.,5.); return (m[i] + 0.5) / 16.0; }
+void main(){ float f = 1.0 - smoothstep(uFar.x, uFar.y, length(vWP - uCam)); if(f < 1.0 && bayer(gl_FragCoord.xy) >= f) discard;
+  bool fol = vC.a > 0.95 && vC.a < 0.995; vec3 base = fol ? vT * vC.rgb : vC.rgb;
+  oCol = vec4(outc(shadeIt(lin(base), normalize(vN), vWP, vC.a < 0.9 ? 1.0 : 0.0)), 1.0); }`;
   const ACT_VS = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec4 aMeta; layout(location=3) in vec4 iPos; layout(location=4) in vec4 iAn;
 uniform mat4 uVP; out vec3 vN; out vec3 vC; out vec3 vWP;
@@ -97,8 +113,8 @@ precision mediump float; in vec2 vUV; uniform sampler2D uTex; out vec4 oCol; voi
     const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){ const m = gl.getShaderInfoLog(s); gl.deleteShader(s); throw new Error('shader: ' + m); } return s; };
     const prog = (vs, fs, names) => { const p = gl.createProgram(); gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if(!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(p)); const u = {}; names.split(' ').forEach(n => { u[n] = gl.getUniformLocation(p, n); }); p.u = u; return p; };
     const ENV = 'uCam uSunDir uSunCol uSky uGround uFogCol uFogD uNight uTime';
-    let pW, pA, pS, pP, pT;
-    function compile(){ pW = prog(WORLD_VS, WORLD_FS, 'uVP uFade uFadeDir ' + ENV); pA = prog(ACT_VS, ACT_FS, 'uVP ' + ENV); pS = prog(SKY_VS, SKY_FS, 'uF uR uU uCam uSunDir uZen uHor uSunCol uTan uAsp uNight uTime uCloud'); pP = prog(PT_VS, PT_FS, 'uVP uCam uTime uFall uSize uScale uSpread uCol'); pT = prog(SCR_VS, SCR_FS, 'uVP uTex'); }
+    let pW, pA, pS, pP, pT, pI;
+    function compile(){ pW = prog(WORLD_VS, WORLD_FS, 'uVP uFade uFadeDir ' + ENV); pA = prog(ACT_VS, ACT_FS, 'uVP ' + ENV); pS = prog(SKY_VS, SKY_FS, 'uF uR uU uCam uSunDir uZen uHor uSunCol uTan uAsp uNight uTime uCloud'); pP = prog(PT_VS, PT_FS, 'uVP uCam uTime uFall uSize uScale uSpread uCol'); pT = prog(SCR_VS, SCR_FS, 'uVP uTex'); pI = prog(PROP_VS, PROP_FS, 'uVP uFar ' + ENV); }
     compile();
     const emptyVAO = gl.createVertexArray();
     function setEnv(p){ const e = G.env, u = p.u; gl.uniform3fv(u.uCam, G.cam); gl.uniform3fv(u.uSunDir, e.sunDir); gl.uniform3fv(u.uSunCol, e.sunCol); gl.uniform3fv(u.uSky, e.sky); gl.uniform3fv(u.uGround, e.ground); gl.uniform3fv(u.uFogCol, e.fog); gl.uniform1f(u.uFogD, e.fogD); gl.uniform1f(u.uNight, e.night); gl.uniform1f(u.uTime, G.time); }
@@ -137,6 +153,20 @@ precision mediump float; in vec2 vUV; uniform sampler2D uTex; out vec4 oCol; voi
       gl.useProgram(pA); gl.uniformMatrix4fv(pA.u.uVP, false, G.vp); setEnv(pA); gl.bindVertexArray(m.vao); gl.bindBuffer(gl.ARRAY_BUFFER, m.inst);
       if(count * 8 > m.cap){ m.cap = Math.max(count * 8, m.cap * 2, 512); gl.bufferData(gl.ARRAY_BUFFER, m.cap * 4, gl.DYNAMIC_DRAW); } gl.bufferSubData(gl.ARRAY_BUFFER, 0, floats, 0, count * 8);
       gl.drawElementsInstanced(gl.TRIANGLES, m.ni, gl.UNSIGNED_SHORT, 0, count); G.tris += m.ni / 3 * count; G.calls++; curW = false; };
+
+    /* ---- instanced props: upload a template once, then draw it with a (re-uploaded when changed) buffer of 8 floats per instance ---- */
+    G.propUpload = function(m){
+      const vao = gl.createVertexArray(), vb = gl.createBuffer(), ib = gl.createBuffer(), inst = gl.createBuffer(); gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, m.vb, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 20, 0); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.BYTE, true, 20, 12); gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.UNSIGNED_BYTE, true, 20, 16);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.ib, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, inst); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 32, 0); gl.vertexAttribDivisor(3, 1); gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4, 4, gl.FLOAT, false, 32, 16); gl.vertexAttribDivisor(4, 1); gl.bindVertexArray(null);
+      return { vao, vb, ib, inst, ni: m.ni, type: m.ib instanceof Uint16Array ? gl.UNSIGNED_SHORT : gl.UNSIGNED_INT, cap: 0, version: -1 };
+    };
+    G.propFree = function(h){ if(!h) return; gl.deleteVertexArray(h.vao); gl.deleteBuffer(h.vb); gl.deleteBuffer(h.ib); gl.deleteBuffer(h.inst); };
+    /* floats: 8 per instance (x y z yaw | scale tint seed 0); `dirty` = the instance data changed since the last upload; far0..far1 = the metres over which the props dissolve */
+    G.props = function(h, floats, count, dirty, far0, far1){ if(!count) return; gl.useProgram(pI); const u = pI.u; gl.uniformMatrix4fv(u.uVP, false, G.vp); setEnv(pI); gl.uniform1f(u.uTime, G.time); gl.uniform2f(u.uFar, far0, far1); gl.bindVertexArray(h.vao); gl.bindBuffer(gl.ARRAY_BUFFER, h.inst);
+      if(dirty || h.version < 0){ if(count * 8 > h.cap){ h.cap = Math.max(count * 8, h.cap * 2, 1024); gl.bufferData(gl.ARRAY_BUFFER, h.cap * 4, gl.DYNAMIC_DRAW); } gl.bufferSubData(gl.ARRAY_BUFFER, 0, floats, 0, count * 8); h.version = 0; }
+      gl.drawElementsInstanced(gl.TRIANGLES, h.ni, h.type, 0, count); G.tris += h.ni / 3 * count; G.calls++; curW = false; };
     /* ---- particles (snow / embers): a fixed cloud of seeds wrapped around the camera, animated entirely in the vertex shader ---- */
     let ptBuf = null, ptVAO = null, PTN = 700;
     G.particles = function(fx, scale){ if(!ptVAO){ const a = new Float32Array(PTN * 4); for(let i = 0; i < a.length; i++) a[i] = Math.random(); ptVAO = gl.createVertexArray(); ptBuf = gl.createBuffer(); gl.bindVertexArray(ptVAO); gl.bindBuffer(gl.ARRAY_BUFFER, ptBuf); gl.bufferData(gl.ARRAY_BUFFER, a, gl.STATIC_DRAW); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 16, 0); gl.bindVertexArray(null); }

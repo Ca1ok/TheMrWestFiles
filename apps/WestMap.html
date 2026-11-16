@@ -21,12 +21,42 @@ h3{margin:0 0 4px;font:800 18px var(--font);letter-spacing:-.01em} .sub{color:va
 #perf{position:absolute;right:calc(340px + 14px);top:10px;font:11px/1.45 ui-monospace,Menlo,monospace;white-space:pre;background:rgba(0,0,0,.62);color:#e8f5e9;padding:7px 9px;border-radius:8px;pointer-events:none}
 </style></head><body><div id="wm"><canvas id="cv"></canvas><div id="bar"></div><div id="perf" hidden></div><div id="zoom"><button id="b3d" title="Switch between 2D and 3D">3D</button><button id="bcomp" title="Point north"><svg viewBox="0 0 24 24"><path d="M12 3l4.2 9H7.8z" fill="#e5484d"/><path d="M12 21l-4.2-9h8.4z" fill="currentColor" opacity=".45"/></svg></button><button id="bloc" title="Show my location"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M20 4 4 11l7 2 2 7z"/></svg></button><button data-z="1">+</button><button data-z="-1">−</button><button data-z="0" title="Fit">⌂</button></div><div id="legend"></div><div id="tip"></div>
 <div id="side"><div id="head"><input id="q" type="search" placeholder="Search houses, places, people" autocomplete="off"></div><div id="tabs"></div><div id="pane"></div></div></div></div>
-<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script><script src="../os/lib/maprender.js"></script><script src="../os/lib/house3d.js"></script>
+<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script><script src="../os/lib/worldgen.js"></script><script src="../os/lib/buildgen.js"></script><script src="../os/realworld/terrain.js"></script><script src="../os/realworld/mesh.js"></script><script src="../os/realworld/layout.js"></script><script src="../os/realworld/nav.js"></script><script src="../os/realworld/chunkgen.js"></script><script src="../os/realworld/env.js"></script><script src="../os/realworld/gfx.js"></script><script src="../os/realworld/props.js"></script><script src="../os/realworld/glb.js"></script><script src="../os/realworld/npcs.js"></script><script src="../os/realworld/streamer.js"></script><script src="../os/realworld/mapview.js"></script><script src="../os/lib/house3d.js"></script>
 <script>
-const H = OS.homes, G = H.gen, { h, money, esc } = Kit, $ = s => document.querySelector(s);
+const H = OS.homes, G0 = H.gen, { h, money, esc } = Kit, $ = s => document.querySelector(s);
 const cv = $('#cv'), DAY = 86400000, HOUR = 3600000, MIN = 60000;
 let me = null, world = {}, list = [], byId = {}, bots = {}, botList = [], owners = {}, sel = null, selX = null, follow = null, tab = 'info', filter = { mine: 0, sale: 0, rent: 0, fire: 0 }, layers = { npc: 1, ppl: 1 };
 let fitted = false, need = true, vehicles = [], seenEv = new Set(), firstEv = true, plots = {}, locs = {}, homesAll = {}, anim = {}, npcPos = [], pplPos = [];
+
+/* ---------- ONE SOURCE OF TRUTH: the 3-D city ----------
+ * WestMap draws the same city as the first-person world, with the same engine (os/realworld/*: layout → chunkgen → streamer → gfx). Everything about WHERE things are (houses, landmarks, plots, people's routes, districts, the
+ * map's extent) therefore comes from layout.js; WorldGen still provides WHAT things are (names, types, economy, timetables). G is WorldGen with just the geometry replaced, so the rest of this file is unchanged.
+ * To change how the city looks or is laid out, edit os/realworld (chunkgen.js, props.js, layout.js, os/lib/buildgen.js): the world and this map both follow. */
+const RWL = RWLayout, NAV = RealWorld.Nav, NPCS = RealWorld.NPC.create(G0, RWL), G = Object.create(G0);
+const NH = () => Math.max(64, list.length || 512), DCOL = ['#5b8def', '#e0775a', '#4cb58a', '#c28a3c', '#9a6fd1', '#3fa6b8', '#d1627f', '#7aa04b', '#b0a24a', '#6b86a8', '#c07a4e', '#58a0a0'];
+let layNH = 0, districts = [], poiList = []; const poiHt = id => { const b = BuildGen.landmark(id); return b ? b.h : 20; };
+const lay = id => { const g0 = H.house(id), g = Object.assign({}, g0), hh = RWL.house(+String(id).slice(1)); if(hh){ g.x = hh.g.x; g.y = hh.g.y; }
+  Object.defineProperty(g, 'district', { configurable: true, get(){ const d = NAV.districtAt(g.x, g.y); Object.defineProperty(g, 'district', { value: d }); return d; } }); return g; };
+function applyLayout(){   // (re)read every position from the layout when the number of houses changes
+  const n = NH(); if(n === layNH) return false; layNH = n; R.setCount(n);
+  G.POIS = {}; for(const id in G0.POIS){ const q = RWL.poi(id); G.POIS[id] = Object.assign({}, G0.POIS[id], q ? { x: q.x, y: q.z } : {}); }
+  const c0 = RWL.content(0, 0); G.CORE = { x: c0.cx, y: c0.cz };
+  const m = new Map(), r = Math.ceil(RWL.radius() / RWL.SU) + 1; for(let i = -r; i <= r; i++) for(let j = -r; j <= r; j++){ const w = RWL.warp(i * RWL.SU, j * RWL.SV); if(Math.hypot(w[0], w[1]) > RWL.radius() + 40) continue; const nm = NAV.districtAt(w[0], w[1]); if(nm === 'Countryside' || nm === 'Outskirts') continue; let d = m.get(nm); if(!d){ d = { name: nm, sx: 0, sy: 0, n: 0, color: DCOL[m.size % DCOL.length] }; m.set(nm, d); } d.sx += w[0]; d.sy += w[1]; d.n++; }
+  districts = [...m.values()].map(d => ({ name: d.name, color: d.color, city: false, cx: d.sx / d.n, cy: d.sy / d.n }));
+  poiList = Object.keys(G.POIS).filter(id => id !== 'hub' && PC[id]).map(id => ({ id, x: G.POIS[id].x, y: G.POIS[id].y, h: poiHt(id) + 10, n: G.POIS[id].n, c: PC[id][0], l: PC[id][1] }));
+  Object.keys(byId).forEach(id => { byId[id].g = lay(id); }); return true;
+}
+G.districtCount = () => districts.length; G.district = k => districts[k]; G.stations = () => [];
+G.bounds = () => { const r = RWL.radius() + 80; return { x0: -r, y0: -r, x1: r, y1: r }; };
+G.plotCell = (kd, uid) => { const c = RWL.plotLot(kd, uid); return c ? { x: c.x, y: c.z, w: c.w, h: c.d } : G0.plotCell(kd, uid); };
+G.playerPlace = (place, uid, hid) => { let p = null;   // a place name (WorldGen vocabulary) → where it is in the 3-D city
+  if(place === 'home'){ const hh = hid ? RWL.house(+String(hid).slice(1)) : null; if(hh) p = { x: hh.g.x, y: hh.g.y }; } else if(place === 'lab' || place === 'factory'){ const c = RWL.plotLot(place === 'lab' ? 'l' : 'f', uid); if(c) p = { x: c.x, y: c.z }; } else { const q = RWL.poi(place); if(q) p = { x: q.x + q.front[0] * 14, y: q.z + q.front[1] * 14 }; }
+  if(!p) p = { x: G.CORE ? G.CORE.x : 0, y: (G.CORE ? G.CORE.y : 0) + 14 }; return { x: p.x, y: p.y, node: place }; };
+G.route = (a, b) => [[a.x, a.y], [b.x, b.y]]; G.lenOf = rt => { let l = 0; for(let i = 1; i < rt.length; i++) l += Math.hypot(rt[i][0] - rt[i - 1][0], rt[i][1] - rt[i - 1][1]); return l; };
+G.posAlong = (rt, f) => { const tot = G.lenOf(rt); let d = clamp(f, 0, 1) * tot; for(let i = 1; i < rt.length; i++){ const sl = Math.hypot(rt[i][0] - rt[i - 1][0], rt[i][1] - rt[i - 1][1]); if(d <= sl || i === rt.length - 1){ const u = sl ? d / sl : 0; return { x: rt[i - 1][0] + (rt[i][0] - rt[i - 1][0]) * u, y: rt[i - 1][1] + (rt[i][1] - rt[i - 1][1]) * u, a: Math.atan2(rt[i][0] - rt[i - 1][0], -(rt[i][1] - rt[i - 1][1])) }; } d -= sl; } return { x: rt[0][0], y: rt[0][1], a: 0 }; };
+G.npcState = (b, home, now) => { const s = NPCS.state(b, home, now, NH());   // the people walk the real streets, exactly as in the 3-D world (same function, same clock)
+  return { x: s.x, y: s.z, moving: s.moving, route: s.route, f: s.f, eta: s.eta, to: { label: s.dest, why: s.why, x: s.toX, y: s.toZ }, from: { label: s.from }, get next(){ const sl = Math.floor(now / G0.SLOT), nd0 = G0.districtCount(NH()); return [1, 2].map(k => G0.npcPlan(b, sl + k, home, nd0)); } }; };
+
 const dark = () => document.documentElement.dataset.theme !== 'light';
 const isBot = o => /^b\d+$/.test(o), fmt0 = n => '$' + Math.round(n).toLocaleString(), fmt2 = n => '$' + (+n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const COL = { mine: '#5bd68a', bank: '#b3b9c4', player: '#7fb2f2', bot: '#f2b676' };
@@ -40,7 +70,7 @@ const POI_INFO = { bank: 'Deposits, loans and your tax bills.', exchange: 'Where
 /* ---------- data ---------- */
 function rebuild(){
   world = H.world(); const ids = Object.keys(world); owners = {};
-  list = ids.map(id => { let e = byId[id]; if(!e){ e = byId[id] = { id, g: H.house(id) }; } e.h = world[id]; if(e.h.o && !isBot(e.h.o) && e.h.o !== 'bank' && e.h.on) owners[e.h.o] = e.h.on; return e; }).filter(e => e.h); need = true;
+  list = ids.map(id => { let e = byId[id]; if(!e){ e = byId[id] = { id, g: lay(id) }; } e.h = world[id]; if(e.h.o && !isBot(e.h.o) && e.h.o !== 'bank' && e.h.on) owners[e.h.o] = e.h.on; return e; }).filter(e => e.h); applyLayout(); need = true;
   if(!fitted && list.length){ fit(); fitted = true; } if(pendingFocus && byId[pendingFocus]){ const f = pendingFocus; pendingFocus = null; setTimeout(() => focus(f), 0); } if(sel && !world[sel]) sel = null; mapData(); paintSide();
 }
 function events(){ const ev = H.events(); Object.keys(ev).forEach(k => { if(seenEv.has(k)) return; seenEv.add(k); const e = ev[k]; if(!firstEv && Date.now() - e.t < 15 * 60000) launch(e); }); firstEv = false; }
@@ -58,9 +88,10 @@ const paintSideSoon = Kit.debounce(() => paintSide(), 250);
 async function loadBots(){ try{ bots = await H.bots(); botList = Object.keys(bots).map(id => { const r = bots[id]; return { id, n: +id.slice(1), rec: r, b: { n: +id.slice(1), job: r.j || 'baker', thrift: typeof r.th === 'number' ? r.th : 0.5 }, home: r.h ? G.house(+String(r.h).slice(1)) : null }; }); need = true; if(tab === 'info' || tab === 'eco') paintSide(); }catch(e){} }
 
 /* ---------- view ---------- */
-const R = MapRender.create(cv, G), V = R.view, MAXP = 1.12, POIH = { bank: 30, exchange: 40, shop: 18, arcade: 22, agency: 20, hall: 28, uni: 24, lab: 22, ind: 16, plant: 26 };
+const R = RealWorld.MapView.create(cv, G0) || (cv.parentNode.innerHTML = '<div style="margin:auto;padding:30px;text-align:center;font:600 15px system-ui">WestMap needs WebGL 2, which this browser does not have.</div>', null), V = R && R.view, MAXP = 1.12, POIH = { bank: 30, exchange: 40, shop: 18, arcade: 22, agency: 20, hall: 28, uni: 24, lab: 22, ind: 16, plant: 26 };
 function resize(){ if(!R.resize()) return; need = true; try{ drawScene(performance.now()); }catch(e){} }   // a resize clears the canvas: repaint in the same task so no blank frame is ever presented
-addEventListener('resize', resize); new ResizeObserver(resize).observe(cv);
+window.__wm = { R, G, get pin(){ return pin; }, set pin(v){ pin = v; }, travel: d => travel(d), clickAt: (x, y) => { const r = hit(x, y); return clickPin(r, { x, y }); } };   // handle for tests / console
+applyLayout(); R.fit(G.bounds()); addEventListener('resize', resize); new ResizeObserver(resize).observe(cv);
 function fit(){ R.fit(G.bounds(list.length || 512)); goal = null; zt = null; paint3d(); need = true; }
 function focusXY(x, y, k){ follow = null; zt = null; V.k = Math.max(V.k, k || 3.4); V.x = x; V.y = y; need = true; }
 function focus(id){ const e = byId[id]; if(!e) return; sel = id; selX = null; focusXY(e.g.x, e.g.y); tab = 'info'; paintSide(); }
@@ -96,7 +127,7 @@ cv.addEventListener('pointermove', e => { if(!pts.has(e.pointerId)){ hoverSoon(e
   if(!drag) return; const dx = lp(e).x - prev.x, dy = lp(e).y - prev.y; drag.moved += Math.abs(dx) + Math.abs(dy);
   if(drag.mode === 'rot'){ V.b += dx * 0.008; V.p = clamp(V.p - dy * 0.006, 0, MAXP); paint3d(); need = true; return; }
   if(drag.moved > 6) follow = null; const a = R.unproject(prev.x, prev.y), b = R.unproject(lp(e).x, lp(e).y); if(a && b){ V.x += a[0] - b[0]; V.y += a[1] - b[1]; R.unproject(0, 0); } need = true; });
-cv.addEventListener('pointerup', e => { pts.delete(e.pointerId); cv.classList.remove('drag'); if(drag && drag.moved < 6 && pts.size === 0 && drag.mode === 'pan'){ const r = hit(lp(e).x, lp(e).y); if(r && r.t === 'house'){ sel = r.id; selX = null; } else if(r){ selX = r; } else { sel = null; selX = null; } tab = 'info'; need = true; paintSide(); } if(!pts.size) drag = null; });
+cv.addEventListener('pointerup', e => { pts.delete(e.pointerId); cv.classList.remove('drag'); if(drag && drag.moved < 6 && pts.size === 0 && drag.mode === 'pan'){ const q = lp(e), r = hit(q.x, q.y); if(!clickPin(r, q)){ if(r && r.t === 'house'){ sel = r.id; selX = null; } else if(r){ selX = r; } else { sel = null; selX = null; } tab = 'info'; need = true; paintSide(); } } if(!pts.size) drag = null; });
 const endPtr = e => { pts.delete(e.pointerId); if(!pts.size){ drag = null; cv.classList.remove('drag'); } };
 cv.addEventListener('mousedown', e => { if(e.button === 1) e.preventDefault(); }); cv.addEventListener('auxclick', e => e.preventDefault());   // middle button pans: stop the browser's autoscroll mode
 cv.addEventListener('pointercancel', endPtr); addEventListener('blur', () => { pts.clear(); drag = null; cv.classList.remove('drag'); });   // a cancelled/lost touch used to stay in `pts` and leave the map stuck in pinch mode
@@ -117,6 +148,27 @@ function hit(px, py){
   for(const uid in plots){ for(const kd of ['f', 'l']){ if(!plots[uid][kd]) continue; const c = G.plotCell(kd, uid), s = R.project(c.x, c.y, 0); if(s && Math.abs(s[0] - px) < c.w * V.k * s[2] / 2 + 3 && Math.abs(s[1] - py) < c.h * V.k * s[2] / 2 + 3) return { t: 'plot', id: uid, kd }; } }
   const hs = pickHouse(px, py); return hs ? { t: 'house', id: hs } : null;
 }
+
+/* ---------- fast travel: click a spot (a pin drops), click the pin again — or press Enter / the button — and you are there ---------- */
+let pin = null;
+function destFor(r, q){   // → where a click would send you: { x, y (world x / z), yaw, name, src }
+  const at = o => { const sp = NAV.safeSpot(o.x, o.y, NH()); return { x: sp.x, y: sp.z, yaw: sp.yaw, name: sp.sub === 'District' ? sp.name : sp.name + ' · ' + sp.district }; };
+  if(r){ if(r.t === 'house'){ const e = byId[r.id], p = e && NAV.housePose(+r.id.slice(1)); if(p) return { x: p.x, y: p.z, yaw: p.yaw, name: e.g.addr, src: r }; }
+    if(r.t === 'poi'){ const p = NAV.poiPose(r.id); return { x: p.x, y: p.z, yaw: p.yaw, name: p.name, src: r }; }
+    if(r.t === 'plot'){ const c = RWL.plotLot(r.kd, r.id); if(c){ const o = at({ x: c.x + c.front[0] * (c.d / 2 + 7), y: c.z + c.front[1] * (c.d / 2 + 7) }); o.name = (r.kd === 'f' ? 'Factory plot' : 'Laboratory') + ' · ' + nameOf(r.id); o.src = r; return o; } }
+    if(r.t === 'npc' || r.t === 'player'){ const q2 = (r.t === 'npc' ? npcPos : pplPos).find(x => x.id === r.id); if(q2){ const o = at(q2); o.name = r.t === 'npc' ? (bots[r.id] ? bots[r.id].n : 'A resident') : nameOf(r.id); o.src = r; return o; } } }
+  const g = R.pick(q.x, q.y); return g ? Object.assign(at(g), { src: null }) : null;
+}
+function clickPin(r, q){   // returns true when the click was consumed by the pin (travel / replace); false → normal selection
+  const d = destFor(r, q); if(!d) return false;
+  if(pin){ const s = R.project(pin.x, pin.y, 0), same = pin.src && r && pin.src.t === r.t && pin.src.id === r.id; if((s && Math.hypot(s[0] - q.x, s[1] - (s[1] > q.y ? 0 : 0) - q.y) < 30) || (s && Math.hypot(s[0] - q.x, s[1] - 38 - q.y) < 22) || same){ travel(pin); return true; } }
+  pin = { x: d.x, y: d.y, yaw: d.yaw, name: d.name, armed: true, src: d.src }; need = true; if(r && r.t === 'house'){ sel = r.id; selX = null; tab = 'info'; } else if(r){ selX = r; sel = null; tab = 'info'; } else { sel = null; selX = null; } paintSide(); return true;
+}
+function travel(d){ pin = null; try{ OS.realworld.hold(false); OS.realworld.travelTo(d.x, d.y, d.yaw || 0); toast('Travelling to ' + d.name, true); setTimeout(() => { try{ OS.close('WestMap'); }catch(e){} }, 120); }catch(e){ toast('Could not travel: ' + e.message); } paintSide(); }
+setInterval(() => { try{ OS.realworld.hold(); }catch(e){} }, 1000); addEventListener('pagehide', () => { try{ OS.realworld.hold(false); }catch(e){} });
+addEventListener('keydown', e => { if(/INPUT|TEXTAREA|SELECT/.test((e.target || {}).tagName || '')) return; if(e.key === 'Enter' && pin){ travel(pin); e.preventDefault(); } else if(e.key === 'Escape' && pin){ pin = null; paintSide(); e.preventDefault(); } else if(e.code === 'KeyM' && !e.ctrlKey && !e.metaKey){ try{ OS.close('WestMap'); }catch(x){} e.preventDefault(); } });
+function travelCard(p){ if(!pin) return; p.append(h('div', { class: 'card', style: { borderLeft: '3px solid #ffd24a' } }, h('b', null, 'Travel to ' + pin.name), h('div', { class: 'sub' }, 'Click the pin again on the map, press Enter, or:'), btn('Travel here', () => travel(pin)), btn('Clear the pin', () => { pin = null; paintSide(); }, 'sec'))); }
+
 const tip = $('#tip');
 let curCursor = 'grab', tipTxt = '';
 function hover(e){ const q = lp(e), r = hit(q.x, q.y), cur = r ? 'pointer' : 'grab'; if(cur !== curCursor){ cv.style.cursor = cur; curCursor = cur; } let txt = '';
@@ -138,18 +190,17 @@ function drawScene(t){ const now = Date.now(), pn = performance.now();
   const players = []; if(layers.ppl) for(const uid in anim){ const p = playerXY(uid, pn); if(!p) continue; players.push({ id: uid, x: p.x, y: p.y, mine: uid === me, name: nameOf(uid) }); }
   let npcSel = null; if(selX && selX.t === 'npc'){ const nb = botList.find(q => q.id === selX.id); if(nb){ const st = npcAt(nb, now); npcSel = { route: st.moving ? st.route : null, rest: st.moving ? remaining(st.route, st.f) : null, to: st.to }; } }
   vehicles = vehicles.filter(v => pn - v.t0 < v.dur + 2500);
-  R.draw({ dark: dark(), n: nd(), houses: list, plots, npcs, players, vehicles, sel, selX, npcSel, shown, kind, me }, t); npcPos = R.npcPos; pplPos = R.pplPos; }
+  R.draw({ dark: dark(), houses: list, byId, shown, kind, hOf, pois: poiList, districts, plotCell: G.plotCell, plots, npcs, players, vehicles, npcSel, sel, selX, pin, filtering: !!(filter.mine || filter.sale || filter.rent || filter.fire), me }, t); npcPos = R.npcPos; pplPos = R.pplPos; }
 
-function launch(ev){ const types = ev.k === 'fire' ? ['fire'] : ev.k === 'police' ? ['police'] : ['ambulance'], e = byId[ev.h]; if(!e) return; const nd = G.districtCount(list.length); let best = null, bd = 1e12;
-  for(let k = 0; k < nd; k++){ const s = G.stations(k).find(q => q.t === types[0]), dd = (s.x - e.g.x) ** 2 + (s.y - e.g.y) ** 2; if(dd < bd){ bd = dd; best = s; } }
-  if(best) vehicles.push({ t: types[0], from: best, to: e.g, t0: performance.now(), dur: 5000 + Math.min(4000, Math.sqrt(bd) * 18), label: ev.k === 'fire' ? 'Fire crew' : ev.k === 'police' ? 'Police' : 'Ambulance' }); need = true; }
+function launch(ev){ const types = ev.k === 'fire' ? ['fire'] : ev.k === 'police' ? ['police'] : ['ambulance'], e = byId[ev.h], hall = RWL.poi('hall'); if(!e || !hall) return; const from = { x: hall.x + hall.front[0] * 17, y: hall.z + hall.front[1] * 17 }, dist = Math.hypot(from.x - e.g.x, from.y - e.g.y);
+  vehicles.push({ t: types[0], from, to: e.g, t0: performance.now(), dur: 5000 + Math.min(4000, dist * 4), label: ev.k === 'fire' ? 'Fire crew' : ev.k === 'police' ? 'Police' : 'Ambulance' }); need = true; }
 let lastDraw = 0, lastFrame = 0, lastFollowT = 0;
 (function loop(t){ requestAnimationFrame(loop); if(document.hidden || t - lastDraw < 28) return; lastDraw = t; tween(); zoomStep(t); need = false;   /* every frame is drawn live: there is no cached layer to invalidate */
   if(follow){ let p = null; if(follow.t === 'npc'){ const nb = botList.find(q => q.id === follow.id); if(nb) p = npcAt(nb, Date.now()); } else if(follow.t === 'player') p = playerXY(follow.id, performance.now()); if(p){ const ff = 1 - Math.pow(1 - 0.18, Math.min(100, t - (lastFollowT || t)) / 33); V.x += (p.x - V.x) * ff; V.y += (p.y - V.y) * ff; } lastFollowT = t; } else lastFollowT = 0;
   drawScene(t); if(perfOn && t - perfAt > 400){ perfAt = t; paintPerf(); } })(0);
 /* LOD stats overlay: Shift+P (remembered). Shows what the last frame drew and how the governor is steering. */
 let perfOn = false, perfAt = 0; try{ perfOn = localStorage.getItem('westmap_perf') === '1'; }catch(e){} $('#perf').hidden = !perfOn;
-function paintPerf(){ const s = R.stats || {}, a = s.atlas || {}, f = n => (n || 0); $('#perf').textContent = 'draw ' + f(s.ms).toFixed(1) + ' ms · ' + list.length + ' houses (' + f(s.houses) + ' on screen)\ndot ' + f(s.dot) + ' · box ' + f(s.box) + ' · sprite ' + f(s.sprite) + ' · mesh ' + f(s.mesh) + '\nscenery ' + f(s.scn) + ' (sprite ' + f(s.scnSprite) + ', mesh ' + f(s.scnMesh) + ') · tiles ' + f(s.tiles) + '\nbaked ' + f(s.bakes) + ' (+' + f(s.queued) + ' queued) · atlas ' + f(a.entries) + ' in ' + f(a.pages) + ' pages\nLOD bias x' + (s.bias || 1).toFixed(2) + (s.moving ? ' · moving' : '') + (s.cache === 2 ? ' · static layer cached' : ''); }
+function paintPerf(){ const s = R.stats || {}, f = n => (n || 0); $('#perf').textContent = 'frame ' + f(s.ms).toFixed(1) + ' ms · ' + list.length + ' houses\nchunks ' + f(s.chunks) + ' (' + f(s.drawn) + ' drawn) · ' + f(s.pending) + ' building\ndraw calls ' + f(s.calls) + ' · ' + f(s.tris).toLocaleString() + ' tris · props ' + f(s.props) + '\neye ' + f(s.dist) + ' m · streamed ' + f(s.mb) + ' MB'; }
 addEventListener('keydown', e => { if(e.shiftKey && e.key === 'P' && !/INPUT|TEXTAREA|SELECT/.test((e.target || {}).tagName || '')){ perfOn = !perfOn; $('#perf').hidden = !perfOn; try{ localStorage.setItem('westmap_perf', perfOn ? '1' : '0'); }catch(x){} } });
 
 /* ---------- side panel ---------- */
@@ -174,7 +225,7 @@ const placeName = pl => G.PLACE_NAMES[pl] || 'Home';
 const people = () => { const now = Date.now(); return Object.keys(locs).filter(u => locs[u] && locs[u].p && now - locs[u].t < 12 * MIN).map(u => ({ uid: u, l: locs[u] })); };
 const whoHere = (x, y, r) => { const out = []; pplPos.forEach(p => { if(Math.hypot(p.x - x, p.y - y) < r) out.push({ t: 'player', id: p.id, name: nameOf(p.id) }); }); npcPos.forEach(p => { if(Math.hypot(p.x - x, p.y - y) < r && bots[p.id]) out.push({ t: 'npc', id: p.id, name: bots[p.id].n }); }); return out; };
 const pick2 = x => { selX = x; tab = 'info'; paintSide(); };
-function paintInfo(p){ if(selX){ if(selX.t === 'npc') return paintNpc(p); if(selX.t === 'player') return paintPlayer(p); if(selX.t === 'poi') return paintPoi(p); if(selX.t === 'plot') return paintPlot(p); } paintHouse(p); }
+function paintInfo(p){ travelCard(p); if(selX){ if(selX.t === 'npc') return paintNpc(p); if(selX.t === 'player') return paintPlayer(p); if(selX.t === 'poi') return paintPoi(p); if(selX.t === 'plot') return paintPlot(p); } paintHouse(p); }
 function paintNpc(p){
   const nb = botList.find(q => q.id === selX.id), r = bots[selX.id]; if(!nb || !r){ p.append(h('div', { class: 'sub' }, 'This person is no longer in WestCountry.')); return; }
   const st = npcAt(nb, Date.now()), now = Date.now(), why = x => G.WHY[x.why] || 'out and about';
@@ -193,7 +244,7 @@ function paintPlayer(p){
   clearTimeout(paintNpc.t); paintNpc.t = setTimeout(() => { if(tab === 'info' && selX && selX.t === 'player') paintSide(); }, 2500);
 }
 function paintPoi(p){
-  const id = selX.id, o = G.POIS[id], app = POI_APP[id], near = whoHere(o.x, o.y, 26);
+  const id = selX.id, o = G.POIS[id], app = POI_APP[id], near = whoHere(o.x, o.y, 42);
   p.append(h('h3', null, o.n), h('div', { class: 'sub' }, POI_INFO[id] || ''));
   if(app) p.append(btn('Go there — open ' + (APPNAME[app] || app), () => OS.open(app)));
   p.append(h('h3', { style: { marginTop: '14px' } }, 'Here now (' + near.length + ')')); if(!near.length) p.append(h('div', { class: 'sub' }, 'Nobody at the moment.'));

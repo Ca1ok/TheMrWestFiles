@@ -1,6 +1,6 @@
 /* REALWORLD · npcs — where the townspeople are, in the 3D city. The ROSTER and TIMETABLE (who is where, when, and why) still come from WorldGen.npcPlan, shared with the map and the economy;
  * the ROUTES are computed here along the real streets of layout.js (so nobody drives through a house), as a pure function of the clock: every client sees the same people in the same place.
- *   const N = RealWorld.NPC.create(WorldGen, RWLayout);   N.state(bot, homeHouse, now, nHouses) → { x, z, yaw, moving, why, dest }
+ *   const N = RealWorld.NPC.create(WorldGen, RWLayout);   N.state(bot, homeHouse, now, nHouses) → { x, z, yaw, moving, why, dest, from, route, f, eta, toX, toZ, plan, planFrom }
  * Idle NPCs (at home, at work…) are inside buildings and are not drawn; moving ones travel the streets (cars when fast). */
 (function(root){
   const RW = root.RealWorld = root.RealWorld || {};
@@ -22,7 +22,8 @@
       if(!T){ const from = G.npcPlan(b, s - 1, home, nd), to = G.npcPlan(b, s, home, nd), R = routeFor(from, to, nh); T = { from, to, R, t0: s * SLOT + (G.h32(b.n, s) % 25000), dur: Math.max(4000, Math.min(R.len / 14 * 1000, 71000)) }; if(TC.size > 5000) TC.clear(); TC.set(key, T); }
       const f = (now - T.t0) / T.dur, R = T.R, moving = R.len > 3 && f > 0 && f < 1, d = Math.max(0, Math.min(1, f)) * R.len; let i = 1; while(i < R.pts.length - 1 && R.cum[i] < d) i++;
       const a = R.pts[i - 1] || R.pts[0], c = R.pts[i] || a, seg = Math.max(0.001, R.cum[i] - R.cum[i - 1] || 1), t = Math.max(0, Math.min(1, (d - (R.cum[i - 1] || 0)) / seg)), x = a[0] + (c[0] - a[0]) * t, z = a[1] + (c[1] - a[1]) * t;
-      return { x, z, yaw: Math.atan2(c[0] - a[0], -(c[1] - a[1])), moving, why: T.to.why, dest: T.to.label, from: T.from.label };
+      const last = R.pts[R.pts.length - 1] || [x, z];
+      return { x, z, yaw: Math.atan2(c[0] - a[0], -(c[1] - a[1])), moving, why: T.to.why, dest: T.to.label, from: T.from.label, route: R.pts, f: Math.max(0, Math.min(1, f)), eta: Math.max(0, T.t0 + T.dur - now), toX: last[0], toZ: last[1], plan: T.to, planFrom: T.from };
     }
     return { state, routeFor, placeOf };
   }

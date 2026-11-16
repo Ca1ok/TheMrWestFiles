@@ -4,12 +4,12 @@
  * BuildGen (the same pure shape generator as the 2D map and the house previews); the ground from terrain.js. Nothing is downloaded or stored.
  * LEVELS OF DETAIL (chosen by the streamer from the distance to the player):
  *   0  everything: windows and doors, trees, lamps, lane markings, kerbs         1  buildings without windows, simple trees, kerbs
- *   2  plain boxes + asphalt, no trees                                          3  terrain and tall buildings only
+ *   2  plain boxes + asphalt, no trees                                          3  terrain and tall buildings only            4  (map view) every road + every building as a plain box, parks, no props
  * Each chunk is ONE mesh (one draw call). A building / road piece / tree belongs to the chunk that contains its centre, so nothing is drawn twice.
  * Colliders (stride 8): [type 0=box 1=circle, x, z, halfW|radius, halfD, cos, sin, top y]. Doors: { k:'house'|'poi', id, x, z, nx, nz, y }. */
 (function(root, factory){ if(typeof module === 'object' && module.exports) module.exports = factory(require('../lib/worldgen.js'), require('../lib/buildgen.js'), require('./terrain.js'), require('./mesh.js'), require('./layout.js')); else root.RWChunk = factory(root.WorldGen, root.BuildGen, root.RWTerrain, root.RWMesh, root.RWLayout); })(typeof self !== 'undefined' ? self : this, function(G, BG, T, M, L){
   const CH = 128, { MB, rgb, shade, mix, GLOW } = M, f01 = G.f01, h32 = G.h32, sm = T.sm;
-  const RAISE = [0.07, 0.13, 0.32, 0.8], SK = [2, 4, 7, 12], RES = [32, 16, 8, 4];
+  const RAISE = [0.07, 0.13, 0.32, 0.8, 0.9], SK = [2, 4, 7, 12, 14], RES = [32, 16, 8, 4, 4];   // LOD 4 = the MAP level: every road and building as a plain shape, flat colours, used only by the map view
   const C = { asphalt: [58, 60, 66], hwy: [70, 72, 78], kerb: [172, 170, 162], mark: [228, 222, 190], plaza: [186, 178, 164], park: [88, 158, 70], pad: [150, 148, 142], water: [76, 150, 190], bark: [96, 70, 48], lamp: [70, 74, 82], lampGlow: [255, 224, 160],
     leaf: [[70, 130, 62], [88, 148, 66], [58, 112, 70], [104, 150, 58], [150, 130, 52]], grass: [98, 150, 76], dry: [136, 150, 84], urban: [152, 152, 148], forest: [58, 106, 54] };
   const SLOT = BG.SLOT;
@@ -45,7 +45,7 @@
     segs.forEach(sg => {
       if(lod === 3 && !sg.ave) return; const len = Math.hypot(sg.b[0] - sg.a[0], sg.b[1] - sg.a[1]), n = Math.max(2, Math.ceil(len / 8)), d = [], W = [];
       for(let q = 0; q <= n; q++){ const u = sg.a[0] + (sg.b[0] - sg.a[0]) * q / n, v = sg.a[1] + (sg.b[1] - sg.a[1]) * q / n, p = L.warp(u, v); d.push([p[0], T.height(p[0], p[1]), p[1]]); }
-      const col = sg.ave ? C.hwy : C.asphalt, w = sg.hw * 2; let run = null;
+      const col = sg.ave ? C.hwy : C.asphalt, w = sg.hw * 2 * (lod === 4 ? 1.5 : 1); let run = null;
       const flush = () => { if(!run) return; const a = Math.max(0, run[0] - 1), b = Math.min(n, run[1] + 1), seg = d.slice(a, b + 1).map(p => [p[0], p[1] + R, p[2]]);
         if(lod <= 1) mb.ribbon(d.slice(a, b + 1).map(p => [p[0], p[1] + R * 0.5, p[2]]), w + 2 * L.SIDE, C.kerb); mb.ribbon(seg, w, col);
         if(lod === 0) for(let q = run[0]; q < run[1]; q++){ const s0 = q * len / n, xs = L.hwOf(sg.m + (s0 < len / 2 ? 0 : 1)) + 4.5; if(s0 < xs || s0 + len / n > len - xs) continue; const p = d[q], r = d[q + 1], P = t => [p[0] + (r[0] - p[0]) * t, p[1] + R + 0.03, p[2] + (r[2] - p[2]) * t];
@@ -80,40 +80,39 @@
     const c0 = Math.cos(ang), s0 = Math.sin(ang), sd = side > 0 ? 1 : -1, V = S.V; let best = null;
     S.F.forEach(f => { if(f.c !== 4 || Math.abs(f.n[2]) > 0.2 || f.n[1] < 0.7) return; let cx = 0, cy = 0, zmin = 1e9; f.v.forEach(i => { cx += V[i * 3]; cy += V[i * 3 + 1]; zmin = Math.min(zmin, V[i * 3 + 2]); }); cx /= f.v.length; cy /= f.v.length; if(!best || zmin < best.z) best = { x: cx, y: cy, z: zmin }; });
     const lx = best ? best.x : 0, ly = best ? best.y : S.d / 2, ly2 = ly + 1.7, nx = -sd * s0 * 1, nz = sd * c0;   // outward = local +y turned
-    return { x: X + lx * c0 - ly2 * sd * s0, z: Z + lx * s0 + ly2 * sd * c0, nx, nz, y: base };
+    return { x: X + lx * c0 - ly2 * sd * s0, z: Z + lx * s0 + ly2 * sd * c0, nx, nz, y: base, lx, ly };
   }
   const LMF = { bank: 1, exchange: 1, shop: 1, arcade: 1, agency: 1, hall: 1, uni: 1, lab: 1, ind: 1, plant: 1 };
 
   /* ---------------- scenery ---------------- */
-  function makeExtra(mb, lod, cols){
+  /* trees, lamps and benches are INSTANCED (props.js): the worker only records where they stand; kind 0 tree · 1 lamp · 2 bench */
+  function makeExtra(lod, cols, props){
     return {
-      tree(x, z, s, seed){ const y = T.height(x, z), lc = C.leaf[Math.abs(seed | 0) % C.leaf.length]; s = s || 1;
-        if(lod === 0){ mb.cyl(x, z, y - 0.1, y + 2.1 * s, 0.17 * s, 5, C.bark); mb.cone(x, z, y + 1.4 * s, y + 4.6 * s, 2.1 * s, 7, lc); mb.cone(x, z, y + 3.2 * s, y + 6.4 * s, 1.5 * s, 7, shade(lc, 1.12)); }
-        else if(lod === 1) mb.cone(x, z, y, y + 5.5 * s, 1.9 * s, 5, lc);
-        else return; cols.push(1, x, z, 0.4 * s, 0, 0, 0, y + 5); },
-      lamp(x, z){ if(lod > 0) return; const y = T.height(x, z); mb.cyl(x, z, y, y + 4.9, 0.07, 4, C.lamp); mb.boxAA(x - 0.35, y + 4.85, z - 0.35, x + 0.35, y + 5.05, z + 0.35, C.lampGlow, C.lampGlow, GLOW); }
+      tree(x, z, s, seed){ if(lod > 1) return; const y = T.height(x, z); s = s || 1; props.push(0, x, y, z, (seed | 0) * 2.399, s, ((Math.abs(seed | 0) * 7919) % 997) / 997, 0); cols.push(1, x, z, 0.4 * s, 0, 0, 0, y + 5); },
+      lamp(x, z){ if(lod > 0) return; props.push(1, x, T.height(x, z), z, 0, 1, 0, 0); },
+      bench(x, z, yaw){ if(lod > 1) return; const y = T.height(x, z); props.push(2, x, y, z, yaw, 1, 0, 0); if(lod === 0) cols.push(0, x, z, 0.95, 0.32, Math.cos(yaw), Math.sin(yaw), y + 0.5); }
     };
   }
 
   function build(cx, cz, lod, nh){
     L.setup(nh); T.setup(L.radius());
     const x0 = cx * CH, z0 = cz * CH, inC = (x, z) => x >= x0 && x < x0 + CH && z >= z0 && z < z0 + CH;
-    const mb = new MB(lod === 0 ? 16384 : 4096), cols = [], doors = [], stats = { houses: 0, blds: 0 }, ex = makeExtra(mb, lod, cols), fine = lod === 0 ? 8 : 16;
+    const mb = new MB(lod === 0 ? 16384 : 4096), cols = [], doors = [], props = [], stats = { houses: 0, blds: 0 }, ex = makeExtra(lod, cols, props), fine = lod === 0 ? 8 : 16;
     terrain(mb, x0, z0, lod); roads(mb, x0, z0, lod);
     const box = (X, Z, w, d, ang, top) => cols.push(0, X, Z, w / 2 + 0.3, d / 2 + 0.3, Math.cos(ang), Math.sin(ang), top);
     L.blocksNear(x0, z0, x0 + CH, z0 + CH).forEach(b => {
       // ground covers
-      if(lod <= 2){ b.greens.forEach(q => { const m = q.reduce((a, p) => [a[0] + p[0] / 4, a[1] + p[1] / 4], [0, 0]); if(inC(m[0], m[1])) patch(mb, q, C.park, 0.07 * (lod + 1), fine * 1.5); });
+      if(lod <= 2 || lod === 4){ b.greens.forEach(q => { const m = q.reduce((a, p) => [a[0] + p[0] / 4, a[1] + p[1] / 4], [0, 0]); if(inC(m[0], m[1])) patch(mb, q, C.park, 0.07 * (lod + 1), fine * 1.5); });
         b.paved.forEach(q => { const m = q.reduce((a, p) => [a[0] + p[0] / 4, a[1] + p[1] / 4], [0, 0]); if(inC(m[0], m[1])) patch(mb, q, b.role === 'plaza' ? C.plaza : C.pad, 0.06 * (lod + 1), fine * 1.5); }); }
       if(lod <= 1) b.ponds.forEach(p => { if(inC(p.x, p.z)){ const y = T.height(p.x, p.z); mb.cyl(p.x, p.z, y + 0.1, y + 0.16, p.r, 18, C.water); } });
       if(b.fountain && lod <= 1 && inC(b.fountain[0], b.fountain[1])){ const [fx, fz] = b.fountain, y = T.height(fx, fz); mb.cyl(fx, fz, y + 0.06, y + 1.0, 4.2, 18, [150, 146, 138], C.plaza); mb.cyl(fx, fz, y + 0.95, y + 1.02, 3.7, 18, C.water); mb.cyl(fx, fz, y + 0.95, y + 3.4, 0.35, 6, [190, 186, 176]); cols.push(1, fx, fz, 4.5, 0, 0, 0, y + 1); }
       // houses
       b.houses.forEach(h => { if(h.idx >= nh) return; const g = h.g; if(!inC(g.x, g.y)) return; stats.houses++; const base = footBase(g.x, g.y, g.ang, g.w, g.dp); box(g.x, g.y, g.w, g.dp, g.ang, base + g.ht);
-        if(lod <= 1){ const S = BG.shape(g); bakeShape(mb, S, g.x, g.y, g.ang, g.side, base, lod); const dr = doorOf(S, g.x, g.y, g.ang, g.side, base); doors.push({ k: 'house', id: g.id, i: h.idx, x: dr.x, z: dr.z, nx: dr.nx, nz: dr.nz, y: base, addr: g.addr, type: g.type, beds: g.beds, w: g.w, dp: g.dp }); }
+        if(lod <= 1){ const S = BG.shape(g); bakeShape(mb, S, g.x, g.y, g.ang, g.side, base, lod); const dr = doorOf(S, g.x, g.y, g.ang, g.side, base); doors.push({ k: 'house', id: g.id, i: h.idx, x: dr.x, z: dr.z, nx: dr.nx, nz: dr.nz, y: base, addr: g.addr, type: g.type, beds: g.beds, w: g.w, dp: g.dp, bx: g.x, bz: g.y, rw: S.w, rd: dr.ly + S.d / 2, fl: S.fl, bh: S.h }); }
         else bakeBox(mb, g.x, g.y, g.w, g.dp, g.ang, base, g.ht, rgb(BG.WALL[G.h32(h.idx, 3) % BG.WALL.length]), rgb(BG.ROOF[G.h32(h.idx, 4) % BG.ROOF.length]), lod); });
       // landmarks
       b.pois.forEach(p => { if(!inC(p.x, p.z)) return; const S = BG.landmark(p.id), base = footBase(p.x, p.z, p.ang, S.w, S.d); box(p.x, p.z, S.w, S.d, p.ang, base + S.h);
-        if(lod <= 1){ bakeShape(mb, S, p.x, p.z, p.ang, 1, base, lod); const dr = doorOf(S, p.x, p.z, p.ang, 1, base); doors.push({ k: 'poi', id: p.id, x: dr.x, z: dr.z, nx: dr.nx, nz: dr.nz, y: base, name: G.POIS[p.id] && G.POIS[p.id].n }); }
+        if(lod <= 1){ bakeShape(mb, S, p.x, p.z, p.ang, 1, base, lod); const dr = doorOf(S, p.x, p.z, p.ang, 1, base); doors.push({ k: 'poi', id: p.id, x: dr.x, z: dr.z, nx: dr.nx, nz: dr.nz, y: base, name: G.POIS[p.id] && G.POIS[p.id].n, bx: p.x, bz: p.z, rw: S.w, rd: dr.ly + S.d / 2, fl: S.fl, bh: S.h }); }
         else bakeBox(mb, p.x, p.z, S.w, S.d, p.ang, base, S.h, rgb(S.pal.wall), rgb(S.pal.roof), lod); });
       // downtown infill towers
       b.fillers.forEach((f, fi) => { if(!inC(f.x, f.z)) return; stats.blds++; const base = footBase(f.x, f.z, f.ang, f.w, f.d), hgt = f.fl * 3.1 + 2; box(f.x, f.z, f.w, f.d, f.ang, base + hgt);
@@ -121,10 +120,11 @@
       if(lod === 0) b.plots.forEach(p => { if(inC(p.x, p.z)){ const y = T.height(p.x, p.z); mb.boxR(p.x, p.z, p.w / 2 + 1.5, p.d / 2 + 1.5, p.ang, y - 0.3, y + 0.1, [176, 174, 168], [176, 174, 168]); } });
       b.trees.forEach(t => { if(t[4] >= nh) return; if(inC(t[0], t[1])) ex.tree(t[0], t[1], t[2], t[3]); });
       b.lamps.forEach(l => { if(inC(l[0], l[1])) ex.lamp(l[0], l[1]); });
+      b.benches.forEach(q => { if(inC(q[0], q[1])) ex.bench(q[0], q[1], q[2]); });
     });
     // wild trees outside the built-up area (never inside the city: the plateau and its streets end well before)
     if(lod <= 1) for(let i = 0; i < 8; i++) for(let j = 0; j < 8; j++){ const x = x0 + i * 16 + f01(cx * 8 + i, cz * 8 + j) * 14, z = z0 + j * 16 + f01(cz * 8 + j, cx * 8 + i + 99) * 14; const bl = T.built(x, z); if(bl > 0.12) continue; const fa = forestAmt(x, z, bl), r = f01(cx * 8 + i + 400, cz * 8 + j); if(r < 0.06 + fa * 0.6) ex.tree(x, z, 0.8 + f01(i, j + cx) * 0.7, i * 8 + j); }
-    return { cx, cz, lod, mesh: mb.finish(), cols: new Float32Array(cols), doors, stats };
+    return { cx, cz, lod, mesh: mb.finish(), cols: new Float32Array(cols), doors, props: new Float32Array(props), stats };
   }
   return { CH, build, RES };
 });
