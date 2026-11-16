@@ -35,6 +35,43 @@ const ev = (p, fn, arg) => p.evaluate(fn, arg);
     await pg.click('[data-pick]'); await pg.waitForSelector('#onb-done', { timeout: 15000 });
     const home = tree.world.home.u1; assert.ok(home && home.h, 'a home was set'); const hs = tree.world.own[home.h]; assert.strictEqual(hs.t, 'u1'); assert.ok(tree.eco.acct.u1.sys.city > 0, 'first day of rent paid to the city'); audit(); log('✓ rented', home.h, 'for', hs.rh * 24 / 100, '/day — rent went to the city');
     await pg.click('#onb-done'); await pg.waitForSelector('#onb', { state: 'detached' });
+    /* ---- WestLab: a real two-step synthesis through the API, money audited, then the real bench UI ---- */
+    { const out = await ev(pg, async () => {
+        const Sy = Synth, K = n => Sy.catalog().find(x => x.name.startsWith(n)).key, log = [];
+        const buy = async (k, n) => { const r = await OS.shop.buy(k, n); if(!r.ok) log.push('buy ' + k + ': ' + r.msg); };
+        await buy(K('Salicylic acid'), 4); await buy(K('Acetic anhydride'), 6); await buy('H2SO4', 1); await buy('C2H5OH', 4);
+        const t1 = OS.lab.buyTool('reflux'); log.push('tool: ' + t1.msg);
+        const salic = K('Salicylic acid'), ac2o = K('Acetic anhydride');
+        const args = { keys: [salic, ac2o], cat: 'H2SO4', T: 350, vessel: 'reflux', heat: 'mantle', time: 60, workup: 'crystal' };
+        const pl = await OS.lab.step.plan(args); log.push('plan ok=' + pl.card.ok + ' ' + (pl.card.type || pl.card.why));
+        const run = await OS.lab.step.run(args, { [salic]: 4, [ac2o]: 4 }); log.push('run: ' + run.msg);
+        const lg = await OS.lab.step.plan({ keys: ['Na', 'Cl'], T: 298, vessel: 'flask', time: 60 }); log.push('inorganic fallback: kind=' + lg.kind + ' ok=' + lg.card.ok + ' ' + (lg.card.eq || lg.card.why || '').slice(0, 40));
+        return { log, run, tray: OS.lab.tray().map(t => t.key + ':' + t.moles), found: OS.lab.found().length, cache: OS.lab.step.cacheInfo() };
+      });
+      log('  lab:', JSON.stringify(out.log)); assert.ok(out.run && out.run.ok, 'aspirin step ran: ' + JSON.stringify(out.run)); assert.ok(out.run.made[0].name.startsWith('Aspirin'), 'the product is aspirin'); assert.ok(out.found >= 1, 'a discovery was recorded'); assert.ok(/kind=L ok=true/.test(out.log.join(' ')), 'inorganic chemistry still works through the original engine: ' + out.log.join(' | ')); audit(); log('✓ WestLab step: salicylic acid + acetic anhydride → aspirin, ledger still balances');
+      const refused = await ev(pg, async () => { const K = n => Synth.catalog().find(x => x.name.startsWith(n)).key; return await OS.lab.step.run({ keys: [K('Bromobenzene'), 'Mg', K('Benzaldehyde')], solv: K('Diethyl ether'), T: 300, vessel: 'flask', time: 60 }, {}); });
+      assert.ok(!refused.ok, 'a Grignard in a plain flask is refused'); log('✓ WestLab refuses chemistry the equipment cannot do');
+      const ui = await ev(pg, async () => { const f = document.createElement('iframe'); f.id = 'labtest'; f.style.cssText = 'position:fixed;inset:0;width:1180px;height:760px;z-index:99999;border:0;background:#111'; f.src = 'apps/WestLab.html'; document.body.appendChild(f); await new Promise(r => f.addEventListener('load', r)); await new Promise(r => setTimeout(r, 900)); const d = f.contentDocument, b = d.querySelector('.bn'); if(!b) return { ok: false, html: d.body.innerHTML.slice(0, 300) };
+        const r = b.getBoundingClientRect(), page = d.querySelector('.sc'); const items = d.querySelectorAll('.bn-i').length; const first = d.querySelector('.bn-i'); first && first.click(); await new Promise(r => setTimeout(r, 400));
+        return { ok: true, h: Math.round(r.height), scrolls: page ? page.scrollHeight > page.clientHeight + 4 : null, items, chips: d.querySelectorAll('.bn-chip').length, selects: d.querySelectorAll('.bn-ctl select').length, err: d.querySelector('.bn-bad') ? d.querySelector('.bn-bad').textContent : '' }; });
+      log('  bench UI:', JSON.stringify(ui)); assert.ok(ui.ok, 'bench mounted: ' + ui.html); assert.ok(ui.items >= 1 && ui.chips === 1 && ui.selects >= 5, 'inventory, flask and conditions render'); assert.ok(!ui.scrolls, 'the bench fits the window without page scrolling');
+      const flow = await ev(pg, async () => { const d = document.getElementById('labtest').contentDocument, w = ms => new Promise(r => setTimeout(r, ms)), K = n => Synth.catalog().find(x => x.name.startsWith(n)).key;
+        await OS.shop.buy(K('Salicylic acid'), 3); await OS.shop.buy(K('Acetic anhydride'), 3); await w(600);
+        d.querySelector('.bn-q').value = ''; d.querySelector('.bn-q').dispatchEvent(new Event('input')); await w(200);
+        [...d.querySelectorAll('.bn-chip .x')].forEach(b => b.click()); await w(200);
+        const click = nm => { const r = [...d.querySelectorAll('.bn-list .bn-i')].find(x => x.textContent.includes(nm)); r && r.click(); }; click('Salicylic'); await w(150); click('Acetic anhydride'); await w(400);
+        const sel = (lab, fn) => { const s = [...d.querySelectorAll('select')].find(x => x.title === lab || x.options[0].text.startsWith(lab)); fn(s); s.dispatchEvent(new Event('change')); };
+        sel('Catalyst', s => { s.value = 'H2SO4'; }); await w(150); sel('Heating', s => { s.value = 'hot'; }); await w(200); sel('Workup', s => { s.value = 'crystal'; }); await w(200); sel('Time', s => { s.value = '60'; }); await w(900);
+        const type = (d.querySelector('.bn-type') || {}).textContent || '', bad = (d.querySelector('.bn-bad') || {}).textContent || '', eta = (d.querySelector('.bn-bar span') || {}).textContent || '', run = d.querySelector('.bn-run');
+        const before = OS.lab.tray().reduce((n, t) => n + t.moles, 0); const dis = run.disabled; if(!dis){ run.click(); await w(1500); }
+        return { type, bad, eta, dis, before, after: OS.lab.tray().reduce((n, t) => n + t.moles, 0), sheet: !!document.querySelector('.sheet, [class*=sheet]') }; });
+      log('  bench flow:', JSON.stringify(flow)); assert.ok(/Acyl/.test(flow.type), 'the bench found the reaction: ' + JSON.stringify(flow)); assert.ok(!flow.dis, 'Run is enabled'); assert.ok(flow.after > flow.before, 'the step ran from the UI and put product in the tray');
+      const tabs = await ev(pg, async () => { const d = document.getElementById('labtest').contentDocument, w = ms => new Promise(r => setTimeout(r, ms)), seg = t => [...d.querySelectorAll('button')].find(b => b.textContent.trim() === t);
+        seg('Equipment').click(); await w(500); const eq = d.querySelectorAll('.sc-in .row, .sc-in [class*=row]').length, eqTxt = d.body.textContent.includes('Schlenk Line');
+        seg('Library').click(); await w(1800); const lib = d.body.textContent.includes('Your discoveries'); const first = [...d.querySelectorAll('.sc-in .row, .sc-in [class*=row]')].find(r => /Aspirin/.test(r.textContent)); first && first.click(); await w(900);
+        const sheet = document.getElementById('labtest').contentDocument.querySelector('.sheet canvas, [class*=sheet] canvas'); seg('Reactor').click(); await w(400); return { eqTxt, lib, aspirinRow: !!first, sheet: !!sheet, bench: !!d.querySelector('.bn') }; });
+      log('  tabs:', JSON.stringify(tabs)); assert.ok(tabs.eqTxt && tabs.lib && tabs.bench, 'Equipment and Library tabs render without breaking the bench'); assert.ok(tabs.aspirinRow && tabs.sheet, 'a synthesised compound opens its structure sheet');
+      await pg.screenshot({ path: '/tmp/bench.png' }); await ev(pg, () => document.getElementById('labtest').remove()); log('✓ WestLab bench UI mounts, lists the inventory, takes a reagent and fits the screen'); }
     /* ---- trading: tax everywhere ---- */
     // ≈ $20,000 of shares whatever the price has drifted to (the price is a random walk; a fixed 2000 shares stopped fitting the $100k grant)
     const gov0 = tree.eco.acct.u1.sys.gov; const r1 = await ev(pg, async () => await OS.stock.buy(Math.max(1, Math.floor(OS.stock.price() > 0 ? 20000 / OS.stock.price() : 100)))); log('  buy $WEST:', JSON.stringify(r1).slice(0, 90)); await pg.waitForTimeout(5000); audit();

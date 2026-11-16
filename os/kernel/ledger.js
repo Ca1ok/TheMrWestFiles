@@ -94,10 +94,10 @@
     db.ref('eco/cfg').on('value', s => { L.cfg = E.cfgOf({ eco: { cfg: s.val() || {} } }); K.emit('eco'); });
     db.ref('eco/epoch').on('value', s => { const v = s.val(); if(L.epoch && v && v.n !== L.epoch.n){ K.emit('notify', { app: 'Settings', title: 'New economy', body: 'The WestEconomy was reset — reloading…' }); setTimeout(() => location.reload(), 1500); } });
     db.ref('eco/stats').on('value', s => { L.stats = s.val(); K.emit('eco'); });
-    listenBills(uid); listenLoans(uid); listenInbox(uid); listenHome(uid); listenBuild(uid); listenPlot(uid);
+    listenBills(uid); listenLoans(uid); listenInbox(uid); listenHome(uid); listenBuild(uid); listenPlot(uid); listenGarage(uid);
     L.started = true; setTimeout(() => { try{ pushLoc(true); }catch(e){} }, 3000); return { offline: false, fresh: !sa.exists() };
   };
-  L.stop = function(){ if(!C.db) return; ['eco/cfg', 'eco/epoch', 'eco/stats', 'world/meta', 'world/own', 'world/ev'].forEach(p => { try{ C.db.ref(p).off(); }catch(e){} }); if(C.user){ ['eco/bill/', 'eco/loan/', 'eco/inbox/', 'world/home/'].forEach(p => { try{ C.db.ref(p + C.user.uid).off(); }catch(e){} }); try{ C.db.ref('world/own').orderByChild('o').equalTo(C.user.uid).off(); }catch(e){} try{ C.db.ref('world/plot/' + C.user.uid).off(); }catch(e){} try{ L.clearLoc(); }catch(e){} } try{ L.watchMap(false); }catch(e){} L.myPlot = null; L.started = false; L.world = null; L.mine = {}; L.bills = {}; L.loans = {}; L.home = null; L.homeHouse = null; L.initGuest(); };
+  L.stop = function(){ if(!C.db) return; ['eco/cfg', 'eco/epoch', 'eco/stats', 'world/meta', 'world/own', 'world/ev'].forEach(p => { try{ C.db.ref(p).off(); }catch(e){} }); if(C.user){ ['eco/bill/', 'eco/loan/', 'eco/inbox/', 'world/home/'].forEach(p => { try{ C.db.ref(p + C.user.uid).off(); }catch(e){} }); try{ C.db.ref('world/own').orderByChild('o').equalTo(C.user.uid).off(); }catch(e){} try{ C.db.ref('world/plot/' + C.user.uid).off(); }catch(e){} try{ C.db.ref('world/garage/' + C.user.uid).off(); }catch(e){} try{ L.clearLoc(); }catch(e){} } try{ L.watchMap(false); }catch(e){} L.myPlot = null; L.garage = {}; L.started = false; L.world = null; L.mine = {}; L.bills = {}; L.loans = {}; L.home = null; L.homeHouse = null; L.initGuest(); };
 
   /* ---------- atomic operations: save pending state first, then ONE update the rules check against the ledger ---------- */
   /* what a guest is told: signed-out visitors → sign in; a signed-in player while the economy hasn't been started → ask the admin */
@@ -111,7 +111,7 @@
     try{ extra = await fn(); }catch(e){ L.restore(snap); if(undo) undo(); return { ok: false, msg: String(e && e.message || e) }; }
     if(!extra || extra.error){ L.restore(snap); if(undo) undo(); return { ok: false, msg: (extra && extra.error) || 'Not possible right now.' }; }
     K.dirty.add('cash'); const ok = await C.flushNow(extra.paths || {});
-    if(!ok){ await L.resync(); L.restore(snap); if(undo) undo(); Object.assign(L.acct, keep); return { ok: false, msg: 'The server refused that (' + (C.lastErr && C.lastErr.code || why) + '). Nothing was changed.' }; }
+    if(!ok){ await L.resync(); L.restore(snap); if(undo) undo(); Object.assign(L.acct, keep); return { ok: false, msg: 'The server refused that (' + (C.lastErr && C.lastErr.code || 'permission denied') + '). Nothing was changed.' }; }
     return Object.assign({ ok: true }, extra.result || {});
   }
   const fresh = async p => (await C.db.ref(p).once('value')).val();
@@ -219,6 +219,35 @@
     if(kind !== 'f' && kind !== 'l') return { error: 'Unknown plot.' }; if(await fresh('world/plot/' + uid() + '/' + kind)) return { error: kind === 'f' ? 'You already own an industrial plot.' : 'You already own a laboratory.' };
     const fee = L.plotFee(kind); if(!move('city', fee)) return { error: (kind === 'f' ? 'An industrial plot' : 'A laboratory') + ' costs $' + dollars(fee).toLocaleString() + '.' };
     L.acct.hop = 'plot-' + kind; logTx(-dollars(fee), kind === 'f' ? 'Industrial plot' : 'University lab'); changed(); return { paths: { ['world/plot/' + uid() + '/' + kind]: TS() }, result: { fee: dollars(fee) } };
+  });
+
+
+  /* ---------- vehicles: the car dealership and the private airport ----------
+   * A vehicle is a record in world/garage/<uid>/<v1..v12> = { m: model id, c: cents paid, t: server time, col: colour 0..7 } (catalogue: data/vehicle-data.js).
+   * Buying is ONE atomic update like the plots: the garage record + the account paying the city the exact catalogue price (hop 'veh+', lop = the slot).
+   * Selling deletes the record while the city pays back 70 % of what was paid (hop 'veh-'). Repainting only changes `col` and moves no money.
+   * database.rules.json checks all of it (tests/rules.test.js). Where you may BUY (standing in the dealership / airport) is a client-side rule, like the plot gate. */
+  const VD = VehicleData;
+  L.garage = {};
+  function listenGarage(u){ C.db.ref('world/garage/' + u).on('value', s => { L.garage = s.val() || {}; K.emit('garage'); K.emit('props'); K.emit('cash'); }, e => D.error('ledger.garage', e)); }
+  L.vehicles = () => VD.slotIds().filter(id => L.garage && L.garage[id] && VD.get(L.garage[id].m)).map(slot => { const r = L.garage[slot], model = VD.get(r.m); return { slot, m: r.m, col: r.col | 0, paid: dollars(r.c), t: r.t, model, value: dollars(VD.resale(r.c)) }; });
+  L.vehValue = () => L.vehicles().reduce((n, v) => n + v.value, 0);
+  K.vehValue = L.vehValue;
+  L.buyVehicle = (model, col) => needExec(async () => {
+    const m = VD.get(model); if(!m) return { error: 'Unknown model.' }; col = Math.max(0, Math.min(VD.COLORS.length - 1, col | 0));
+    const cur = (await fresh('world/garage/' + uid())) || {}, slot = VD.slotIds().find(x => !cur[x]); if(!slot) return { error: 'Your garage is full (' + VD.MAX_SLOTS + ' vehicles). Sell one first.' };
+    if(!move('city', m.price)) return { error: 'The ' + m.name + ' costs $' + dollars(m.price).toLocaleString() + '.' };
+    L.acct.hop = 'veh+'; L.acct.lop = slot; logTx(-dollars(m.price), m.name); changed();
+    return { paths: { ['world/garage/' + uid() + '/' + slot]: { m: m.id, c: m.price, t: TS(), col } }, result: { slot, name: m.name, price: dollars(m.price) } };
+  });
+  L.sellVehicle = slot => needExec(async () => {
+    const r = await fresh('world/garage/' + uid() + '/' + slot); if(!r) return { error: 'That vehicle is gone.' }; const m = VD.get(r.m), back = VD.resale(r.c);
+    move('city', -back); L.acct.hop = 'veh-'; L.acct.lop = slot; logTx(dollars(back), 'Sold ' + (m ? m.name : 'vehicle')); changed();
+    return { paths: { ['world/garage/' + uid() + '/' + slot]: null }, result: { name: m ? m.name : 'vehicle', price: dollars(back) } };
+  });
+  L.repaintVehicle = (slot, col) => L.exec(async () => {
+    const r = await fresh('world/garage/' + uid() + '/' + slot); if(!r) return { error: 'That vehicle is gone.' }; col = Math.max(0, Math.min(VD.COLORS.length - 1, col | 0));
+    return { paths: { ['world/garage/' + uid() + '/' + slot]: { m: r.m, c: r.c, t: r.t, col } } };
   });
 
   /* ---------- where everybody is: the map's live layers ----------

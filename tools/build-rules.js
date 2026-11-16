@@ -3,6 +3,7 @@
 // WestEconomy law "money is never created or destroyed" (see os/lib/economy.js). Every rule is built from small named pieces so it stays readable,
 // and tests/rules.test.js runs the generated strings against honest and cheating writes.
 const fs = require('fs'), path = require('path');
+const VD = require('../data/vehicle-data.js');                         // the dealership / airport catalogue: every model's exact price is written into the rules below
 const ADMIN_EMAIL = 'kirattdhaliwal@gmail.com';
 const ADMIN = `(auth != null && auth.token.email === '${ADMIN_EMAIL}' && auth.token.email_verified === true)`;
 const NONANON = `(auth != null && auth.token.firebase.sign_in_provider !== 'anonymous')`;
@@ -32,6 +33,16 @@ const HOME = `${R3}.child('world/home/' + $uid + '/h').exists()`;
 const H = `${R3}.child('world/own/' + ${n('hop')})`, H0 = `root.child('world/own/' + ${n('hop')})`;
 const PI = `(root.child('world/meta/pi').exists() ? root.child('world/meta/pi').val() : 10000)`;
 const inbox = (path) => `${R3}.child('eco/inbox/' + ${path})`;
+
+
+/* ---------- vehicles (car dealership + private airport): world/garage/<uid>/<v1..v12> ----------
+ * Buying = ONE atomic update: the garage record + the account paying the city its exact catalogue price (hop 'veh+', lop = the slot).
+ * Selling = deleting the record while the account receives floor(price paid x 70 %) from the city (hop 'veh-'). Same pattern as the plots / houses. */
+const VSLOT = '^v([1-9]|1[0-2])$';
+const vPrice = m => VD.ALL.reduceRight((acc, v) => `(${m} === '${v.id}' ? ${v.price} : ${acc})`, '-1');
+const vRec0 = `root.child('world/garage/' + $uid + '/' + newData.child('lop').val())`, vRec1 = `newData.parent().parent().parent().child('world/garage/' + $uid + '/' + newData.child('lop').val())`;
+const vBuy = `(newData.child('hop').val() === 'veh+' && newData.child('lop').val().matches(/${VSLOT}/) && !${vRec0}.exists() && ${vRec1}.exists() && (newData.child('sys/city').val() - (data.exists() ? data.child('sys/city').val() : 0)) === ${vRec1}.child('c').val())`;
+const vSell = `(newData.child('hop').val() === 'veh-' && ${vRec0}.exists() && !${vRec1}.exists() && (newData.child('sys/city').val() - (data.exists() ? data.child('sys/city').val() : 0)) * 10000 === 0 - (${vRec0}.child('c').val() * ${VD.SELL_BP} - (${vRec0}.child('c').val() * ${VD.SELL_BP}) % 10000))`;
 
 const ACCT_CORE = [
   `newData.exists()`,
@@ -75,7 +86,9 @@ const ACCT_CORE = [
     ` || (${n('hop')} === 'plot-f' && !root.child('world/plot/' + $uid + '/f').exists() && ${D('sys/city')} === ${cfg('plotFee', 25000000)} && ${R3}.child('world/plot/' + $uid + '/f').val() === now)` +
     ` || (${n('hop')} === 'plot-l' && !root.child('world/plot/' + $uid + '/l').exists() && ${D('sys/city')} === ${cfg('labFee', 15000000)} && ${R3}.child('world/plot/' + $uid + '/l').val() === now)` +
     // escrow for a house the council will build (the exact price is charged when it is built; the rest is refunded)
-    ` || (${n('hop')} === 'bld' && !root.child('world/build/' + $uid + '/' + ${n('lop')}).exists() && ${R3}.child('world/build/' + $uid + '/' + ${n('lop')}).exists() && ${D('sys/city')} === (root.child('eco/cfg/builds/' + ${R3}.child('world/build/' + $uid + '/' + ${n('lop')} + '/y').val() + '/c').val() * ${PI} - (root.child('eco/cfg/builds/' + ${R3}.child('world/build/' + $uid + '/' + ${n('lop')} + '/y').val() + '/c').val() * ${PI}) % 10000) / 10000)))`
+    ` || (${n('hop')} === 'bld' && !root.child('world/build/' + $uid + '/' + ${n('lop')}).exists() && ${R3}.child('world/build/' + $uid + '/' + ${n('lop')}).exists() && ${D('sys/city')} === (root.child('eco/cfg/builds/' + ${R3}.child('world/build/' + $uid + '/' + ${n('lop')} + '/y').val() + '/c').val() * ${PI} - (root.child('eco/cfg/builds/' + ${R3}.child('world/build/' + $uid + '/' + ${n('lop')} + '/y').val() + '/c').val() * ${PI}) % 10000) / 10000)` +
+    // a vehicle from the car dealership or the private airport (bought at the catalogue price, sold back at 70 % of what was paid)
+    ` || ${vBuy} || ${vSell}))`
 ];
 const acctWrite = `${ADMIN} || (${OWNER('$uid')} && ${ACCT_CORE.map(x => '(' + x + ')').join(' && ')})`;
 const acctRules = {
@@ -171,6 +184,14 @@ const world = { '.write': ADMIN, own: houseRules, meta: { '.read': true }, ev: {
     '.validate': `!newData.exists() || (newData.hasChildren(['y','t','c','on']) && newData.child('y').isString() && newData.child('t').isNumber() && newData.child('c').isNumber() && newData.child('on').isString())`, y: {}, t: {}, c: {}, on: {}, $other: { '.validate': false } } } },
   // plots: public read (the map shows who owns what); a plot can only be written together with the ledger charge that pays for it, and never rewritten
   plot: { '.read': true, $uid: { $kind: { '.write': `${ADMIN} || (${OWNER('$uid')} && !data.exists() && newData.exists() && newData.val() === now && ($kind === 'f' || $kind === 'l') && newData.parent().parent().parent().parent().child('eco/acct/' + $uid + '/hop').val() === 'plot-' + $kind && newData.parent().parent().parent().parent().child('eco/acct/' + $uid + '/rev').val() === root.child('eco/acct/' + $uid + '/rev').val() + 1)`, '.validate': `($kind === 'f' || $kind === 'l') && newData.isNumber()` } } },
+  // garage: the owner's cars and planes. Private (owner + admin read). A record can only appear together with the ledger charge that pays for it (exact catalogue price), only be deleted together with the refund, and only be repainted (col) otherwise.
+  garage: { $uid: { '.read': OWNER_OR_ADMIN('$uid'), $slot: {
+    '.write': `${ADMIN} || (${OWNER('$uid')} && $slot.matches(/${VSLOT}/) && (` +
+      `(!data.exists() && newData.exists() && newData.parent().parent().parent().parent().child('eco/acct/' + $uid + '/hop').val() === 'veh+' && newData.parent().parent().parent().parent().child('eco/acct/' + $uid + '/lop').val() === $slot && newData.parent().parent().parent().parent().child('eco/acct/' + $uid + '/rev').val() === root.child('eco/acct/' + $uid + '/rev').val() + 1 && newData.child('t').val() === now && newData.child('c').val() === newData.parent().parent().parent().parent().child('eco/acct/' + $uid + '/sys/city').val() - root.child('eco/acct/' + $uid + '/sys/city').val())` +
+      ` || (data.exists() && !newData.exists() && newData.parent().parent().parent().parent().child('eco/acct/' + $uid + '/hop').val() === 'veh-' && newData.parent().parent().parent().parent().child('eco/acct/' + $uid + '/lop').val() === $slot && newData.parent().parent().parent().parent().child('eco/acct/' + $uid + '/rev').val() === root.child('eco/acct/' + $uid + '/rev').val() + 1)` +
+      ` || (data.exists() && newData.exists() && newData.child('m').val() === data.child('m').val() && newData.child('c').val() === data.child('c').val() && newData.child('t').val() === data.child('t').val())))`,
+    '.validate': `!newData.exists() || (newData.hasChildren(['m','c','t','col']) && newData.child('m').isString() && newData.child('m').val().matches(/^(${VD.ids().join('|')})$/) && newData.child('c').isNumber() && newData.child('c').val() === ${vPrice("newData.child('m').val()")} && newData.child('t').isNumber() && newData.child('col').isNumber() && newData.child('col').val() % 1 === 0 && newData.child('col').val() >= 0 && newData.child('col').val() <= ${VD.COLORS.length - 1})`,
+    m: {}, c: {}, t: {}, col: {}, $other: { '.validate': false } } } },
   // loc: where each online player is on the map (the app in their front window). Cosmetic, no money: owner-only, at most one change per 4 s, the name must match the leaderboard name.
   loc: { '.read': true, $uid: { '.write': `${ADMIN} || (${OWNER('$uid')} && (!newData.exists() || (newData.child('t').val() === now && (!data.exists() || now >= data.child('t').val() + 4000))))`,
     '.validate': `!newData.exists() || (newData.hasChildren(['p','t','n']) && newData.child('p').isString() && newData.child('p').val().matches(/^[a-z]{2,10}$/) && newData.child('t').isNumber() && newData.child('n').isString() && newData.child('n').val() === root.child('leaderboard/' + $uid + '/name').val())`, p: {}, t: {}, n: {}, $other: { '.validate': false } } },

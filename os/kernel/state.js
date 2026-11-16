@@ -107,7 +107,7 @@
 
   /* ---- minigames: payouts shrink per game per day and soften after a daily total ---- */
   K.gameDay = () => { const d = K.today(); if(K.S.games.day !== d) K.S.games = { day: d, plays: {}, earned: 0, hi: K.S.games.hi || {}, pAll: K.S.games.pAll }; return K.S.games; };   // a new day resets plays/earned, never the high scores
-  K.collectionBonus = () => 1 + Math.min(0.5, 0.004 * Object.keys(K.S.inv.e).length + 0.004 * K.S.lab.found.length);
+  K.collectionBonus = () => 1 + Math.min(0.5, 0.004 * Object.keys(K.S.inv.e).length + 0.004 * (K.S.lab.found.filter(f => !(f[0] === 'S' && f[1] === ':')).length + Math.min(25, K.S.lab.found.filter(f => f[0] === 'S' && f[1] === ':').length)));
   const CHEAP = ['H', 'C', 'N', 'O', 'Na', 'Mg', 'Al', 'Si', 'S', 'Cl', 'K', 'Ca', 'Fe', 'Zn', 'Cu'];
   K.award = function(gameId, base){
     if(K.ledger && K.ledger.guestMsg && K.ledger.guestMsg()) return { amount: 0, bonus: 1, drop: null, earnedToday: 0, softcap: 0, guest: true };       // signed-out: view only, nothing is earned
@@ -121,5 +121,5 @@
   };
 
   /* ---- net worth ---- */
-  K.netWorth = () => round2(K.S.cash + K.inventoryValue() + (K.stockValue ? K.stockValue() : 0) + K.propValue());
+  K.netWorth = () => round2(K.S.cash + K.inventoryValue() + (K.stockValue ? K.stockValue() : 0) + K.propValue() + (K.vehValue ? K.vehValue() : 0));
 });

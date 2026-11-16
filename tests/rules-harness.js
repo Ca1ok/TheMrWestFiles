@@ -66,4 +66,6 @@ function update(oldT, updates, now, auth){
 }
 const mkAuth = (uid, email, anon) => ({ uid, token: { email: email || (uid + '@x.com'), email_verified: true, firebase: { sign_in_provider: anon ? 'anonymous' : 'google.com' } } });
 const ADMIN = mkAuth('admin', 'kirattdhaliwal@gmail.com');
-module.exports = { RULES, update, node, mkAuth, ADMIN, clone, checkWrite, checkValidate };
+/* may `auth` read this path? .read rules cascade DOWN from any ancestor, like .write */
+function read(tree, pathStr, now, auth){ const p = pathStr.split('/').filter(Boolean); for(const c of chain(p)){ const r = c.rule['.read']; if(r === true) return { ok: true }; if(typeof r === 'string' && evalExpr(r, ctxFor(tree, tree, c.at, c.vars, now, auth))) return { ok: true }; } return { ok: false }; }
+module.exports = { RULES, update, node, mkAuth, ADMIN, clone, checkWrite, checkValidate, read };

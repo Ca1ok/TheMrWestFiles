@@ -7,7 +7,7 @@
   const cfg = RW.config = Object.assign({ radius: 8, perfRadius: 5, fov: 72, walk: 4.4, run: 8.4, jump: 5.6, grav: 17, eye: 1.65, pr: 0.38, sens: 0.0022, far: 1700, npcRange: 230, carRange: 480, minScale: 0.55 }, RW.config || {});
   /* landmark id (WorldGen.POIS) → the interior to build when you walk in. Add a line + RealWorld.Interiors.register('<kind>', …) for a new public building. */
   const BUILDINGS = RW.buildings = { bank: { kind: 'bank', name: 'Bank' }, exchange: { kind: 'exchange', name: 'Stock Exchange' }, shop: { kind: 'shop', name: 'WestShop' }, arcade: { kind: 'arcade', name: 'Arcade' }, agency: { kind: 'agency', name: 'Estate Agency' }, hall: { kind: 'hall', name: 'Council Hall' },
-    uni: { kind: 'uni', name: 'University Library' }, lab: { kind: 'lab', name: 'Research Institute' }, ind: { kind: 'ind', name: 'Freight Depot' }, plant: { kind: 'plant', name: 'Power Plant' } };
+    dealer: { kind: 'dealer', name: 'Car Dealership' }, airport: { kind: 'airport', name: 'Private Airport' }, uni: { kind: 'uni', name: 'University Library' }, lab: { kind: 'lab', name: 'Research Institute' }, ind: { kind: 'ind', name: 'Freight Depot' }, plant: { kind: 'plant', name: 'Power Plant' } };
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), TAU = Math.PI * 2, wrapA = a => Math.atan2(Math.sin(a), Math.cos(a)), sleep = ms => new Promise(r => setTimeout(r, ms));
   const hsl = (h, s, l) => { s /= 100; l /= 100; const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l), f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))); return [f(0) * 255, f(8) * 255, f(4) * 255]; };
   const pack = c => (Math.round(c[0]) * 65536 + Math.round(c[1]) * 256 + Math.round(c[2]));
@@ -32,6 +32,20 @@
     const toast = m => { try{ OS.toast(m); }catch(e){} };
     const perfLow = () => document.documentElement.classList.contains('perf-low');
     const nh = () => { const w = OS.homes.world && OS.homes.world(); const n = w ? Object.keys(w).length : 0; return Math.max(64, n || 512); };
+    /* ---------------- vehicles (vehicles.js): showroom models + your own cars and planes, drawn instanced, solid, and ready to be driven later ---------------- */
+    const V = { list: [], sig: '', cols: null, look: null }, VD = root.VehicleData, VH = root.RWVehicles;
+    function rebuildVehicles(){
+      if(!VH || !VD) return; let garage = []; try{ garage = OS.homes.garage ? OS.homes.garage() : []; }catch(e){}
+      const h = OS.homes.home && OS.homes.home(), hg = h && h.id ? (L.house(+String(h.id).slice(1)) || {}).g : null, sig = garage.map(g => g.slot + g.m + g.col).join() + '|' + (hg ? h.id : '') + '|' + S.nh; if(sig === V.sig) return; V.sig = sig;
+      V.list = VH.showcase('dealer').concat(VH.showcase('airport'), VH.owned(garage, hg || null)); V.cols = V.list.length ? Float32Array.from(VH.colliders(V.list, T.height)) : null; V.bufs = null;
+    }
+    const vehBufs = {};
+    function fillVehicles(){
+      const out = {}, px = P.x, pz = P.z, hexOf = i => VD.colorHex(i);
+      for(const q of V.list){ const dx = q.x - px, dz = q.z - pz; if(dx * dx + dz * dz > cfg.npcRange ** 2) continue; const b = vehBufs[q.style] || (vehBufs[q.style] = new Float32Array(8 * 16)); let o = out[q.style]; if(!o) o = out[q.style] = { buf: b, n: 0 };
+        if(o.n * 8 + 8 > o.buf.length){ const nb = new Float32Array(o.buf.length * 2); nb.set(o.buf); o.buf = vehBufs[q.style] = nb; } const rgb = M.rgb(hexOf(q.col)), i = o.n++ * 8, f = o.buf; f[i] = q.x; f[i + 1] = T.height(q.x, q.z) + (q.kind === 'plane' ? 0.05 : 0.1); f[i + 2] = q.z; f[i + 3] = q.yaw; f[i + 4] = 0; f[i + 5] = 0; f[i + 6] = pack(rgb); f[i + 7] = pack(rgb.map(c => c * 0.5)); }
+      return out;
+    }
     const homeRec = id => ((OS.homes.world && OS.homes.world()) || {})[id] || {};
     const me = () => OS.homes.uid && OS.homes.uid();
 
@@ -95,7 +109,7 @@
     }
 
     /* ---------------- collisions: see phys.js (boxes with a height, stairs, floors, ceilings) ---------------- */
-    const collSets = () => { const sets = []; st.nearCols(P.x, P.z, c => sets.push({ a: c, st: 8 })); if(dynColsA) sets.push({ a: dynColsA, st: 8 }); const cs = cells.sets(); for(let i = 0; i < cs.length; i++) sets.push(cs[i]); return sets; };
+    const collSets = () => { const sets = []; st.nearCols(P.x, P.z, c => sets.push({ a: c, st: 8 })); if(dynColsA) sets.push({ a: dynColsA, st: 8 }); if(V.cols) sets.push({ a: V.cols, st: 8 }); const cs = cells.sets(); for(let i = 0; i < cs.length; i++) sets.push(cs[i]); return sets; };
 
     /* ---------------- people & cars ---------------- */
     async function loadBots(){ try{ const m = await (RW.botSource ? RW.botSource() : OS.homes.bots()); botList = Object.keys(m || {}).map(id => { const r = m[id], n = +id.slice(1); return { id, n, b: { n, job: r.j || 'baker', thrift: typeof r.th === 'number' ? r.th : 0.5 }, home: r.h ? G.house(+String(r.h).slice(1)) : null, shirt: pack(hsl(G.h32(n, 19) % 360, 55, 52)), pants: pack(hsl(G.h32(n, 21) % 360, 30, 24)), init: 0, x: 0, z: 0, tx: 0, tz: 0, vx: 0, vz: 0, yaw: 0, ph: 0, mv: 0, vis: false, t: 0 }; }); }catch(e){} }
@@ -167,7 +181,7 @@
     function openDialog(n){
       S.dialog = n; if(locked()) document.exitPointerLock(); setPrompt(null); const d = $('#rwDlg');
       d.innerHTML = '<div class="n">' + esc(n.name) + '</div><div class="l">' + esc(n.line) + '</div>' + (n.opts || []).map((o, i) => '<button data-i="' + i + '">' + esc(o.label) + '</button>').join('') + '<button class="bye">' + ((n.opts || []).length ? 'Goodbye' : 'Wave goodbye') + '</button>'; d.classList.add('show');
-      d.querySelectorAll('button[data-i]').forEach(b => { b.onclick = () => { const o = n.opts[+b.dataset.i]; closeDialog(); try{ OS.open(o.app); }catch(e){} }; });
+      d.querySelectorAll('button[data-i]').forEach(b => { b.onclick = () => { const o = n.opts[+b.dataset.i]; closeDialog(); try{ if(o.tab) sessionStorage.setItem('assets_tab', o.tab); OS.open(o.app); }catch(e){} }; });
       d.querySelector('.bye').onclick = () => { closeDialog(); if(!touch.on){ try{ cv.requestPointerLock(); }catch(e){} } };
     }
     function closeDialog(){ S.dialog = null; const d = rootEl && rootEl.querySelector('#rwDlg'); if(d) d.classList.remove('show'); }
@@ -175,12 +189,14 @@
     function openMap(){ if(!S.running || S.loading) return; if(locked()) document.exitPointerLock(); closeDialog(true); try{ OS.open('WestMap'); }catch(e){} }
 
     /* ---------------- interaction ---------------- */
-    function interact(){ if(!S.running || S.loading || S.dialog) return; if(uiOpen()) return; if(curNpc){ openDialog(curNpc); return; } if(curDoor && curDoor.info && curDoor.info.go) curDoor.info.go(); }
+    function interact(){ if(!S.running || S.loading || S.dialog) return; if(uiOpen()) return; if(curNpc){ openDialog(curNpc); return; } if(!curDoor && V.look){ const q = V.look, m = VD.get(q.id); if(q.slot){ if(VH.canDrive() && m && m.driveable) toast('Driving is not wired up yet.'); else { try{ sessionStorage.setItem('assets_tab', 'garage'); OS.open('RealEstate'); }catch(e){} toast('Driving and flying arrive in a future update.'); } } else { try{ sessionStorage.setItem('assets_tab', q.kind === 'plane' ? 'planes' : 'cars'); OS.open('RealEstate'); }catch(e){} } return; } if(curDoor && curDoor.info && curDoor.info.go) curDoor.info.go(); }
     function findInteraction(){
       curNpc = null; curDoor = null; const fx = Math.sin(P.yaw), fz = -Math.cos(P.yaw);
       if(S.cell){ let bd = 3.4; S.cell.npcs.forEach(n => { if(Math.abs(n.y - P.y) > 2.4) return; const dx = n.x - P.x, dz = n.z - P.z, d = Math.hypot(dx, dz); if(d < bd && (dx * fx + dz * fz) / (d || 1) > 0.25){ bd = d; curNpc = n; } }); if(curNpc) setPrompt('Talk to ' + curNpc.name, curNpc.opts.length ? curNpc.opts.map(o => o.label.split(' · ')[0]).join(' · ') : ''); else setPrompt(null); return; }
       if(lookNpc && Math.hypot(lookNpc.x - P.x, lookNpc.z - P.z) < 5){ curNpc = { name: G.bot(lookNpc.n).name, line: outLine(lookNpc), opts: [], bot: lookNpc }; }
       let bd = 3.2; allDoorsNear(P.x, P.z, 3.4).forEach(d => { const dist = Math.hypot(d.x - P.x, d.z - P.z); if(dist < bd){ const i = doorInfo(d); if(i){ bd = dist; curDoor = { d, info: i, dist }; } } });
+      V.look = null; if(!curDoor && !curNpc && !S.cell){ let vd = 4.2; for(const q of V.list){ const d = Math.hypot(q.x - P.x, q.z - P.z); if(d < vd){ vd = d; V.look = q; } } }
+      if(V.look && !curDoor && !curNpc){ const m = VD.get(V.look.id); setPrompt(V.look.slot ? 'Your ' + m.name : m.name + ' · ' + (m.price / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }), V.look.slot ? 'E: open your garage' : 'E: see it in Assets'); return; }
       if(curDoor){ curNpc = null; setPrompt(curDoor.info.label); } else if(curNpc) setPrompt('Talk to ' + curNpc.name); else setPrompt(null);
     }
 
@@ -205,14 +221,14 @@
       const dpr = Math.min(window.devicePixelRatio || 1, perfLow() ? 1 : 1.5) * S.scale; gfx.resize(cv.clientWidth, cv.clientHeight, dpr);
       if(!env || t - envAt > 250){ envAt = t; grade = K.skin && K.skin(); env = RW.Env.state(OS.now() + (RW.timeShift || 0), grade && grade.three); S.env = env; }
       st.update(P.x, P.z); st.upload(2); st.step(dt);
-      if(t - sunTick > 2000){ sunTick = t; const n2 = nh(); if(n2 !== S.nh){ S.nh = n2; S.nd = G.districtCount(n2); L.setup(n2); T.setup(L.radius()); st.setNH(n2); } if(S.nh) rebuildDyn(); }
+      if(t - sunTick > 2000){ sunTick = t; const n2 = nh(); if(n2 !== S.nh){ S.nh = n2; S.nd = G.districtCount(n2); L.setup(n2); T.setup(L.radius()); st.setNH(n2); } if(S.nh){ rebuildDyn(); rebuildVehicles(); } }
       if(t - botsAt > 90000){ botsAt = t; loadBots(); } stepNPCs(t, dt);
       const e = env, bob = Math.sin(P.bob * 2.2) * 0.03 * P.mv, cam = { pos: [P.x, P.cy + cfg.eye + bob, P.z], yaw: P.yaw, pitch: P.pitch, fov: cfg.fov * Math.PI / 180, near: 0.25, far: cfg.far };
       gfx.begin(cam, e, t / 1000);
       gfx.sky(e.cloud); gfx.startWorld(); S.drawn = st.draw(P.x, P.z, cfg.far); if(dyn.plots) gfx.draw(dyn.plots, 1, 1); if(dyn.marks) gfx.draw(dyn.marks, 1, 1);
       S.props = st.drawProps(perfLow() ? 260 : 430, perfLow() ? 380 : 570);                      // trees, lamps, benches: one instanced call per kind
       if(cells.cells.size){ gfx.env = RW.Env.INDOOR; gfx.startWorld(); cells.draw(); gfx.env = e; if(S.cell){ scr.tick(P.x, P.z, t); scr.draw(); } }   // insides: only loaded ones, indoor light
-      const [np, nc] = fillActors(); gfx.actors('person', actorBuf, np); if(nc) gfx.actors('car', carBuf, nc);
+      const [np, nc] = fillActors(); gfx.actors('person', actorBuf, np); if(nc) gfx.actors('car', carBuf, nc); if(VD){ const vb = fillVehicles(); for(const k in vb) gfx.actors(k, vb[k].buf, vb[k].n); }
       if(S.cell){ const ni = fillInside(); if(ni){ gfx.env = RW.Env.INDOOR; gfx.actors('person', inBuf, ni); gfx.env = e; } }
       const fx = grade && grade.fx; if(fx && !P.inside && (fx.kind === 'snow' || fx.kind === 'embers')) gfx.particles(fx, cv.height * 0.9);
       labels(); minimap(t); hud(t);
@@ -242,6 +258,9 @@
     function travelTo(x, z, yaw){ if(!S.running) return false; if(S.phone) phone(false); return teleport(x, z, yaw); }
     /* WestMap calls this about once a second while it is open: the world stops drawing under it (no second 3-D scene burning the GPU) */
     const hold = on => { S.holdUntil = on === false ? 0 : performance.now() + 2500; };
-    return { enter, exit, phone, active: () => S.running, inPhone: () => S.phone, teleport, travelTo, hold, openMap, state: () => ({ x: P.x, y: P.y, z: P.z, yaw: P.yaw, mode: S.mode, fps: S.fps, scale: S.scale, radius: st && st.radius, chunks: st && st.chunks.size, calls: gfx && gfx.calls, tris: gfx && Math.round(gfx.tris), built: st && st.built, bots: botList.length, others: net ? net.others.size : 0, loading: S.loading, drawn: S.drawn, props: S.props, inside: S.cell ? S.cell.name : null, cells: cells ? cells.cells.size : 0, nh: S.nh }), _P: P, _S: S, _st: () => st, _cells: () => cells };
+    /* vehicles: public read-only view + the door for a future driving controller */
+    const vehicles = { list: () => V.list.slice(), mine: () => V.list.filter(q => q.slot), canDrive: () => VH.canDrive(), enter: slot => { const q = V.list.find(x => x.slot === slot); return !!(q && VH.canDrive() && (VD.get(q.id) || {}).driveable); },
+      at: id => { const p = L.poi(id); return !!(S.running && p && Math.hypot(p.x - P.x, p.z - P.z) < 48); } };
+    return { enter, exit, phone, vehicles, active: () => S.running, inPhone: () => S.phone, teleport, travelTo, hold, openMap, state: () => ({ x: P.x, y: P.y, z: P.z, yaw: P.yaw, mode: S.mode, fps: S.fps, scale: S.scale, radius: st && st.radius, chunks: st && st.chunks.size, calls: gfx && gfx.calls, tris: gfx && Math.round(gfx.tris), built: st && st.built, bots: botList.length, others: net ? net.others.size : 0, loading: S.loading, drawn: S.drawn, props: S.props, inside: S.cell ? S.cell.name : null, cells: cells ? cells.cells.size : 0, nh: S.nh }), _P: P, _S: S, _st: () => st, _cells: () => cells };
   };
 })(typeof self !== 'undefined' ? self : this);

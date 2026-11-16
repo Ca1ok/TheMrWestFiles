@@ -2,7 +2,7 @@
  * The engine (≈110 KB of JS + CSS) is fetched the first time somebody actually steps outside, then cached by the browser; nothing is downloaded for players who stay in WestOS.
  * Read os/realworld/README.md before changing anything. */
 (window.__OSM = window.__OSM || []).push(function(K){
-  const OS = K.facade, FILES = ['terrain', 'mesh', 'layout', 'nav', 'chunkgen', 'env', 'gfx', 'screens', 'interiors', 'cells', 'props', 'glb', 'phys', 'npcs', 'net', 'streamer', 'game'].map(f => 'os/realworld/' + f + '.js');
+  const OS = K.facade, FILES = ['terrain', 'mesh', 'layout', 'vehicles', 'nav', 'chunkgen', 'env', 'gfx', 'screens', 'interiors', 'cells', 'props', 'glb', 'phys', 'npcs', 'net', 'streamer', 'game'].map(f => 'os/realworld/' + f + '.js');
   let api = null, loading = null; const btn = document.getElementById('rwExit'), screen = document.getElementById('screen');
   const add = (tag, attrs) => new Promise((res, rej) => { const e = document.createElement(tag); Object.assign(e, attrs); e.onload = res; e.onerror = () => rej(new Error('Could not load ' + (attrs.src || attrs.href))); document.head.appendChild(e); });
   function ensure(){
@@ -22,5 +22,5 @@
     try{ OS.prefs.set('rwPos', { x: Math.round(x), z: Math.round(z), yaw: Math.round((yaw || 0) * 100) / 100 }); }catch(e){} return enter();
   }
   if(btn) btn.addEventListener('click', enter);
-  OS.realworld = { travelTo, hold: on => { if(api && api.active()) api.hold(on); }, openMap: () => { if(api && api.active()) api.openMap(); else OS.open('WestMap'); }, enter, exit: () => { if(api) api.exit(); }, phone: on => { if(api) api.phone(on); }, active: () => !!(api && api.active()), state: () => api && api.state(), api: () => api };
+  OS.realworld = { at: id => !!(api && api.active() && api.vehicles && api.vehicles.at(id)), vehicles: () => api && api.vehicles, travelTo, hold: on => { if(api && api.active()) api.hold(on); }, openMap: () => { if(api && api.active()) api.openMap(); else OS.open('WestMap'); }, enter, exit: () => { if(api) api.exit(); }, phone: on => { if(api) api.phone(on); }, active: () => !!(api && api.active()), state: () => api && api.state(), api: () => api };
 });

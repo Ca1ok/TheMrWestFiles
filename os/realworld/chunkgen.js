@@ -82,7 +82,7 @@
     const lx = best ? best.x : 0, ly = best ? best.y : S.d / 2, ly2 = ly + 1.7, nx = -sd * s0 * 1, nz = sd * c0;   // outward = local +y turned
     return { x: X + lx * c0 - ly2 * sd * s0, z: Z + lx * s0 + ly2 * sd * c0, nx, nz, y: base, lx, ly };
   }
-  const LMF = { bank: 1, exchange: 1, shop: 1, arcade: 1, agency: 1, hall: 1, uni: 1, lab: 1, ind: 1, plant: 1 };
+  const LMF = { bank: 1, exchange: 1, shop: 1, arcade: 1, agency: 1, hall: 1, uni: 1, lab: 1, ind: 1, plant: 1, dealer: 1, airport: 1 };
 
   /* ---------------- scenery ---------------- */
   /* trees, lamps and benches are INSTANCED (props.js): the worker only records where they stand; kind 0 tree · 1 lamp · 2 bench */
@@ -114,6 +114,8 @@
       b.pois.forEach(p => { if(!inC(p.x, p.z)) return; const S = BG.landmark(p.id), base = footBase(p.x, p.z, p.ang, S.w, S.d); box(p.x, p.z, S.w, S.d, p.ang, base + S.h);
         if(lod <= 1){ bakeShape(mb, S, p.x, p.z, p.ang, 1, base, lod); const dr = doorOf(S, p.x, p.z, p.ang, 1, base); doors.push({ k: 'poi', id: p.id, x: dr.x, z: dr.z, nx: dr.nx, nz: dr.nz, y: base, name: G.POIS[p.id] && G.POIS[p.id].n, bx: p.x, bz: p.z, rw: S.w, rd: dr.ly + S.d / 2, fl: S.fl, bh: S.h }); }
         else bakeBox(mb, p.x, p.z, S.w, S.d, p.ang, base, S.h, rgb(S.pal.wall), rgb(S.pal.roof), lod); });
+      // painted markings on the dealership forecourt / airport apron (layout c.strips: flat boxes just above the paving)
+      if(lod <= 1 && b.strips) b.strips.forEach(q => { if(!inC(q.x, q.z)) return; const y = T.height(q.x, q.z) + 0.07 * (lod + 1) + 0.03; mb.boxR(q.x, q.z, q.w / 2, q.l / 2, q.ang, y, y + 0.03, q.col, q.col); });
       // downtown infill towers
       b.fillers.forEach((f, fi) => { if(!inC(f.x, f.z)) return; stats.blds++; const base = footBase(f.x, f.z, f.ang, f.w, f.d), hgt = f.fl * 3.1 + 2; box(f.x, f.z, f.w, f.d, f.ang, base + hgt);
         if(lod <= 1) bakeShape(mb, BG.proto(f.kind, f.w, f.d, f.fl, f.v), f.x, f.z, f.ang, f.side, base, lod); else bakeBox(mb, f.x, f.z, f.w, f.d, f.ang, base, hgt, rgb(BG.WALL[G.h32(f.v, 9) % BG.WALL.length]), rgb(BG.GLASSW[G.h32(f.v, 10) % BG.GLASSW.length]), lod); });

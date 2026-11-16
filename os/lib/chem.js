@@ -159,7 +159,7 @@ const Chem = (function(){
     return null;
   }
   function nameOf(formulaOrComp){
-    init(); const comp = typeof formulaOrComp === 'string' ? parse(formulaOrComp) : formulaOrComp; if(!comp) return String(formulaOrComp);
+    init(); if(typeof formulaOrComp === 'string' && formulaOrComp[1] === ':' && formulaOrComp[0] === 'S' && typeof Synth !== 'undefined') return Synth.labelOf(formulaOrComp); const comp = typeof formulaOrComp === 'string' ? parse(formulaOrComp) : formulaOrComp; if(!comp) return String(formulaOrComp);
     const reg = registry[compKey(comp)]; if(reg && reg.name) return reg.name;
     const els = Object.keys(comp);
     if(els.length === 1){ const s = els[0], n = comp[s]; return n === 1 ? EL[s].name : EL[s].name + ' (' + s + n + ')'; }
@@ -229,8 +229,11 @@ const Chem = (function(){
     return out.some(v => v > 60) ? null : out;
   }
   // ---------------------------------------------------------------- species
+  function sSpecies(key){                                     // "S:…" keys are structures made by the synthesis engine (os/lib/synth*.js): the key carries the SMILES, so every client can read it
+    if(typeof SynthCore === 'undefined' || typeof Synth === 'undefined' || !SynthCore.isSKey(key)) return null; const sp = Synth.species(key); return sp ? { key: sp.key, kind: 'compound', f: sp.key, comp: sp.comp, apu: 1, synth: true } : null;
+  }
   function speciesOf(key){                                    // inventory key -> species used in equations
-    init(); const comp = parse(key); if(!comp) return null;
+    init(); if(typeof key === 'string' && key.charCodeAt(0) === 83 && key[1] === ':') return sSpecies(key); const comp = parse(key); if(!comp) return null;
     const els = Object.keys(comp);
     if(els.length === 1 && comp[els[0]] === 1){ const s = els[0], dia = I.DIA.has(s); return { key: s, kind: 'element', el: s, f: s, comp: { [s]: 1 }, apu: 1 }; }   // F, H, O… are FREE ATOMS; the molecules (F2, H2, O2) are compounds below
     const reg = registry[compKey(comp)]; const f = reg ? reg.formula : key;
@@ -448,7 +451,7 @@ const Chem = (function(){
   }
   const condLabel = c => ({ heat: 'heat', spark: 'electric current', pressure: 'high pressure', catalyst: 'a catalyst', cryo: 'cryogenic cooling', distill: 'distillation', polymer: 'polymerisation' })[c] || c;
   const sub = n => String(n).replace(/\d/g, d => '₀₁₂₃₄₅₆₇₈₉'[d]);
-  const prettyFormula = f => f.replace(/(\d+)/g, (m) => sub(m));
+  const prettyFormula = f => { if(typeof f === 'string' && f[1] === ':' && f[0] === 'S' && typeof Synth !== 'undefined'){ const sp = Synth.species(f); f = sp ? SynthCore.hillStr(sp.comp) : f.slice(2, 14); } return f.replace(/(\d+)/g, (m) => sub(m)); };
   function fmtEquation(re, pr){
     const side = a => a.map(x => (x.coeff > 1 ? x.coeff + ' ' : '') + prettyFormula(x.s.f)).join(' + ');
     return side(re) + ' → ' + side(pr);
@@ -518,6 +521,7 @@ const Chem = (function(){
     init(); const sp = speciesOf(key); if(!sp) return 0;
     if(sp.kind === 'element') return price(sp.el);
     const comp = sp.comp; let base = 0; Object.keys(comp).forEach(e => { base += price(e) * comp[e]; });
+    if(sp.synth) return Math.round(base * 1.12 * 100) / 100;                // structure-made compounds: flat bonus, so building big molecules from small ones never creates money
     const rec = I.RECIPES.find(r => r.formula === sp.f);
     const tier = rec ? Math.max(0, I.TOOLS.findIndex(t => t.id === rec.tool)) : Math.min(5, Math.floor(atoms(comp) / 8));
     const bonus = (I.CBB || 1.15) + (I.CTB || 0.06) * tier + 0.01 * (Object.keys(comp).length - 1);

@@ -11,7 +11,7 @@
     dark: { land: '#17120d', hood: '#1e1812', road: '#4a3e31', edge: '#0e0b08', hwy: '#a07a3a', hwyE: '#4f3a18', exp: '#cf7a3c', expE: '#5c2f17', park: '#2a3d29', parkE: '#213220', core: '#251e16', coreE: '#35291d', text: '#f6efdd', sub: 'rgba(246,239,221,.62)', halo: 'rgba(14,11,8,.88)', roof: '#5c4f41', water: '#2c4a5e', zoneU: '#2a2944', zoneI: '#3a2a1c', plot: '#33281e', uLo: '#1d1711', uHi: '#30281e' }
   };
   const cssTint = (() => { let v = '#e8924f', at = 0; return () => { const n = Date.now(); if(n - at > 2000){ at = n; try{ const c = getComputedStyle(document.documentElement).getPropertyValue('--tint').trim(); if(/^#[0-9a-f]{6}$/i.test(c)) v = c; }catch(e){} } return v; }; })();
-  const PC = { bank: ['#4a6fa8', 'B'], exchange: ['#3fae78', 'E'], shop: ['#e0a23a', 'S'], arcade: ['#b36be0', 'A'], agency: ['#d08a5d', 'R'], hall: ['#7d8799', 'C'], park: ['#5aa15c', 'P'], uni: ['#6f7fd0', 'U'], lab: ['#4fb3ae', 'L'], ind: ['#c97b4a', 'F'], plant: ['#8f6e5a', 'W'] };
+  const PC = { bank: ['#4a6fa8', 'B'], exchange: ['#3fae78', 'E'], shop: ['#e0a23a', 'S'], arcade: ['#b36be0', 'A'], agency: ['#d08a5d', 'R'], hall: ['#7d8799', 'C'], park: ['#5aa15c', 'P'], uni: ['#6f7fd0', 'U'], lab: ['#4fb3ae', 'L'], ind: ['#c97b4a', 'F'], plant: ['#8f6e5a', 'W'], dealer: ['#d9534f', 'D'], airport: ['#4aa3d9', 'T'] };
   const POIH = { bank: 30, exchange: 40, shop: 18, arcade: 22, agency: 20, hall: 28, uni: 24, lab: 22, ind: 16, plant: 26 };
   const KIND = { mine: '#5bd68a', bank: '#b3b9c4', player: '#7fb2f2', bot: '#f2b676' };
   const cacheRGB = new Map();

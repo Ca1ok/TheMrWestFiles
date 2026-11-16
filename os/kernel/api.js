@@ -8,19 +8,22 @@
   const COND_TOOL = { heat: 'burner', spark: 'electrolysis', pressure: 'pressure', catalyst: 'catalysis', distill: 'distillation', polymer: 'polymer', cryo: 'cryo' };
   const TOOL_COND = Object.keys(COND_TOOL).reduce((o, c) => (o[COND_TOOL[c]] = c, o), {});
   const ELSYM = new Set(ELEMENTS.map(e => e[1]));
+  const synthBuyable = k => typeof Synth !== 'undefined' && Synth.byKey[k] && Synth.byKey[k].buy && !Synth.byKey[k].free;
   const knownCompound = f => { const v = Chem.validate(f); return v.ok && v.how !== undefined ? v : null; };
   const ownedConds = () => Object.keys(K.S.lab.tools).filter(t => K.S.lab.tools[t] && TOOL_COND[t]).map(t => TOOL_COND[t]);
   const itemRow = (type, key) => ({ type, key, name: type === 'element' ? Chem.elements[key].name : Chem.nameOf(key), qty: K.qty(type, key) });
 
   /* ---------------- shop ---------------- */
+  const shopCompounds = reg => reg.map(c => ({ formula: c.formula, name: c.name || c.formula, desc: c.desc || '', category: c.category || Chem.classify(Chem.parse(c.formula)), price: K.buyPrice(c.formula), mult: World.itemMult(c.formula, K.now()), qty: K.qty('compound', c.formula) }));
   const shop = {
     elements: () => ELEMENTS.map(e => ({ sym: e[1], num: e[0], name: e[2], cat: e[4], price: K.buyPrice(e[1]), base: Chem.price(e[1]), mult: World.itemMult(e[1], K.now()), qty: K.qty('element', e[1]) })),
-    compounds: () => Chem.registryList().filter(c => c.formula && Chem.parse(c.formula)).map(c => ({ formula: c.formula, name: c.name || c.formula, desc: c.desc || '', category: c.category || Chem.classify(Chem.parse(c.formula)), price: K.buyPrice(c.formula), mult: World.itemMult(c.formula, K.now()), qty: K.qty('compound', c.formula) })),
+    compounds: () => { const reg = Chem.registryList().filter(c => c.formula && Chem.parse(c.formula)), have = new Set(reg.map(c => c.formula)); const extra = typeof Synth === 'undefined' ? [] : Synth.catalog().filter(e => e.buy && !e.free && !have.has(e.key) && Chem.speciesOf(e.key)).map(e => ({ formula: e.key, name: e.name, desc: e.tags.has('solv:p') || e.solv ? 'Solvent' : '', category: e.comp.C ? 'Organic (WestLab reagent)' : 'Reagent', price: K.buyPrice(e.key), mult: World.itemMult(e.key, K.now()), qty: K.qty('compound', e.key), label: e.comp.C ? Synth.S.hillStr(e.comp) : e.key })); return shopCompounds(reg).concat(extra); },
+
     price: key => K.buyPrice(key), sellPrice: key => K.sellPrice(key), quote: (key, n) => K.sellQuote(key, n), qty: (t, k) => K.qty(t, k),
     buy(key, n){
       n = Math.floor(n); if(!(n >= 1) || n > 100000) return no('Choose a quantity between 1 and 100,000.');
       if(K.ledger.guest) return no(K.ledger.guestMsg());      // visitors have no wallet: say so instead of "you need $…"
-      const type = ELSYM.has(key) ? 'element' : (knownCompound(key) ? 'compound' : null); if(!type) return no('Not for sale.');
+      const type = ELSYM.has(key) ? 'element' : (synthBuyable(key) || knownCompound(key) ? 'compound' : null); if(!type) return no('Not for sale.');
       const k = type === 'compound' ? Chem.speciesOf(key).key : key, cost = K.round2(K.buyPrice(k) * n);
       if(!K.spend(cost, 'Bought ' + k)) return no('You need ' + fmt(cost) + '.');
       K.invAdd(type, k, n); return ok('Bought ' + n + ' × ' + (type === 'element' ? Chem.elements[k].name : Chem.nameOf(k)) + ' for ' + fmt(cost), { cost });
@@ -62,13 +65,13 @@
   /* ---- identify a species: GitHub compound library → free PubChem lookup → constructed from valence rules. Real structures drive the reactor visuals. ---- */
   const IDENT = new Map(), GRAPHS = new Map(), CSHARDS = {};
   async function cshard(id){ if(CSHARDS[id]) return CSHARDS[id]; try{ const r = await fetch('lab-cache/compounds/' + id + '.json', { cache: 'no-cache' }); CSHARDS[id] = r.ok ? await r.json() : {}; }catch(e){ CSHARDS[id] = {}; } return CSHARDS[id]; }
-  function graphOf(key){ const sp = Chem.speciesOf(key); if(!sp) return { a: [], b: [], x: [], y: [], q: [] }; if(GRAPHS.has(sp.f + '|' + sp.kind + sp.apu)) return GRAPHS.get(sp.f + '|' + sp.kind + sp.apu); const g = Mol.layout(Mol.build(sp)); GRAPHS.set(sp.f + '|' + sp.kind + sp.apu, g); return g; }
+  function graphOf(key){ const sp = Chem.speciesOf(key); if(!sp) return { a: [], b: [], x: [], y: [], q: [] }; if(sp.synth || (typeof Synth !== 'undefined' && sp.comp && sp.comp.C && Synth.byKey[key])){ const gk = 'syn|' + key; if(GRAPHS.has(gk)) return GRAPHS.get(gk); const sg = Synth.graphOf(key); if(sg){ const g = Mol.layout(sg); GRAPHS.set(gk, g); return g; } } if(GRAPHS.has(sp.f + '|' + sp.kind + sp.apu)) return GRAPHS.get(sp.f + '|' + sp.kind + sp.apu); const g = Mol.layout(Mol.build(sp)); GRAPHS.set(sp.f + '|' + sp.kind + sp.apu, g); return g; }
   /* identify(): shared library on GitHub (lab-cache/ff) → this device (IndexedDB) → calculate here (PubChem + MMFF94, on the player's own CPU) → legacy valence-built graph.
      Firebase is never involved. A freshly calculated record is queued for the maintainer's GitHub commit (WestFFSync) when a token is configured on this machine. */
   const FF = typeof WestFF !== 'undefined' ? WestFF : null, FFS = typeof WestFFSync !== 'undefined' ? WestFFSync : null;
   if(FF && FFS) FF.onNew = rec => FFS.enqueue(rec);
   function identify(key){
-    const sp = Chem.speciesOf(key); if(!sp) return Promise.resolve(null); if(sp.kind === 'element') return Promise.resolve({ f: sp.f, name: Chem.elements[sp.el].name, real: true, src: 'element', graph: graphOf(key) });
+    const sp = Chem.speciesOf(key); if(!sp) return Promise.resolve(null); if(sp.synth) return Promise.resolve({ f: sp.f, name: Chem.nameOf(key), real: true, src: 'synth', graph: graphOf(key) }); if(sp.kind === 'element') return Promise.resolve({ f: sp.f, name: Chem.elements[sp.el].name, real: true, src: 'element', graph: graphOf(key) });
     if(IDENT.has(sp.f)) return IDENT.get(sp.f);
     const p = (async () => {
       let ff = null; if(FF){ try{ ff = await FF.lookup(Chem.hill(sp.comp)); }catch(e){} }
@@ -90,9 +93,92 @@
     async pushLocal(){ if(!FF || !FFS) return 0; const all = await FF.local.all(); all.filter(r => FF.valid(r)).forEach(r => FFS.enqueue(r)); await FFS.flush(); return all.length; }
   };
   const tierOf = () => Math.min(6, Object.keys(K.S.lab.tools).filter(t => K.S.lab.tools[t] && t !== 'basic').length);
+
+  /* ---------------- WestLab synthesis steps (os/lib/synth*.js): equipment, conditions, workup. Order of lookup is the same as everywhere else:
+   *   this session → the verified library on GitHub (lab-cache/synth/<shard>.json) → calculate here → offer the INPUTS to the library (the Action recomputes them; nobody can submit a result). ---------------- */
+  const SQ = typeof SYNTH_EQUIP !== 'undefined' ? SYNTH_EQUIP : [], allTools = () => TOOLS.concat(SQ);
+  const SYN = { cards: new Map(), shards: {}, sent: new Set(), hits: { github: 0, session: 0, local: 0, rejected: 0 }, index: null, feed: [] };
+  const owns = id => id === 'basic' || !!K.S.lab.tools[id];
+  const haveN = k => K.qty(K.kindOf(k), k) + (K.S.lab.tray[k] || 0);
+  const nmOf = k => { const sp = Chem.speciesOf(k); if(sp && sp.kind === 'element') return Chem.elements[k].name; return (typeof Synth !== 'undefined' && Synth.nameOfKey(k)) || Chem.nameOf(k); };
+  const P_SYN = [1, 2, 3, 4, 5, 10, 20, 30, 50, 100, 200, 300, 500];
+  function clampStep(a){                                  // whatever the app asks for is limited to what the player's equipment can do (the same checks run again inside run())
+    const V = SYNTH_VESSELS, H = SYNTH_HEAT, W = SYNTH_WORKUP, vessel = V[a.vessel] && owns(V[a.vessel].need) ? a.vessel : 'flask', vm = V[vessel];
+    const heat = H[a.heat] && owns(H[a.heat].need) ? a.heat : 'none'; let hi = Math.min(H[heat].T[1], vm.Tmax), lo = Math.min(H[heat].T[0], hi);
+    const T = Math.min(hi, Math.max(lo, Math.round((+a.T || 298) / 5) * 5)), P0 = Math.min(vm.sealed ? vm.Pmax || 1 : 1, Math.max(1, +a.P || 1)), P = vm.sealed ? P_SYN.filter(p => p <= (vm.Pmax || 1)).reduce((m, p) => Math.abs(p - P0) < Math.abs(m - P0) ? p : m, 1) : 1;
+    const atm = vessel === 'schlenk' && ['air', 'N2', 'Ar', 'vac'].includes(a.atm) ? a.atm : 'air', t0 = +a.time || 60, time = SYNTH_TIMES.reduce((m, x) => Math.abs(Math.log(x / t0)) < Math.abs(Math.log(m / t0)) ? x : m, SYNTH_TIMES[0]);
+    const keys = []; (a.keys || []).forEach(k => { k = String(k).slice(0, 200); if(k && !keys.includes(k) && keys.length < 4) keys.push(k); });
+    return { keys, solv: a.solv ? String(a.solv).slice(0, 200) : '', cat: a.cat ? String(a.cat).slice(0, 200) : '', T, P, atm, vessel, heat, stir: a.stir && owns('stirrer') ? 1 : 0, dean: a.dean && owns('distillation') ? 1 : 0, slow: a.slow ? 1 : 0, time, workup: W[a.workup] && owns(W[a.workup].need) ? a.workup : 'none' };
+  }
+  async function sshard(id){ if(SYN.shards[id]) return SYN.shards[id]; try{ const r = await fetch('lab-cache/synth/' + id + '.json', { cache: 'no-cache' }); SYN.shards[id] = r.ok ? await r.json() : {}; }catch(e){ SYN.shards[id] = {}; } return SYN.shards[id]; }
+  async function getStepCard(a){
+    const key = Synth.cacheKey(a), s0 = SYN.cards.get(key); if(s0){ SYN.hits.session++; return s0; }
+    const sh = await sshard(Synth.shardOf(key)), hit = sh && sh[key];
+    if(hit){ const v = Synth.validate(hit); if(v.ok && hit.key === key){ const r = { card: hit, src: 'github' }; SYN.cards.set(key, r); SYN.hits.github++; return r; } SYN.hits.rejected++; }      // a library card that fails the checks is thrown out and recomputed
+    const card = Synth.card(a), r = { card, src: 'local' }; SYN.cards.set(key, r); SYN.hits.local++;
+    if(card.ok && !SYN.sent.has(key)){ SYN.sent.add(key); K.cloud.submitStep(Synth.fnv(key), a); }
+    return r;
+  }
+  const legacyArgs = a => ({ keys: a.keys, T: Math.max(75, a.T), P: Math.min(500, Math.max(1, a.P)), cat: !!a.cat, elec: a.vessel === 'cell', ign: a.heat === 'flame' });
+  const synthOnly = a => a.keys.some(k => SynthCore.isSKey(k));
+  async function stepPlan(a0){
+    const a = clampStep(a0), items = a.keys.concat(a.solv ? [a.solv] : []).concat(a.cat ? [a.cat] : []);
+    if(!a.keys.length) return { kind: 'S', card: { ok: false, why: 'Drag reagents into the flask.' }, args: a, src: '' };
+    const r = await getStepCard(a), c = r.card;
+    if(!c.ok && !c.refused && !c.restricted && !c.tpl && !synthOnly(a) && a.keys.every(k => Chem.speciesOf(k))){          // no organic template applies → the original WestPhys engine (inorganic chemistry)
+      const lg = await lab.plan(legacyArgs(a)); if(lg.card && lg.card.ok) return { kind: 'L', card: lg.card, src: lg.src, args: a, legacyArgs: lg.args };
+      return { kind: 'S', card: Object.assign({}, c, { why: c.tpl ? c.why : (lg.card && lg.card.why) || c.why }), args: a, src: r.src };
+    }
+    return { kind: 'S', card: c, args: a, src: r.src };
+  }
+  const kwh = (cd, a) => Math.max(0, (Math.min(cd.Teff || a.T, 1500) - 295) / 100) * (a.time / 60) * .6 + (a.stir ? .02 * a.time / 60 : 0) + (a.vessel === 'schlenk' ? .05 * a.time / 60 : 0);
+  const wearLimit = k => { const e = Synth.byKey[k], sp = Chem.speciesOf(k); return (e && e.wear) || (sp && sp.kind === 'element' && SYNTH_CATALYSTS[k] && SYNTH_CATALYSTS[k].wear) || 25; };
+  async function stepRun(a0, amounts, o){
+    o = o || {}; const a = clampStep(a0); if(!a.keys.length) return no('Drag reagents into the flask.');
+    const pl = await stepPlan(a); if(pl.kind === 'L'){ const am = {}; pl.card.R.forEach(x => { const fk = a.keys.find(k => { const q = Chem.speciesOf(k); return k === x[0] || (q && (q.key === x[0] || q.f === x[0])); }); am[x[0]] = Math.max(0, Math.floor((amounts[x[0]] !== undefined ? amounts[x[0]] : amounts[fk]) || 0)); }); const r = await lab.run(pl.legacyArgs, am, o); if(r.ok) r.kind = 'L'; return r; }
+    const card = pl.card; if(!card.ok) return no(card.why || 'Nothing happens.');
+    const am = {}; for(const r of card.R){ const n = Math.floor(+amounts[r.key] || 0); if(n < 1) return no('Set an amount for ' + nmOf(r.key) + '.'); if(haveN(r.key) < n) return no('You don’t have ' + n + ' mol of ' + nmOf(r.key) + '.'); am[r.key] = n; }
+    const sim = Synth.run(card, am); if(!sim.ok) return no(sim.why);
+    if(sim.hazard && !o.risk) return no('This run is unsafe at this scale — confirm to run it anyway.', { hazard: sim.hazard });
+    const sNeed = Synth.solventNeed(card, am); if(sNeed && haveN(card.solvent) < sNeed) return no('You need ' + sNeed + ' mol of ' + nmOf(card.solvent) + ' as solvent for this batch.');
+    const cat = card.a.cat; if(cat && haveN(cat) < 1) return no('You need 1 mol of ' + nmOf(cat) + ' as catalyst.');
+    const used = {}; let value = 0; Object.keys(sim.used).forEach(k => { const u = Math.min(am[k] || Infinity, Math.ceil(sim.used[k] - (sim.back[k] || 0) - 1e-9)); if(u > 0){ used[k] = u; value += K.listValue(k) * u; } });
+    const made = sim.made, nMade = Object.keys(made).length; if(!nMade) return no(sim.notes[0] || 'Nothing could be recovered with this workup. Try a different workup or more material.');
+    const fee = K.round2(value * 0.02 + 0.25 * (1 + tierOf()) + kwh(card, a) * 0.5 + (sim.hazard ? 25 : 0) + (a.vessel === 'schlenk' ? 1 : 0)); if(!K.spend(fee, 'Lab fee')) return no('The lab fee is ' + fmt(fee) + '.');
+    const take = (k, n) => { if(!(n > 0)) return; const fromTray = Math.min(n, K.S.lab.tray[k] || 0); if(fromTray){ K.S.lab.tray[k] -= fromTray; if(K.S.lab.tray[k] <= 0) delete K.S.lab.tray[k]; } if(n - fromTray > 0) K.invTake(K.kindOf(k), k, n - fromTray); };
+    Object.keys(used).forEach(k => take(k, used[k])); if(sNeed){ take(card.solvent, sNeed); const back = Math.floor(sNeed * (sim.solvBack || 0)); if(back > 0) K.S.lab.tray[card.solvent] = (K.S.lab.tray[card.solvent] || 0) + back; }
+    K.S.lab.wear = K.S.lab.wear || {}; if(cat){ K.S.lab.wear[cat] = (K.S.lab.wear[cat] || 0) + 1; if(K.S.lab.wear[cat] >= wearLimit(cat)){ K.S.lab.wear[cat] = 0; take(cat, 1); } }
+    const out = []; Object.keys(made).forEach(k => { K.S.lab.tray[k] = (K.S.lab.tray[k] || 0) + made[k]; out.push({ key: k, n: made[k], name: nmOf(k) }); });
+    Object.keys(sim.back).forEach(k => { K.S.lab.tray[k] = (K.S.lab.tray[k] || 0) + sim.back[k]; });
+    K.S.lab.runs++; let bonus = 0, firstGlobal = false; const newly = [];
+    const iso = p => p.iso ? Object.assign({}, p, { key: p.iso.key }) : p, PR = card.Pr.map(iso), mainP = PR.find(p => made[p.key] && p.role === 'main') || PR.find(p => made[p.key]);
+    for(const p of PR){ if(!made[p.key] || K.S.lab.found.includes(p.key) || (Chem.speciesOf(p.key) || {}).kind !== 'compound' || /^(H2O|CO2|HCl|HBr|NaCl|KCl)$/.test(p.key)) continue; K.S.lab.found.push(p.key); newly.push(p.key); bonus += Math.max(5, K.round2(Chem.valueOf(p.key) * 0.5)); }
+    if(newly.length && mainP){ const id = 's:' + Synth.fnv(mainP.key), rc = JSON.stringify([card.a.keys, card.a.solv, card.a.cat, card.a.T, card.a.P, card.a.atm, card.a.vessel, card.a.stir, card.a.time, card.a.dean, card.a.slow, card.a.workup]); const r = await K.cloud.discover(id, { eq: card.eq, n: mainP.key.slice(0, 240), rc: rc.length <= 300 ? rc : '' }); if(r.first){ firstGlobal = true; bonus += Math.min(100, 25 + 5 * Math.min(15, Object.keys(mainP.comp).filter(e => e !== 'H').reduce((t, e) => t + mainP.comp[e], 0) / 2)); } }
+    if(bonus > 0) K.earn(bonus, 'Discovery bonus'); K.touch('lab'); K.emit('lab');
+    return ok('Made ' + out.map(m => m.n + ' × ' + m.name).join(', '), { kind: 'S', made: out, fee, bonus, newly: newly.map(k => ({ key: k, name: nmOf(k) })), firstGlobal, equation: card.eq, y: card.eta, hazard: sim.hazard, src: pl.src, tLabel: sim.tLabel, notes: sim.notes, back: sim.back });
+  }
+  function stepSim(card, amounts){ return card && card.ok ? Synth.run(card, amounts) : null; }
+  function stepOptions(){
+    const V = SYNTH_VESSELS, H = SYNTH_HEAT, W = SYNTH_WORKUP, lock = id => owns(id), need = id => (allTools().find(t => t.id === id) || { name: id }).name;
+    const row = (o, k) => Object.keys(o).map(id => Object.assign({ id, owned: lock(o[id].need), needName: need(o[id].need) }, o[id])), atm = [{ id: 'air', name: 'Air' }, { id: 'N2', name: 'Nitrogen' }, { id: 'Ar', name: 'Argon' }, { id: 'vac', name: 'Vacuum' }];
+    return { vessels: row(V), heats: row(H), workups: row(W), atms: atm, times: SYNTH_TIMES, stir: owns('stirrer'), dean: owns('distillation') };
+  }
+  function stepItems(){                                    // everything you can put in the flask: inventory + tray, with the roles the reaction templates look for
+    const out = [], seen = new Set(), add = (k, qty, tray) => { if(seen.has(k)) return; seen.add(k); const sp = Synth.species(k), ck = Chem.speciesOf(k); if(!ck) return; out.push({ key: k, name: nmOf(k), qty: haveN(k), tray: K.S.lab.tray[k] || 0, f: ck.kind === 'element' ? k : (ck.comp && ck.comp.C && sp ? Synth.S.hillStr(ck.comp) : Chem.prettyFormula ? Chem.prettyFormula(k) : k), kind: ck.kind, tags: sp ? Array.from(sp.tags) : [], solv: sp && sp.solv || '', cat: !!(sp && (sp.tags.has('cat') || sp.tags.has('lewis') || sp.tags.has('acid-strong') || sp.tags.has('base-strong') || sp.el && SYNTH_CATALYSTS[sp.el] || sp.tags.has('acid-mid'))), organic: !!(ck.comp && ck.comp.C), synth: !!ck.synth }); };
+    Object.keys(K.S.inv.e).forEach(k => add(k)); Object.keys(K.S.inv.c).forEach(k => add(k)); Object.keys(K.S.lab.tray).forEach(k => add(k));
+    if(!seen.has('H2O')) out.push({ key: 'H2O', name: 'Water (tap)', qty: 999, tray: 0, f: 'H₂O', kind: 'compound', tags: ['solv:p', 'w'], solv: 'p', cat: false, organic: false, free: true });
+    return out;
+  }
+  async function stepRoute(target){                         // how could I make `target`? search the shared library (cards other players' runs produced) backwards to things that can be bought
+    try{ if(!SYN.index){ const r = await fetch('lab-cache/synth/index.json', { cache: 'no-cache' }); SYN.index = r.ok ? await r.json() : {}; } }catch(e){ SYN.index = {}; }
+    const cards = [], seenK = new Set(), want = [target]; let guard = 0;
+    while(want.length && guard++ < 40){ const p = want.shift(); for(const ck of (SYN.index[p] || []).slice(0, 3)){ if(seenK.has(ck)) continue; seenK.add(ck); const sh = await sshard(Synth.shardOf(ck)), cd = sh && sh[ck]; if(cd && Synth.validate(cd).ok){ cards.push(cd); cd.R.forEach(r => { if(!r.spent && !want.includes(r.key)) want.push(r.key); }); } } }
+    const buy = Synth.catalog().filter(e => e.buy).map(e => e.key).concat(Object.keys(Chem.elements));
+    const steps = Synth.route(target, cards, buy.concat(Object.keys(K.S.inv.c)), 6); return steps ? steps.map(c => ({ eq: c.eq, type: c.type, a: c.a, key: c.key })) : null;
+  }
   const lab = {
-    tools: () => TOOLS.map(t => Object.assign({}, t, { owned: !!K.S.lab.tools[t.id] })),
-    buyTool(id){ const t = TOOLS.find(x => x.id === id); if(!t) return no('Unknown equipment.'); if(K.S.lab.tools[id]) return no('You already own that.'); if(!K.spend(t.cost, 'Bought ' + t.name)) return no('You need ' + fmt(t.cost) + '.'); K.S.lab.tools[id] = 1; K.touch('lab'); K.emit('lab'); return ok('Bought ' + t.name + '.'); },
+    tools: () => allTools().map(t => Object.assign({}, t, { owned: !!K.S.lab.tools[t.id] })),
+    buyTool(id){ const t = allTools().find(x => x.id === id); if(!t) return no('Unknown equipment.'); if(K.S.lab.tools[id]) return no('You already own that.'); if(!K.spend(t.cost, 'Bought ' + t.name)) return no('You need ' + fmt(t.cost) + '.'); K.S.lab.tools[id] = 1; K.touch('lab'); K.emit('lab'); return ok('Bought ' + t.name + '.'); },
     bench, describe: f => Chem.describe(f), validate: f => Chem.validate(f), owned: () => Object.assign({}, K.S.lab.tools),
     async plan(a){ a = clampArgs(a); const r = await getCard(a); return { card: r.card, src: r.src, args: a }; },
     simulate(card, amounts, o){ return card && card.ok ? Phys.run(card, amounts, { removal: !!(o && o.removal) && bench().removal, tools: K.S.lab.tools, volume: o && o.volume }) : null; },
@@ -120,6 +206,7 @@
     collect(key){ const u = K.S.lab.tray[key]; if(!(u > 0)) return no('Nothing to collect.'); K.invAdd(K.kindOf(key), key, u); delete K.S.lab.tray[key]; K.touch('lab'); K.emit('lab'); return ok('Added to your inventory.'); },
     collectAll(){ Object.keys(K.S.lab.tray).forEach(k => { K.invAdd(K.kindOf(k), k, K.S.lab.tray[k]); delete K.S.lab.tray[k]; }); K.touch('lab'); K.emit('lab'); return ok('Everything added to your inventory.'); },
     graph: key => graphOf(key), identify: key => identify(key), ff: ffTools,
+    step: { plan: stepPlan, run: stepRun, simulate: stepSim, options: stepOptions, items: stepItems, route: stepRoute, clamp: clampStep, cacheInfo: () => Object.assign({ cards: SYN.cards.size }, SYN.hits), label: nmOf, owns, props: k => Synth.props(k), watch: cb => K.cloud.watchDiscoveries(cb) },
     found: () => K.S.lab.found.slice(), runs: () => K.S.lab.runs, cacheInfo: () => Object.assign({ cards: SEEN.cards.size }, SEEN.hits),
     async registry(){ try{ const r = await fetch('lab-cache/discoveries.json', { cache: 'no-cache' }); return r.ok ? await r.json() : {}; }catch(e){ return {}; } }
   };
@@ -140,7 +227,10 @@
     licence: () => ({ active: LG.licActive(), leftMs: LG.licLeftMs(), fee: LG.cfg.licFee / 100, days: LG.cfg.licDays, markup: LG.cfg.buildMarkupBp / 10000 }), buyLicence: () => R(LG.buyLicence()), build: t => R(LG.build(t)), buildTypes: () => LG.buildTypes(),
     orders: () => Object.keys(LG.orders || {}).sort().map(slot => Object.assign({ slot }, LG.orders[slot])),
     plot: kind => LG.hasPlot(kind), plotFee: kind => LG.plotFee(kind) / 100, buyPlot: kind => R(LG.buyPlot(kind)), gate: id => (C.isAdmin() && K.prefs.adminBypass === true) ? null : LG.gate(id),   // admin-only 'open without buying' switch (Settings → Administrator)
-    watchMap: on => LG.watchMap(!!on), plots: () => LG.plots || {}, locs: () => LG.locs || {}, allHomes: () => LG.homes || {}
+    watchMap: on => LG.watchMap(!!on), plots: () => LG.plots || {}, locs: () => LG.locs || {}, allHomes: () => LG.homes || {},
+    /* cars and planes (data/vehicle-data.js): the garage, and the dealership / airport purchases (the app only offers Buy while you stand there in the real world) */
+    garage: () => LG.vehicles(), garageValue: () => LG.vehValue(), vehicleCatalogue: () => VehicleData,
+    buyVehicle: (model, col) => R(LG.buyVehicle(model, col)), sellVehicle: slot => R(LG.sellVehicle(slot)), repaintVehicle: (slot, col) => R(LG.repaintVehicle(slot, col))
   };
   const loans = { list: () => LG.loanList(), plans: () => LG.plans(), limit: () => LG.loanLimit(), owed: () => LG.debt(), take: (plan, d) => R(LG.takeLoan(plan, d)), repay: (slot, d) => R(LG.repay(slot, d)) };
   /* the old fixed-property API now only reports your houses (kept so older widgets keep working) */
@@ -153,7 +243,7 @@
   const bank = {
     balance: () => K.S.cash, bills: K.bank.bills, open: K.bank.open, owed: K.bank.owed, preview: K.bank.preview, pay: id => R(K.bank.pay(id)), payAll: () => K.bank.payAll(), rate: K.bank.rate,
     history: () => K.S.bank.hist.slice(), config: () => ({ threshold: K.bank.threshold(), taxRate: K.taxRate(), dutyRate: LG.cfg.dutyBp / 10000, propTaxDay: LG.cfg.propTaxBpDay / 10000, maxRate: 0.02 }), threshold: () => K.bank.threshold(), netWorth: K.netWorth,
-    breakdown: () => ({ cash: K.S.cash, inventory: K.inventoryValue(), stock: K.stockValue(), property: K.propValue() }), debt: () => LG.debt()
+    breakdown: () => ({ cash: K.S.cash, inventory: K.inventoryValue(), stock: K.stockValue(), property: K.propValue(), vehicles: K.vehValue ? K.vehValue() : 0 }), debt: () => LG.debt()
   };
 
 
@@ -222,8 +312,9 @@
   const mguard = (check, obj, names) => names.forEach(n => { const f = obj[n]; if(typeof f !== 'function') return; obj[n] = function(){ const m = check(); return m ? no(m) : f.apply(this, arguments); }; });
   const appG = id => () => K.maint.appMsg(id), sysG = k => () => K.maint.sysMsg(k);
   mguard(appG('WestShop'), shop, ['buy', 'sell']);
-  mguard(appG('WestLab'), lab, ['buyTool', 'run', 'collect', 'collectAll']);
+  mguard(appG('WestLab'), lab, ['buyTool', 'run', 'collect', 'collectAll']); mguard(appG('WestLab'), lab.step, ['run']);
   mguard(appG('WestMap'), homes, ['buy', 'sellToCity', 'setAsk', 'setRent', 'evict', 'rent', 'topUp', 'leave', 'setHome', 'requestHousing', 'buyLicence', 'build']);
+  mguard(appG('RealEstate'), homes, ['buyVehicle', 'sellVehicle', 'repaintVehicle']);
   mguard(appG('Stocks'), stock, ['buy', 'sell', 'sellQty', 'sellFraction', 'buyFraction', 'sellAll']); mguard(sysG('trading'), stock, ['buy', 'sell', 'sellQty', 'sellFraction', 'buyFraction', 'sellAll']);
   mguard(appG('WestFactory'), factory, ['addLine', 'buySlot', 'upgrade', 'setRate', 'setOn', 'setAuto', 'setReserve', 'gAdd', 'gDel', 'gWire', 'gUnwire', 'gAuto', 'gClear', 'setRoute', 'setPrice', 'sellNow', 'remove', 'collect', 'withdraw']);
   mguard(sysG('market'), factory.market, ['buy']); mguard(appG('WestShop'), factory.market, ['buy']);
@@ -238,7 +329,7 @@
     shop, lab, props, homes, loans, bank, mail, auth, stock, games, arcade, factory, files, world, admin, gallery, leaderboard, maintenance, econ: () => K.econ(),
     report: { submit: r => C.report.submit(r), list: () => C.report.list(), setStatus: (i, s) => C.report.setStatus(i, s), remove: i => C.report.remove(i) },
     chem: Chem, phys: Phys, mol: Mol, worldModel: World,
-    data: { ELEMENTS, CATEGORY_COLORS, CATEGORY_LABELS, GAS_AT_25C, LIQUID_AT_25C, UNKNOWN_STATE, STATE_COLORS, STATE_LABELS, BLOCK_COLORS, BLOCK_LABELS, COMPOUND_LOOKUP, CATEGORY_LOOKUP_LABELS, POLYATOMIC_IONS, DATABOOK, WANTED_DATA, PROPERTIES, PROPERTY_SECTORS, TOOLS, MELTING_POINTS, BOILING_POINTS, OXIDATION, ELECTRONEG, RECIPES },
+    data: { ELEMENTS, CATEGORY_COLORS, CATEGORY_LABELS, GAS_AT_25C, LIQUID_AT_25C, UNKNOWN_STATE, STATE_COLORS, STATE_LABELS, BLOCK_COLORS, BLOCK_LABELS, COMPOUND_LOOKUP, CATEGORY_LOOKUP_LABELS, POLYATOMIC_IONS, DATABOOK, WANTED_DATA, PROPERTIES, PROPERTY_SECTORS, TOOLS, MELTING_POINTS, BOILING_POINTS, OXIDATION, ELECTRONEG, RECIPES, VEHICLES: VehicleData },
     nameOk: K.nameOk, netWorth: K.netWorth, sync: () => K.cloud.flushNow(), usage: () => ({ bytes: C.bytes, reads: C.reads, writes: C.writes }),
     notify: n => K.emit('notify', n)
   };

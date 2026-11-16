@@ -162,6 +162,40 @@ const apply = r => r.tree;
   const r = H.update(old, upd, NOW, H.ADMIN); ok(r, 'the admin reset write'); no(H.update(old, upd, NOW, U), 'a player running the reset');
   assert.ok(E.audit({ eco: r.tree.eco }).ok, 'the reset economy balances'); assert.strictEqual(Object.keys(r.tree.world.own).length, 512); assert.ok(!r.tree.players && !r.tree.leaderboard, 'old progress is gone'); }
 
+// ---- vehicles: the car dealership and the private airport (world/garage/<uid>/<v1..v12>, hop 'veh+' / 'veh-') ----
+{ const VD = require('../data/vehicle-data.js'); const t0 = apply(run(world(), 'u1', a => { mv(a, 'pool', -10000000); a.ob = 1; })); t0.eco.acct.u1.b += 90000000; t0.eco.acct.u1.sys.pool -= 90000000;
+  const rec = (m, c, col) => ({ m, c: c === undefined ? VD.price(m) : c, t: NOW, col: col || 0 });
+  const buy = (tree, slot, r, pay, hop, uid) => run(tree, uid || 'u1', a => { mv(a, 'city', pay === undefined ? r.c : pay); a.hop = hop || 'veh+'; a.lop = slot; }, { ['world/garage/' + (uid || 'u1') + '/' + slot]: r });
+  ok(buy(t0, 'v1', rec('wren')), 'buying a hatchback at the catalogue price'); ok(buy(t0, 'v12', rec('alder', undefined, 7)), 'buying into the last garage slot, in the last colour');
+  VD.ALL.filter(v => v.price <= 90000000).forEach(v => ok(buy(t0, 'v2', rec(v.id)), 'every affordable model can be bought: ' + v.id));
+  no(buy(t0, 'v1', rec('wren'), VD.price('wren') - 1), 'paying the city one cent too little for a car'); no(buy(t0, 'v1', rec('wren', VD.price('wren') - 1), VD.price('wren') - 1), 'a record that lies about the price (cheaper than the catalogue)');
+  no(buy(t0, 'v1', rec('apex', VD.price('wren')), VD.price('wren')), 'an Apex R for the price of a Wren'); no(buy(t0, 'v1', rec('nonsense', 100), 100), 'a model that is not in the catalogue');
+  no(buy(t0, 'v1', rec('wren'), undefined, 'veh-'), 'a purchase filed as a sale'); no(buy(t0, 'v1', rec('wren'), undefined, 'plot-f'), 'a purchase with the wrong ledger tag'); no(buy(t0, 'v1', rec('wren'), undefined, 'none'), 'a purchase with a meaningless ledger tag');
+  no(buy(t0, 'v13', rec('wren')), 'a 13th garage slot'); no(buy(t0, 'v0', rec('wren')), 'garage slot v0'); no(buy(t0, 'x1', rec('wren')), 'a made-up slot name');
+  no(H.update(t0, { 'world/garage/u1/v1': rec('wren') }, NOW, U), 'a free car (no payment at all)'); no(H.update(t0, { 'world/garage/u1/v1': rec('wren') }, NOW, V), 'a free car for someone else');
+  no(run(t0, 'u1', a => { mv(a, 'city', VD.price('wren')); a.hop = 'veh+'; a.lop = 'v1'; }), 'paying the city for a car and getting no record');
+  no(run(t0, 'u1', a => { mv(a, 'city', VD.price('wren')); a.hop = 'veh+'; a.lop = 'v1'; }, { 'world/garage/u2/v1': rec('wren') }), 'paying for a car but filing it under another player');
+  no(buy(t0, 'v1', Object.assign(rec('wren'), { t: NOW - 1 })), 'a back-dated record'); no(buy(t0, 'v1', Object.assign(rec('wren'), { col: 8 })), 'a colour that does not exist'); no(buy(t0, 'v1', Object.assign(rec('wren'), { col: 1.5 })), 'a fractional colour');
+  no(buy(t0, 'v1', Object.assign(rec('wren'), { x: 1 })), 'an extra field on the record'); no(buy(t0, 'v1', { m: 'wren', c: VD.price('wren'), t: NOW }), 'a record with no colour');
+  no(run(t0, 'u1', a => { mv(a, 'city', VD.price('wren')); a.hop = 'veh+'; a.lop = 'v2'; }, { 'world/garage/u1/v1': rec('wren') }), 'the ledger names one slot and the record is in another');
+  { const poor = clone(t0); poor.eco.acct.u1.b = 1000; poor.eco.acct.u1.sys.pool = -1000 - 0; no(buy(poor, 'v1', rec('wren')), 'buying a car with no money'); }
+  const tg = apply(buy(t0, 'v1', rec('wren')));
+  no(buy(tg, 'v1', rec('alder')), 'buying over an occupied slot'); ok(buy(tg, 'v2', rec('alder')), 'a second vehicle in the next slot');
+  // selling back: exactly floor(paid x 70 %) from the city, record deleted in the same update
+  const refund = Math.floor(VD.price('wren') * 7000 / 10000), sell = (tree, slot, back, hop) => run(tree, 'u1', a => { mv(a, 'city', -back); a.hop = hop || 'veh-'; a.lop = slot; }, { ['world/garage/u1/' + slot]: null });
+  ok(sell(tg, 'v1', refund), 'selling a car back for 70 % of what was paid'); no(sell(tg, 'v1', refund + 1), 'selling a car for one cent more than 70 %'); no(sell(tg, 'v1', VD.price('wren')), 'selling a car back for the full price');
+  no(sell(tg, 'v1', refund, 'veh+'), 'a sale filed as a purchase'); no(sell(tg, 'v1', refund, 'lic'), 'a sale with the wrong ledger tag'); no(sell(tg, 'v2', refund), 'selling a slot that holds nothing');
+  no(run(tg, 'u1', a => { mv(a, 'city', -refund); a.hop = 'veh-'; a.lop = 'v1'; }), 'taking the refund and keeping the car'); no(H.update(tg, { 'world/garage/u1/v1': null }, NOW, U), 'deleting a car without the refund (harmless but unledgered writes stay refused)');
+  no(H.update(tg, { 'world/garage/u1/v1': null }, NOW, V), 'deleting somebody else’s car');
+  // repaint: only the colour may change, no money moves
+  ok(H.update(tg, { 'world/garage/u1/v1': Object.assign({}, tg.world.garage.u1.v1, { col: 5 }) }, NOW, U), 'repainting a car'); no(H.update(tg, { 'world/garage/u1/v1': Object.assign({}, tg.world.garage.u1.v1, { col: 9 }) }, NOW, U), 'repainting into a colour that does not exist');
+  no(H.update(tg, { 'world/garage/u1/v1': rec('apex', VD.price('apex')) }, NOW, U), 'swapping a Wren for an Apex R'); no(H.update(tg, { 'world/garage/u1/v1': Object.assign({}, tg.world.garage.u1.v1, { c: 1 }) }, NOW, U), 'rewriting the price paid (to sell it back for more)');
+  no(H.update(tg, { 'world/garage/u1/v1': Object.assign({}, tg.world.garage.u1.v1, { t: NOW + 5 }) }, NOW, U), 'rewriting the purchase time'); no(H.update(tg, { 'world/garage/u1/v1': Object.assign({}, tg.world.garage.u1.v1, { col: 5 }) }, NOW, V), 'repainting somebody else’s car');
+  // privacy
+  assert.strictEqual(H.read(tg, 'world/garage/u1', NOW, U).ok, true, 'the owner reads their garage'); assert.strictEqual(H.read(tg, 'world/garage/u1', NOW, V).ok, false, 'other players cannot read a garage'); assert.strictEqual(H.read(tg, 'world/garage/u1', NOW, ANON).ok, false, 'anonymous sessions cannot read a garage');
+  // the city rule still refuses everything else
+  no(run(t0, 'u1', a => { mv(a, 'city', VD.price('wren')); a.hop = 'veh+'; a.lop = 'v1'; }, { 'world/garage/u1/v1': rec('wren'), 'world/plot/u1/f': NOW }), 'smuggling a plot into a vehicle purchase');
+}
 // ---- industrial plots (WestFactory), University Quarter labs (WestLab) and the map presence node ----
 { const t0 = apply(run(world(), 'u1', a => { mv(a, 'pool', -10000000); a.ob = 1; })); t0.eco.acct.u1.b += 90000000; t0.eco.acct.u1.sys.pool -= 90000000; const plot = (tree, kind, fee, tv, hop) => run(tree, 'u1', a => { mv(a, 'city', fee); a.hop = hop || 'plot-' + kind; }, { ['world/plot/u1/' + kind]: tv });
   ok(plot(t0, 'f', 25000000, NOW), 'buying an industrial plot'); ok(plot(t0, 'l', 15000000, NOW), 'buying a university lab');

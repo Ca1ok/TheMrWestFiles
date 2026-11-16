@@ -37,10 +37,11 @@
     shop: { x: 664, y: 552, n: 'WestShop', k: 'shop' }, arcade: { x: 736, y: 552, n: 'Arcade', k: 'arcade' }, agency: { x: 700, y: 466, n: 'Estate Agency', k: 'agency' },
     hall: { x: 700, y: 580, n: 'Council Hall', k: 'hall' }, park: { x: 700, y: 640, n: 'Central Park', k: 'park' },
     uni: { x: 372, y: 398, n: 'University Library', k: 'uni' }, lab: { x: 432, y: 440, n: 'Research Institute', k: 'lab' },
-    ind: { x: 1006, y: 648, n: 'Freight Depot', k: 'ind' }, plant: { x: 1096, y: 604, n: 'Power Plant', k: 'plant' }
+    ind: { x: 1006, y: 648, n: 'Freight Depot', k: 'ind' }, plant: { x: 1096, y: 604, n: 'Power Plant', k: 'plant' },
+    dealer: { x: 560, y: 530, n: 'Car Dealership', k: 'dealer' }, airport: { x: 850, y: 500, n: 'Private Airport', k: 'airport' }   // legacy 2-D coordinates (desktop map widget only; far enough from the core not to move the skyline). The real positions come from os/realworld/layout.js
   };
   const APP_PLACE = { Arcade: 'arcade', Bank: 'bank', WestShop: 'shop', Stocks: 'exchange', RealEstate: 'agency', WestLab: 'lab', WestFactory: 'factory' };   // every other app (and the bare desktop) = at home
-  const PLACE_NAMES = { home: 'Home', arcade: 'the Arcade', bank: 'the Bank', shop: 'WestShop', exchange: 'the Stock Exchange', agency: 'the Estate Agency', lab: 'their Laboratory', factory: 'their Factory', hall: 'Council Hall', park: 'Central Park' };
+  const PLACE_NAMES = { home: 'Home', arcade: 'the Arcade', bank: 'the Bank', shop: 'WestShop', exchange: 'the Stock Exchange', agency: 'the Estate Agency', lab: 'their Laboratory', factory: 'their Factory', hall: 'Council Hall', park: 'Central Park', dealer: 'the Car Dealership', airport: 'the Airport' };
   // plots: the University Quarter (labs, west) and the Industrial Estate (factories, east), a fixed grid; your cell comes from your uid so it never moves
   const ZONES = { uni: { x0: 224, y0: 340, x1: 536, y1: 480, cols: 12, rows: 5, n: 'University Quarter', c: '#6f7fd0', kind: 'l', ids: 'lab' }, ind: { x0: 868, y0: 570, x1: 1180, y1: 700, cols: 12, rows: 5, n: 'Industrial Estate', c: '#c0764a', kind: 'f', ids: 'factory' } };
   const plotCell = (kind, uid) => { const z = kind === 'l' ? ZONES.uni : ZONES.ind, c = h32(hash(uid), kind === 'l' ? 901 : 902) % (z.cols * z.rows), col = c % z.cols, row = Math.floor(c / z.cols), cw = (z.x1 - z.x0) / z.cols, rh = (z.y1 - z.y0) / z.rows; return { x: z.x0 + (col + 0.5) * cw, y: z.y0 + (row + 0.5) * rh, w: cw * 0.7, h: rh * 0.62, col, row }; };

@@ -33,7 +33,8 @@
     K.toArr(g && g.wires).slice(0, 48).forEach(w => { if(w && ids.has(w.a) && (w.b === 'o' || ids.has(w.b)) && typeof w.s === 'string' && /^[A-Za-z0-9()]{1,16}$/.test(w.s)) wires.push({ a: w.a, b: w.b, s: w.s }); });
     return { nodes, wires, next: Math.max(1, Math.floor(num(g && g.next, nodes.length + 1))) };
   };
-  const migrate = l => { try{ return cleanGraph(F.graphFromSheet(F.flowsheet(l.f, { found: K.S.lab.found, opt: cleanOpt(l._o), rate: 1, atomPrice: elPrice, compOf, cfg: CFG, lab: LAB }))); }catch(e){ return { nodes: [], wires: [], next: 1 }; } };   // old lines become the equivalent graph
+  const foundF = () => K.S.lab.found.filter(f => !(typeof SynthCore !== 'undefined' && SynthCore.isSKey(f)));       // structure-built (WestLab step) compounds are not factory products: a plant cannot make them 'from the elements'
+  const migrate = l => { try{ return cleanGraph(F.graphFromSheet(F.flowsheet(l.f, { found: foundF(), opt: cleanOpt(l._o), rate: 1, atomPrice: elPrice, compOf, cfg: CFG, lab: LAB }))); }catch(e){ return { nodes: [], wires: [], next: 1 }; } };   // old lines become the equivalent graph
   const cleanOpt = o => { const out = {}; if(o && typeof o === 'object') Object.keys(o).slice(0, 16).forEach(k => { if(/^[A-Za-z0-9()]{1,16}$/.test(k) && (o[k] === 'buy' || o[k] === 'make')) out[k] = o[k]; }); return out; };
 
   /* ---- state hygiene (called after every load / adopt) ---- */
@@ -51,9 +52,9 @@
   };
 
   /* ---- derived numbers for the UI ---- */
-  const proc = f => F.process(f, K.S.lab.found, CFG, LAB);                       // how this product is made right now (real multistep process, or direct from the elements)
-  const autoOf = (f, opt, rate) => F.flowsheet(f, { found: K.S.lab.found, opt, rate, atomPrice: elPrice, compOf, cfg: CFG, lab: LAB });   // the staged route as a tree (used by 'Auto-build' and the add-line margins)
-  const sheetOf = (l, rate) => F.graphSheet(l.g, { f: l.f, found: K.S.lab.found, rate, atomPrice: elPrice, compOf, cfg: CFG, lab: LAB, cap: 3 * F.rateCap(l.tier, CFG) });   // the player's graph, solved (rate 0 = structure + unit cost only)
+  const proc = f => F.process(f, foundF(), CFG, LAB);                       // how this product is made right now (real multistep process, or direct from the elements)
+  const autoOf = (f, opt, rate) => F.flowsheet(f, { found: foundF(), opt, rate, atomPrice: elPrice, compOf, cfg: CFG, lab: LAB });   // the staged route as a tree (used by 'Auto-build' and the add-line margins)
+  const sheetOf = (l, rate) => F.graphSheet(l.g, { f: l.f, found: foundF(), rate, atomPrice: elPrice, compOf, cfg: CFG, lab: LAB, cap: 3 * F.rateCap(l.tier, CFG) });   // the player's graph, solved (rate 0 = structure + unit cost only)
   let memo = null;                                                              // per-tick cache of unit costs (prices don't move inside one tick)
   const sheetFor = l => { if(memo && memo.has(l.id)) return memo.get(l.id); const sh = sheetOf(l, 0); if(memo) memo.set(l.id, sh); return sh; };
   function view(l){
@@ -71,7 +72,7 @@
     });
     return { lines, slots: s.slots, maxSlots: CFG.slotsMax, nextSlotCost: F.slotCost(s.slots, CFG), reserve: s.reserve, made: s.made, sold: s.sold, earned: s.earned, pos: Object.assign({}, s.pos), perMin: { mol: r2(mol), cost: r2(cost), rev: r2(rev), net: r2(rev - cost) }, cfg: { fee: CFG.marketFee, failLockMs: CFG.failLockMs, shopLo: CFG.shopLo, shopHi: CFG.shopHi, maxTier: CFG.maxTier }, online: C.signedIn() };
   };
-  FA.found = () => K.S.lab.found.filter(f => compOf(f)).map(f => ({ f, name: nameOf(f), est: est(f), comp: compOf(f), unitCost: r2(autoOf(f, {}, 0).unit), process: proc(f).mode }));
+  FA.found = () => foundF().filter(f => compOf(f)).map(f => ({ f, name: nameOf(f), est: est(f), comp: compOf(f), unitCost: r2(autoOf(f, {}, 0).unit), process: proc(f).mode }));
   FA.quote = function(id){
     const l = line(id); if(!l) return null; const e = est(l.f), rg = F.shopRange(e, CFG), n = Math.max(1, Math.min(Math.floor(l.stock) || F.batch(l.tier, CFG), F.batch(l.tier, CFG)));
     const quote = K.sellQuote(l.f, n), sat = F.clamp(quote.avg / (0.7 * e || 1), 0.3, 1), price = F.clamp(l.price, rg.lo, rg.hi);
@@ -145,7 +146,7 @@
   const touch = () => { K.touch('factory'); K.emit('factory'); };
   FA.addLine = function(f){
     const s = S(), key = keyOf(f); if(!key || !compOf(key)) return no('Unknown compound.');
-    if(!K.S.lab.found.some(x => keyOf(x) === key)) return no('Discover it in WestLab first.');
+    if(!foundF().some(x => keyOf(x) === key)) return no('Discover it in WestLab first.');
     if(s.lines.length >= s.slots) return no('No free line — buy another slot.');
     if(s.lines.some(l => l.f === key)) return no('You already produce that.');
     const id = 'l' + (s.nid++); s.lines.push({ id, f: key, tier: 1, rate: 1, on: true, route: 'shop', price: r2(est(key) * 0.9), auto: true, stock: 0, sellAt: 0, listed: 0, note: '', keepEmpty: false, g: { nodes: [], wires: [], next: 1 } }); const nl = s.lines[s.lines.length - 1]; nl.g = migrate(nl); touch();
@@ -160,9 +161,9 @@
   const gOf = l => l.g || (l.g = { nodes: [], wires: [], next: 1 });
   const gSp = /^[A-Za-z0-9()]{1,16}$/;
   FA.sources = function(){                                                          // what a Source node can buy: every element, plus the compounds you have discovered (and water)
-    const P = F.priceFn(F.cfgOf(CFG), { atomPrice: elPrice, compOf }), found = new Set(K.S.lab.found.map(keyOf).filter(Boolean)), out = [];
+    const P = F.priceFn(F.cfgOf(CFG), { atomPrice: elPrice, compOf }), found = new Set(foundF().map(keyOf).filter(Boolean)), out = [];
     ELEMENTS.forEach(e => { const sym = e[1], sp = ['H', 'N', 'O', 'F', 'Cl', 'Br', 'I'].includes(sym) ? sym + '2' : sym; out.push({ sp, name: e[2] + (sp !== sym ? ' (' + sp.replace(/\d/g, d => '₀₁₂₃₄₅₆₇₈₉'[d]) + ')' : ''), price: r2(P.price(sp)), el: true }); });
-    K.S.lab.found.filter(f => compOf(f)).concat(found.has('H2O') ? [] : ['H2O']).forEach(f => { out.push({ sp: f, name: nameOf(f), price: r2(P.price(f)), el: false }); });
+    foundF().filter(f => compOf(f)).concat(found.has('H2O') ? [] : ['H2O']).forEach(f => { out.push({ sp: f, name: nameOf(f), price: r2(P.price(f)), el: false }); });
     return out;
   };
   /* The factory's recipe book is checked against WestLab's own engine: a recipe is usable only if Chem.solve gives exactly its products from its reagents (the conditions it asks for are shown). */
@@ -172,7 +173,7 @@
     for(const c of LAB_CONDS){ try{ const x = Chem.solve(Object.keys(rc.in), c); if(x && x.ok && x.products.map(q => q.s.key).sort().join() === want){ res = { ok: true, needs: x.needs || [] }; break; } }catch(e){} }
     return (labMemo[rc.id] = res);
   };
-  FA.recipes = () => F.recipes(K.S.lab.found, compOf, CFG, LAB).map(r => { if(r.kind !== 'real') return Object.assign(r, { needs: [], lab: true }); const lb = labOf(r); return Object.assign(r, { needs: lb.needs, lab: lb.ok, locked: r.locked || !lb.ok, reason: lb.ok ? '' : 'not a reaction WestLab can run' }); });
+  FA.recipes = () => F.recipes(foundF(), compOf, CFG, LAB).map(r => { if(r.kind !== 'real') return Object.assign(r, { needs: [], lab: true }); const lb = labOf(r); return Object.assign(r, { needs: lb.needs, lab: lb.ok, locked: r.locked || !lb.ok, reason: lb.ok ? '' : 'not a reaction WestLab can run' }); });
   FA.gAdd = function(id, kind, ref, x, y){
     const l = line(id); if(!l) return no('No such line.'); const g = gOf(l); if(g.nodes.length >= 24) return no('A plant can have at most 24 nodes.'); ref = String(ref);
     const n = { id: 'n' + (g.next++), t: kind === 'src' ? 'src' : 'rx', x: F.clamp(Math.round(num(x, 40)), 0, 6000), y: F.clamp(Math.round(num(y, 40)), 0, 6000) };

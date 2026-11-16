@@ -14,7 +14,7 @@
   function frame(u, v){ const p = warp(u, v), a = warp(u + 1.5, v), b = warp(u - 1.5, v), c = warp(u, v + 1.5), d = warp(u, v - 1.5), tu = Math.atan2(a[1] - b[1], a[0] - b[0]), tv = Math.atan2(c[1] - d[1], c[0] - d[0]) - Math.PI / 2, s = Math.sin(tu) + Math.sin(tv), co = Math.cos(tu) + Math.cos(tv); return { x: p[0], z: p[1], ang: Math.atan2(s, co), tu }; }
   /* lattice direction (du, dv) → world direction at a frame */
   const dirOf = (fr, du, dv) => { const c = Math.cos(fr.ang), s = Math.sin(fr.ang); return [c * du - s * dv, s * du + c * dv]; };
-  const POI_BLOCK = { agency: [-1, -1], hall: [0, -1], arcade: [1, -1], bank: [-1, 0], exchange: [1, 0], shop: [0, 1], park: [1, 1], uni: [-3, 0], lab: [-3, 1], ind: [3, 0], plant: [3, 1] };
+  const POI_BLOCK = { agency: [-1, -1], hall: [0, -1], arcade: [1, -1], bank: [-1, 0], exchange: [1, 0], shop: [0, 1], park: [1, 1], uni: [-3, 0], lab: [-3, 1], ind: [3, 0], plant: [3, 1], dealer: [-2, 0], airport: [4, 0] };   // dealer + airport replace two 'plain' blocks of row 0: those were already static, so the house spiral (ORDER) and every house position are unchanged
   const ZW = [[-7, -2], [-6, -2], [-5, -2], [-7, -1], [-6, -1], [-5, -1], [-7, 0], [-6, 0], [-5, 0], [-7, 1], [-6, 1], [-5, 1]];
   const ZONE_BLOCKS = { l: ZW, f: ZW.map(([i, j]) => [-i, j]) }, ZONE_NAME = { l: 'University Quarter', f: 'Industrial Estate' };
   const K = (i, j) => i + ',' + j;
@@ -35,6 +35,14 @@
   /* a street point on the boundary of block (i, j) facing lattice direction (du, dv): { kind:'h'|'v', k, t } */
   const streetPt = (i, j, du, dv, u, v) => du ? { kind: 'v', k: du > 0 ? i + 1 : i, t: v } : { kind: 'h', k: dv > 0 ? j + 1 : j, t: u };
   const CACHE = new Map();
+  /* ---- vehicle sites: the Car Dealership (dealer) and the Private Airport (airport). Positions are in the block's own frame: `fwd` metres in front of the building (toward the plaza), `lat` metres sideways. ---- */
+  const bay = (g, fwd, lat) => { const u = g.cu + g.du * fwd - g.dv * lat, v = g.cv + g.dv * fwd + g.du * lat, fr = frame(u, v); return { x: fr.x, z: fr.z, ang: fr.ang, f: dirOf(fr, g.du, g.dv), l: dirOf(fr, -g.dv, g.du) }; };
+  const VEH_SITES = {
+    dealer: { show: [-13, 0, 13].map(l => ({ fwd: 18, lat: l })).concat([-13, 0, 13].map(l => ({ fwd: 28, lat: l }))),          // six showroom cars on the forecourt, in catalogue order
+              lot: [-16, -5.5, 5.5, 16].map(l => ({ fwd: -17, lat: l })).concat([-16, -5.5, 5.5, 16].map(l => ({ fwd: -27, lat: l }))) },   // the customers' lot behind: owned cars that do not fit at home
+    airport: { show: [{ fwd: 24, lat: -14.5 }, { fwd: 24, lat: 0 }, { fwd: 24, lat: 14.5 }],                                         // three showroom planes on the front apron
+               rows: [{ fwd: -20, from: -21, to: 21 }] }                                                                          // the owners' row behind the terminal, packed by wingspan (vehicles.js)
+  };
   const mkTree = (u, v, s, seed, h) => { const p = warp(u, v); return [p[0], p[1], s, seed, h === undefined ? -1 : h]; };
   function content(i, j){
     const key = K(i, j); let c = CACHE.get(key); if(c) return c; const r = roleOf(i, j); if(!r) return null; const B = inner(i, j), cu = (B.uL + B.uR) / 2, cv = (B.vT + B.vB) / 2;
@@ -57,6 +65,12 @@
       const [bi, bj] = [i, j], du = Math.abs(bi) >= Math.abs(bj) ? -Math.sign(bi) : 0, dv = du ? 0 : -Math.sign(bj), fr = frame(cu, cv), f = dirOf(fr, du, dv);
       if(r.role === 'park'){ c.greens.push(quad(B.uL, B.vT, B.uR, B.vB)); c.park = { x: fr.x, z: fr.z }; c.ponds.push({ x: fr.x, z: fr.z, r: 8 }); ring(cu, cv, 13, 6, 0.5); for(let q = 0; q < 30; q++){ const u = B.uL + 6 + f01(q, 31) * (B.uR - B.uL - 12), v = B.vT + 6 + f01(q, 32) * (B.vB - B.vT - 12); if(Math.hypot(u - cu, (v - cv) * 1.2) > 13) c.trees.push(mkTree(u, v, 1 + f01(q, 33) * 0.5, q)); } c.street = streetPt(i, j, du || 0, dv || 1, cu, cv); }
       else { c.pois.push({ id: r.id, x: fr.x, z: fr.z, ang: Math.atan2(-f[0], f[1]), side: 1, front: f, street: streetPt(i, j, du, dv, cu, cv) });
+        if(r.id === 'dealer' || r.id === 'airport'){      // a forecourt / apron instead of downtown fillers: tarmac all over the block, parking bays (bayPoint), painted markings (c.strips, drawn by chunkgen)
+          c.paved.push(quad(B.uL, B.vT, B.uR, B.vB)); c.bay = { cu, cv, du, dv }; c.strips = [];
+          const sp = (fwd, lat, w, l, alongLat, col) => { const q = bay(c.bay, fwd, lat); c.strips.push({ x: q.x, z: q.z, w, l, ang: q.ang + (alongLat ? Math.PI / 2 : 0), col }); };   // w across, l along the lattice u-axis (or v when alongLat)
+          if(r.id === 'dealer') VEH_SITES.dealer.show.forEach(sh => sp(sh.fwd, sh.lat, 6.2, 3.2, false, [96, 98, 106]));
+          else { sp(-37, 0, 4.2, 56, true, [66, 68, 74]); for(let q = -24; q <= 24; q += 6) sp(-37, q, 0.35, 2.4, true, [232, 226, 186]); VEH_SITES.airport.show.forEach(sh => sp(sh.fwd, sh.lat, 0.5, 5, false, [232, 190, 60])); }
+        } else
         for(const sgn of [-1, 1]){ const p = frame(cu + sgn * 24, cv), q = (f01(i + 5, j + 9 + sgn) * 7) | 0, fl = 5 + ((f01(i * 3 + sgn, j + 2) * 9) | 0); c.fillers.push({ x: p.x, z: p.z, ang: p.ang, side: j > 0 ? -1 : 1, w: 13 + f01(i, sgn + 8) * 2, d: 14 + f01(sgn, j + 4) * 2, fl, kind: q % 3 === 0 ? 'apartment' : 'office', v: Math.floor(f01(i + sgn * 7, j + 3) * 997), street: streetPt(i, j, 0, j > 0 ? -1 : 1, cu + sgn * 24, cv) }); } }
       verge(true); lamps();
     } else if(r.role === 'tower'){ const p = frame(cu, cv); c.fillers.push({ x: p.x, z: p.z, ang: p.ang, side: 1, w: 22, d: 20, fl: 16, kind: 'office', v: 411, street: streetPt(i, j, 0, 1, cu, cv) }); verge(true); lamps(); }
@@ -90,6 +104,10 @@
     const a = ptOf(A), b = ptOf(B), n1 = nodeOf(A), n2 = nodeOf(B), head = [a, n1], tail = [n2, b], opt = [[n1, [n2[0], n1[1]], n2], [n1, [n1[0], n2[1]], n2]];
     let mid = opt.find(pathOk) || opt[0]; return head.concat(mid.slice(1)).concat(tail.slice(0)).filter((p, q, arr) => q === 0 || p[0] !== arr[q - 1][0] || p[1] !== arr[q - 1][1]);
   }
+  /* world pose of a bay: x, z and the unit vectors `f` (forward = away from the building, toward the street) and `l` (sideways) */
+  const bayPoint = (id, fwd, lat) => { const bl = POI_BLOCK[id]; if(!bl || !VEH_SITES[id]) return null; const c = content(bl[0], bl[1]); return c && c.bay ? bay(c.bay, fwd, lat) : null; };
+  /* where a car parks at the kerb in front of house `g` (a layout house record: x, y, ang, side, dp): k = 0 or 1 → two cars per house, along the street, inside the road edge */
+  const kerbSpot = (g, k) => { const c0 = Math.cos(g.ang), s0 = Math.sin(g.ang), sd = g.side > 0 ? 1 : -1, fx = -sd * s0, fz = sd * c0, d = g.dp / 2 + SET + SIDE + 1.4, off = (k ? 1 : -1) * 5; const x = g.x + fx * d + c0 * off, z = g.y + fz * d + s0 * off; return { x, z, yaw: Math.atan2(c0, -s0), f: [fx, fz] }; };
   const bounds = () => ({ x0: -RADIUS, x1: RADIUS, z0: -RADIUS, z1: RADIUS });
-  return { SU, SV, SIDE, SET, PER, warp, frame, dirOf, lineU, lineV, hwOf, isAve, setup, exists, roleOf, content, house, poi, plotLot, blocksNear, streetsNear, segExists, route, bounds, radius: () => RADIUS, POI_BLOCK, ZONE_BLOCKS, ZONE_NAME, inner, ORDER };
+  return { SU, SV, SIDE, SET, PER, warp, frame, dirOf, lineU, lineV, hwOf, isAve, setup, exists, roleOf, content, house, poi, plotLot, blocksNear, streetsNear, segExists, route, bounds, bayPoint, kerbSpot, VEH_SITES, radius: () => RADIUS, POI_BLOCK, ZONE_BLOCKS, ZONE_NAME, inner, ORDER };
 });

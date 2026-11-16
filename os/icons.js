@@ -75,7 +75,7 @@ const OS_APPS = [
   { id:'WestShop',   name:'WestShop',    file:'WestShop.html',   g:['#efc062','#b9822a'], glyph:'shop'     },
   { id:'WestLab',    name:'WestLab',     file:'WestLab.html',    g:['#52b5b0','#27677a'], glyph:'lab'      },
   { id:'WestMap',    name:'WestMap',     file:'WestMap.html',    g:['#4fb88a','#1f5e63'], glyph:'map'      },
-  { id:'RealEstate', name:'Real Estate', file:'RealEstate.html', g:['#c98a62','#7b4b31'], glyph:'home'     },
+  { id:'RealEstate', name:'Assets', file:'RealEstate.html', g:['#c98a62','#7b4b31'], glyph:'home'     },
   { id:'Bank',       name:'Bank',        file:'Bank.html',       g:['#4a6fa8','#22375e'], glyph:'bank'     },
   { id:'Games',      name:'Games',       file:'Games.html',      g:['#b36be0','#5a2f9a'], glyph:'games'    },
   { id:'WestFactory', name:'WestFactory', file:'WestFactory.html', g:['#d9774e','#7a3320'], glyph:'factory' },

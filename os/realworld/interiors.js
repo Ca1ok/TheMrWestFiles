@@ -49,6 +49,12 @@
       mb.boxAA(x - 0.07, y, z0 - n * tr, x, y + rise + 0.95, z0 - n * tr + 0.07, '#5a4630'); mb.boxAA(x - 0.07, y, z0 - 0.07, x, y + 1, z0, '#5a4630');
       const rl = (a) => { const hx = a ? x + wd : x - 0.05; for(let i = 0; i < n; i += 2){ const top = y + (i + 1) * rs; mb.boxAA(hx, top, z0 - (i + 1) * tr, hx + 0.05, top + 0.9, z0 - (i + 1) * tr + 0.05, '#5a4630'); } mb.quad([hx + 0.02, y + 0.95, z0], [hx + 0.02, y + rise + 0.95, z0 - n * tr], [hx + 0.02, y + rise + 0.95 + 0.04, z0 - n * tr], [hx + 0.02, y + 0.99, z0], [a ? 1 : -1, 0, 0], '#5a4630'); }; rl(0); rl(1);
       return { x, z: z0 - n * tr, w: wd, d: n * tr }; }
+    /* a display car made of boxes (solid). along: 'z' = nose north/south, 'x' = nose east/west. hex = body colour */
+    car(x, z, along, hex, style){ const L = style === 'coupe' ? 4.4 : style === 'pickup' ? 5.2 : style === 'hatch' ? 3.6 : 4.5, W = 1.8, y = this.y, ax = along === 'x', bx = (a, b, c2, d, e, f, col, top) => { const X0 = ax ? x - L / 2 + a : x - W / 2 + b, Z0 = ax ? z - W / 2 + b : z - L / 2 + a; this.mb.boxAA(X0, y + c2, Z0, X0 + (ax ? d : e), y + f, Z0 + (ax ? e : d), col, top || col); };
+      bx(0, 0, 0.3, L, W, 0.95, hex); bx(L * (style === 'coupe' ? 0.34 : 0.28), 0.1, 0.95, L * (style === 'pickup' ? 0.32 : 0.45), W - 0.2, 1.5, '#9fb7c9'); [[0.9, 0], [0.9, W - 0.2], [L - 1.2, 0], [L - 1.2, W - 0.2]].forEach(w => bx(w[0], w[1], 0, 0.6, 0.2, 0.62, '#15161a'));
+      this.cols.push([ax ? x - L / 2 : x - W / 2, ax ? z - W / 2 : z - L / 2, ax ? x + L / 2 : x + W / 2, ax ? z + W / 2 : z + L / 2, y, y + 1.5]); return this; }
+    /* a model plane on a stand (a metre or so long, solid) */
+    plane(x, z, hex, jet){ const y = this.y + 0.9; this.box(x - 0.5, z - 0.5, 1, 1, 0.9, '#3b3f48'); this.mb.boxAA(x - 0.9, y, z - 0.09, x + 0.9, y + 0.16, z + 0.09, hex); this.mb.boxAA(x - 0.07, y, z - 0.9, x + 0.07, y + 0.05, z + 0.9, jet ? '#cfd5dc' : hex); this.mb.boxAA(x - 0.3, y + 0.15, z - 0.04, x - 0.2, y + 0.45, z + 0.04, '#cfd5dc'); return this; }
     finish(){ return { mesh: this.mb.finish(), cols: this.cols, doorX: this.doorX, h: this.h, levels: this.levels, lh: this.o.lh || this.h, screens: this.screens, npcs: this.npcs, w: this.w, d: this.d, spawn: { x: this.w / 2, z: this.d - 1.8, yaw: 0 }, name: this.name }; }
   }
   const register = (kind, fn) => { REG[kind] = fn; };
@@ -83,7 +89,7 @@
   register('agency', c => { const r = new Room(18, 14, 3.8, { name: 'Estate Agency', floor: '#c6b08e', wall: '#f1dfc8', base: '#8f5f3f' });
     for(let i = 0; i < 6; i++) for(let j = 0; j < 4; j++){ const h = 0.2 + ((i * 5 + j * 3) % 5) * 0.12; r.mb.boxAA(6 + i * 0.9, 0.9, 3.4 + j * 0.9, 6.7 + i * 0.9, 0.9 + h, 4.1 + j * 0.9, J(i + j), J(i + j)); } r.box(5.6, 3, 5.8, 4, 0.9, '#6b4b32', '#8a6a48');
     r.screen('listings', 0.04, 1.5, 7, 3.4, 1.9, 'e'); r.screen('listings', 17.96, 1.5, 7, 3.4, 1.9, 'w');
-    r.npc(9, 10.3, Math.PI, 'Agent Quinn', 'Looking to buy, rent or sell? I know every house in town.', '#c98a62', null, [{ label: 'Browse properties', app: 'RealEstate' }, { label: 'Show me the map', app: 'WestMap' }]); r.plant(1.2, 1.2); r.plant(16.8, 12.8); return r; });
+    r.npc(9, 10.3, Math.PI, 'Agent Quinn', 'Looking to buy, rent or sell? I know every house in town.', '#c98a62', null, [{ label: 'My assets & properties', app: 'RealEstate', tab: 'houses' }, { label: 'Show me the map', app: 'WestMap' }]); r.plant(1.2, 1.2); r.plant(16.8, 12.8); return r; });
   register('hall', c => { const r = new Room(26, 20, 6, { name: 'Council Hall', floor: '#cfd3da', floor2: '#aab0bb', wall: '#e4e7ee', base: '#6b7280' });
     for(let i = 0; i < 4; i++){ r.box(3 + i * 6.7, 3, 0.8, 0.8, 6, '#f1f2f6', '#f1f2f6'); } r.box(8, 1, 10, 2.4, 0.5, '#6b4b32', '#8a6a48'); r.box(10, 1.3, 6, 0.9, 1.1, '#8a6a48', '#a98a64');
     r.npc(13, 2.9, Math.PI, 'Mayor Ada', 'Taxes keep the city running. Bills can be paid at the bank.', '#7c8696', null, [{ label: 'Taxes & bills', app: 'Bank' }]);
@@ -125,6 +131,14 @@
       r.at(0);
     }
     r.screen('tv', w / 2 - (lv > 1 ? 1.5 : 0), 0.9, 0.06, Math.min(3.2, w - 3), 1.5, 's'); if(lv === 1){ r.box(1, d - 2.6, 0.8, 2.6, 0.95, '#d9d3c4', '#4b5563'); r.plant(w - 1, d - 1); } return r; });
+  register('dealer', c => { const r = new Room(24, 18, 4.2, { name: 'Car Dealership', floor: '#d8d4cc', floor2: '#c4c0b8', wall: '#f3f0ea', base: '#d9534f' }); const VD = root.VehicleData, hexes = VD ? VD.CARS.map((v, i) => VD.colorHex(i)) : [];
+    (VD ? VD.CARS : []).forEach((v, i) => { const col = i % 3, row = (i / 3) | 0; r.mb.boxAA(4 + col * 7 - 3, 0, 5 + row * 5.2 - 2, 4 + col * 7 + 3, 0.12, 5 + row * 5.2 + 2, '#8d95a3'); r.car(4 + col * 7 + 1.2, 5 + row * 5.2, 'x', hexes[i], v.style); });
+    r.screen('cars', 12, 1.7, 0.06, 6, 2.4, 's'); r.box(14, 14.6, 6, 1, 1.1, '#6b4b32', '#8a6a48');
+    r.npc(17, 15.8, Math.PI, 'Salesman Reg', 'Every car on this floor is brand new. Take your time — then step into the office and sign.', '#d9534f', null, [{ label: 'Browse & buy cars', app: 'RealEstate', tab: 'cars' }, { label: 'My garage', app: 'RealEstate', tab: 'garage' }]); r.plant(1.2, 1.2); r.plant(22.8, 1.2); return r; });
+  register('airport', c => { const r = new Room(26, 18, 4.6, { name: 'Private Airport', floor: '#cdd5de', floor2: '#b9c3ce', wall: '#eef3f8', base: '#4aa3d9' }); const VD = root.VehicleData;
+    (VD ? VD.PLANES : []).forEach((v, i) => { const hex = VD.colorHex([2, 4, 0, 3][i % 4]); r.mb.boxAA(3.2 + i * 5.2, 0, 3.2, 5.2 + i * 5.2, 0.6, 5.2, '#2f3a4a'); r.plane(4.2 + i * 5.2, 4.2, hex, v.style === 'jet'); });
+    r.screen('planes', 13, 1.7, 0.06, 6.4, 2.4, 's'); r.screen('planes', 0.04, 1.5, 11, 3.4, 2.0, 'e'); r.box(15, 14.6, 6, 1, 1.1, '#2f3a4a', '#4a5a70');
+    r.npc(18, 15.8, Math.PI, 'Agent Imogen', 'Welcome to the private terminal. Your aircraft are parked on the apron behind the building.', '#2a6fb0', null, [{ label: 'Browse & buy planes', app: 'RealEstate', tab: 'planes' }, { label: 'My hangar', app: 'RealEstate', tab: 'garage' }]); r.bench(4, 11, 4, 0.9); r.bench(4, 13.2, 4, 0.9); r.plant(1.2, 1.2); r.plant(24.8, 16.6); return r; });
   register('generic', c => { const r = new Room(14, 10, 3.2, { name: c.name || 'Building' }); r.plant(1.2, 1.2); return r; });
   RW.Interiors = { register, build, Room, kinds: () => Object.keys(REG) };
 })(typeof self !== 'undefined' ? self : this);

@@ -281,6 +281,23 @@
     C.db.ref('labSubmit/' + id).transaction(cur => cur === null ? rec : undefined).catch(() => {});
   };
 
+
+  /* ---- WestLab synthesis steps: same idea — only the INPUTS of a step you just ran are offered; the Action recomputes it with os/lib/synth*.js, validates the card (atoms balanced, structures valid, yield sane,
+   *      nothing restricted) and commits it to lab-cache/synth/. Nobody can submit a result. ---- */
+  C.submitStep = function(id, a){
+    if(!C.db || !C.signedIn()) return;
+    const rec = { r: (a.keys || []).slice(0, 4).map(String), T: Math.round(a.T), P: +a.P || 1, a: a.atm || 'air', v: a.vessel || 'flask', f: (a.stir ? 1 : 0) | (a.dean ? 2 : 0) | (a.slow ? 4 : 0), m: Math.round(a.time) || 60, w: a.workup || 'none', t: firebase.database.ServerValue.TIMESTAMP };
+    if(a.solv) rec.s = String(a.solv).slice(0, 160); if(a.cat) rec.k = String(a.cat).slice(0, 160);
+    C.db.ref('labStep/' + id).transaction(cur => cur === null ? rec : undefined).catch(() => {});
+  };
+  /* live discovery feed: one listener on the newest few discoveries (a handful of small records), so every open client hears about a new compound within a second — nothing is polled */
+  let feedOn = false;
+  C.watchDiscoveries = function(cb){
+    if(!C.db || feedOn) return () => {}; feedOn = true; const start = Date.now(); let ready = false; const ref = C.db.ref('labCache').orderByChild('t').limitToLast(20);
+    const h = ref.on('child_added', s => { const v = s.val(); if(v && typeof v.by === 'string') cb({ id: s.key, by: v.by, eq: v.eq || '', n: v.n || '', rc: v.rc || '', t: v.t || 0, live: ready && (v.t || 0) >= start - 5000 }); }, () => {});
+    setTimeout(() => { ready = true; }, 2500); return () => { ref.off('child_added', h); feedOn = false; };
+  };
+
   /* ---- admin (every call is also enforced by database.rules.json — hiding buttons is not the security) ---- */
   const A = C.admin = {};
   /* ---- WestReport: bug reports (anyone signed in can file one; only the admin can read, triage and export them) ---- */
@@ -307,7 +324,7 @@
      * (the world server then refuses to run). Economy.retire() claims the inbox, pays the cash back into the pool and folds the counters into eco/dead — all in ONE update. */
     const db = C.db, [as, is, ds] = await Promise.all(['eco/acct/' + uid, 'eco/inbox/' + uid, 'eco/dead'].map(p => db.ref(p).once('value')));
     const upd = { ['players/' + uid]: null, ['leaderboard/' + uid]: null, ['eco/acct/' + uid]: null, ['eco/inbox/' + uid]: null, ['eco/bill/' + uid]: null, ['eco/loan/' + uid]: null,
-      ['world/home/' + uid]: null, ['world/plot/' + uid]: null, ['world/lic/' + uid]: null, ['world/build/' + uid]: null, ['world/loc/' + uid]: null };
+      ['world/home/' + uid]: null, ['world/plot/' + uid]: null, ['world/lic/' + uid]: null, ['world/build/' + uid]: null, ['world/garage/' + uid]: null, ['world/loc/' + uid]: null };
     if(as.val()){ const tmp = { eco: { acct: { [uid]: as.val() }, inbox: is.val() ? { [uid]: is.val() } : {}, dead: ds.val() || { sys: {}, s: 0, r: 0 } } }; Economy.retire(tmp, uid);
       upd['eco/dead/sys'] = tmp.eco.dead.sys; upd['eco/dead/s'] = tmp.eco.dead.s; upd['eco/dead/r'] = tmp.eco.dead.r; }
     else if(is.val()){ throw new Error('That player has money waiting in an inbox but no account — fix the ledger first (the world server repairs it on its next run).'); }
@@ -320,7 +337,7 @@
     need(); if(confirm !== 'RESET') throw new Error('Type RESET to confirm.'); const now = Date.now(), og = {};
     for(const p of ['players', 'leaderboard']){ try{ const s = await C.db.ref(p).once('value'); Object.keys(s.val() || {}).forEach(u => { og[u] = true; }); }catch(e){} }       // everyone who already played is an OG player
     const prev = (await C.db.ref('eco/epoch').once('value')).val(), db = { eco: { epoch: prev } }; EcoSim.genesis(db, now, Object.keys(og));
-    const upd = { eco: JSON.parse(JSON.stringify(db.eco)), world: JSON.parse(JSON.stringify(db.world)), players: null, leaderboard: null, labCache: null, labSubmit: null, 'market/listings': null, 'market/proceeds': null };
+    const upd = { eco: JSON.parse(JSON.stringify(db.eco)), world: JSON.parse(JSON.stringify(db.world)), players: null, leaderboard: null, labCache: null, labSubmit: null, labStep: null, 'market/listings': null, 'market/proceeds': null };
     await C.db.ref().update(upd); return { houses: Object.keys(db.world.own).length, bots: Object.keys(db.eco.bots).length, og: Object.keys(og).length, epoch: db.eco.epoch.n };
   };
   A.ecoCfg = async patch => { need(); const lim = { taxBp: [0, 3000], dutyBp: [0, 2000], propTaxBpDay: [0, 100], rentBpDay: [1, 100], wealthFree: [0, 1e13], loanMax: [100000, 1e10], startGrant: [0, 1e9], ogExtra: [0, 1e9], poolDaily: [1e5, 1e11], lateBpDay: [0, 2000], graceHours: [1, 720], sellBp: [5000, 10000], buildBp: [1000, 20000], earnPerDay: [100000, 1e11], earnSlack: [0, 1e9], licFee: [0, 1e10], licDays: [1, 365], plotFee: [0, 1e11], labFee: [0, 1e11], maxAcct: [1e9, 5e15], marketFeeBp: [0, 5000], buildMarkupBp: [10000, 30000], homelessPoolDiv: [1, 1000] }, cur = (await C.db.ref('eco/cfg').once('value')).val() || {};
