@@ -2,12 +2,12 @@
  * The engine (≈110 KB of JS + CSS) is fetched the first time somebody actually steps outside, then cached by the browser; nothing is downloaded for players who stay in WestOS.
  * Read os/realworld/README.md before changing anything. */
 (window.__OSM = window.__OSM || []).push(function(K){
-  const OS = K.facade, FILES = ['terrain', 'mesh', 'layout', 'vehicles', 'nav', 'chunkgen', 'env', 'gfx', 'screens', 'interiors', 'cells', 'props', 'glb', 'phys', 'npcs', 'net', 'streamer', 'game'].map(f => 'os/realworld/' + f + '.js?v=20261117a');
+  const OS = K.facade, FILES = ['terrain', 'mesh', 'layout', 'vehicles', 'nav', 'chunkgen', 'env', 'gfx', 'screens', 'interiors', 'cells', 'props', 'glb', 'phys', 'npcs', 'net', 'streamer', 'game'].map(f => 'os/realworld/' + f + '.js');
   let api = null, loading = null; const btn = document.getElementById('rwExit'), screen = document.getElementById('screen');
   const add = (tag, attrs) => new Promise((res, rej) => { const e = document.createElement(tag); Object.assign(e, attrs); e.onload = res; e.onerror = () => rej(new Error('Could not load ' + (attrs.src || attrs.href))); document.head.appendChild(e); });
   function ensure(){
     if(api) return Promise.resolve(api);
-    if(!loading) loading = (async () => { if(!document.getElementById('rwCss')) await add('link', { id: 'rwCss', rel: 'stylesheet', href: 'os/realworld/realworld.css?v=20261117a' }); await Promise.all(FILES.map(src => add('script', { src, async: false }))); api = window.RealWorld.start(K); return api; })().catch(e => { loading = null; throw e; });
+    if(!loading) loading = (async () => { if(!document.getElementById('rwCss')) await add('link', { id: 'rwCss', rel: 'stylesheet', href: 'os/realworld/realworld.css' }); await Promise.all(FILES.map(src => add('script', { src, async: false }))); api = window.RealWorld.start(K); return api; })().catch(e => { loading = null; throw e; });
     return loading;
   }
   async function enter(){

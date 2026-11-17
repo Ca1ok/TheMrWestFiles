@@ -62,3 +62,6 @@ Trees, street lamps and benches are **instanced**: the chunk worker only emits 3
 
 ## Vehicles (car dealership + private airport)
 `vehicles.js` (pure) decides where every car and plane stands (showroom models, plus your own garage from `OS.homes.garage()`); `game.js` draws them instanced (`gfx.actors(style)`), makes them solid and lets E open the Assets app. Buying happens in the Assets app while you stand at the dealership / airport (`OS.realworld.at(id)`). Driving/flying is NOT implemented: see `RWVehicles.canDrive()` and the `drive` / `fly` numbers in `data/vehicle-data.js`. Test: `node tests/vehicles.test.js`.
+
+## Money units (do not get this wrong)
+`OS.cash()` is in **dollars**; catalogue prices (`VehicleData`, house values) and everything stored in the ledger are in **cents**. Show the balance exactly as `OS.cash()` formatted with 2 decimals (HUD `#rwCash` in `game.js`, bank wall screen in `screens.js`) — never `/ 100` it — and show a catalogue price as `price / 100`. Full rules: AGENTS.md §6d "Units".
