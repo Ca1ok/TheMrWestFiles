@@ -4,7 +4,7 @@
  * RealWorld.start(K) is called once by boot.js the first time the player steps outside; it returns the public API (enter / exit / phone / travel …). */
 (function(root){
   const RW = root.RealWorld, Phys = RW.Phys, G = root.WorldGen, BG = root.BuildGen, T = root.RWTerrain, M = root.RWMesh, L = root.RWLayout;
-  const cfg = RW.config = Object.assign({ radius: 8, perfRadius: 5, fov: 72, walk: 4.4, run: 8.4, jump: 5.6, grav: 17, eye: 1.65, pr: 0.38, sens: 0.0022, far: 1700, npcRange: 230, carRange: 480, minScale: 0.55 }, RW.config || {});
+  const cfg = RW.config = Object.assign({ radius: 8, perfRadius: 5, fov: 72, walk: 4.4, run: 8.4, jump: 5.6, grav: 17, eye: 1.55, pr: 0.36, sens: 0.0022, far: 1700, npcRange: 230, carRange: 480, minScale: 0.55 }, RW.config || {});
   /* landmark id (WorldGen.POIS) → the interior to build when you walk in. Add a line + RealWorld.Interiors.register('<kind>', …) for a new public building. */
   const BUILDINGS = RW.buildings = { bank: { kind: 'bank', name: 'Bank' }, exchange: { kind: 'exchange', name: 'Stock Exchange' }, shop: { kind: 'shop', name: 'WestShop' }, arcade: { kind: 'arcade', name: 'Arcade' }, agency: { kind: 'agency', name: 'Estate Agency' }, hall: { kind: 'hall', name: 'Council Hall' },
     uni: { kind: 'uni', name: 'University Library' }, lab: { kind: 'lab', name: 'Research Institute' }, ind: { kind: 'ind', name: 'Freight Depot' }, plant: { kind: 'plant', name: 'Power Plant' } };
@@ -188,7 +188,12 @@
     function openMap(){ if(!S.running || S.loading) return; if(locked()) document.exitPointerLock(); closeDialog(true); try{ OS.open('WestMap'); }catch(e){} }
 
     /* ---------------- interaction ---------------- */
-    function interact(){ if(!S.running || S.loading || S.dialog) return; if(uiOpen()) return; if(curNpc){ openDialog(curNpc); return; } if(curDoor && curDoor.info && curDoor.info.go) curDoor.info.go(); }
+    /* E at an enterable door: build the cell if it is not loaded yet, then step the player through the doorway (facing in). Walking in still works too. */
+    function stepIn(d, sp){
+      if(!cells) return; let c = cells.cells.get(sp.key) || cells.ensure(sp.key, sp.kind, sp.ctx, d); if(!c) return toast('Could not open this building.');
+      const x = d.x - d.nx * 2.6, z = d.z - d.nz * 2.6; P.x = x; P.z = z; P.y = P.cy = d.y + 0.1; P.vx = P.vz = P.vy = 0; P.grounded = true; P.yaw = Math.atan2(-d.nx, d.nz); P.pitch = 0; cellAt = 0; cellsUpdate(performance.now());
+    }
+    function interact(){ if(!S.running || S.loading || S.dialog) return; if(uiOpen()) return; if(curNpc){ openDialog(curNpc); return; } if(curDoor && curDoor.info){ if(curDoor.info.enter) stepIn(curDoor.d, curDoor.info.spec); else if(curDoor.info.go) curDoor.info.go(); } }
     function findInteraction(){
       curNpc = null; curDoor = null; const fx = Math.sin(P.yaw), fz = -Math.cos(P.yaw);
       if(S.cell){ let bd = 3.4; S.cell.npcs.forEach(n => { if(Math.abs(n.y - P.y) > 2.4) return; const dx = n.x - P.x, dz = n.z - P.z, d = Math.hypot(dx, dz); if(d < bd && (dx * fx + dz * fz) / (d || 1) > 0.25){ bd = d; curNpc = n; } }); if(curNpc) setPrompt('Talk to ' + curNpc.name, curNpc.opts.length ? curNpc.opts.map(o => o.label.split(' · ')[0]).join(' · ') : ''); else setPrompt(null); return; }

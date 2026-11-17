@@ -12,7 +12,7 @@
    * plan(room0, door) → { k, doorX } where room0 was built without a doorX; build the room again with ctx.doorX = doorX, then place() it. */
   function plan(room0, door){
     const nn = [door.nx, door.nz], ex = [door.nz, -door.nx], Fx = door.x - nn[0] * 1.7, Fz = door.z - nn[1] * 1.7, lat = door.bx === undefined ? 0 : (Fx - door.bx) * ex[0] + (Fz - door.bz) * ex[1];
-    const k = Math.max(0.6, Math.min(1, ((door.rw || room0.w + 1) - 0.9) / room0.w, ((door.rd || room0.d + 1) - 0.9) / room0.d)); return { k, doorX: room0.w / 2 + lat / k };
+    const M2 = 2.2 /* walls + roof overhang + porch of the model stay outside the room */, k = Math.max(0.5, Math.min(1, ((door.rw || room0.w + 1) - M2) / room0.w, ((door.rd || room0.d + 1) - M2) / room0.d)); return { k, doorX: room0.w / 2 + lat / k };
   }
   function place(room, door, k){
     const nn = [door.nx, door.nz], ex = [door.nz, -door.nx], dx = room.doorX === undefined ? room.w / 2 : room.doorX; k = k || 1;

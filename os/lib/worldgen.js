@@ -69,7 +69,7 @@
   const streetName = (k, c) => STREETS[(h32(k, 60) + c * 5) % STREETS.length];
   function stations(k){ return [{ t: 'fire', ...pt(loc(k, -S, 11)), d: k }, { t: 'police', ...pt(loc(k, 0, -11)), d: k }, { t: 'ambulance', ...pt(loc(k, S, 11)), d: k }]; }
   const pt = p => ({ x: p[0], y: p[1] });
-  const BH = { studio: 5, apartment: 13, townhouse: 8, house: 7, villa: 9, mansion: 12 }, BW = { studio: 8, apartment: 13, townhouse: 10, house: 11, villa: 13, mansion: 15 }, BD = { studio: 8, apartment: 11, townhouse: 9, house: 10, villa: 12, mansion: 15 };
+  const BH = { studio: 5, apartment: 13, townhouse: 8, house: 7, villa: 9, mansion: 12 }, BW = { studio: 10, apartment: 13, townhouse: 10, house: 11, villa: 13, mansion: 15 }, BD = { studio: 9, apartment: 11, townhouse: 9, house: 10, villa: 12, mansion: 15 };
   function house(i){
     const k = Math.floor(i / PER), s = i % PER, d = district(k), c = s >> 4, j = s & 15, roll = h32(i, SEED) % TW;
     let acc = 0, ty = TYPES[0]; for(const t of TYPES){ acc += t.w; if(roll < acc){ ty = t; break; } }
