@@ -256,19 +256,19 @@ html.reduce-motion #screen[data-dock=hide] .dock{ transition:none; }
 .mbtn.mb-close:hover{ background:#ff5f57; color:rgba(80,10,6,.85); filter:brightness(1.08); } .mbtn.mb-close:active{ transform:scale(.9); } .mb-close.busy{ opacity:.5; cursor:progress; }
 .mb-close svg{ display:block; }
 
-/* WestOS brand menu: click → "Touch grass" → the icon turns into the outdoors icon and the real world loads */
-.mb-brandwrap{ position:relative; display:flex; align-items:center; }
-button.mb-brand{ border:0; background:transparent; color:inherit; font:inherit; font-weight:700; cursor:pointer; transition:background .15s; }
+/* WestOS brand menu: ONE icon at a time (WestOS icon on the desktop, outdoors icon while in the real world); the dropdown lives in #screen so nothing clips it */
+.mb-brandwrap{ position:relative; display:flex; align-items:center; flex:none; }
+button.mb-brand{ flex:none; white-space:nowrap; border:0; background:transparent; color:inherit; font:inherit; font-weight:700; cursor:pointer; gap:7px; padding:0 8px 0 7px; transition:background .15s; }
 button.mb-brand:hover,button.mb-brand[aria-expanded=true]{ background:rgba(255,255,255,.16); } html[data-theme=light] button.mb-brand:hover,html[data-theme=light] button.mb-brand[aria-expanded=true]{ background:rgba(60,42,20,.1); }
 button.mb-brand:focus-visible{ outline:2px solid rgba(255,255,255,.5); outline-offset:1px; }
-.mb-ico{ position:relative; width:17px; height:17px; display:block; } .mb-ico img,.mb-ico .mb-out{ position:absolute; inset:0; width:17px; height:17px; border-radius:4px; transition:opacity .3s,transform .35s var(--spring); }
-.mb-ico .mb-out{ opacity:0; transform:scale(.4) rotate(-25deg); } .mb-brand.out .mb-ico img{ opacity:0; transform:scale(.4) rotate(25deg); } .mb-brand.out .mb-ico .mb-out{ opacity:1; transform:none; }
-.mb-caret{ opacity:.65; margin-left:-2px; transition:transform .2s; } .mb-brand[aria-expanded=true] .mb-caret{ transform:rotate(180deg); }
-#rwMenu{ position:absolute; top:calc(100% + 6px); left:0; min-width:230px; padding:5px; border-radius:12px; z-index:90; background:rgba(28,22,16,.92); backdrop-filter:blur(24px) saturate(1.5); -webkit-backdrop-filter:blur(24px) saturate(1.5); box-shadow:0 12px 32px rgba(0,0,0,.4),inset 0 0 0 .5px rgba(255,255,255,.14); color:#fff; animation:rwMenuIn .16s var(--spring); }
-html[data-theme=light] #rwMenu{ background:rgba(252,247,236,.95); color:var(--label); box-shadow:0 12px 32px rgba(60,42,20,.22),inset 0 0 0 .5px rgba(60,42,20,.16); }
-#rwMenu[hidden]{ display:none; }
-#rwGo{ display:flex; align-items:center; gap:11px; width:100%; padding:9px 11px; border:0; border-radius:8px; background:transparent; color:inherit; text-align:left; cursor:pointer; font:inherit; }
-#rwGo:hover,#rwGo:focus-visible{ background:rgba(79,174,90,.28); outline:0; } #rwGo svg{ flex:none; color:#6fcf7c; } #rwGo b{ display:block; font-size:13px; font-weight:650; } #rwGo small{ display:block; margin-top:2px; font-size:11px; opacity:.65; font-weight:400; }
-#rwGo.busy{ opacity:.55; cursor:progress; } .mb-brand.switching .mb-ico{ animation:rwPulse .8s ease-in-out infinite; }
-@keyframes rwMenuIn{ from{ opacity:0; transform:translateY(-6px) scale(.97); } to{ opacity:1; transform:none; } } @keyframes rwPulse{ 50%{ transform:scale(1.18); } }
-@media (pointer:coarse){ #rwGo{ padding:12px 13px; } }
+.mb-ico{ display:flex; flex:none; width:17px; height:17px; } .mb-ico img,.mb-ico .mb-out{ width:17px; height:17px; border-radius:4px; display:block; flex:none; }
+.mb-ico .mb-out{ display:none; } .mb-brand.out .mb-ico img{ display:none; } .mb-brand.out .mb-ico .mb-out{ display:block; animation:rwIcoIn .35s var(--spring); }
+.mb-caret{ flex:none; opacity:.65; transition:transform .2s; } .mb-brand[aria-expanded=true] .mb-caret{ transform:rotate(180deg); }
+#rwMenu{ position:absolute; z-index:9000; width:250px; max-width:calc(100% - 16px); box-sizing:border-box; padding:5px; border-radius:12px; background:rgba(28,22,16,.94); backdrop-filter:blur(24px) saturate(1.5); -webkit-backdrop-filter:blur(24px) saturate(1.5); box-shadow:0 12px 32px rgba(0,0,0,.4),inset 0 0 0 .5px rgba(255,255,255,.14); color:#fff; font:500 13px/1.25 var(--font); animation:rwMenuIn .16s var(--spring); }
+html[data-theme=light] #rwMenu{ background:rgba(252,247,236,.96); color:var(--label); box-shadow:0 12px 32px rgba(60,42,20,.22),inset 0 0 0 .5px rgba(60,42,20,.16); }
+#rwMenu[hidden],#rwMenu [hidden]{ display:none !important; }
+#rwMenu button{ display:flex; align-items:center; gap:11px; width:100%; padding:9px 11px; border:0; border-radius:8px; background:transparent; color:inherit; text-align:left; cursor:pointer; font:inherit; }
+#rwMenu button:hover,#rwMenu button:focus-visible{ background:rgba(79,174,90,.28); outline:0; } #rwMenu svg{ flex:none; color:#6fcf7c; } #rwMenu b{ display:block; font-size:13px; font-weight:650; } #rwMenu small{ display:block; margin-top:2px; font-size:11px; opacity:.65; font-weight:400; }
+#rwMenu button.busy{ opacity:.55; cursor:progress; }
+@keyframes rwMenuIn{ from{ opacity:0; transform:translateY(-6px) scale(.97); } to{ opacity:1; transform:none; } } @keyframes rwIcoIn{ from{ opacity:0; transform:scale(.4) rotate(-25deg); } to{ opacity:1; transform:none; } }
+@media (pointer:coarse){ #rwMenu button{ padding:12px 13px; } }
