@@ -1,12 +1,30 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Real Estate</title>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Assets</title>
 <link rel="stylesheet" href="../os/tokens.css"><link rel="stylesheet" href="../os/app/kit.css">
 <style>.hero{background:linear-gradient(155deg,#8a5a3a,#4b2f1e 70%);color:#fff;border-radius:var(--r-xl);padding:20px 22px;box-shadow:var(--shadow)} .hero small{opacity:.75;font:600 13px var(--font);letter-spacing:.04em;text-transform:uppercase} .hero .bignum{font-size:38px;margin:4px 0}
-.cta{display:block;width:100%;border:0;border-radius:var(--r-l);padding:14px;margin:12px 0;background:var(--tint);color:#fff;font:700 15px var(--font);cursor:pointer}</style></head><body><div id="app"></div>
+.cta{display:block;width:100%;border:0;border-radius:var(--r-l);padding:14px;margin:12px 0;background:var(--tint);color:#fff;font:700 15px var(--font);cursor:pointer} .cta[disabled]{opacity:.45;cursor:default}
+.art{width:100%;height:auto;display:block} .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin:8px 0}
+.vc{background:var(--card);border-radius:var(--r-l);padding:14px;display:flex;flex-direction:column;gap:6px} .vc .pr{font:800 20px var(--font)} .vc .sp{display:flex;flex-wrap:wrap;gap:6px 12px;font:500 12px var(--font);opacity:.75}
+.sw{display:flex;gap:7px;flex-wrap:wrap;margin:4px 0} .sw i{width:24px;height:24px;border-radius:50%;cursor:pointer;border:2px solid transparent;box-shadow:0 0 0 1px rgba(128,128,128,.4)} .sw i.on{border-color:var(--tint);box-shadow:0 0 0 2px var(--tint)}
+.mini{width:84px;flex:none}</style></head><body><div id="app"></div>
 <script src="../os/icons.js"></script><script src="../os/app/kit.js"></script><script src="../os/lib/house3d.js"></script>
 <script>
-const { h, row, group, money } = Kit, H = OS.homes, HOUR = 3600000;
-/* click a house: a live 3D preview of its real shape, with the facts and a button to find it on WestMap */
+const { h, row, group, money } = Kit, H = OS.homes, HOUR = 3600000, VD = OS.data.VEHICLES;
+/* ---------- little side-view pictures of every model, tinted with the chosen colour ---------- */
+const CAR = { hatch: [30, 150, 22], sedan: [40, 118, 24], coupe: [52, 112, 18], suv: [34, 140, 34], pickup: [34, 96, 30] };
+function art(m, hex){
+  const dk = '#1c2026', gl = '#a9c3d6';
+  if(m.kind === 'car'){ const [c0, c1, ch] = CAR[m.style] || CAR.sedan, top = 56 - ch, bed = m.style === 'pickup';
+    return '<svg class="art" viewBox="0 0 200 80"><ellipse cx="100" cy="71" rx="88" ry="4" fill="rgba(0,0,0,.25)"/><path d="M8 58 L8 46 Q9 40 22 38 L' + c0 + ' 36 Q' + (c0 + 10) + ' ' + top + ' ' + (c0 + 26) + ' ' + top + ' L' + c1 + ' ' + top + ' Q' + (c1 + 8) + ' ' + top + ' ' + (c1 + 18) + ' 38 L' + (bed ? 118 : 186) + ' 40 Q192 44 192 52 L192 58 Z" fill="' + hex + '"/><path d="M' + (c0 + 14) + ' 38 Q' + (c0 + 20) + ' ' + (top + 3) + ' ' + (c0 + 28) + ' ' + (top + 3) + ' L' + (c1 - 2) + ' ' + (top + 3) + ' Q' + (c1 + 8) + ' ' + (top + 3) + ' ' + (c1 + 14) + ' 38 Z" fill="' + gl + '"/>' + (bed ? '<rect x="118" y="40" width="74" height="18" fill="' + hex + '"/><rect x="118" y="38" width="74" height="4" fill="' + dk + '" opacity=".5"/>' : '') + '<circle cx="42" cy="60" r="11" fill="' + dk + '"/><circle cx="42" cy="60" r="5" fill="#8d95a3"/><circle cx="160" cy="60" r="11" fill="' + dk + '"/><circle cx="160" cy="60" r="5" fill="#8d95a3"/></svg>'; }
+  const jet = m.style === 'jet', tw = m.style === 'turbo';
+  return '<svg class="art" viewBox="0 0 200 80"><ellipse cx="100" cy="72" rx="80" ry="3" fill="rgba(0,0,0,.25)"/><path d="M14 44 Q14 30 50 30 L170 34 L190 18 L196 18 L190 40 Q184 50 150 50 L50 52 Q14 54 14 44 Z" fill="' + hex + '"/><path d="M26 38 Q34 33 50 33 L62 33 L58 42 L28 42 Z" fill="' + gl + '"/><path d="M' + (jet ? 92 : 80) + ' ' + (jet ? 46 : 36) + ' L' + (jet ? 130 : 118) + ' ' + (jet ? 56 : 28) + ' L' + (jet ? 142 : 128) + ' ' + (jet ? 56 : 28) + ' L' + (jet ? 116 : 104) + ' ' + (jet ? 46 : 36) + ' Z" fill="' + hex + '" opacity=".92" stroke="rgba(0,0,0,.25)"/>' + (jet ? '<rect x="136" y="38" width="30" height="9" rx="4" fill="' + dk + '"/>' : tw ? '<rect x="96" y="30" width="22" height="8" rx="3" fill="' + dk + '"/><rect x="10" y="38" width="5" height="12" fill="' + dk + '"/>' : '<rect x="9" y="38" width="5" height="12" fill="' + dk + '"/>') + '<rect x="92" y="53" width="4" height="12" fill="' + dk + '"/><circle cx="94" cy="66" r="4" fill="' + dk + '"/><circle cx="40" cy="62" r="3.5" fill="' + dk + '"/></svg>';
+}
+const swatches = (cur, on) => { const el = h('div', { class: 'sw' }); VD.COLORS.forEach(c => el.append(h('i', { title: c.name, class: c.id === cur ? 'on' : '', style: { background: c.hex }, onclick: () => { cur = c.id; [...el.children].forEach((x, i) => x.classList.toggle('on', i === cur)); on(cur); } }))); return el; };
+const usd = c => money(c / 100, { dp: 0 });
+const spec = m => m.kind === 'car' ? [m.seats + ' seats', m.top + ' km/h', '0–100 in ' + m.zero100 + ' s', m.range + ' km range'] : [m.seats + ' seats', m.top + ' km/h', m.range.toLocaleString() + ' km range', (m.ceiling / 1000) + ' km ceiling'];
+const here = kind => { try{ return !!(OS.realworld && OS.realworld.at && OS.realworld.at(kind === 'car' ? 'dealer' : 'airport')); }catch(e){ return false; } };
+
+/* ---------- a house: live 3D preview ---------- */
 function preview(x){ const BG = H.gen.BuildGen, g = x.g; if(!BG || !window.House3D){ OS.open('WestMap'); return; } let v = null;
   Kit.sheet({ title: g.addr, tall: true, onClose: () => { if(v) v.destroy(); }, build: (b, api) => {
     const cv = h('canvas', { style: { width: '100%', height: '280px', borderRadius: '14px', display: 'block', background: '#9cc7ec' } }), S = BG.shape(g);
@@ -14,20 +32,65 @@ function preview(x){ const BG = H.gen.BuildGen, g = x.g; if(!BG || !window.House
     v = House3D.create(cv, S, { dark: () => document.documentElement.dataset.theme !== 'light' }); v.set({ forSale: x.a > 0, mine: true });
     b.append(group(row({ title: g.typeName + (g.beds ? ' · ' + g.beds + ' bed' : ''), sub: g.district }), row({ title: 'Value', sub: money(x.v / 100, { dp: 0 }) }), row({ title: 'Status', sub: x.t ? 'Rented to ' + (x.tn || 'a tenant') : x.a > 0 ? 'For sale' : x.rh > 0 ? 'For rent ' + money(x.rh * 24 / 100, { dp: 2 }) + '/day' : 'Yours to live in' })));
     b.append(h('button', { class: 'cta', onclick: () => { try{ localStorage.setItem('westmap_focus', x.id); }catch(e){} OS.open('WestMap'); api.close(); } }, 'Show on WestMap')); } }); }
-Kit.app({ title: 'Real Estate', build: (body) => {
-  const box = h('div'); body.append(box);
+
+/* ---------- one of your vehicles ---------- */
+function vehicleSheet(v, after){
+  Kit.sheet({ title: v.model.name, tall: true, build: (b, api) => {
+    const pic = h('div', { html: art(v.model, VD.colorHex(v.col)) }); b.append(pic);
+    b.append(group(row({ title: v.model.tag, sub: spec(v.model).join(' · ') }), row({ title: 'You paid', sub: money(v.paid, { dp: 0 }) }), row({ title: 'Dealer buy-back (70%)', sub: money(v.value, { dp: 0 }) }),
+      row({ title: v.model.kind === 'car' ? 'Parked' : 'Hangared', sub: v.model.kind === 'car' ? 'Outside your home, or in the dealership’s customer lot' : 'On the apron behind the airport terminal' }),
+      row({ title: v.model.kind === 'car' ? 'Driving' : 'Flying', sub: 'Arrives in a future update — your ' + v.model.name + ' is already parked in WestCountry.' })));
+    b.append(h('div', { class: 'section-label' }, 'Paint'));
+    b.append(swatches(v.col, async c => { const r = await H.repaintVehicle(v.slot, c); if(r.ok) pic.innerHTML = art(v.model, VD.colorHex(c)); else Kit.toast(r.msg, 'bad'); }));
+    b.append(h('button', { class: 'btn block tinted', style: { marginTop: '10px', color: 'var(--bad, #ff6b6b)' }, onclick: async () => { if(!(await Kit.confirm({ title: 'Sell the ' + v.model.name + '?', msg: 'The dealer pays ' + money(v.value, { dp: 0 }) + ' (70% of what you paid).', ok: 'Sell', destructive: true }))) return; const r = await H.sellVehicle(v.slot); Kit.toast(r.ok ? 'Sold for ' + money(r.price, { dp: 0 }) : r.msg, r.ok ? 'good' : 'bad'); if(r.ok){ api.close(); after(); } } }, 'Sell back to the dealer')); } });
+}
+
+/* ---------- the showroom (cars or planes) ---------- */
+function showroom(kind, after){
+  const list = kind === 'car' ? VD.CARS : VD.PLANES, can = here(kind), box = h('div');
+  box.append(h('h2', { class: 'sec' }, kind === 'car' ? 'Car dealership' : 'Private airport'));
+  box.append(can ? h('div', { class: 'card' }, h('b', null, 'You are here — pick a colour and buy.'), h('div', { class: 'sub' }, 'New vehicles are delivered straight to your garage.'))
+    : h('div', { class: 'card' }, h('b', null, 'Visit the ' + (kind === 'car' ? 'Car Dealership' : 'Private Airport') + ' to buy'), h('div', { class: 'sub' }, 'Walk there in WestCountry (the red ✕ in the menu bar). You can look at the range from anywhere.'), h('button', { class: 'btn block tinted', style: { marginTop: '8px' }, onclick: () => OS.open('WestMap') }, 'Open WestMap')));
+  const cards = h('div', { class: 'cards' }); box.append(cards);
+  list.forEach(m => { let col = m.id.length % 8; const pic = h('div', { html: art(m, VD.colorHex(col)) }), cash = OS.cash() / 100 >= m.price / 100;
+    cards.append(h('div', { class: 'vc' }, pic, h('b', null, m.name), h('div', { class: 'sub' }, m.tag + ' — ' + m.blurb), h('div', { class: 'sp' }, ...spec(m).map(t => h('span', null, t))), swatches(col, c => { col = c; pic.innerHTML = art(m, VD.colorHex(c)); }), h('div', { class: 'pr' }, usd(m.price)),
+      h('button', { class: 'cta', style: { margin: '4px 0 0' }, disabled: !can || OS.homes.garage().length >= VD.MAX_SLOTS || !cash, onclick: async () => { if(!(await Kit.confirm({ title: 'Buy the ' + m.name + '?', msg: usd(m.price) + ' will be paid to the city.', ok: 'Buy' }))) return; const r = await H.buyVehicle(m.id, col); Kit.toast(r.ok ? 'The ' + m.name + ' is yours' : r.msg, r.ok ? 'good' : 'bad'); if(r.ok) after(); } }, !can ? 'Visit to buy' : OS.homes.garage().length >= VD.MAX_SLOTS ? 'Garage full' : !cash ? 'Not enough cash' : 'Buy'))); });
+  return box;
+}
+
+const TABS = [{ id: 'overview', label: 'Overview' }, { id: 'houses', label: 'Houses' }, { id: 'cars', label: 'Cars' }, { id: 'planes', label: 'Planes' }];
+Kit.app({ title: 'Assets', build: (body) => {
+  let tab = 'overview'; try{ const t = sessionStorage.getItem('assets_tab'); sessionStorage.removeItem('assets_tab'); if(t) tab = t === 'garage' ? 'overview' : t; }catch(e){}
+  if(!TABS.some(x => x.id === tab)) tab = 'overview';
+  const bar = Kit.seg(TABS, tab, t => { tab = t; paint(); }), box = h('div'); body.append(bar, box);
+  const owned = k => H.garage().filter(v => v.model.kind === k), vrows = list => list.map(v => row({ title: v.model.name, sub: v.model.tag + ' · worth ' + money(v.value, { dp: 0 }), chev: true, onClick: () => vehicleSheet(v, paint) }));
+  const art2 = v => h('div', { class: 'mini', html: art(v.model, VD.colorHex(v.col)) });
+  const vlist = list => list.length ? group(list.map(v => { const r = row({ title: v.model.name, sub: v.model.tag + ' · worth ' + money(v.value, { dp: 0 }), chev: true, onClick: () => vehicleSheet(v, paint) }); r.prepend(art2(v)); return r; })) : null;
   function paint(){
-    box.innerHTML = ''; const cfg = H.cfg(), mine = H.mine(), lv = H.home(), val = mine.reduce((s, x) => s + H.sellValue(x.v), 0);
-    if(!H.ready()){ box.append(h('div', { class: 'card empty' }, 'Sign in (and wait for the economy to start) to own houses.')); return; }
-    box.append(h('div', { class: 'hero' }, h('small', null, 'Property you own'), h('div', { class: 'bignum num' }, money(val, { dp: 0 })), h('div', null, mine.length + ' house' + (mine.length === 1 ? '' : 's') + ' · valued at the city’s buy-back price')));
-    box.append(h('h2', { class: 'sec' }, 'Where you live'));
-    if(lv){ const left = H.rentLeftMs(); box.append(group(row({ chev: true, onClick: () => preview({ g: lv.g, id: lv.id, v: lv.v || lv.g.base, a: 0, t: 0, rh: 0 }), title: lv.g.addr, sub: lv.g.typeName + ' · ' + lv.g.district + (lv.owned ? ' · owned' : ' · rented, ' + (left > 0 ? Math.floor(left / HOUR) + 'h of rent left' : 'rent has run out!')) }))); if(!lv.owned) box.append(h('button', { class: 'btn block tinted', onclick: async () => { const r = await H.topUp(24); Kit.toast(r.msg || 'Rent paid', r.ok ? 'good' : 'bad'); paint(); } }, 'Pay 24 more hours of rent')); }
-    else box.append(h('div', { class: 'card' }, h('b', null, 'You are homeless'), h('div', { class: 'sub' }, 'Find a house on WestMap — games pay half and loans are closed until you do.')));
-    box.append(h('button', { class: 'cta', onclick: () => OS.open('WestMap') }, 'Open WestMap'));
-    box.append(h('h2', { class: 'sec' }, 'Your houses'));
-    box.append(mine.length ? group(mine.map(x => row({ title: x.g.addr, sub: x.g.typeName + ' · ' + money(x.v / 100, { dp: 0 }) + (x.t ? ' · rented to ' + (x.tn || 'a tenant') : x.a > 0 ? ' · for sale' : x.rh > 0 ? ' · for rent ' + money(x.rh * 24 / 100, { dp: 2 }) + '/day' : ' · yours to live in'), chev: true, onClick: () => preview(x) }))) : h('div', { class: 'card empty' }, 'No houses yet — buy one on WestMap.'));
-    box.append(h('div', { class: 'card' }, h('b', null, 'What owning costs'), h('p', { class: 'sub', style: { margin: '6px 0 0' } }, 'Property tax ' + (cfg.propTaxBpDay / 100).toFixed(2) + '% of value per day, 2% stamp duty when you buy, ' + (cfg.sellBp / 100) + '% of value if you sell straight to the city. Rent your spare houses out — to players or bots — to earn it back.')));
+    bar.set(tab); box.innerHTML = '';
+    if(!H.ready()){ box.append(h('div', { class: 'card empty' }, 'Sign in (and wait for the economy to start) to own houses, cars and planes.')); return; }
+    const cfg = H.cfg(), mine = H.mine(), lv = H.home(), hv = mine.reduce((s, x) => s + H.sellValue(x.v), 0), cars = owned('car'), planes = owned('plane'), cv = cars.reduce((s, v) => s + v.value, 0), pv = planes.reduce((s, v) => s + v.value, 0);
+    if(tab === 'overview'){
+      box.append(h('div', { class: 'hero' }, h('small', null, 'Everything you own'), h('div', { class: 'bignum num' }, money(hv + cv + pv, { dp: 0 })), h('div', null, 'valued at what the city and the dealers would pay you today')));
+      box.append(h('h2', { class: 'sec' }, 'Breakdown'));
+      box.append(group(row({ title: 'Houses', sub: mine.length + (mine.length === 1 ? ' house' : ' houses'), right: money(hv, { dp: 0 }), chev: true, onClick: () => { tab = 'houses'; paint(); } }), row({ title: 'Cars', sub: cars.length + (cars.length === 1 ? ' car' : ' cars'), right: money(cv, { dp: 0 }), chev: true, onClick: () => { tab = 'cars'; paint(); } }), row({ title: 'Planes', sub: planes.length + (planes.length === 1 ? ' plane' : ' planes'), right: money(pv, { dp: 0 }), chev: true, onClick: () => { tab = 'planes'; paint(); } })));
+      box.append(h('h2', { class: 'sec' }, 'Where you live'));
+      if(lv){ const left = H.rentLeftMs(); box.append(group(row({ chev: true, onClick: () => preview({ g: lv.g, id: lv.id, v: lv.v || lv.g.base, a: 0, t: 0, rh: 0 }), title: lv.g.addr, sub: lv.g.typeName + ' · ' + lv.g.district + (lv.owned ? ' · owned' : ' · rented, ' + (left > 0 ? Math.floor(left / HOUR) + 'h of rent left' : 'rent has run out!')) }))); if(!lv.owned) box.append(h('button', { class: 'btn block tinted', onclick: async () => { const r = await H.topUp(24); Kit.toast(r.msg || 'Rent paid', r.ok ? 'good' : 'bad'); paint(); } }, 'Pay 24 more hours of rent')); }
+      else box.append(h('div', { class: 'card' }, h('b', null, 'You are homeless'), h('div', { class: 'sub' }, 'Find a house on WestMap — games pay half and loans are closed until you do.')));
+      if(cars.length || planes.length){ box.append(h('h2', { class: 'sec' }, 'Your garage')); box.append(vlist(cars.concat(planes))); }
+      else box.append(h('div', { class: 'card' }, h('b', null, 'No cars or planes yet'), h('div', { class: 'sub' }, 'Visit the Car Dealership or the Private Airport in WestCountry to buy one.')));
+    } else if(tab === 'houses'){
+      box.append(h('button', { class: 'cta', onclick: () => OS.open('WestMap') }, 'Open WestMap'));
+      box.append(h('h2', { class: 'sec' }, 'Your houses'));
+      box.append(mine.length ? group(mine.map(x => row({ title: x.g.addr, sub: x.g.typeName + ' · ' + money(x.v / 100, { dp: 0 }) + (x.t ? ' · rented to ' + (x.tn || 'a tenant') : x.a > 0 ? ' · for sale' : x.rh > 0 ? ' · for rent ' + money(x.rh * 24 / 100, { dp: 2 }) + '/day' : ' · yours to live in'), chev: true, onClick: () => preview(x) }))) : h('div', { class: 'card empty' }, 'No houses yet — buy one on WestMap.'));
+      box.append(h('div', { class: 'card' }, h('b', null, 'What owning costs'), h('p', { class: 'sub', style: { margin: '6px 0 0' } }, 'Property tax ' + (cfg.propTaxBpDay / 100).toFixed(2) + '% of value per day, 2% stamp duty when you buy, ' + (cfg.sellBp / 100) + '% of value if you sell straight to the city. Rent your spare houses out — to players or bots — to earn it back.')));
+    } else {
+      const k = tab === 'cars' ? 'car' : 'plane', mineK = k === 'car' ? cars : planes;
+      box.append(h('h2', { class: 'sec' }, k === 'car' ? 'Your cars' : 'Your planes')); box.append(vlist(mineK) || h('div', { class: 'card empty' }, k === 'car' ? 'No cars yet.' : 'No planes yet.'));
+      box.append(showroom(k, paint));
+      box.append(h('div', { class: 'card' }, h('b', null, 'Good to know'), h('p', { class: 'sub', style: { margin: '6px 0 0' } }, 'The dealer buys a ' + (k === 'car' ? 'car' : 'plane') + ' back at ' + (VD.SELL_BP / 100) + '% of what you paid. Up to ' + VD.MAX_SLOTS + ' vehicles in total. ' + (k === 'car' ? 'Your first two cars park outside your home; the rest in the dealership’s lot.' : 'Your planes stand on the apron behind the terminal.') + ' Driving and flying arrive in a future update.')));
+    }
   }
-  paint(); ['props', 'home', 'cash', 'world'].forEach(e => Kit.live(e, Kit.debounce(paint, 200))); setInterval(paint, 60000);
+  paint(); ['props', 'home', 'cash', 'world', 'garage'].forEach(e => Kit.live(e, Kit.debounce(paint, 200))); setInterval(paint, 60000);
 } });
 </script></body></html>

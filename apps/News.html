@@ -67,7 +67,7 @@ const A = Kit.app({ title: 'News', build: (body) => {
   function openArticle(a, m){
     A.push({ title: a.cat, large: false, backLabel: 'News', build: (b) => {
       const im = h('div', { class: 'detail-img', style: m ? {} : { display: 'none' } }); if(m) setThumb(im, m);
-      const open = a.impact ? h('button', { class: 'btn block tinted', onclick: () => OS.open(a.impact.el || a.impact.all ? 'WestShop' : 'RealEstate') }, a.impact.el || a.impact.all ? 'See prices in WestShop' : 'Open Real Estate') : null;
+      const open = a.impact ? h('button', { class: 'btn block tinted', onclick: () => OS.open(a.impact.el || a.impact.all ? 'WestShop' : 'RealEstate') }, a.impact.el || a.impact.all ? 'See prices in WestShop' : 'Open Assets') : null;
       const paras = a.paras || [a.body], rel = OS.world.articles(60).filter(x => x.id !== a.id && (x.cat === a.cat)).slice(0, 3);
       const quote = paras.length > 2 ? paras[1] : null;
       b.appendChild(h('div', { class: 'detail' }, im, h('span', { class: 'cat' }, a.cat), h('h3', null, a.headline),

@@ -63,8 +63,8 @@ const COL = { mine: '#5bd68a', bank: '#b3b9c4', player: '#7fb2f2', bot: '#f2b676
 const kind = hs => hs.o === me ? 'mine' : hs.o === 'bank' ? 'bank' : isBot(hs.o) ? 'bot' : 'player';
 const toast = (m, ok) => Kit.toast(m, ok ? 'good' : 'bad');
 const nd = () => G.districtCount(list.length || 512), clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const PC = { bank: ['#4a6fa8', 'B'], exchange: ['#3fae78', 'E'], shop: ['#d9a441', 'S'], arcade: ['#b36be0', 'A'], agency: ['#c98a62', 'R'], hall: ['#7c8696', 'C'], park: ['#5d8f4a', 'P'], uni: ['#6f7fd0', 'U'], lab: ['#52b5b0', 'L'], ind: ['#c0764a', 'F'], plant: ['#8a6a58', 'W'] };
-const POI_APP = { bank: 'Bank', exchange: 'Stocks', shop: 'WestShop', arcade: 'Arcade', agency: 'RealEstate', lab: 'WestLab' };
+const PC = { bank: ['#4a6fa8', 'B'], exchange: ['#3fae78', 'E'], shop: ['#d9a441', 'S'], arcade: ['#b36be0', 'A'], agency: ['#c98a62', 'R'], hall: ['#7c8696', 'C'], park: ['#5d8f4a', 'P'], uni: ['#6f7fd0', 'U'], lab: ['#52b5b0', 'L'], ind: ['#c0764a', 'F'], plant: ['#8a6a58', 'W'], dealer: ['#d9534f', 'D'], airport: ['#4aa3d9', 'T'] };
+const POI_APP = { bank: 'Bank', exchange: 'Stocks', shop: 'WestShop', arcade: 'Arcade', agency: 'RealEstate', dealer: 'RealEstate', airport: 'RealEstate', lab: 'WestLab' };
 const POI_INFO = { bank: 'Deposits, loans and your tax bills.', exchange: 'Where $WEST shares are traded.', shop: 'Buy and sell elements and tools.', arcade: 'The casino. You must have a home to play.', agency: 'Houses for sale and rent.', hall: 'The council: licences, building orders and emergency services.', park: 'Central Park. Nice for a stroll.', uni: 'The University Library, a favourite of teachers and students.', lab: 'The Research Institute. Chemists and lab techs work here.', ind: 'The Freight Depot of the Industrial Estate.', plant: 'The power plant that keeps the factories running.' };
 
 /* ---------- data ---------- */
@@ -250,7 +250,7 @@ function paintPoi(p){
   p.append(h('h3', { style: { marginTop: '14px' } }, 'Here now (' + near.length + ')')); if(!near.length) p.append(h('div', { class: 'sub' }, 'Nobody at the moment.'));
   near.slice(0, 30).forEach(x => p.append(h('div', { class: 'ev', onclick: () => pick2({ t: x.t, id: x.id }) }, h('div', { class: 'dot', style: { background: x.t === 'player' ? '#5aa0f0' : (bots[x.id] && bots[x.id].c) || '#e8a04f' } }, x.name[0]), h('div', null, h('b', null, x.name), h('div', { class: 'sub' }, x.t === 'player' ? 'Player' : bots[x.id].j)))));
 }
-const APPNAME = { Bank: 'the Bank', Stocks: 'Stocks', WestShop: 'WestShop', Arcade: 'the Arcade', RealEstate: 'Real Estate', WestLab: 'WestLab' };
+const APPNAME = { Bank: 'the Bank', Stocks: 'Stocks', WestShop: 'WestShop', Arcade: 'the Arcade', RealEstate: 'Assets', WestLab: 'WestLab' };
 function paintPlot(p){
   const uid = selX.id, kd = selX.kd, mine = uid === me, z = kd === 'f' ? G.ZONES.ind : G.ZONES.uni;
   p.append(h('h3', null, kd === 'f' ? 'Factory plot' : 'Laboratory'), h('div', { class: 'sub' }, z.n + ' · owned by ' + nameOf(uid)), h('div', { style: { margin: '8px 0' } }, mine ? h('span', { class: 'tag good' }, 'Yours') : ''));

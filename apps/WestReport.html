@@ -20,7 +20,7 @@ textarea.field{ line-height:1.45; }
 <script>
 const { h, row, group, seg, toggle, ago } = Kit, R = OS.report;
 const AREAS = ['Desktop / menu bar', 'Widgets', 'Sign-in / account', 'Messages', 'Stocks', 'News', 'WestShop', 'WestLab', 'Real Estate', 'Bank', 'Games', 'Arcade', 'Leaderboard', 'WestFactory', 'Photos', 'Notes', 'Files', 'Settings', 'WestReport', 'Something else'];
-const APP_AREA = { Messages: 'Messages', Stocks: 'Stocks', News: 'News', WestShop: 'WestShop', WestLab: 'WestLab', RealEstate: 'Real Estate', Bank: 'Bank', Games: 'Games', Arcade: 'Arcade', Leaderboard: 'Leaderboard', WestFactory: 'WestFactory', Photos: 'Photos', Notes: 'Notes', Files: 'Files', Settings: 'Settings', WestReport: 'WestReport' };
+const APP_AREA = { Messages: 'Messages', Stocks: 'Stocks', News: 'News', WestShop: 'WestShop', WestLab: 'WestLab', RealEstate: 'Assets', Bank: 'Bank', Games: 'Games', Arcade: 'Arcade', Leaderboard: 'Leaderboard', WestFactory: 'WestFactory', Photos: 'Photos', Notes: 'Notes', Files: 'Files', Settings: 'Settings', WestReport: 'WestReport' };
 const SEV = { low: ['Minor', '#6ab0ff'], medium: ['Normal', '#e8b64f'], high: ['Serious', '#e8803d'], critical: ['Blocking', '#e5484d'] };
 const HKEY = 'westreport.sent';
 let tab = 'bug', kind = 'bug', filter = 'open', allowFlagged = false, reports = [], loaded = false, loading = false, lastSent = 0;
