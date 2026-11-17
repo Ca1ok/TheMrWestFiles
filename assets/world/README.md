@@ -1,4 +1,24 @@
-# World models (.glb) — optional
+# World models (.glb)
+
+## Kenney models (baked) — what ships now
+
+The realworld's buildings, trees, street lamps, benches, cars, people and a few pieces of interior furniture are **Kenney's CC0 asset library** (<https://www.kenney.nl>, see `assets/kenney/CREDITS.md`).
+The library itself lives in `assets/kenney/`; the game only loads the **baked** copies in `assets/world/kenney/`, listed in `manifest.json` (version 2).
+Both are generated — **never edit them by hand**; run `python3 tools/bake-kenney.py` (Pillow + numpy) from the repo root after changing the tool or the library.
+
+What the bake does: the world shader is vertex-colour only, so each model's palette texture is sampled into vertex colours; models are turned so their **front faces −Z**, scaled to metres, centred and put on y = 0; a lighter **LOD 1** is made for every model (colour-aware vertex clustering); window glass is flagged to glow at night; building **doors** come from the `DOORS` table in the tool (entrance x per model, read off renders). Each `.glb` is 20-byte vertices (the engine's own format) with `asset.extras.rwSrgb`.
+
+| manifest section | used by | LOD |
+|---|---|---|
+| `props` (`tree` ×2 variants, `lamp`, `bench`) | `props.js` / `streamer.drawProps` (instanced; a tree variant is picked by the instance seed; lamps are turned to face the street by `layout.js`) | LOD 0 near, LOD 1 far |
+| `buildings` (`house` ×21, `mid` ×14, `tower` ×5, `industrial`) | `chunkgen.js` via `models.js` — houses, the 10 landmarks (`POI_MODEL`), downtown towers. The model is scaled to fit the footprint; door/interior/collider follow the model | chunk LOD 0 = full, LOD 1 = lighter, 2–3 = boxes as before |
+| `cars` (8) | `game.js drawCars` (instanced props) | near mesh < 90 m, lighter beyond |
+| `people` (8) + `peoplePivot` | `gfx.setActorModel` (same walk-cycle shader, baked colours) | one mesh (72 tris) |
+| `furniture` (plant, sofa, bed, arcade, claw) | `Room.model()` in `interiors.js` | — |
+
+If the manifest or a file is missing, the procedural original is drawn (nothing depends on the models). Buildings are loaded inside the chunk worker; everything else on the main thread (`Assets.load`).
+
+## Own models (optional)
 
 The world runs with **no files here**: every prop is generated (`os/realworld/props.js`). To replace one with a model:
 

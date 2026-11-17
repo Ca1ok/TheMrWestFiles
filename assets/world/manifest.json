@@ -1,1 +1,1022 @@
-{ "version": 1, "props": {} }
+{
+ "version": 2,
+ "credit": "Models by Kenney (www.kenney.nl), Creative Commons CC0 1.0. Baked for WestOS by tools/bake-kenney.py.",
+ "props": {
+  "tree": {
+   "variants": [
+    {
+     "glb": "kenney/tree_a.glb",
+     "lod1": "kenney/tree_a_lod1.glb",
+     "height": 8.5,
+     "tris": [
+      42,
+      24
+     ]
+    },
+    {
+     "glb": "kenney/tree_b.glb",
+     "lod1": "kenney/tree_b_lod1.glb",
+     "height": 6.0,
+     "tris": [
+      42,
+      28
+     ]
+    }
+   ]
+  },
+  "lamp": {
+   "variants": [
+    {
+     "glb": "kenney/lamp_a.glb",
+     "lod1": "kenney/lamp_a_lod1.glb",
+     "height": 5.4,
+     "tris": [
+      60,
+      28
+     ]
+    }
+   ]
+  },
+  "bench": {
+   "variants": [
+    {
+     "glb": "kenney/bench_a.glb",
+     "lod1": "kenney/bench_a_lod1.glb",
+     "height": 0.47,
+     "tris": [
+      170,
+      104
+     ]
+    }
+   ]
+  }
+ },
+ "cars": {
+  "sedan": {
+   "glb": "kenney/car_sedan.glb",
+   "lod1": "kenney/car_sedan_lod1.glb",
+   "length": 3.82,
+   "width": 2.25,
+   "height": 1.95,
+   "tris": [
+    2032,
+    568
+   ]
+  },
+  "sedan-sports": {
+   "glb": "kenney/car_sedan-sports.glb",
+   "lod1": "kenney/car_sedan-sports_lod1.glb",
+   "length": 3.82,
+   "width": 1.95,
+   "height": 1.65,
+   "tris": [
+    2088,
+    589
+   ]
+  },
+  "hatchback-sports": {
+   "glb": "kenney/car_hatchback-sports.glb",
+   "lod1": "kenney/car_hatchback-sports_lod1.glb",
+   "length": 4.28,
+   "width": 1.95,
+   "height": 1.65,
+   "tris": [
+    2088,
+    572
+   ]
+  },
+  "suv": {
+   "glb": "kenney/car_suv.glb",
+   "lod1": "kenney/car_suv_lod1.glb",
+   "length": 4.05,
+   "width": 2.25,
+   "height": 1.95,
+   "tris": [
+    2474,
+    828
+   ]
+  },
+  "suv-luxury": {
+   "glb": "kenney/car_suv-luxury.glb",
+   "lod1": "kenney/car_suv-luxury_lod1.glb",
+   "length": 4.28,
+   "width": 2.25,
+   "height": 1.95,
+   "tris": [
+    2086,
+    573
+   ]
+  },
+  "taxi": {
+   "glb": "kenney/car_taxi.glb",
+   "lod1": "kenney/car_taxi_lod1.glb",
+   "length": 4.12,
+   "width": 2.25,
+   "height": 2.25,
+   "tris": [
+    2072,
+    680
+   ]
+  },
+  "van": {
+   "glb": "kenney/car_van.glb",
+   "lod1": "kenney/car_van_lod1.glb",
+   "length": 4.13,
+   "width": 2.25,
+   "height": 2.02,
+   "tris": [
+    2082,
+    600
+   ]
+  },
+  "delivery": {
+   "glb": "kenney/car_delivery.glb",
+   "lod1": "kenney/car_delivery_lod1.glb",
+   "length": 4.87,
+   "width": 2.25,
+   "height": 2.47,
+   "tris": [
+    2476,
+    776
+   ]
+  }
+ },
+ "people": {
+  "a": {
+   "glb": "kenney/person_a.glb",
+   "tris": 72,
+   "height": 1.8
+  },
+  "b": {
+   "glb": "kenney/person_b.glb",
+   "tris": 72,
+   "height": 1.8
+  },
+  "c": {
+   "glb": "kenney/person_c.glb",
+   "tris": 72,
+   "height": 1.8
+  },
+  "d": {
+   "glb": "kenney/person_d.glb",
+   "tris": 72,
+   "height": 1.8
+  },
+  "e": {
+   "glb": "kenney/person_e.glb",
+   "tris": 72,
+   "height": 1.8
+  },
+  "f": {
+   "glb": "kenney/person_f.glb",
+   "tris": 72,
+   "height": 1.8
+  },
+  "g": {
+   "glb": "kenney/person_g.glb",
+   "tris": 72,
+   "height": 1.8
+  },
+  "h": {
+   "glb": "kenney/person_h.glb",
+   "tris": 72,
+   "height": 1.8
+  }
+ },
+ "buildings": {
+  "h_a": {
+   "kind": "house",
+   "glb": "kenney/h_a.glb",
+   "lod1": "kenney/h_a_lod1.glb",
+   "w": 10.4,
+   "d": 8.23,
+   "h": 6.67,
+   "door": {
+    "x": 0.0,
+    "z": -4.11,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1174,
+    385
+   ]
+  },
+  "h_b": {
+   "kind": "house",
+   "glb": "kenney/h_b.glb",
+   "lod1": "kenney/h_b_lod1.glb",
+   "w": 14.62,
+   "d": 9.12,
+   "h": 9.1,
+   "door": {
+    "x": 2.2,
+    "z": -4.56,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1748,
+    574
+   ]
+  },
+  "h_c": {
+   "kind": "house",
+   "glb": "kenney/h_c.glb",
+   "lod1": "kenney/h_c_lod1.glb",
+   "w": 10.29,
+   "d": 8.23,
+   "h": 8.27,
+   "door": {
+    "x": 0.0,
+    "z": -4.11,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1196,
+    393
+   ]
+  },
+  "h_d": {
+   "kind": "house",
+   "glb": "kenney/h_d.glb",
+   "lod1": "kenney/h_d_lod1.glb",
+   "w": 14.05,
+   "d": 8.22,
+   "h": 9.9,
+   "door": {
+    "x": 1.3,
+    "z": -4.11,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1757,
+    599
+   ]
+  },
+  "h_e": {
+   "kind": "house",
+   "glb": "kenney/h_e.glb",
+   "lod1": "kenney/h_e_lod1.glb",
+   "w": 10.4,
+   "d": 8.22,
+   "h": 9.1,
+   "door": {
+    "x": 0.0,
+    "z": -4.11,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1731,
+    603
+   ]
+  },
+  "h_f": {
+   "kind": "house",
+   "glb": "kenney/h_f.glb",
+   "lod1": "kenney/h_f_lod1.glb",
+   "w": 11.42,
+   "d": 11.25,
+   "h": 9.1,
+   "door": {
+    "x": 0.6,
+    "z": -5.62,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1616,
+    572
+   ]
+  },
+  "h_g": {
+   "kind": "house",
+   "glb": "kenney/h_g.glb",
+   "lod1": "kenney/h_g_lod1.glb",
+   "w": 11.6,
+   "d": 9.42,
+   "h": 6.15,
+   "door": {
+    "x": 0.0,
+    "z": -4.71,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1067,
+    382
+   ]
+  },
+  "h_h": {
+   "kind": "house",
+   "glb": "kenney/h_h.glb",
+   "lod1": "kenney/h_h_lod1.glb",
+   "w": 10.4,
+   "d": 7.33,
+   "h": 5.9,
+   "door": {
+    "x": 0.0,
+    "z": -3.66,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    770,
+    267
+   ]
+  },
+  "h_i": {
+   "kind": "house",
+   "glb": "kenney/h_i.glb",
+   "lod1": "kenney/h_i_lod1.glb",
+   "w": 10.29,
+   "d": 8.22,
+   "h": 5.9,
+   "door": {
+    "x": 3.4,
+    "z": -4.11,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    800,
+    288
+   ]
+  },
+  "h_j": {
+   "kind": "house",
+   "glb": "kenney/h_j.glb",
+   "lod1": "kenney/h_j_lod1.glb",
+   "w": 10.96,
+   "d": 7.33,
+   "h": 8.3,
+   "door": {
+    "x": 0.0,
+    "z": -3.66,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1210,
+    376
+   ]
+  },
+  "h_k": {
+   "kind": "house",
+   "glb": "kenney/h_k.glb",
+   "lod1": "kenney/h_k_lod1.glb",
+   "w": 7.37,
+   "d": 8.16,
+   "h": 9.2,
+   "door": {
+    "x": -1.5,
+    "z": -4.08,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1024,
+    304
+   ]
+  },
+  "h_l": {
+   "kind": "house",
+   "glb": "kenney/h_l.glb",
+   "lod1": "kenney/h_l_lod1.glb",
+   "w": 8.27,
+   "d": 8.16,
+   "h": 8.39,
+   "door": {
+    "x": -2.0,
+    "z": -4.08,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1310,
+    459
+   ]
+  },
+  "h_m": {
+   "kind": "house",
+   "glb": "kenney/h_m.glb",
+   "lod1": "kenney/h_m_lod1.glb",
+   "w": 11.42,
+   "d": 11.42,
+   "h": 5.9,
+   "door": {
+    "x": 0.6,
+    "z": -5.71,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1112,
+    413
+   ]
+  },
+  "h_n": {
+   "kind": "house",
+   "glb": "kenney/h_n.glb",
+   "lod1": "kenney/h_n_lod1.glb",
+   "w": 14.27,
+   "d": 11.02,
+   "h": 9.1,
+   "door": {
+    "x": -1.1,
+    "z": -5.51,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1612,
+    598
+   ]
+  },
+  "h_o": {
+   "kind": "house",
+   "glb": "kenney/h_o.glb",
+   "lod1": "kenney/h_o_lod1.glb",
+   "w": 10.16,
+   "d": 8.22,
+   "h": 9.1,
+   "door": {
+    "x": 3.3,
+    "z": -4.11,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1326,
+    476
+   ]
+  },
+  "h_p": {
+   "kind": "house",
+   "glb": "kenney/h_p.glb",
+   "lod1": "kenney/h_p_lod1.glb",
+   "w": 9.92,
+   "d": 7.92,
+   "h": 7.34,
+   "door": {
+    "x": 3.2,
+    "z": -3.96,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1282,
+    496
+   ]
+  },
+  "h_q": {
+   "kind": "house",
+   "glb": "kenney/h_q.glb",
+   "lod1": "kenney/h_q_lod1.glb",
+   "w": 9.92,
+   "d": 7.08,
+   "h": 7.34,
+   "door": {
+    "x": 0.1,
+    "z": -3.54,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1140,
+    356
+   ]
+  },
+  "h_r": {
+   "kind": "house",
+   "glb": "kenney/h_r.glb",
+   "lod1": "kenney/h_r_lod1.glb",
+   "w": 8.22,
+   "d": 8.16,
+   "h": 9.13,
+   "door": {
+    "x": -1.1,
+    "z": -4.08,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1030,
+    341
+   ]
+  },
+  "h_s": {
+   "kind": "house",
+   "glb": "kenney/h_s.glb",
+   "lod1": "kenney/h_s_lod1.glb",
+   "w": 11.25,
+   "d": 8.69,
+   "h": 9.1,
+   "door": {
+    "x": 0.0,
+    "z": -4.35,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1212,
+    417
+   ]
+  },
+  "h_t": {
+   "kind": "house",
+   "glb": "kenney/h_t.glb",
+   "lod1": "kenney/h_t_lod1.glb",
+   "w": 10.51,
+   "d": 11.25,
+   "h": 9.25,
+   "door": {
+    "x": 0.0,
+    "z": -5.63,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    2062,
+    698
+   ]
+  },
+  "h_u": {
+   "kind": "house",
+   "glb": "kenney/h_u.glb",
+   "lod1": "kenney/h_u_lod1.glb",
+   "w": 11.42,
+   "d": 8.7,
+   "h": 9.1,
+   "door": {
+    "x": 0.5,
+    "z": -4.35,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1332,
+    488
+   ]
+  },
+  "m_a": {
+   "kind": "mid",
+   "glb": "kenney/m_a.glb",
+   "lod1": "kenney/m_a_lod1.glb",
+   "w": 7.07,
+   "d": 7.52,
+   "h": 10.34,
+   "door": {
+    "x": 2.0,
+    "z": -3.76,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1252,
+    452
+   ]
+  },
+  "m_b": {
+   "kind": "mid",
+   "glb": "kenney/m_b.glb",
+   "lod1": "kenney/m_b_lod1.glb",
+   "w": 7.76,
+   "d": 7.52,
+   "h": 10.34,
+   "door": {
+    "x": -1.0,
+    "z": -3.76,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1276,
+    413
+   ]
+  },
+  "m_c": {
+   "kind": "mid",
+   "glb": "kenney/m_c.glb",
+   "lod1": "kenney/m_c_lod1.glb",
+   "w": 7.07,
+   "d": 8.72,
+   "h": 7.14,
+   "door": {
+    "x": -1.5,
+    "z": -4.36,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1195,
+    375
+   ]
+  },
+  "m_d": {
+   "kind": "mid",
+   "glb": "kenney/m_d.glb",
+   "lod1": "kenney/m_d_lod1.glb",
+   "w": 6.72,
+   "d": 7.2,
+   "h": 10.34,
+   "door": {
+    "x": 1.8,
+    "z": -3.6,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1100,
+    381
+   ]
+  },
+  "m_e": {
+   "kind": "mid",
+   "glb": "kenney/m_e.glb",
+   "lod1": "kenney/m_e_lod1.glb",
+   "w": 13.12,
+   "d": 8.06,
+   "h": 7.14,
+   "door": {
+    "x": 1.8,
+    "z": -4.03,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1509,
+    522
+   ]
+  },
+  "m_f": {
+   "kind": "mid",
+   "glb": "kenney/m_f.glb",
+   "lod1": "kenney/m_f_lod1.glb",
+   "w": 6.72,
+   "d": 8.24,
+   "h": 13.54,
+   "door": {
+    "x": -1.2,
+    "z": -4.12,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1794,
+    592
+   ]
+  },
+  "m_g": {
+   "kind": "mid",
+   "glb": "kenney/m_g.glb",
+   "lod1": "kenney/m_g_lod1.glb",
+   "w": 7.76,
+   "d": 7.38,
+   "h": 13.54,
+   "door": {
+    "x": -0.8,
+    "z": -3.69,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    2006,
+    756
+   ]
+  },
+  "m_h": {
+   "kind": "mid",
+   "glb": "kenney/m_h.glb",
+   "lod1": "kenney/m_h_lod1.glb",
+   "w": 7.07,
+   "d": 8.06,
+   "h": 10.34,
+   "door": {
+    "x": -1.4,
+    "z": -4.03,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1512,
+    450
+   ]
+  },
+  "m_i": {
+   "kind": "mid",
+   "glb": "kenney/m_i.glb",
+   "lod1": "kenney/m_i_lod1.glb",
+   "w": 9.92,
+   "d": 10.42,
+   "h": 13.44,
+   "door": {
+    "x": 0.0,
+    "z": -5.21,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    2359,
+    740
+   ]
+  },
+  "m_j": {
+   "kind": "mid",
+   "glb": "kenney/m_j.glb",
+   "lod1": "kenney/m_j_lod1.glb",
+   "w": 16.46,
+   "d": 10.72,
+   "h": 13.44,
+   "door": {
+    "x": 0.0,
+    "z": -5.36,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    2387,
+    786
+   ]
+  },
+  "m_k": {
+   "kind": "mid",
+   "glb": "kenney/m_k.glb",
+   "lod1": "kenney/m_k_lod1.glb",
+   "w": 16.64,
+   "d": 7.54,
+   "h": 11.76,
+   "door": {
+    "x": 0.0,
+    "z": -3.77,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    2461,
+    856
+   ]
+  },
+  "m_l": {
+   "kind": "mid",
+   "glb": "kenney/m_l.glb",
+   "lod1": "kenney/m_l_lod1.glb",
+   "w": 10.86,
+   "d": 11.15,
+   "h": 18.16,
+   "door": {
+    "x": 0.0,
+    "z": -5.61,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    2351,
+    692
+   ]
+  },
+  "m_m": {
+   "kind": "mid",
+   "glb": "kenney/m_m.glb",
+   "lod1": "kenney/m_m_lod1.glb",
+   "w": 9.92,
+   "d": 9.94,
+   "h": 25.2,
+   "door": {
+    "x": 0.0,
+    "z": -4.97,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    2210,
+    734
+   ]
+  },
+  "m_n": {
+   "kind": "mid",
+   "glb": "kenney/m_n.glb",
+   "lod1": "kenney/m_n_lod1.glb",
+   "w": 18.56,
+   "d": 14.56,
+   "h": 19.84,
+   "door": {
+    "x": 3.0,
+    "z": -7.28,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    2455,
+    861
+   ]
+  },
+  "t_a": {
+   "kind": "tower",
+   "glb": "kenney/t_a.glb",
+   "lod1": "kenney/t_a_lod1.glb",
+   "w": 10.88,
+   "d": 10.88,
+   "h": 23.04,
+   "door": {
+    "x": 0.0,
+    "z": -5.44,
+    "w": 1.2,
+    "found": false
+   },
+   "tris": [
+    1292,
+    414
+   ]
+  },
+  "t_b": {
+   "kind": "tower",
+   "glb": "kenney/t_b.glb",
+   "lod1": "kenney/t_b_lod1.glb",
+   "w": 10.88,
+   "d": 10.88,
+   "h": 35.84,
+   "door": {
+    "x": 0.0,
+    "z": -5.44,
+    "w": 1.2,
+    "found": false
+   },
+   "tris": [
+    1592,
+    466
+   ]
+  },
+  "t_c": {
+   "kind": "tower",
+   "glb": "kenney/t_c.glb",
+   "lod1": "kenney/t_c_lod1.glb",
+   "w": 10.24,
+   "d": 11.1,
+   "h": 32.64,
+   "door": {
+    "x": 0.0,
+    "z": -5.55,
+    "w": 1.2,
+    "found": false
+   },
+   "tris": [
+    1704,
+    483
+   ]
+  },
+  "t_d": {
+   "kind": "tower",
+   "glb": "kenney/t_d.glb",
+   "lod1": "kenney/t_d_lod1.glb",
+   "w": 10.24,
+   "d": 11.1,
+   "h": 43.76,
+   "door": {
+    "x": 0.0,
+    "z": -5.55,
+    "w": 1.2,
+    "found": false
+   },
+   "tris": [
+    1892,
+    574
+   ]
+  },
+  "t_e": {
+   "kind": "tower",
+   "glb": "kenney/t_e.glb",
+   "lod1": "kenney/t_e_lod1.glb",
+   "w": 10.36,
+   "d": 9.94,
+   "h": 32.64,
+   "door": {
+    "x": 0.0,
+    "z": -4.97,
+    "w": 1.2,
+    "found": false
+   },
+   "tris": [
+    1156,
+    362
+   ]
+  },
+  "i_l": {
+   "kind": "industrial",
+   "glb": "kenney/i_l.glb",
+   "lod1": "kenney/i_l_lod1.glb",
+   "w": 16.67,
+   "d": 14.96,
+   "h": 15.4,
+   "door": {
+    "x": 2.7,
+    "z": -7.48,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1896,
+    672
+   ]
+  },
+  "i_q": {
+   "kind": "industrial",
+   "glb": "kenney/i_q.glb",
+   "lod1": "kenney/i_q_lod1.glb",
+   "w": 17.12,
+   "d": 14.16,
+   "h": 7.04,
+   "door": {
+    "x": 6.6,
+    "z": -7.08,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    2062,
+    846
+   ]
+  },
+  "i_s": {
+   "kind": "industrial",
+   "glb": "kenney/i_s.glb",
+   "lod1": "kenney/i_s_lod1.glb",
+   "w": 16.96,
+   "d": 7.33,
+   "h": 6.69,
+   "door": {
+    "x": -6.2,
+    "z": -3.67,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    876,
+    270
+   ]
+  },
+  "i_m": {
+   "kind": "industrial",
+   "glb": "kenney/i_m.glb",
+   "lod1": "kenney/i_m_lod1.glb",
+   "w": 10.53,
+   "d": 13.6,
+   "h": 12.15,
+   "door": {
+    "x": 0.0,
+    "z": -6.8,
+    "w": 1.2,
+    "found": true
+   },
+   "tris": [
+    1694,
+    542
+   ]
+  }
+ },
+ "furniture": {
+  "plant": {
+   "glb": "kenney/furn_plant.glb",
+   "w": 0.49,
+   "d": 0.56,
+   "h": 1.5,
+   "tris": 60
+  },
+  "sofa": {
+   "glb": "kenney/furn_sofa.glb",
+   "w": 2.0,
+   "d": 0.84,
+   "h": 0.94,
+   "tris": 128
+  },
+  "bed": {
+   "glb": "kenney/furn_bed.glb",
+   "w": 1.91,
+   "d": 2.25,
+   "h": 0.75,
+   "tris": 264
+  },
+  "arcade": {
+   "glb": "kenney/furn_arcade.glb",
+   "w": 1.0,
+   "d": 1.34,
+   "h": 1.81,
+   "tris": 392
+  },
+  "claw": {
+   "glb": "kenney/furn_claw.glb",
+   "w": 1.44,
+   "d": 1.53,
+   "h": 2.09,
+   "tris": 730
+  }
+ },
+ "peoplePivot": {
+  "hip": 0.667,
+  "shoulder": 1.147
+ },
+ "note": "Generated by tools/bake-kenney.py - do not edit by hand (re-run the tool)."
+}
