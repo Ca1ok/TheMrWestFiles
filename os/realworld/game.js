@@ -18,7 +18,7 @@
     const rootEl = document.createElement('div'); rootEl.id = 'rw';
     rootEl.innerHTML = `<canvas id="rwc" tabindex="0"></canvas><div id="rwHud">
       <div class="rw-top"><button class="rw-btn" id="rwPhone" title="Open WestOS (P)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><span>Phone</span></button><button class="rw-btn" id="rwTravel" title="Travel (M)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></svg><span>Travel</span></button><span class="rw-chip" id="rwClock"></span><span class="rw-chip" id="rwCash"></span></div>
-      <div id="rwLoc"></div><div id="rwCross"></div><div id="rwTip"></div><div id="rwPrompt"></div><canvas id="rwMap" width="168" height="168"></canvas><div id="rwLabels"></div>
+      <div id="rwCompass"><canvas id="rwCompassC" width="640" height="64"></canvas><i></i></div><div id="rwLoc"></div><div id="rwCross"></div><div id="rwTip"></div><div id="rwPrompt"></div><canvas id="rwMap" width="168" height="168"></canvas><div id="rwLabels"></div>
       <div id="rwDlg"></div><div id="rwHelp"><div><b>W A S D</b> walk</div><div><b>Shift</b> run &nbsp; <b>Space</b> jump</div><div><b>Mouse</b> look (click to capture)</div><div><b>E</b> open a door / talk to someone</div><div><b>M</b> map &nbsp; <b>P</b> phone (WestOS)</div><div><b>Esc</b> release the mouse</div></div><div id="rwPause">Click to look around</div>
       <div id="rwTouch"><div id="rwStick"><i></i></div><button id="rwBtnE">E</button><button id="rwBtnJ">⤒</button><button id="rwBtnR">Run</button></div>
       <div id="rwLoad"><div class="t">Stepping outside…</div><div class="bar"><i></i></div></div><div id="rwFade"></div></div>`;
@@ -151,6 +151,20 @@
       list.sort((a, b) => a.d - b.d); const n = Math.min(list.length, 14); while(labelPool.length < n){ const e = document.createElement('div'); labelsEl.appendChild(e); labelPool.push(e); }
       for(let i = 0; i < labelPool.length; i++){ const e = labelPool[i]; if(i >= n){ e.style.display = 'none'; continue; } const l = list[i], p = project(l.x, l.y, l.z); if(!p){ e.style.display = 'none'; continue; } e.style.display = 'block'; if(e._t !== l.t || e._c !== l.c){ e.textContent = l.t; e.className = 'rw-lab ' + l.c; e._t = l.t; e._c = l.c; } e.style.transform = `translate(${p[0].toFixed(0)}px,${p[1].toFixed(0)}px) translate(-50%,-100%)`; e.style.opacity = l.c === 'poi' ? clamp(1.3 - l.d / 140, 0.25, 1) : 1; }
     }
+    /* compass strip at the top: heading scrolls under a fixed centre marker (0° = north = −Z, 90° = east). Redrawn only when the heading changes. */
+    const cc = $('#rwCompassC'), cx2 = cc.getContext('2d'); let compassYaw = 1e9, compassIn = null;
+    const DIRS = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SW', 270: 'W', 315: 'NW' };
+    function compass(){
+      const yaw = P.yaw; if(Math.abs(yaw - compassYaw) < 0.0015 && compassIn === !!S.cell) return; compassYaw = yaw; compassIn = !!S.cell;
+      const W = cc.width, H = cc.height, span = 120, ppd = W / span, hd = ((yaw * 180 / Math.PI) % 360 + 360) % 360; cx2.clearRect(0, 0, W, H); cx2.textAlign = 'center'; cx2.textBaseline = 'middle'; cx2.shadowColor = 'rgba(0,0,0,.6)'; cx2.shadowBlur = 4;
+      for(let a = Math.floor((hd - span / 2) / 5) * 5; a <= hd + span / 2; a += 5){
+        const x = W / 2 + (a - hd) * ppd, d = ((a % 360) + 360) % 360, name = DIRS[d];
+        if(name){ const main = name.length === 1; cx2.fillStyle = d === 0 ? '#ff6a5a' : '#fff'; cx2.font = (main ? '800 24px' : '700 17px') + ' system-ui,sans-serif'; cx2.fillText(name, x, 22); }
+        else if(d % 15 === 0){ cx2.fillStyle = 'rgba(255,255,255,.85)'; cx2.fillRect(x - 1, 40, 2, 11); cx2.font = '600 13px system-ui,sans-serif'; cx2.fillStyle = 'rgba(255,255,255,.7)'; cx2.fillText(String(d), x, 8); }
+        else { cx2.fillStyle = 'rgba(255,255,255,.5)'; cx2.fillRect(x - 1, 44, 2, 6); }
+      }
+      cx2.shadowBlur = 0; $('#rwCompass').dataset.deg = Math.round(hd) + '°';
+    }
     const mm = $('#rwMap').getContext('2d'); let mmAt = 0;
     function minimap(t){
       if(t - mmAt < 160) return; mmAt = t; const W = 168, c = mm; c.clearRect(0, 0, W, W); c.save(); c.beginPath(); c.arc(84, 84, 82, 0, TAU); c.clip(); c.fillStyle = 'rgba(20,24,20,.72)'; c.fillRect(0, 0, W, W); const sc = 0.62; c.translate(84, 84); c.rotate(-P.yaw); c.scale(sc, sc);
@@ -241,7 +255,7 @@
       ensureModels(); const [np, nc] = fillActors(); drawPeople(actorBuf, np); if(nc) drawCars(carBuf, nc);
       if(S.cell){ const ni = fillInside(); if(ni){ gfx.env = RW.Env.INDOOR; drawPeople(inBuf, ni); gfx.env = e; } }
       const fx = grade && grade.fx; if(fx && !P.inside && (fx.kind === 'snow' || fx.kind === 'embers')) gfx.particles(fx, cv.height * 0.9);
-      labels(); minimap(t); hud(t);
+      labels(); minimap(t); compass(); hud(t);
     }
     function loop(t){
       raf = requestAnimationFrame(loop); if(!S.running) return; if(document.hidden || S.phone || performance.now() < S.holdUntil){ last = t; return; } if(gfx.lost){ last = t; return; }

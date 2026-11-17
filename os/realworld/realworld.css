@@ -11,7 +11,7 @@
 .rw-btn,.rw-chip{height:34px;border-radius:17px;padding:0 13px;display:inline-flex;align-items:center;gap:7px;background:rgba(20,16,12,.5);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.14);color:#fff;font-weight:600;font-size:13px;text-shadow:none}
 .rw-btn{cursor:pointer}.rw-btn:hover{background:rgba(60,46,32,.7)}.rw-chip{font-variant-numeric:tabular-nums}.rw-chip:empty{display:none}
 html.perf-low .rw-btn,html.perf-low .rw-chip,html.perf-low #rwPrompt{backdrop-filter:none;-webkit-backdrop-filter:none;background:rgba(20,16,12,.8)}
-#rwLoc{position:absolute;top:calc(58px + env(safe-area-inset-top,0px));left:0;right:0;text-align:center;font-weight:800;font-size:22px;letter-spacing:-.01em;opacity:0;transform:translateY(-6px);transition:opacity .5s,transform .5s}
+#rwLoc{position:absolute;top:calc(104px + env(safe-area-inset-top,0px));left:0;right:0;text-align:center;font-weight:800;font-size:22px;letter-spacing:-.01em;opacity:0;transform:translateY(-6px);transition:opacity .5s,transform .5s}
 #rwLoc.show{opacity:1;transform:none}
 #rwCross{position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px;border-radius:50%;background:rgba(255,255,255,.75);box-shadow:0 0 0 1.5px rgba(0,0,0,.35)}
 #rwTip{position:absolute;left:50%;top:calc(50% + 24px);transform:translateX(-50%);padding:5px 11px;border-radius:10px;background:rgba(20,16,12,.62);font-size:13px;font-weight:600;white-space:nowrap;opacity:0;transition:opacity .2s}
@@ -44,3 +44,10 @@ html.perf-low .rw-btn,html.perf-low .rw-chip,html.perf-low #rwPrompt{backdrop-fi
 #rwDlg .n{font-weight:800;font-size:15px;color:#ffd24a}#rwDlg .l{font-size:15px;line-height:1.45;margin-bottom:4px}
 #rwDlg button{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.14);color:#fff;padding:11px 14px;border-radius:12px;font-weight:600;font-size:14px;text-align:left;cursor:pointer}
 #rwDlg button:hover{background:rgba(255,255,255,.2)}#rwDlg button.bye{background:none;border-color:transparent;opacity:.7}
+
+/* compass strip: heading scrolls under the fixed marker; the degrees sit below it */
+#rwCompass{position:absolute;left:50%;top:calc(52px + env(safe-area-inset-top,0px));transform:translateX(-50%);width:min(320px,calc(100vw - 32px));height:32px;pointer-events:none}
+#rwCompass canvas{display:block;width:100%;height:100%;-webkit-mask-image:linear-gradient(90deg,transparent,#000 22%,#000 78%,transparent);mask-image:linear-gradient(90deg,transparent,#000 22%,#000 78%,transparent)}
+#rwCompass i{position:absolute;left:50%;top:-6px;width:0;height:0;margin-left:-6px;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid #ffd45a;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
+#rwCompass::after{content:attr(data-deg);position:absolute;left:50%;top:33px;transform:translateX(-50%);font:700 12px system-ui,sans-serif;letter-spacing:.04em;color:#ffd45a;text-shadow:0 1px 4px rgba(0,0,0,.7)}
+@media (max-width:700px){#rwCompass{width:min(240px,calc(100vw - 32px))}}
