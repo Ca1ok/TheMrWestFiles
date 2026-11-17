@@ -103,16 +103,7 @@ precision mediump float; in vec2 vUV; uniform sampler2D uTex; out vec4 oCol; voi
     const Cr = mk(); // car, facing -z
     box(Cr, -0.95, 0.3, -2.1, 0.95, 0.95, 2.1, 0, 5); box(Cr, -0.8, 0.95, -0.9, 0.8, 1.5, 1.5, 0, 6); box(Cr, -0.76, 1.48, -0.8, 0.76, 1.54, 1.4, 0, 5);
     [[-0.95, -1.35], [0.8, -1.35], [-0.95, 1.3], [0.8, 1.3]].forEach(w => box(Cr, w[0], 0, w[1] - 0.32, w[0] + 0.15, 0.62, w[1] + 0.32, 0, 4));
-    /* ---- vehicle bodies (cars face -z; planes face -z). slot 5 = body colour (shirt), 2 = accent (pants), 4 = tyres, 6 = glass ---- */
-    const bx = (M, x0, y0, z0, x1, y1, z1, slot) => box(M, x0, y0, z0, x1, y1, z1, 0, slot);
-    const carM = (len, wid, hgt, cab0, cab1, cabH, bed) => { const M = mk(), l = len / 2, w = wid / 2; bx(M, -w, 0.28, -l, w, hgt, l, 5); if(bed) bx(M, -w + 0.1, hgt, l - bed, w - 0.1, hgt + 0.25, l, 2); bx(M, -w + 0.12, hgt, -l + cab0, w - 0.12, hgt + cabH, -l + cab1, 6); bx(M, -w + 0.16, hgt + cabH, -l + cab0 + 0.1, w - 0.16, hgt + cabH + 0.05, -l + cab1 - 0.1, 5);
-      [[-1, -0.3], [1, -0.3], [-1, 0.3], [1, 0.3]].forEach((q, i) => { const z = q[1] < 0 ? -l + 0.75 : l - 0.8; bx(M, q[0] < 0 ? -w - 0.02 : w - 0.2, 0, z - 0.33, q[0] < 0 ? -w + 0.2 : w + 0.02, 0.66, z + 0.33, 4); }); bx(M, -w + 0.2, 0.55, -l - 0.02, w - 0.2, 0.7, -l + 0.05, 2); return M; };
-    const planeM = (len, span, hgt, jet, twin) => { const M = mk(), l = len / 2, f = hgt * 0.5, fy = 0.55 + hgt * 0.3; bx(M, -f * 0.55, fy - f * 0.5, -l, f * 0.55, fy + f * 0.5, l, 5); bx(M, -f * 0.5, fy + f * 0.05, -l + 0.6, f * 0.5, fy + f * 0.3, -l + len * 0.3, 6); bx(M, -f * 0.56, fy - f * 0.04, -l + len * 0.25, f * 0.56, fy + f * 0.06, l - 0.4, 2);
-      const wy = jet ? fy - f * 0.35 : fy + f * 0.5, ch = len * (jet ? 0.2 : 0.14); bx(M, -span / 2, wy, -ch * 0.2, span / 2, wy + 0.14, ch * 0.8, 5); bx(M, -span * 0.18, fy + f * 0.45, l - len * 0.14, span * 0.18, fy + f * 0.55, l, 5); bx(M, -0.07, fy, l - len * 0.16, 0.07, fy + hgt * 0.9, l, 5);
-      if(jet){ [-1, 1].forEach(q => bx(M, q * f * 0.75 - 0.3, fy, l - len * 0.28, q * f * 0.75 + 0.3, fy + 0.6, l - len * 0.05, 4)); } else if(twin){ [-1, 1].forEach(q => bx(M, q * span * 0.22 - 0.25, wy - 0.2, -ch - 0.8, q * span * 0.22 + 0.25, wy + 0.4, ch * 0.5, 4)); } else bx(M, -0.25, fy - 0.25, -l - 0.3, 0.25, fy + 0.25, -l, 4);
-      bx(M, -0.09, 0, -l * 0.45, 0.09, fy - f * 0.5, -l * 0.45 + 0.2, 4); bx(M, -f * 0.5, 0, l * 0.1 - 0.15, -f * 0.5 + 0.2, fy - f * 0.5, l * 0.1 + 0.15, 4); bx(M, f * 0.5 - 0.2, 0, l * 0.1 - 0.15, f * 0.5, fy - f * 0.5, l * 0.1 + 0.15, 4); return M; };
-    return { person: P, car: Cr, sedan: carM(4.5, 1.8, 0.95, 1.3, 3.4, 0.55, 0), hatch: carM(3.7, 1.7, 1.0, 1.0, 3.5, 0.6, 0), coupe: carM(4.5, 1.9, 0.8, 1.7, 3.3, 0.45, 0), suv: carM(4.9, 2.0, 1.15, 1.0, 4.6, 0.7, 0), pickup: carM(5.4, 2.0, 1.1, 1.0, 2.9, 0.65, 2.0),
-      prop: planeM(6.8, 9.5, 2.0, false, false), turbo: planeM(10.5, 12.5, 2.4, false, true), jet: planeM(15.5, 13.5, 2.6, true, false) };
+    return { person: P, car: Cr };
   }
 
   /* ---------------- the engine ---------------- */
