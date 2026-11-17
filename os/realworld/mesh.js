@@ -64,9 +64,9 @@
       for(let i = 0; i < n - 1; i++) this.quad(L[i], R[i], R[i + 1], L[i + 1], [0, 1, 0], c, a);
     }
     /* stamp a finished template mesh (see finish()) into this builder: scaled, turned by yaw about Y, moved to (x, y, z). tint = optional [r,g,b] 0..1 multiplier. Used by interiors for .glb furniture. */
-    addMesh(t, x, y, z, yaw, k, tint){
-      const f = new Float32Array(t.vb), i8 = new Int8Array(t.vb), u8 = new Uint8Array(t.vb), c = Math.cos(yaw || 0), s = Math.sin(yaw || 0), base = this.n; k = k || 1;
-      for(let i = 0; i < t.n; i++){ const px = f[i * 5] * k, py = f[i * 5 + 1] * k, pz = f[i * 5 + 2] * k, nx = i8[i * 20 + 12] / 127, ny = i8[i * 20 + 13] / 127, nz = i8[i * 20 + 14] / 127, b = i * 20;
+    addMesh(t, x, y, z, yaw, k, tint, ky){
+      const f = new Float32Array(t.vb), i8 = new Int8Array(t.vb), u8 = new Uint8Array(t.vb), c = Math.cos(yaw || 0), s = Math.sin(yaw || 0), base = this.n; k = k || 1; ky = ky || k;
+      for(let i = 0; i < t.n; i++){ const px = f[i * 5] * k, py = f[i * 5 + 1] * ky, pz = f[i * 5 + 2] * k, nx = i8[i * 20 + 12] / 127, ny = i8[i * 20 + 13] / 127, nz = i8[i * 20 + 14] / 127, b = i * 20;
         this.v(x + px * c + pz * s, y + py, z - px * s + pz * c, nx * c + nz * s, ny, -nx * s + nz * c, [u8[b + 16] * (tint ? tint[0] : 1), u8[b + 17] * (tint ? tint[1] : 1), u8[b + 18] * (tint ? tint[2] : 1)], u8[b + 19]); }
       while(this.ni + t.ni > this.idx.length){ const ni = new Uint32Array(this.idx.length * 2); ni.set(this.idx); this.idx = ni; }
       for(let i = 0; i < t.ni; i++) this.idx[this.ni++] = base + t.ib[i];

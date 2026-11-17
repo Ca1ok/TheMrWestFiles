@@ -56,19 +56,20 @@
         if(c.fade < 1 && c.old){ gfx.draw(c.old.h, c.fade, 0); gfx.draw(c.cur.h, c.fade, 1); } else gfx.draw(c.cur.h, c.fade, 1); n++; }); return n; };
     /* ---- instanced props ---- */
     const P = () => RW.Props, groups = new Map(); let propRev = -1;
+    const vOf = (Pr, kind, seed) => { const n = Pr.nv ? Pr.nv(kind) : 1; return n > 1 ? Math.min(3, Math.floor(seed * n) % n) : 0; };
     function regroup(){
       const Pr = P(); if(!Pr) return; const cnt = new Map();
-      S.chunks.forEach(c => { if(!c.cur || !c.props) return; const a = c.props; for(let i = 0; i < a.length; i += 8){ const kind = a[i], tl = Pr.lodFor(kind, c.lod); if(tl < 0) continue; const g = kind * 2 + tl; cnt.set(g, (cnt.get(g) || 0) + 1); } });
+      S.chunks.forEach(c => { if(!c.cur || !c.props) return; const a = c.props; for(let i = 0; i < a.length; i += 8){ const kind = a[i], tl = Pr.lodFor(kind, c.lod); if(tl < 0) continue; const g = ((kind * 4 + vOf(Pr, kind, a[i + 6])) << 1) | tl; cnt.set(g, (cnt.get(g) || 0) + 1); } });
       groups.forEach((g, id) => { if(!cnt.has(id)) g.n = 0; });
-      cnt.forEach((n, id) => { let g = groups.get(id); if(!g){ g = { id, kind: id >> 1, tl: id & 1, h: null, arr: new Float32Array(0), n: 0, dirty: true }; groups.set(id, g); } if(g.arr.length < n * 8) g.arr = new Float32Array(Math.max(n * 8, g.arr.length * 2)); g.n = 0; g.fill = 0; });
-      S.chunks.forEach(c => { if(!c.cur || !c.props) return; const a = c.props; for(let i = 0; i < a.length; i += 8){ const kind = a[i], tl = Pr.lodFor(kind, c.lod); if(tl < 0) continue; const g = groups.get(kind * 2 + tl), o = g.n * 8, seed = a[i + 6];
+      cnt.forEach((n, id) => { let g = groups.get(id); if(!g){ g = { id, kind: id >> 3, v: (id >> 1) & 3, tl: id & 1, h: null, arr: new Float32Array(0), n: 0, dirty: true }; groups.set(id, g); } if(g.arr.length < n * 8) g.arr = new Float32Array(Math.max(n * 8, g.arr.length * 2)); g.n = 0; g.fill = 0; });
+      S.chunks.forEach(c => { if(!c.cur || !c.props) return; const a = c.props; for(let i = 0; i < a.length; i += 8){ const kind = a[i], tl = Pr.lodFor(kind, c.lod); if(tl < 0) continue; const g = groups.get(((kind * 4 + vOf(Pr, kind, a[i + 6])) << 1) | tl), o = g.n * 8, seed = a[i + 6];
         g.arr[o] = a[i + 1]; g.arr[o + 1] = a[i + 2]; g.arr[o + 2] = a[i + 3]; g.arr[o + 3] = a[i + 4]; g.arr[o + 4] = a[i + 5]; g.arr[o + 5] = kind === 0 ? PALETTE[Math.floor(seed * PALETTE.length) % PALETTE.length] : 0xffffff; g.arr[o + 6] = seed; g.arr[o + 7] = 0; g.n++; } });
       groups.forEach(g => { g.dirty = true; }); S.propsDirty = false;
     }
     /* draw every loaded chunk's props (call between startWorld()s with the outdoor lighting on). far0..far1 = the dissolve range in metres. */
     S.drawProps = function(far0, far1){
       const Pr = P(); if(!Pr) return 0; if(propRev !== Pr.rev){ groups.forEach(g => { if(g.h){ gfx.propFree(g.h); g.h = null; } }); propRev = Pr.rev; S.propsDirty = true; } if(S.propsDirty) regroup();
-      let n = 0, tris = 0; groups.forEach(g => { if(!g.n) return; if(!g.h){ const t = Pr.template(g.kind, g.tl); if(!t) return; g.h = gfx.propUpload(t); g.dirty = true; } gfx.props(g.h, g.arr, g.n, g.dirty, far0, far1); g.dirty = false; n += g.n; tris += g.n * g.h.ni / 3; }); S.propTris = tris; return n;
+      let n = 0, tris = 0; groups.forEach(g => { if(!g.n) return; if(!g.h){ const t = Pr.template(g.kind, g.tl, g.v); if(!t) return; g.h = gfx.propUpload(t); g.dirty = true; } gfx.props(g.h, g.arr, g.n, g.dirty, far0, far1); g.dirty = false; n += g.n; tris += g.n * g.h.ni / 3; }); S.propTris = tris; return n;
     };
     S.free = function(){ S.chunks.forEach(c => { if(c.cur) gfx.free(c.cur.h); if(c.old) gfx.free(c.old.h); }); S.chunks.clear(); groups.forEach(g => { if(g.h) gfx.propFree(g.h); }); groups.clear(); queue.length = 0; ready.length = 0; workers.forEach(w => w.terminate()); };
     S.ground = (x, z) => RWTerrain.height(x, z);

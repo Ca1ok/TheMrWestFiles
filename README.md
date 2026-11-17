@@ -123,3 +123,7 @@ Element Clicker, the Life simulator and contracts/crafting benches. The OS is bu
 * **Preview** is the photo viewer app. Photos, News and the Wanted widget open pictures with `OS.preview({ kind: 'gallery', list, index })` or `{ kind: 'poster' }`; it zooms, pans, flips through, saves and sets wallpapers. `preview.html` no longer exists.
 * **Growing economy.** `World.econ(now)` (os/lib/world.js) is a deterministic index: 1.0 until 2026-11-07, then about +2%/day easing to +0.4%/day (×12.6 in a year). Element/compound values, property prices (and so rent), game payouts, the shop’s demand scale and the tax threshold all ride it. The $WEST trend compounds faster (`marketGrowthAt`, ×2.6 in 30 days) and its slow wander is calmed, so holding makes money: in a 120-day simulation every 30-day hold was profitable (`node tests/economy.test.js`). Short flips are still a gamble.
 * **Faster, synced events.** A news story every 15 minutes (effects fade in hours), a busier $WEST pump/dump generator (about one every 8 minutes) and alerts for holders. Everything is a pure function of the clock and a fixed seed, so every player sees the same thing at the same second with zero network traffic.
+
+## Credits
+
+3D models in the real world (buildings, trees, street lamps, cars, people, furniture) are from the **Kenney asset library** — <https://www.kenney.nl>, Creative Commons **CC0 1.0** (see `assets/kenney/CREDITS.md`). They are baked for the engine by `tools/bake-kenney.py`.

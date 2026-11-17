@@ -84,12 +84,30 @@
   }
   const LMF = { bank: 1, exchange: 1, shop: 1, arcade: 1, agency: 1, hall: 1, uni: 1, lab: 1, ind: 1, plant: 1, dealer: 1, airport: 1 };
 
+
+  /* ---------------- baked models (Kenney city kits via models.js) ---------------- */
+  const MD = () => { const R = (typeof self !== 'undefined' ? self : globalThis).RWModels; return R && R.ready ? R : null; };
+  const POOL = { house: 'house', townhouse: 'house', villa: 'house', mansion: 'house', studio: 'house', apartment: 'mid' };
+  /* first model of the list whose footprint can hold the landmark's interior (cells.js shrinks a room down to about ×0.55) wins */
+  const POI_MODEL = { bank: ['m_j'], exchange: ['t_d'], shop: ['m_e'], arcade: ['m_i'], agency: ['m_c'], hall: ['m_m'], uni: ['m_n'], lab: ['i_q', 'i_l'], ind: ['i_q', 'i_l', 'i_s'], plant: ['i_l', 'i_q'] };
+  const POI_ROOM = { bank: [22, 16], exchange: [28, 20], shop: [20, 16], arcade: [24, 18], agency: [18, 14], hall: [26, 20], uni: [22, 16], lab: [22, 16], ind: [24, 18], plant: [24, 18] };
+  const roomFits = (pk, id) => { const r = POI_ROOM[id] || [14, 10]; return pk && pk.w >= r[0] * 0.55 + 1 && pk.d >= r[1] * 0.55 + 1 ? pk : null; };
+  /* a model's placement: centred on (X, Z), its front (−Z) turned to the outward normal (nx, nz). th turns the model about Y (mesh.addMesh convention); `ang` is the matching collider/box angle;
+   * door = the approach point 1.7 m in front of the model's real entrance (same convention as doorOf) */
+  function placeModel(pk, X, Z, nx, nz){ const th = Math.atan2(-nx, -nz), c = Math.cos(th), s = Math.sin(th), lz = -pk.d / 2 - 1.7; return { th, ang: -th, nx, nz, door: { x: X + pk.dx * c + lz * s, z: Z - pk.dx * s + lz * c } }; }
+  /* an interior needs headroom: a model lower than its room is stretched up (at most x1.5 of its own scale, else the procedural building is used). Room heights mirror interiors.js. */
+  const POI_H = { bank: 4.4, exchange: 5.4, shop: 4, arcade: 4.2, agency: 3.8, hall: 6, uni: 7.4, lab: 4, ind: 5.2, plant: 7 };
+  const homeH = g => { const big = g.type === 'mansion' || g.type === 'villa', lv = (g.type === 'apartment' || g.type === 'studio') ? 1 : Math.max(1, Math.min(g.type === 'mansion' ? 3 : 2, g.fl || 2)); return lv > 1 ? lv * (big ? 3.2 : 2.9) : (big ? 3.8 : 3); };
+  function headroom(pk, need){ if(!pk) return null; need *= 1.03; if(pk.h >= need) return pk; const ky = need / pk.m.h; if(ky > pk.k * 1.5) return null; pk.ky = ky; pk.h = need; return pk; }
+  const PLINTH = [118, 116, 110];
+  function stampModel(mb, pk, X, Z, pl, base, lod){ mb.addMesh(lod === 0 ? pk.m.m0 : pk.m.m1, X, base, Z, pl.th, pk.k, null, pk.ky); mb.boxR(X, Z, pk.w / 2 + 0.25, pk.d / 2 + 0.25, pl.ang, base - 1.6, base + 0.04, PLINTH, PLINTH); }
+
   /* ---------------- scenery ---------------- */
   /* trees, lamps and benches are INSTANCED (props.js): the worker only records where they stand; kind 0 tree · 1 lamp · 2 bench */
   function makeExtra(lod, cols, props){
     return {
       tree(x, z, s, seed){ if(lod > 1) return; const y = T.height(x, z); s = s || 1; props.push(0, x, y, z, (seed | 0) * 2.399, s, ((Math.abs(seed | 0) * 7919) % 997) / 997, 0); cols.push(1, x, z, 0.4 * s, 0, 0, 0, y + 5); },
-      lamp(x, z){ if(lod > 0) return; props.push(1, x, T.height(x, z), z, 0, 1, 0, 0); },
+      lamp(x, z, yaw){ if(lod > 1) return; props.push(1, x, T.height(x, z), z, yaw || 0, 1, 0, 0); },
       bench(x, z, yaw){ if(lod > 1) return; const y = T.height(x, z); props.push(2, x, y, z, yaw, 1, 0, 0); if(lod === 0) cols.push(0, x, z, 0.95, 0.32, Math.cos(yaw), Math.sin(yaw), y + 0.5); }
     };
   }
@@ -107,21 +125,35 @@
       if(lod <= 1) b.ponds.forEach(p => { if(inC(p.x, p.z)){ const y = T.height(p.x, p.z); mb.cyl(p.x, p.z, y + 0.1, y + 0.16, p.r, 18, C.water); } });
       if(b.fountain && lod <= 1 && inC(b.fountain[0], b.fountain[1])){ const [fx, fz] = b.fountain, y = T.height(fx, fz); mb.cyl(fx, fz, y + 0.06, y + 1.0, 4.2, 18, [150, 146, 138], C.plaza); mb.cyl(fx, fz, y + 0.95, y + 1.02, 3.7, 18, C.water); mb.cyl(fx, fz, y + 0.95, y + 3.4, 0.35, 6, [190, 186, 176]); cols.push(1, fx, fz, 4.5, 0, 0, 0, y + 1); }
       // houses
-      b.houses.forEach(h => { if(h.idx >= nh) return; const g = h.g; if(!inC(g.x, g.y)) return; stats.houses++; const base = footBase(g.x, g.y, g.ang, g.w, g.dp); box(g.x, g.y, g.w, g.dp, g.ang, base + g.ht);
+      b.houses.forEach(h => { if(h.idx >= nh) return; const g = h.g; if(!inC(g.x, g.y)) return; stats.houses++; const base = footBase(g.x, g.y, g.ang, g.w, g.dp), R = lod <= 3 ? MD() : null, sd = g.side > 0 ? 1 : -1;
+        const pk = R && headroom(R.pick(R.ofKind(POOL[g.type] || 'house'), g.w, g.dp, g.ht * 1.35, G.h32(h.idx, 21), { maxK: 1.6 }), homeH(g));
+        if(pk){ const pl = placeModel(pk, g.x, g.y, -sd * Math.sin(g.ang), sd * Math.cos(g.ang)); box(g.x, g.y, pk.w, pk.d, pl.ang, base + pk.h);
+          if(lod <= 1){ stampModel(mb, pk, g.x, g.y, pl, base, lod); doors.push({ k: 'house', id: g.id, i: h.idx, x: pl.door.x, z: pl.door.z, nx: pl.nx, nz: pl.nz, y: base, addr: g.addr, type: g.type, beds: g.beds, w: g.w, dp: g.dp, bx: g.x, bz: g.y, rw: pk.w, rd: pk.d, fl: g.fl, bh: pk.h, model: pk.m.id }); }
+          else bakeBox(mb, g.x, g.y, pk.w, pk.d, pl.ang, base, pk.h, rgb(BG.WALL[G.h32(h.idx, 3) % BG.WALL.length]), rgb(BG.ROOF[G.h32(h.idx, 4) % BG.ROOF.length]), lod); return; }
+        box(g.x, g.y, g.w, g.dp, g.ang, base + g.ht);
         if(lod <= 1){ const S = BG.shape(g); bakeShape(mb, S, g.x, g.y, g.ang, g.side, base, lod); const dr = doorOf(S, g.x, g.y, g.ang, g.side, base); doors.push({ k: 'house', id: g.id, i: h.idx, x: dr.x, z: dr.z, nx: dr.nx, nz: dr.nz, y: base, addr: g.addr, type: g.type, beds: g.beds, w: g.w, dp: g.dp, bx: g.x, bz: g.y, rw: S.w, rd: dr.ly + S.d / 2, fl: S.fl, bh: S.h }); }
         else bakeBox(mb, g.x, g.y, g.w, g.dp, g.ang, base, g.ht, rgb(BG.WALL[G.h32(h.idx, 3) % BG.WALL.length]), rgb(BG.ROOF[G.h32(h.idx, 4) % BG.ROOF.length]), lod); });
       // landmarks
-      b.pois.forEach(p => { if(!inC(p.x, p.z)) return; const S = BG.landmark(p.id), base = footBase(p.x, p.z, p.ang, S.w, S.d); box(p.x, p.z, S.w, S.d, p.ang, base + S.h);
+      b.pois.forEach(p => { if(!inC(p.x, p.z)) return; const S = BG.landmark(p.id), base = footBase(p.x, p.z, p.ang, S.w, S.d), R = lod <= 3 ? MD() : null;
+        let pk = null; if(R) for(const mid of POI_MODEL[p.id] || []){ pk = roomFits(headroom(R.pick([mid], S.w, S.d, 0, 0, { maxK: 2.4, minCover: 0.3 }), POI_H[p.id] || 4), p.id); if(pk) break; }
+        if(pk){ const pl = placeModel(pk, p.x, p.z, -Math.sin(p.ang), Math.cos(p.ang)); box(p.x, p.z, pk.w, pk.d, pl.ang, base + pk.h);
+          if(lod <= 1){ stampModel(mb, pk, p.x, p.z, pl, base, lod); doors.push({ k: 'poi', id: p.id, x: pl.door.x, z: pl.door.z, nx: pl.nx, nz: pl.nz, y: base, name: G.POIS[p.id] && G.POIS[p.id].n, bx: p.x, bz: p.z, rw: pk.w, rd: pk.d, fl: S.fl, bh: pk.h, model: pk.m.id }); }
+          else bakeBox(mb, p.x, p.z, pk.w, pk.d, pl.ang, base, pk.h, rgb(S.pal.wall), rgb(S.pal.roof), lod); return; }
+        box(p.x, p.z, S.w, S.d, p.ang, base + S.h);
         if(lod <= 1){ bakeShape(mb, S, p.x, p.z, p.ang, 1, base, lod); const dr = doorOf(S, p.x, p.z, p.ang, 1, base); doors.push({ k: 'poi', id: p.id, x: dr.x, z: dr.z, nx: dr.nx, nz: dr.nz, y: base, name: G.POIS[p.id] && G.POIS[p.id].n, bx: p.x, bz: p.z, rw: S.w, rd: dr.ly + S.d / 2, fl: S.fl, bh: S.h }); }
         else bakeBox(mb, p.x, p.z, S.w, S.d, p.ang, base, S.h, rgb(S.pal.wall), rgb(S.pal.roof), lod); });
       // painted markings on the dealership forecourt / airport apron (layout c.strips: flat boxes just above the paving)
       if(lod <= 1 && b.strips) b.strips.forEach(q => { if(!inC(q.x, q.z)) return; const y = T.height(q.x, q.z) + 0.07 * (lod + 1) + 0.03; mb.boxR(q.x, q.z, q.w / 2, q.l / 2, q.ang, y, y + 0.03, q.col, q.col); });
       // downtown infill towers
-      b.fillers.forEach((f, fi) => { if(!inC(f.x, f.z)) return; stats.blds++; const base = footBase(f.x, f.z, f.ang, f.w, f.d), hgt = f.fl * 3.1 + 2; box(f.x, f.z, f.w, f.d, f.ang, base + hgt);
+      b.fillers.forEach((f, fi) => { if(!inC(f.x, f.z)) return; stats.blds++; const base = footBase(f.x, f.z, f.ang, f.w, f.d), hgt = f.fl * 3.1 + 2, R = lod <= 3 ? MD() : null, sd = f.side > 0 ? 1 : -1;
+        const pk = R && R.pick(R.ofKind('tower').concat(R.ofKind('mid')), f.w, f.d, 0, G.h32(f.v, 31), { maxK: 1.9, minCover: 0.45 });
+        if(pk){ pk.ky = Math.max(0.7 * pk.k, Math.min(1.7 * pk.k, hgt / pk.m.h)); pk.h = pk.m.h * pk.ky; const pl = placeModel(pk, f.x, f.z, -sd * Math.sin(f.ang), sd * Math.cos(f.ang)); box(f.x, f.z, pk.w, pk.d, pl.ang, base + pk.h);
+          if(lod <= 1) stampModel(mb, pk, f.x, f.z, pl, base, lod); else bakeBox(mb, f.x, f.z, pk.w, pk.d, pl.ang, base, pk.h, rgb(BG.WALL[G.h32(f.v, 9) % BG.WALL.length]), rgb(BG.GLASSW[G.h32(f.v, 10) % BG.GLASSW.length]), lod); return; }
+        box(f.x, f.z, f.w, f.d, f.ang, base + hgt);
         if(lod <= 1) bakeShape(mb, BG.proto(f.kind, f.w, f.d, f.fl, f.v), f.x, f.z, f.ang, f.side, base, lod); else bakeBox(mb, f.x, f.z, f.w, f.d, f.ang, base, hgt, rgb(BG.WALL[G.h32(f.v, 9) % BG.WALL.length]), rgb(BG.GLASSW[G.h32(f.v, 10) % BG.GLASSW.length]), lod); });
       if(lod === 0) b.plots.forEach(p => { if(inC(p.x, p.z)){ const y = T.height(p.x, p.z); mb.boxR(p.x, p.z, p.w / 2 + 1.5, p.d / 2 + 1.5, p.ang, y - 0.3, y + 0.1, [176, 174, 168], [176, 174, 168]); } });
       b.trees.forEach(t => { if(t[4] >= nh) return; if(inC(t[0], t[1])) ex.tree(t[0], t[1], t[2], t[3]); });
-      b.lamps.forEach(l => { if(inC(l[0], l[1])) ex.lamp(l[0], l[1]); });
+      b.lamps.forEach(l => { if(inC(l[0], l[1])) ex.lamp(l[0], l[1], l[2]); });
       b.benches.forEach(q => { if(inC(q[0], q[1])) ex.bench(q[0], q[1], q[2]); });
     });
     // wild trees outside the built-up area (never inside the city: the plateau and its streets end well before)

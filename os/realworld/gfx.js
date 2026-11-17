@@ -53,16 +53,17 @@ void main(){ float f = 1.0 - smoothstep(uFar.x, uFar.y, length(vWP - uCam)); if(
   bool fol = vC.a > 0.95 && vC.a < 0.995; vec3 base = fol ? vT * vC.rgb : vC.rgb;
   oCol = vec4(outc(shadeIt(lin(base), normalize(vN), vWP, vC.a < 0.9 ? 1.0 : 0.0)), 1.0); }`;
   const ACT_VS = `#version 300 es
-layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec4 aMeta; layout(location=3) in vec4 iPos; layout(location=4) in vec4 iAn;
-uniform mat4 uVP; out vec3 vN; out vec3 vC; out vec3 vWP;
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec4 aMeta; layout(location=3) in vec4 iPos; layout(location=4) in vec4 iAn; layout(location=5) in vec4 aBake;
+uniform mat4 uVP; uniform vec2 uPiv; out vec3 vN; out vec3 vC; out vec3 vWP;
 vec3 unpackC(float p){ return vec3(floor(p / 65536.0), floor(mod(p, 65536.0) / 256.0), mod(p, 256.0)) / 255.0; }
-void main(){ vec3 p = aPos, n = aNrm; float part = aMeta.x, sw = sin(iAn.x) * iAn.y, ang = 0.0, pv = 0.9;
-  if(part > 0.5 && part < 1.5) ang = sw * 0.75; else if(part < 2.5 && part > 1.5) ang = -sw * 0.75; else if(part < 3.5 && part > 2.5){ ang = -sw * 0.6; pv = 1.42; } else if(part < 4.5 && part > 3.5){ ang = sw * 0.6; pv = 1.42; }
+void main(){ vec3 p = aPos, n = aNrm; float part = aMeta.x, sw = sin(iAn.x) * iAn.y, ang = 0.0, pv = uPiv.x;
+  if(part > 0.5 && part < 1.5) ang = sw * 0.75; else if(part < 2.5 && part > 1.5) ang = -sw * 0.75; else if(part < 3.5 && part > 2.5){ ang = -sw * 0.6; pv = uPiv.y; } else if(part < 4.5 && part > 3.5){ ang = sw * 0.6; pv = uPiv.y; }
   if(part > 0.5 && part < 4.5){ float c = cos(ang), s = sin(ang), y = p.y - pv; p = vec3(p.x, y * c - p.z * s + pv, y * s + p.z * c); n = vec3(n.x, n.y * c - n.z * s, n.y * s + n.z * c); }
   p.y += abs(sin(iAn.x)) * iAn.y * 0.05 * step(part, 4.5);
   float th = -iPos.w, ct = cos(th), st = sin(th); p = vec3(p.x * ct + p.z * st, p.y, -p.x * st + p.z * ct); n = vec3(n.x * ct + n.z * st, n.y, -n.x * st + n.z * ct);
   vec3 shirt = unpackC(iAn.z), pants = unpackC(iAn.w), skin = mix(vec3(0.95, 0.76, 0.62), vec3(0.45, 0.30, 0.22), fract(iAn.z * 0.000173)); float sl = aMeta.y;
   vC = sl < 0.5 ? skin : sl < 1.5 ? shirt : sl < 2.5 ? pants : sl < 3.5 ? vec3(0.13, 0.1, 0.08) * (0.6 + fract(iAn.w * 0.00031)) : sl < 4.5 ? vec3(0.07) : sl < 5.5 ? shirt : vec3(0.3, 0.42, 0.55);
+  if(sl > 6.5) vC = aBake.rgb;   /* slot 7 = a baked model colour (Kenney people) */
   vC *= aMeta.z / 255.0; vN = n; vWP = p + iPos.xyz; gl_Position = uVP * vec4(vWP, 1.0); }`;
   const ACT_FS = COMMON + `
 in vec3 vN; in vec3 vC; in vec3 vWP; out vec4 oCol; void main(){ oCol = vec4(outc(shadeIt(lin(vC), normalize(vN), vWP, 0.0)), 1.0); }`;
@@ -123,7 +124,7 @@ precision mediump float; in vec2 vUV; uniform sampler2D uTex; out vec4 oCol; voi
     const prog = (vs, fs, names) => { const p = gl.createProgram(); gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if(!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(p)); const u = {}; names.split(' ').forEach(n => { u[n] = gl.getUniformLocation(p, n); }); p.u = u; return p; };
     const ENV = 'uCam uSunDir uSunCol uSky uGround uFogCol uFogD uNight uTime';
     let pW, pA, pS, pP, pT, pI;
-    function compile(){ pW = prog(WORLD_VS, WORLD_FS, 'uVP uFade uFadeDir ' + ENV); pA = prog(ACT_VS, ACT_FS, 'uVP ' + ENV); pS = prog(SKY_VS, SKY_FS, 'uF uR uU uCam uSunDir uZen uHor uSunCol uTan uAsp uNight uTime uCloud'); pP = prog(PT_VS, PT_FS, 'uVP uCam uTime uFall uSize uScale uSpread uCol'); pT = prog(SCR_VS, SCR_FS, 'uVP uTex'); pI = prog(PROP_VS, PROP_FS, 'uVP uFar ' + ENV); }
+    function compile(){ pW = prog(WORLD_VS, WORLD_FS, 'uVP uFade uFadeDir ' + ENV); pA = prog(ACT_VS, ACT_FS, 'uVP uPiv ' + ENV); pS = prog(SKY_VS, SKY_FS, 'uF uR uU uCam uSunDir uZen uHor uSunCol uTan uAsp uNight uTime uCloud'); pP = prog(PT_VS, PT_FS, 'uVP uCam uTime uFall uSize uScale uSpread uCol'); pT = prog(SCR_VS, SCR_FS, 'uVP uTex'); pI = prog(PROP_VS, PROP_FS, 'uVP uFar ' + ENV); }
     compile();
     const emptyVAO = gl.createVertexArray();
     function setEnv(p){ const e = G.env, u = p.u; gl.uniform3fv(u.uCam, G.cam); gl.uniform3fv(u.uSunDir, e.sunDir); gl.uniform3fv(u.uSunCol, e.sunCol); gl.uniform3fv(u.uSky, e.sky); gl.uniform3fv(u.uGround, e.ground); gl.uniform3fv(u.uFogCol, e.fog); gl.uniform1f(u.uFogD, e.fogD); gl.uniform1f(u.uNight, e.night); gl.uniform1f(u.uTime, G.time); }
@@ -151,15 +152,20 @@ precision mediump float; in vec2 vUV; uniform sampler2D uTex; out vec4 oCol; voi
     G.draw = function(h, fade, dir){ gl.uniform1f(pW.u.uFade, fade == null ? 1 : fade); gl.uniform1f(pW.u.uFadeDir, dir ? 1 : 0); gl.bindVertexArray(h.vao); gl.drawElements(gl.TRIANGLES, h.ni, h.type, 0); G.tris += h.ni / 3; G.calls++; };
     /* ---- actors ---- */
     const AM = actorMeshes(), meshes = {};
-    function actorGPU(M){ const n = M.p.length / 3, buf = new ArrayBuffer(n * 20), f = new Float32Array(buf), i8 = new Int8Array(buf), u8 = new Uint8Array(buf); for(let i = 0; i < n; i++){ f[i * 5] = M.p[i * 3]; f[i * 5 + 1] = M.p[i * 3 + 1]; f[i * 5 + 2] = M.p[i * 3 + 2]; i8[i * 20 + 12] = Math.round(M.n[i * 3] * 127); i8[i * 20 + 13] = Math.round(M.n[i * 3 + 1] * 127); i8[i * 20 + 14] = Math.round(M.n[i * 3 + 2] * 127); u8[i * 20 + 16] = M.m[i * 4]; u8[i * 20 + 17] = M.m[i * 4 + 1]; u8[i * 20 + 18] = M.m[i * 4 + 2]; }
+    function actorGPU(M){ const n = M.p.length / 3, buf = new ArrayBuffer(n * 24), f = new Float32Array(buf), i8 = new Int8Array(buf), u8 = new Uint8Array(buf); for(let i = 0; i < n; i++){ f[i * 6] = M.p[i * 3]; f[i * 6 + 1] = M.p[i * 3 + 1]; f[i * 6 + 2] = M.p[i * 3 + 2]; i8[i * 24 + 12] = Math.round(M.n[i * 3] * 127); i8[i * 24 + 13] = Math.round(M.n[i * 3 + 1] * 127); i8[i * 24 + 14] = Math.round(M.n[i * 3 + 2] * 127); u8[i * 24 + 16] = M.m[i * 4]; u8[i * 24 + 17] = M.m[i * 4 + 1]; u8[i * 24 + 18] = M.m[i * 4 + 2]; if(M.c){ u8[i * 24 + 20] = M.c[i * 3]; u8[i * 24 + 21] = M.c[i * 3 + 1]; u8[i * 24 + 22] = M.c[i * 3 + 2]; } }
       const vao = gl.createVertexArray(), vb = gl.createBuffer(), ib = gl.createBuffer(), inst = gl.createBuffer(); gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, buf, gl.STATIC_DRAW);
-      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 20, 0); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.BYTE, true, 20, 12); gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.UNSIGNED_BYTE, false, 20, 16);
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.BYTE, true, 24, 12); gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.UNSIGNED_BYTE, false, 24, 16); gl.enableVertexAttribArray(5); gl.vertexAttribPointer(5, 4, gl.UNSIGNED_BYTE, true, 24, 20);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(M.i), gl.STATIC_DRAW);
       gl.bindBuffer(gl.ARRAY_BUFFER, inst); gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 4, gl.FLOAT, false, 32, 0); gl.vertexAttribDivisor(3, 1); gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4, 4, gl.FLOAT, false, 32, 16); gl.vertexAttribDivisor(4, 1); gl.bindVertexArray(null);
-      return { vao, inst, ni: M.i.length, cap: 0 }; }
+      return { vao, inst, ni: M.i.length, cap: 0, piv: M.piv || [0.9, 1.42] }; }
+    /* a model (see glb.js parse, baked by tools/bake-kenney.py: alpha 200+n = body part n) becomes an actor kind with its own colours and limb pivots {hip, shoulder} (metres) */
+    G.setActorModel = function(kind, t, pivot){ const n = t.n, f = new Float32Array(t.vb), i8 = new Int8Array(t.vb), u8 = new Uint8Array(t.vb), M = { p: new Float32Array(n * 3), n: new Float32Array(n * 3), m: new Uint8Array(n * 4), c: new Uint8Array(n * 3), i: Uint16Array.from(t.ib), piv: pivot ? [pivot.hip, pivot.shoulder] : null };
+      for(let i = 0; i < n; i++){ M.p[i * 3] = f[i * 5]; M.p[i * 3 + 1] = f[i * 5 + 1]; M.p[i * 3 + 2] = f[i * 5 + 2]; M.n[i * 3] = i8[i * 20 + 12] / 127; M.n[i * 3 + 1] = i8[i * 20 + 13] / 127; M.n[i * 3 + 2] = i8[i * 20 + 14] / 127;
+        const part = u8[i * 20 + 19] - 200; M.m[i * 4] = part >= 0 && part <= 4 ? part : 0; M.m[i * 4 + 1] = 7; M.m[i * 4 + 2] = 255; M.c[i * 3] = u8[i * 20 + 16]; M.c[i * 3 + 1] = u8[i * 20 + 17]; M.c[i * 3 + 2] = u8[i * 20 + 18]; }
+      AM[kind] = M; if(meshes[kind]){ gl.deleteVertexArray(meshes[kind].vao); gl.deleteBuffer(meshes[kind].inst); delete meshes[kind]; } return true; };
     /* floats = 8 per instance: x y z yaw | phase move shirt pants */
     G.actors = function(kind, floats, count){ if(!count) return; let m = meshes[kind]; if(!m) m = meshes[kind] = actorGPU(AM[kind]);
-      gl.useProgram(pA); gl.uniformMatrix4fv(pA.u.uVP, false, G.vp); setEnv(pA); gl.bindVertexArray(m.vao); gl.bindBuffer(gl.ARRAY_BUFFER, m.inst);
+      gl.useProgram(pA); gl.uniformMatrix4fv(pA.u.uVP, false, G.vp); gl.uniform2f(pA.u.uPiv, m.piv[0], m.piv[1]); setEnv(pA); gl.bindVertexArray(m.vao); gl.bindBuffer(gl.ARRAY_BUFFER, m.inst);
       if(count * 8 > m.cap){ m.cap = Math.max(count * 8, m.cap * 2, 512); gl.bufferData(gl.ARRAY_BUFFER, m.cap * 4, gl.DYNAMIC_DRAW); } gl.bufferSubData(gl.ARRAY_BUFFER, 0, floats, 0, count * 8);
       gl.drawElementsInstanced(gl.TRIANGLES, m.ni, gl.UNSIGNED_SHORT, 0, count); G.tris += m.ni / 3 * count; G.calls++; curW = false; };
 

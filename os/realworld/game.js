@@ -119,6 +119,19 @@
       for(const q of botList){ if(!q.init){ q.vis = false; continue; } const e = Math.min(0.25, (t - q.t) / 1000); q.x = q.tx + q.vx * e; q.z = q.tz + q.vz * e; const sp = Math.hypot(q.vx, q.vz); q.sp = sp; q.vis = !!q.moving; if(sp > 0.4){ q.yaw += wrapA(Math.atan2(q.vx, -q.vz) - q.yaw) * Math.min(1, dt * 8); } q.mv = clamp(sp / 4, 0, 1.3); q.ph += dt * sp * 2.4; }
     }
     const outLine = q => { const w = G.WHY[q.why] || 'out and about'; return ['Hello! I am ' + w + '.', 'Lovely day in WestCountry, isn\u2019t it?', q.dest ? 'I am heading to ' + q.dest + '.' : 'Just passing through.'][G.h32(q.n, Math.floor(OS.now() / 30000)) % 3]; };
+    /* Kenney people + cars (assets/world/manifest.json, loaded by glb.js). People: each character model is its own instanced actor kind ('person0'…), picked per person by their colour seed so a
+     * person always looks the same; the walk cycle is the same vertex shader (limb pivots come from the manifest). Cars: each model is an instanced prop (near mesh within CAR_NEAR m, the
+     * lighter one beyond). Without models both fall back to the procedural 'person' / 'car'. */
+    const PL = { names: [], bufs: [], rev: -1 }, CARS = { h: new Map(), bufs: [], rev: -1 }, CAR_NEAR = 90;
+    function ensureModels(){ const Pr = RW.Props; if(!Pr || PL.rev === Pr.rev) return; PL.rev = Pr.rev;
+      PL.names = Pr.people.map((p, i) => { gfx.setActorModel('person' + i, p.m, Pr.pivot); return 'person' + i; }); PL.bufs = PL.names.map(() => ({ a: new Float32Array(8 * 64), n: 0 }));
+      CARS.h.forEach(h => gfx.propFree(h)); CARS.h = new Map(); CARS.bufs = Pr.cars.flatMap(() => [{ a: new Float32Array(8 * 32), n: 0 }, { a: new Float32Array(8 * 32), n: 0 }]); }
+    const push8 = (b, src, o) => { if(b.n * 8 + 8 > b.a.length){ const na = new Float32Array(b.a.length * 2); na.set(b.a); b.a = na; } b.a.set(src.subarray(o, o + 8), b.n++ * 8); };
+    function drawPeople(buf, n){ const nv = PL.names.length; if(!nv){ gfx.actors('person', buf, n); return; } PL.bufs.forEach(b => { b.n = 0; });
+      for(let i = 0; i < n; i++) push8(PL.bufs[Math.abs(buf[i * 8 + 6] | 0) % nv], buf, i * 8); PL.bufs.forEach((b, v) => { if(b.n) gfx.actors(PL.names[v], b.a, b.n); }); }
+    function drawCars(buf, n){ const cs = RW.Props.cars, nv = cs.length; if(!nv){ gfx.actors('car', buf, n); return; } CARS.bufs.forEach(b => { b.n = 0; }); const px = P.x, pz = P.z, tmp = new Float32Array(8);
+      for(let i = 0; i < n; i++){ const o = i * 8, v = Math.abs(buf[o + 7] | 0) % nv, dx = buf[o] - px, dz = buf[o + 2] - pz; tmp[0] = buf[o]; tmp[1] = buf[o + 1]; tmp[2] = buf[o + 2]; tmp[3] = buf[o + 3]; tmp[4] = 1; tmp[5] = 0xffffff; tmp[6] = 0; tmp[7] = 0; push8(CARS.bufs[v * 2 + (dx * dx + dz * dz > CAR_NEAR * CAR_NEAR ? 1 : 0)], tmp, 0); }
+      CARS.bufs.forEach((b, k) => { if(!b.n) return; const m = cs[k >> 1][(k & 1) ? 'm1' : 'm0']; let h = CARS.h.get(m); if(!h){ h = gfx.propUpload(m); CARS.h.set(m, h); } gfx.props(h, b.a, b.n, true, cfg.carRange * 0.85, cfg.carRange); }); }
     function fillActors(){
       let np = 0, nc = 0; const px = P.x, pz = P.z, put = (buf, i, x, y, z, yaw, ph, mv, sh, pa) => { const o = i * 8; buf[o] = x; buf[o + 1] = y; buf[o + 2] = z; buf[o + 3] = yaw; buf[o + 4] = ph; buf[o + 5] = mv; buf[o + 6] = sh; buf[o + 7] = pa; };
       const grow = (buf, n) => (n * 8 + 8 > buf.length) ? (() => { const b = new Float32Array(buf.length * 2); b.set(buf); return b; })() : buf;
@@ -228,8 +241,8 @@
       gfx.sky(e.cloud); gfx.startWorld(); S.drawn = st.draw(P.x, P.z, cfg.far); if(dyn.plots) gfx.draw(dyn.plots, 1, 1); if(dyn.marks) gfx.draw(dyn.marks, 1, 1);
       S.props = st.drawProps(perfLow() ? 260 : 430, perfLow() ? 380 : 570);                      // trees, lamps, benches: one instanced call per kind
       if(cells.cells.size){ gfx.env = RW.Env.INDOOR; gfx.startWorld(); cells.draw(); gfx.env = e; if(S.cell){ scr.tick(P.x, P.z, t); scr.draw(); } }   // insides: only loaded ones, indoor light
-      const [np, nc] = fillActors(); gfx.actors('person', actorBuf, np); if(nc) gfx.actors('car', carBuf, nc); if(VD){ const vb = fillVehicles(); for(const k in vb) gfx.actors(k, vb[k].buf, vb[k].n); }
-      if(S.cell){ const ni = fillInside(); if(ni){ gfx.env = RW.Env.INDOOR; gfx.actors('person', inBuf, ni); gfx.env = e; } }
+      ensureModels(); const [np, nc] = fillActors(); drawPeople(actorBuf, np); if(nc) drawCars(carBuf, nc); if(VD){ const vb = fillVehicles(); for(const k in vb) gfx.actors(k, vb[k].buf, vb[k].n); }
+      if(S.cell){ const ni = fillInside(); if(ni){ gfx.env = RW.Env.INDOOR; drawPeople(inBuf, ni); gfx.env = e; } }
       const fx = grade && grade.fx; if(fx && !P.inside && (fx.kind === 'snow' || fx.kind === 'embers')) gfx.particles(fx, cv.height * 0.9);
       labels(); minimap(t); hud(t);
     }

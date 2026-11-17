@@ -51,7 +51,9 @@
     const verge = (skipU) => { for(let u = B.uL + 9, n = 0; u < B.uR - 4; u += 18, n++){ c.trees.push(mkTree(u, B.vT + 1.5, 0.95 + f01(i * 31 + n, j) * 0.4, i * 7 + n)); c.trees.push(mkTree(u + 9, B.vB - 1.5, 0.95 + f01(i + n, j * 17) * 0.4, j * 5 + n)); }
       if(!skipU) for(let v = B.vT + 12, n = 0; v < B.vB - 8; v += 18, n++){ c.trees.push(mkTree(B.uL + 1.5, v, 1, n + i)); c.trees.push(mkTree(B.uR - 1.5, v + 5, 1, n + j)); } };
     const ring = (u0, v0, rad, n, off) => { const c0 = warp(u0, v0); for(let q = 0; q < n; q++){ const a = off + q / n * TAU, p = warp(u0 + Math.cos(a) * rad, v0 + Math.sin(a) * rad * 0.8); c.benches.push([p[0], p[1], Math.atan2(c0[0] - p[0], -(c0[1] - p[1]))]); } };
-    const lamps = () => { for(let u = B.uL + 14, n = 0; u < B.uR; u += 30, n++){ c.lamps.push(warp(u, B.vT - 0.6)); c.lamps.push(warp(u + 14, B.vB + 0.6)); } };
+    /* [x, z, yaw]: yaw turns a model lamp's arm over the street (yaw 0 = north, the same convention as every prop) */
+    const face = (u, v, dv) => { const p = warp(u, v), q = warp(u, v + dv); return [p[0], p[1], Math.atan2(q[0] - p[0], -(q[1] - p[1]))]; };
+    const lamps = () => { for(let u = B.uL + 14, n = 0; u < B.uR; u += 30, n++){ c.lamps.push(face(u, B.vT - 0.6, -4)); c.lamps.push(face(u + 14, B.vB + 0.6, 4)); } };
     if(r.role === 'res'){
       const nl = 4, lw = (B.uR - B.uL - 6) / nl, mid = (B.vT + B.vB) / 2;
       for(let s = 0; s < PER; s++){ const idx = r.b * PER + s, row = s >> 2, k = s & 3, g = G.house(idx), u = B.uL + 3 + (k + 0.5) * lw, v = row ? B.vB - SET - g.dp / 2 : B.vT + SET + g.dp / 2, fr = frame(u, v), side = row ? 1 : -1;

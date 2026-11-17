@@ -23,7 +23,10 @@
       const gp = 0.95, tk = 0.35; this.cols.push([-tk, -tk, w + tk, 0], [-tk, 0, 0, d], [w, 0, w + tk, d], [-tk, d, cx - gp, d + tk], [cx + gp, d, w + tk, d + tk]);   // thin walls (they must fit inside the building's own walls), a doorway in the south wall
     }
     box(x, z, w, d, h, c, top, o){ o = o || {}; const y0 = (o.y0 || 0) + this.y; this.mb.boxAA(x, y0, z, x + w, y0 + h, z + d, c, top || c, o.glow ? GLOW : 255); if(o.solid !== false) this.cols.push([x, z, x + w, z + d, y0, y0 + h]); return this; }
-    plant(x, z){ const y = this.y; this.mb.cyl(x, z, y, y + 0.5, 0.28, 8, '#a9694a'); this.mb.cone(x, z, y + 0.4, y + 1.9, 0.6, 7, '#3f8f4a'); this.mb.cone(x, z, y + 1.1, y + 2.3, 0.4, 7, '#56a85a'); this.cols.push([x - 0.3, z - 0.3, x + 0.3, z + 0.3, y, y + 2.3]); return this; }
+    /* a baked furniture model (Props.furn, from the manifest): front faces −z at yaw 0, centred on (x, z), k scales it. Returns false when the model is not loaded so the caller draws the procedural piece. */
+    model(name, x, z, yaw, o){ const F = RW.Props && RW.Props.furn && RW.Props.furn[name]; if(!F) return false; o = o || {}; const k = o.k || 1, y = this.y; this.mb.addMesh(F.m, x, y, z, yaw || 0, k, null, o.ky || k);
+      const sw = Math.abs(Math.sin(yaw || 0)) > 0.7, hw = (sw ? F.d : F.w) * k / 2, hd = (sw ? F.w : F.d) * k / 2; this.cols.push([x - hw, z - hd, x + hw, z + hd, y, y + F.h * (o.ky || k)]); return true; }
+    plant(x, z){ if(this.model('plant', x, z, 0)) return this; const y = this.y; this.mb.cyl(x, z, y, y + 0.5, 0.28, 8, '#a9694a'); this.mb.cone(x, z, y + 0.4, y + 1.9, 0.6, 7, '#3f8f4a'); this.mb.cone(x, z, y + 1.1, y + 2.3, 0.4, 7, '#56a85a'); this.cols.push([x - 0.3, z - 0.3, x + 0.3, z + 0.3, y, y + 2.3]); return this; }
     bench(x, z, w, d, c){ this.box(x, z, w, d, 0.45, c || '#7a5a3a', '#9a7a52'); return this; }
     shelf(x, z, w, d, h, face){ const rows = Math.floor(h / 0.5); this.box(x, z, w, d, h, '#6b4b32'); const cols = ['#d9534f', '#f0ad4e', '#5bc0de', '#5cb85c', '#9b7bff', '#e8e0c8', '#e8803d'];
       for(let r = 0; r < rows; r++) for(let i = 0; i < Math.floor((face === 'n' || face === 's' ? w : d) / 0.45); i++){ const c = cols[(i * 3 + r * 5) % cols.length], hh = 0.28 + ((i * 7 + r) % 3) * 0.05, f = F[face || 's']; const px = f[0] === 0 ? x + 0.2 + i * 0.45 : x + (f[0] > 0 ? w : -0.0) - (f[0] > 0 ? 0 : -0.0), pz = f[1] === 0 ? z + 0.2 + i * 0.45 : z + (f[1] > 0 ? d : 0);
@@ -82,7 +85,7 @@
     r.screen('movers', 10, 1.7, 0.06, 5.4, 1.9, 's'); r.plant(1.2, 1.2); return r; });
   register('arcade', c => { const r = new Room(24, 18, 4.2, { name: 'Arcade', floor: '#1b1530', wall: '#2a2147', base: '#171126', lamp: [200, 120, 255], ceil: '#120d22' });
     const neon = [[255, 80, 200], [80, 220, 255], [255, 220, 80], [120, 255, 140]];
-    for(let row = 0; row < 2; row++) for(let i = 0; i < 5; i++){ const x = 3.5 + i * 3.8, z = 5 + row * 6, g = neon[(i + row) % 4]; r.box(x - 0.5, z - 0.4, 1, 0.8, 1.9, '#2e2a46', '#3b3560'); r.mb.boxAA(x - 0.4, 1.1, z + 0.38, x + 0.4, 1.75, z + 0.42, g, g, GLOW); r.mb.boxAA(x - 0.5, 1.9, z - 0.4, x + 0.5, 2.0, z + 0.4, g, g, GLOW); }
+    for(let row = 0; row < 2; row++) for(let i = 0; i < 5; i++){ const x = 3.5 + i * 3.8, z = 5 + row * 6, g = neon[(i + row) % 4]; if(r.model((i + row) % 3 === 2 ? 'claw' : 'arcade', x, z, Math.PI)) r.mb.boxAA(x - 0.5, 2.05, z - 0.4, x + 0.5, 2.1, z + 0.4, g, g, GLOW); else { r.box(x - 0.5, z - 0.4, 1, 0.8, 1.9, '#2e2a46', '#3b3560'); r.mb.boxAA(x - 0.4, 1.1, z + 0.38, x + 0.4, 1.75, z + 0.42, g, g, GLOW); r.mb.boxAA(x - 0.5, 1.9, z - 0.4, x + 0.5, 2.0, z + 0.4, g, g, GLOW); } }
     for(let x = 1; x < 23; x += 3) r.mb.quad([x, 0.01, 1.5], [x + 0.2, 0.01, 1.5], [x + 0.2, 0.01, 17], [x, 0.01, 17], [0, 1, 0], neon[(x / 3 | 0) % 4], GLOW);
     r.screen('arcade', 12, 1.8, 0.06, 6, 2.2, 's'); r.box(18, 14.2, 5, 1, 1.1, '#3b3560', '#5b4fa0');
     r.npc(20.5, 15.4, 0, 'Attendant', 'Gambling is only for players with a home. Feeling lucky?', '#b36be0', null, [{ label: 'Slots · Blackjack · Poker · Bus', app: 'Arcade' }, { label: 'Mini-games', app: 'Games' }]); return r; });
@@ -118,16 +121,16 @@
   /* a home, sized from the house: lounge + kitchen at the front, a bedroom per bed at the back. Apps live on your phone (P); the TV on the wall shows the news. */
   register('home', c => { const w = Math.max(7, Math.min(20, Math.round((c.w || 10) - 1))), d = Math.max(7, Math.min(18, Math.round((c.dp || 9) - 1))), beds = Math.max(1, Math.min(4, c.beds || 1)), big = c.type === 'mansion' || c.type === 'villa';
     const lv = (c.type === 'apartment' || c.type === 'studio') ? 1 : Math.max(1, Math.min(c.type === 'mansion' ? 3 : 2, c.fl || 2)), lh = big ? 3.2 : 2.9, o = { name: c.name || 'Home', floor: '#b08a62', wall: '#f0e6d2', base: '#c9b79a', lamp: [255, 226, 180], levels: lv, lh };
-    const r = new Room(w, d, lv > 1 ? lv * lh : (big ? 3.8 : 3), o), z0 = d * 0.42;
+    const r = new Room(w, d, lv > 1 ? lv * lh : (big ? 3.8 : 3), o), z0 = d * 0.42, bed = x => { if(!r.model('bed', x + 1.0, 0.5 + 1.15, Math.PI)){ r.box(x, 0.5, 2.0, 2.4, 0.5, '#e8e2f0', '#9db4d9'); r.box(x, 0.5, 2.0, 0.3, 1.1, '#6b4b32', '#6b4b32'); } };
     if(lv === 1){   // a flat or a one-storey home: lounge + kitchen at the front, bedrooms at the back
       r.cols.push([1, z0, w / 2 - 1.2, z0 + 0.15], [w / 2 + 1.2, z0, w - 1, z0 + 0.15]); r.mb.boxAA(1, 0, z0, w / 2 - 1.2, 3, z0 + 0.15, '#f0e6d2'); r.mb.boxAA(w / 2 + 1.2, 0, z0, w - 1, 3, z0 + 0.15, '#f0e6d2');
-      for(let i = 0; i < beds; i++){ const x = 1.2 + i * 2.8; if(x + 2.2 > w - 0.5) break; r.box(x, 0.5, 2.0, 2.4, 0.5, '#e8e2f0', '#9db4d9'); r.box(x, 0.5, 2.0, 0.3, 1.1, '#6b4b32', '#6b4b32'); }
-      r.box(w - 2.2, 0.4, 1.6, 0.6, 2.1, '#6b4b32', '#8a6a48'); r.box(0.5, z0 + 1.0, 1.1, 3.0, 0.5, '#4a6fa5', '#5d86c2'); r.box(2.3, z0 + 1.6, 1.3, 1.8, 0.45, '#8c5a3a', '#a9694a');   // sofa along the wall, coffee table: the way in from the door stays clear
+      for(let i = 0; i < beds; i++){ const x = 1.2 + i * 2.8; if(x + 2.2 > w - 0.5) break; bed(x); }
+      r.box(w - 2.2, 0.4, 1.6, 0.6, 2.1, '#6b4b32', '#8a6a48'); if(!r.model('sofa', 1.05, z0 + 2.5, -Math.PI / 2, { k: 1.25 })) r.box(0.5, z0 + 1.0, 1.1, 3.0, 0.5, '#4a6fa5', '#5d86c2'); r.box(2.3, z0 + 1.6, 1.3, 1.8, 0.45, '#8c5a3a', '#a9694a');   // sofa along the wall, coffee table: the way in from the door stays clear
     } else {        // a house: living room + kitchen downstairs, the bedrooms upstairs (a real staircase, on the side away from the door)
       const west = r.doorX > w / 2, X = (x, wd) => west ? w - x - wd : x, sx = west ? 1.2 : w - 2.3; let hole = null;
       for(let k = 0; k < lv - 1; k++){ r.at(k * lh); hole = r.stairs(sx, d - 1.0, 1.1, lh); r.slab((k + 1) * lh, hole); }
-      r.at(0); r.box(X(1, 3.2), 0.4, 3.2, 0.7, 0.95, '#d9d3c4', '#4b5563'); r.box(X(4.6, 1.0), 0.4, 1.0, 0.7, 2.1, '#6b4b32', '#8a6a48'); r.box(X(1.4, 4.2), d - 4.8, 4.2, 1.1, 0.5, '#4a6fa5', '#5d86c2'); r.box(X(1.6, 3.4), d - 7.5, 3.4, 1.3, 0.8, '#8c5a3a', '#a9694a'); r.plant(west ? 1 : w - 1, 1);
-      for(let k = 1; k < lv; k++){ r.at(k * lh); const per = Math.ceil(beds / (lv - 1)), room2 = (west ? w - 1.2 - 2.4 : sx - 1.4); for(let i = 0; i < per; i++){ const x = (west ? 2.6 : 1.2) + i * 2.8; if(x + 2.2 > (west ? w - 0.5 : sx - 0.3)) break; r.box(x, 0.5, 2.0, 2.4, 0.5, '#e8e2f0', '#9db4d9'); r.box(x, 0.5, 2.0, 0.3, 1.1, '#6b4b32', '#6b4b32'); } r.box(X(1, 2.2), d - 2.4, 2.2, 0.6, 2.1, '#6b4b32', '#8a6a48'); r.plant(west ? 1 : w - 1, 1); }
+      r.at(0); r.box(X(1, 3.2), 0.4, 3.2, 0.7, 0.95, '#d9d3c4', '#4b5563'); r.box(X(4.6, 1.0), 0.4, 1.0, 0.7, 2.1, '#6b4b32', '#8a6a48'); if(!r.model('sofa', X(1.4, 4.2) + 2.1, d - 4.25, 0, { k: 1.3 })) r.box(X(1.4, 4.2), d - 4.8, 4.2, 1.1, 0.5, '#4a6fa5', '#5d86c2'); r.box(X(1.6, 3.4), d - 7.5, 3.4, 1.3, 0.8, '#8c5a3a', '#a9694a'); r.plant(west ? 1 : w - 1, 1);
+      for(let k = 1; k < lv; k++){ r.at(k * lh); const per = Math.ceil(beds / (lv - 1)), room2 = (west ? w - 1.2 - 2.4 : sx - 1.4); for(let i = 0; i < per; i++){ const x = (west ? 2.6 : 1.2) + i * 2.8; if(x + 2.2 > (west ? w - 0.5 : sx - 0.3)) break; bed(x); } r.box(X(1, 2.2), d - 2.4, 2.2, 0.6, 2.1, '#6b4b32', '#8a6a48'); r.plant(west ? 1 : w - 1, 1); }
       r.at(0);
     }
     r.screen('tv', w / 2 - (lv > 1 ? 1.5 : 0), 0.9, 0.06, Math.min(3.2, w - 3), 1.5, 's'); if(lv === 1){ r.box(1, d - 2.6, 0.8, 2.6, 0.95, '#d9d3c4', '#4b5563'); r.plant(w - 1, d - 1); } return r; });
