@@ -45,9 +45,15 @@ html.perf-low .rw-btn,html.perf-low .rw-chip,html.perf-low #rwPrompt{backdrop-fi
 #rwDlg button{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.14);color:#fff;padding:11px 14px;border-radius:12px;font-weight:600;font-size:14px;text-align:left;cursor:pointer}
 #rwDlg button:hover{background:rgba(255,255,255,.2)}#rwDlg button.bye{background:none;border-color:transparent;opacity:.7}
 
-/* compass strip: heading scrolls under the fixed marker; the degrees sit below it */
-#rwCompass{position:absolute;left:50%;top:calc(52px + env(safe-area-inset-top,0px));transform:translateX(-50%);width:min(320px,calc(100vw - 32px));height:32px;pointer-events:none}
-#rwCompass canvas{display:block;width:100%;height:100%;-webkit-mask-image:linear-gradient(90deg,transparent,#000 22%,#000 78%,transparent);mask-image:linear-gradient(90deg,transparent,#000 22%,#000 78%,transparent)}
-#rwCompass i{position:absolute;left:50%;top:-6px;width:0;height:0;margin-left:-6px;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid #ffd45a;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
-#rwCompass::after{content:attr(data-deg);position:absolute;left:50%;top:33px;transform:translateX(-50%);font:700 12px system-ui,sans-serif;letter-spacing:.04em;color:#ffd45a;text-shadow:0 1px 4px rgba(0,0,0,.7)}
-@media (max-width:700px){#rwCompass{width:min(240px,calc(100vw - 32px))}}
+/* compass strip (top centre): the heading scrolls under the fixed marker; landmarks + what you own sit on it; the caption below names what you face.
+ * Always centred on the SCREEN (left:0/right:0/auto margins), never on the free space between other widgets. Wide screens: same row as the buttons and the minimap, width = what is left
+ * between them (they are ~340px wide on each side). Narrower: a row under the buttons. Phones in portrait: under the minimap. */
+#rwCompass{position:absolute;left:0;right:0;margin:0 auto;top:calc(10px + env(safe-area-inset-top,0px));width:min(640px,calc(100vw - 720px));min-width:300px;height:46px;border-radius:14px;background:rgba(20,16,12,.42);border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);pointer-events:none}
+html.perf-low #rwCompass{backdrop-filter:none;-webkit-backdrop-filter:none;background:rgba(20,16,12,.7)}
+#rwCompass canvas{display:block;width:100%;height:100%;-webkit-mask-image:linear-gradient(90deg,transparent,#000 9%,#000 91%,transparent);mask-image:linear-gradient(90deg,transparent,#000 9%,#000 91%,transparent)}
+#rwCompass i{position:absolute;left:50%;bottom:-8px;width:0;height:0;margin-left:-6px;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:8px solid #ffd45a;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
+#rwCompassLbl{position:absolute;left:50%;top:calc(100% + 10px);transform:translateX(-50%);display:flex;gap:10px;align-items:baseline;white-space:nowrap;font:700 12.5px system-ui,sans-serif;letter-spacing:.03em;text-shadow:0 1px 4px rgba(0,0,0,.8)}
+#rwCompassLbl .d{color:#ffd45a}#rwCompassLbl .t{font-size:13px}
+#rwLoc{top:calc(112px + env(safe-area-inset-top,0px))}
+@media (max-width:999px){#rwCompass{top:calc(52px + env(safe-area-inset-top,0px));width:min(560px,calc(100vw - 380px));min-width:280px}#rwLoc{top:calc(124px + env(safe-area-inset-top,0px))}}
+@media (max-width:700px){#rwCompass{top:calc(142px + env(safe-area-inset-top,0px));width:min(480px,calc(100vw - 24px));min-width:0}#rwLoc{top:calc(214px + env(safe-area-inset-top,0px))}}

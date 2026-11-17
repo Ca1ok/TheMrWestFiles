@@ -18,7 +18,7 @@
     const rootEl = document.createElement('div'); rootEl.id = 'rw';
     rootEl.innerHTML = `<canvas id="rwc" tabindex="0"></canvas><div id="rwHud">
       <div class="rw-top"><button class="rw-btn" id="rwPhone" title="Open WestOS (P)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><span>Phone</span></button><button class="rw-btn" id="rwTravel" title="Travel (M)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></svg><span>Travel</span></button><span class="rw-chip" id="rwClock"></span><span class="rw-chip" id="rwCash"></span></div>
-      <div id="rwCompass"><canvas id="rwCompassC" width="640" height="64"></canvas><i></i></div><div id="rwLoc"></div><div id="rwCross"></div><div id="rwTip"></div><div id="rwPrompt"></div><canvas id="rwMap" width="168" height="168"></canvas><div id="rwLabels"></div>
+      <div id="rwCompass"><canvas id="rwCompassC" width="560" height="46"></canvas><i></i><div id="rwCompassLbl"></div></div><div id="rwLoc"></div><div id="rwCross"></div><div id="rwTip"></div><div id="rwPrompt"></div><canvas id="rwMap" width="168" height="168"></canvas><div id="rwLabels"></div>
       <div id="rwDlg"></div><div id="rwHelp"><div><b>W A S D</b> walk</div><div><b>Shift</b> run &nbsp; <b>Space</b> jump</div><div><b>Mouse</b> look (click to capture)</div><div><b>E</b> open a door / talk to someone</div><div><b>M</b> map &nbsp; <b>P</b> phone (WestOS)</div><div><b>Esc</b> release the mouse</div></div><div id="rwPause">Click to look around</div>
       <div id="rwTouch"><div id="rwStick"><i></i></div><button id="rwBtnE">E</button><button id="rwBtnJ">⤒</button><button id="rwBtnR">Run</button></div>
       <div id="rwLoad"><div class="t">Stepping outside…</div><div class="bar"><i></i></div></div><div id="rwFade"></div></div>`;
@@ -151,19 +151,84 @@
       list.sort((a, b) => a.d - b.d); const n = Math.min(list.length, 14); while(labelPool.length < n){ const e = document.createElement('div'); labelsEl.appendChild(e); labelPool.push(e); }
       for(let i = 0; i < labelPool.length; i++){ const e = labelPool[i]; if(i >= n){ e.style.display = 'none'; continue; } const l = list[i], p = project(l.x, l.y, l.z); if(!p){ e.style.display = 'none'; continue; } e.style.display = 'block'; if(e._t !== l.t || e._c !== l.c){ e.textContent = l.t; e.className = 'rw-lab ' + l.c; e._t = l.t; e._c = l.c; } e.style.transform = `translate(${p[0].toFixed(0)}px,${p[1].toFixed(0)}px) translate(-50%,-100%)`; e.style.opacity = l.c === 'poi' ? clamp(1.3 - l.d / 140, 0.25, 1) : 1; }
     }
-    /* compass strip at the top: heading scrolls under a fixed centre marker (0° = north = −Z, 90° = east). Redrawn only when the heading changes. */
-    const cc = $('#rwCompassC'), cx2 = cc.getContext('2d'); let compassYaw = 1e9, compassIn = null;
+    /* COMPASS (top centre). The heading scrolls under the fixed marker (0° = north = −Z, 90° = east). On the strip, placed by bearing: LANDMARKS (dark badge, gold glyph) and everything YOU OWN
+     * (solid badge): your home / houses, laboratory + factory plots, cars, planes. The marker closest to the centre is named under the strip with its distance. Redrawn only when the heading,
+     * your position or the list of markers changes. EXTEND: LM (landmark id → glyph), CPAL (colours), GL (glyph drawings, a 12×12 box around 0,0), compassItems() (what is listed). */
+    const cc = $('#rwCompassC'), cx2 = cc.getContext('2d'), cLbl = $('#rwCompassLbl');
+    let compassYaw = 1e9, compassIn = null, cPx = 1e9, cPz = 1e9, cItemsAt = -1e9, cRev = 0, cSeen = -1, cSig = '', cItems = [], cLblTxt = '';
     const DIRS = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SW', 270: 'W', 315: 'NW' };
-    function compass(){
-      const yaw = P.yaw; if(Math.abs(yaw - compassYaw) < 0.0015 && compassIn === !!S.cell) return; compassYaw = yaw; compassIn = !!S.cell;
-      const W = cc.width, H = cc.height, span = 120, ppd = W / span, hd = ((yaw * 180 / Math.PI) % 360 + 360) % 360; cx2.clearRect(0, 0, W, H); cx2.textAlign = 'center'; cx2.textBaseline = 'middle'; cx2.shadowColor = 'rgba(0,0,0,.6)'; cx2.shadowBlur = 4;
-      for(let a = Math.floor((hd - span / 2) / 5) * 5; a <= hd + span / 2; a += 5){
-        const x = W / 2 + (a - hd) * ppd, d = ((a % 360) + 360) % 360, name = DIRS[d];
-        if(name){ const main = name.length === 1; cx2.fillStyle = d === 0 ? '#ff6a5a' : '#fff'; cx2.font = (main ? '800 24px' : '700 17px') + ' system-ui,sans-serif'; cx2.fillText(name, x, 22); }
-        else if(d % 15 === 0){ cx2.fillStyle = 'rgba(255,255,255,.85)'; cx2.fillRect(x - 1, 40, 2, 11); cx2.font = '600 13px system-ui,sans-serif'; cx2.fillStyle = 'rgba(255,255,255,.7)'; cx2.fillText(String(d), x, 8); }
-        else { cx2.fillStyle = 'rgba(255,255,255,.5)'; cx2.fillRect(x - 1, 44, 2, 6); }
+    const CSPAN = 150, CPAL = { poi: '#ffd24a', house: '#5bd68a', flask: '#4fd6c8', factory: '#ff9a4a', car: '#7ec8ff', plane: '#b9a4ff' };
+    const LM = { bank: 'bank', exchange: 'chart', shop: 'bag', arcade: 'pad', agency: 'key', hall: 'hall', uni: 'cap', lab: 'flask', ind: 'factory', plant: 'bolt', park: 'tree', dealer: 'car', airport: 'plane' };
+    const poly = (c, a) => { c.beginPath(); c.moveTo(a[0], a[1]); for(let i = 2; i < a.length; i += 2) c.lineTo(a[i], a[i + 1]); c.closePath(); c.fill(); };
+    const line = (c, w, a) => { c.lineWidth = w; c.beginPath(); c.moveTo(a[0], a[1]); for(let i = 2; i < a.length; i += 2) c.lineTo(a[i], a[i + 1]); c.stroke(); };
+    const GL = {
+      house: c => { poly(c, [-6.5, 0.5, 0, -6, 6.5, 0.5]); c.fillRect(-4.6, 0.5, 9.2, 5.6); }, building: c => { c.fillRect(-4.5, -6, 9, 12); },
+      bank: c => { poly(c, [-6.5, -2, 0, -6.5, 6.5, -2]); c.fillRect(-5, -1, 2, 6); c.fillRect(-1, -1, 2, 6); c.fillRect(3, -1, 2, 6); c.fillRect(-6.5, 5, 13, 1.6); },
+      chart: c => { line(c, 2.2, [-6, 5, -2, 0, 1, 3, 6, -5]); }, bag: c => { poly(c, [-5, -2, 5, -2, 6, 6, -6, 6]); c.lineWidth = 1.7; c.beginPath(); c.arc(0, -2, 3, Math.PI, 0); c.stroke(); },
+      pad: c => { c.fillRect(-6, 2, 12, 3.6); line(c, 2, [0, 2, 0, -3.5]); c.beginPath(); c.arc(0, -5, 2.4, 0, TAU); c.fill(); },
+      hall: c => { c.beginPath(); c.arc(0, 1, 5.6, Math.PI, 0); c.fill(); c.fillRect(-6.5, 1.6, 13, 1.8); c.fillRect(-5.2, 3.8, 10.4, 2.2); }, cap: c => { poly(c, [0, -5.5, 7, -1.5, 0, 2.5, -7, -1.5]); c.fillRect(-3.6, 1.6, 7.2, 3.8); },
+      flask: c => { poly(c, [-1.9, -6.5, 1.9, -6.5, 1.9, -1.5, 6.2, 5.8, -6.2, 5.8, -1.9, -1.5]); }, factory: c => { poly(c, [-6.5, 1, -6.5, -3, -2.2, 1, -2.2, -3, 2.2, 1, 2.2, -3, 6.5, 1]); c.fillRect(-6.5, 1, 13, 5); c.fillRect(3.6, -6.5, 2.3, 5); },
+      bolt: c => { poly(c, [1.6, -7, -4.6, 1, -0.6, 1, -1.6, 7, 4.6, -1.6, 0.6, -1.6]); }, tree: c => { c.beginPath(); c.arc(0, -2, 4.8, 0, TAU); c.fill(); c.fillRect(-0.9, 1, 1.8, 5.6); },
+      key: c => { c.beginPath(); c.arc(-2.6, -2.6, 3.2, 0, TAU); c.lineWidth = 2; c.stroke(); line(c, 2, [-0.2, -0.2, 6, 6]); line(c, 1.8, [3.6, 3.6, 5.4, 1.9]); },
+      car: c => { poly(c, [-6.6, 2.4, -6.6, -0.8, -4, -1, -2.6, -4.6, 2.6, -4.6, 4, -1, 6.6, -0.8, 6.6, 2.4]); c.beginPath(); c.arc(-3.6, 3.2, 2, 0, TAU); c.arc(3.6, 3.2, 2, 0, TAU); c.fill(); },
+      plane: c => { poly(c, [0, -7.2, 1.5, -2.2, 7.2, 2, 7.2, 3.6, 1.4, 1.8, 1, 5, 3, 6.4, 3, 7.4, 0, 6.6, -3, 7.4, -3, 6.4, -1, 5, -1.4, 1.8, -7.2, 3.6, -7.2, 2, -1.5, -2.2]); },
+      star: c => { const a = []; for(let i = 0; i < 10; i++){ const r = i % 2 ? 2.7 : 6.6, t = -Math.PI / 2 + i * Math.PI / 5; a.push(Math.cos(t) * r, Math.sin(t) * r); } poly(c, a); }
+    };
+    const dirName = hd => ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(hd / 45) % 8];
+    const distText = d => d < 100 ? Math.round(d) + ' m' : d < 1000 ? Math.round(d / 10) * 10 + ' m' : (d / 1000).toFixed(1) + ' km';
+    /* the list of markers (rebuilt about once a second: positions only change when you buy / sell / move house). Never throws: a missing piece just leaves its markers out. */
+    function compassItems(){
+      const out = [], my = me(), H = OS.homes; let homeRec2 = null, homeG = null;
+      try{ Object.keys(LM).forEach(id => { const p = L.poi(id); if(p) out.push({ k: 'poi', g: LM[id], x: p.x, z: p.z, name: poiName(id), own: false }); }); const pc = L.content(0, 0); if(pc) out.push({ k: 'poi', g: 'star', x: pc.cx, z: pc.cz, name: 'Town Square', own: false }); }catch(e){}
+      if(my){
+        const house = (id, label, home) => { try{ const h = L.house(+String(id).slice(1)); if(!h || !h.g) return null; let ad = ''; try{ const w = G.house(+String(id).slice(1)); ad = w && w.addr ? ' · ' + w.addr : ''; }catch(e){} out.push({ k: 'house', g: 'house', x: h.g.x, z: h.g.y, name: label + ad, own: true, home }); return h.g; }catch(e){ return null; } };
+        try{ homeRec2 = H.home && H.home(); if(homeRec2) homeG = house(homeRec2.id, homeRec2.owned ? 'Your home' : 'Rented home', true); }catch(e){}
+        try{ (H.mine && H.mine() || []).forEach(h => { if(!homeRec2 || h.id !== homeRec2.id) house(h.id, 'Your house', false); }); }catch(e){}
+        try{ const mine = ((H.plots && H.plots()) || {})[my] || {}; ['l', 'f'].forEach(k => { if(!mine[k]) return; const c = L.plotLot(k, my); if(c) out.push({ k: 'plot' + k, g: k === 'l' ? 'flask' : 'factory', x: c.x, z: c.z, name: k === 'l' ? 'Your laboratory' : 'Your factory', own: true }); }); }catch(e){}
+        try{ vehicleItems(out, homeG); }catch(e){}
       }
-      cx2.shadowBlur = 0; $('#rwCompass').dataset.deg = Math.round(hd) + '°';
+      const sig = out.map(i => i.k + i.name + i.n + ':' + Math.round(i.x) + ',' + Math.round(i.z)).join('|'); if(sig !== cSig){ cSig = sig; cRev++; } cItems = out;
+    }
+    /* cars + planes: where they stand (vehicles.js: kerb at home, the dealer's lot, the airport row) when this city has those sites; otherwise cars count as parked at your home and planes at the airport (if there is one). Close ones merge into one marker with a count. */
+    function vehicleItems(out, homeG){
+      const H = OS.homes, gar = (H.garage && H.garage()) || []; if(!gar.length) return; const VDc = H.vehicleCatalogue && H.vehicleCatalogue(), nm = id => { const m = VDc && VDc.get && VDc.get(id); return m ? m.name : 'vehicle'; };
+      let list = null; try{ if(root.RWVehicles) list = root.RWVehicles.owned(gar, homeG); }catch(e){ list = null; }
+      if(!list || !list.length){ const ap = L.poi('airport'); list = []; gar.forEach(g => { const pl = g.model && g.model.kind === 'plane'; if(pl && ap) list.push({ id: g.m, kind: 'plane', x: ap.x, z: ap.z, where: 'airport' }); else if(!pl && homeG) list.push({ id: g.m, kind: 'car', x: homeG.x, z: homeG.y, where: 'home' }); }); }
+      const cl = []; list.forEach(v => { const kind = v.kind === 'plane' ? 'plane' : 'car'; let c = cl.find(q => q.kind === kind && Math.hypot(q.x - v.x, q.z - v.z) < 40); if(c){ c.n++; c.sx += v.x; c.sz += v.z; } else cl.push({ kind, id: v.id, where: v.where, x: v.x, z: v.z, sx: v.x, sz: v.z, n: 1 }); });
+      cl.forEach(c => { const w = c.where === 'home' ? ' · at home' : c.where === 'airport' ? ' · at the airport' : c.where === 'dealer' ? ' · at the dealership' : ''; out.push({ k: c.kind, g: c.kind, x: c.sx / c.n, z: c.sz / c.n, n: c.n, own: true, name: c.n > 1 ? 'Your ' + (c.kind === 'plane' ? 'planes' : 'cars') + ' ×' + c.n + w : 'Your ' + nm(c.id) + w }); });
+    }
+    function compass(t){
+      const w = cc.clientWidth, h = cc.clientHeight; if(!w || !h) return; const dpr = Math.min(2, window.devicePixelRatio || 1), pw = Math.round(w * dpr), ph = Math.round(h * dpr), inside = !!S.cell, yaw = P.yaw;
+      if(t - cItemsAt > 1000){ cItemsAt = t; compassItems(); }
+      const resized = cc.width !== pw || cc.height !== ph;
+      if(!resized && Math.abs(yaw - compassYaw) < 0.0015 && compassIn === inside && cSeen === cRev && Math.hypot(P.x - cPx, P.z - cPz) < 0.35) return;
+      if(resized){ cc.width = pw; cc.height = ph; } compassYaw = yaw; compassIn = inside; cSeen = cRev; cPx = P.x; cPz = P.z;
+      const c = cx2, ppd = w / CSPAN, hd = ((yaw * 180 / Math.PI) % 360 + 360) % 360, mid = w / 2; c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, w, h); c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineCap = c.lineJoin = 'round';
+      /* the tape: ticks every 5°, numbers every 15°, letters at the eight directions */
+      c.shadowColor = 'rgba(0,0,0,.6)'; c.shadowBlur = 3;
+      for(let a = Math.floor((hd - CSPAN / 2) / 5) * 5; a <= hd + CSPAN / 2 + 5; a += 5){
+        const x = mid + (a - hd) * ppd, d = ((a % 360) + 360) % 360, name = DIRS[d];
+        if(name){ const main = name.length === 1; c.fillStyle = d === 0 ? '#ff6a5a' : '#fff'; c.font = (main ? '800 16px' : '700 12px') + ' system-ui,sans-serif'; c.fillText(name, x, h - 15); c.fillStyle = 'rgba(255,255,255,.8)'; c.fillRect(x - 1, h - 7, 2, 6); }
+        else if(d % 15 === 0){ c.fillStyle = 'rgba(255,255,255,.75)'; c.font = '600 10px system-ui,sans-serif'; c.fillText(String(d), x, h - 15); c.fillRect(x - 0.75, h - 7, 1.5, 5); }
+        else { c.fillStyle = 'rgba(255,255,255,.4)'; c.fillRect(x - 0.5, h - 5, 1, 3); }
+      }
+      c.shadowBlur = 0;
+      /* the markers (not inside a building: the street positions mean nothing there) */
+      let focus = null, fx = 1e9;
+      if(!inside){
+        const cand = []; for(const it of cItems){ const dx = it.x - P.x, dz = it.z - P.z, dist = Math.hypot(dx, dz); if(dist < 5) continue; const rel = ((Math.atan2(dx, -dz) * 180 / Math.PI - hd + 540) % 360) - 180; if(Math.abs(rel) > CSPAN / 2 + 8) continue; cand.push({ it, dist, sx: mid + rel * ppd }); }
+        cand.sort((a, b) => (b.it.own - a.it.own) || (a.dist - b.dist)); const placed = [], GAP = 23, cy = 11;
+        for(const q of cand){ const free = x => !placed.some(p => Math.abs(p.sx - x) < GAP); if(free(q.sx)){ placed.push(q); continue; } if(!q.it.own) continue; for(const k of [1, -1, 2, -2]){ const x = q.sx + k * GAP; if(x > 14 && x < w - 14 && free(x)){ q.sx = x; placed.push(q); break; } } }   // yours step aside for each other; landmarks just yield
+        placed.sort((a, b) => (a.it.own - b.it.own) || (b.dist - a.dist));            // yours are drawn last, on top
+        for(const q of placed){ const ax = Math.abs(q.sx - mid); if(ax < fx && ax < 13){ fx = ax; focus = q; } }
+        for(const q of placed){ const it = q.it, col = it.own ? (CPAL[it.g] || CPAL.poi) : CPAL.poi, on = q === focus, r = (it.own ? 10 : 9) * (on ? 1.14 : 1); c.save(); c.translate(q.sx, cy); c.globalAlpha = it.own ? 1 : clamp(1.15 - q.dist / 700, 0.62, 1);
+          c.beginPath(); c.arc(0, 0, r, 0, TAU); c.shadowColor = 'rgba(0,0,0,.55)'; c.shadowBlur = 4; c.fillStyle = it.own ? col : 'rgba(22,17,12,.82)'; c.fill(); c.shadowBlur = 0; c.lineWidth = it.own ? 1.6 : 1.4; c.strokeStyle = on ? '#fff' : it.own ? 'rgba(255,255,255,.85)' : col; c.stroke();
+          c.scale(r / 9.5 * 0.82, r / 9.5 * 0.82); c.fillStyle = c.strokeStyle = it.own ? '#14100c' : col; (GL[it.g] || GL.building)(c); c.restore();
+          if(it.n > 1){ c.save(); c.font = '800 10px system-ui,sans-serif'; c.fillStyle = '#14100c'; c.beginPath(); c.arc(q.sx + 8, cy + 8, 5.6, 0, TAU); c.fillStyle = '#fff'; c.fill(); c.fillStyle = '#14100c'; c.fillText(String(it.n), q.sx + 8, cy + 8.5); c.restore(); } }
+      }
+      /* caption under the strip: your heading, and the marker you are facing */
+      const txt = dirName(hd) + ' ' + Math.round(hd) + '°' + (focus ? '|' + focus.it.name + ' · ' + distText(focus.dist) + '|' + (focus.it.own ? (CPAL[focus.it.g] || CPAL.poi) : CPAL.poi) : '');
+      if(txt !== cLblTxt){ cLblTxt = txt; const pt = txt.split('|'); cLbl.innerHTML = '<span class="d">' + esc(pt[0]) + '</span>' + (pt[1] ? '<span class="t" style="color:' + pt[2] + '">' + esc(pt[1]) + '</span>' : ''); }
     }
     const mm = $('#rwMap').getContext('2d'); let mmAt = 0;
     function minimap(t){
@@ -255,7 +320,7 @@
       ensureModels(); const [np, nc] = fillActors(); drawPeople(actorBuf, np); if(nc) drawCars(carBuf, nc);
       if(S.cell){ const ni = fillInside(); if(ni){ gfx.env = RW.Env.INDOOR; drawPeople(inBuf, ni); gfx.env = e; } }
       const fx = grade && grade.fx; if(fx && !P.inside && (fx.kind === 'snow' || fx.kind === 'embers')) gfx.particles(fx, cv.height * 0.9);
-      labels(); minimap(t); compass(); hud(t);
+      labels(); minimap(t); compass(t); hud(t);
     }
     function loop(t){
       raf = requestAnimationFrame(loop); if(!S.running) return; if(document.hidden || S.phone || performance.now() < S.holdUntil){ last = t; return; } if(gfx.lost){ last = t; return; }
