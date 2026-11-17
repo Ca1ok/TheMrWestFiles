@@ -5,9 +5,8 @@
  * PRICES ARE IN CENTS (like all money in the WestEconomy). Changing a price here changes it for the client AND, after `node tools/build-rules.js`
  * and pasting database.rules.json into the Firebase console, for the server — until the rules are republished a changed price is simply refused.
  *
- * DRIVING-READY: every model carries the numbers a driving / flying controller needs (`drive` or `fly`: top speed in m/s, acceleration, braking, grip,
- * mass, dimensions…) and the 3-D world already gives every owned vehicle a place, a pose (x, z, yaw) and a collision box. `driveable` is false for now;
- * the day a controller exists it only has to read these numbers (see os/realworld/README.md → "Vehicles"). */
+ * Every model carries the numbers the driving / flying controller (os/realworld/drive.js) reads: `drive` or `fly` (top speed in m/s, acceleration, braking, grip,
+ * mass, dimensions…). `driveable` is true: owned vehicles can be driven / flown in the 3-D world (see os/realworld/README.md → "Vehicles"). */
 (function(root, factory){ if(typeof module === 'object' && module.exports) module.exports = factory(); else root.VehicleData = factory(); })(typeof self !== 'undefined' ? self : this, function(){
   const KMH = 1 / 3.6;
   /* body colours a buyer can choose (index stored in the garage record: 0..7) */
@@ -41,7 +40,7 @@
     { id: 'zenith',  kind: 'plane', style: 'jet',   name: 'Zenith X',   tag: 'Long-range jet',    price: 2400000000, seats: 12, top: 900, range: 9800, ceiling: 15500, blurb: 'Twelve seats, a bedroom aft and enough range to leave the country behind.',
       fly: { cruise: 850 * KMH, vr: 70, stall: 58, climb: 18, ceiling: 15500, runway: 1300, mass: 21000, span: 13.5, len: 15.5, hgt: 5.0 } }
   ];
-  const ALL = CARS.concat(PLANES), BY = {}; ALL.forEach(v => { v.driveable = false; BY[v.id] = v; });
+  const ALL = CARS.concat(PLANES), BY = {}; ALL.forEach(v => { v.driveable = true; BY[v.id] = v; });
   const SELL_BP = 7000, MAX_SLOTS = 12;                                       // the dealer buys a vehicle back at 70 % of what you paid; at most 12 vehicles
   const slotIds = () => Array.from({ length: MAX_SLOTS }, (_, i) => 'v' + (i + 1));
   const get = id => BY[id] || null, price = id => BY[id] ? BY[id].price : 0;

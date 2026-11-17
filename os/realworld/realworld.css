@@ -57,3 +57,18 @@ html.perf-low #rwCompass{backdrop-filter:none;-webkit-backdrop-filter:none;backg
 #rwLoc{top:calc(112px + env(safe-area-inset-top,0px))}
 @media (max-width:999px){#rwCompass{top:calc(52px + env(safe-area-inset-top,0px));width:min(560px,calc(100vw - 380px));min-width:280px}#rwLoc{top:calc(124px + env(safe-area-inset-top,0px))}}
 @media (max-width:700px){#rwCompass{top:calc(142px + env(safe-area-inset-top,0px));width:min(480px,calc(100vw - 24px));min-width:0}#rwLoc{top:calc(214px + env(safe-area-inset-top,0px))}}
+/* ---- driving (drive.js): dashboard, touch controls ---- */
+#rwDash{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);display:none;flex-direction:column;align-items:center;gap:7px;pointer-events:none;color:#fff;font-weight:700;text-shadow:0 1px 6px rgba(0,0,0,.65);max-width:94vw}
+#rw.driving #rwDash{display:flex}#rw.driving #rwPause,#rw.driving #rwHelp,#rw.driving #rwCross{display:none !important}
+#rwDash .spd{display:flex;align-items:baseline;gap:6px;padding:6px 18px;border-radius:16px;background:rgba(20,16,12,.55)}#rwDash .spd b{font:800 38px/1 ui-monospace,monospace;font-variant-numeric:tabular-nums}#rwDash .spd small{font-size:12px;opacity:.8}
+#rwDash .row{display:flex;gap:10px}#rwDash .row span{display:flex;flex-direction:column;align-items:center;min-width:74px;padding:5px 12px;border-radius:14px;background:rgba(20,16,12,.55);font-size:10.5px;letter-spacing:.08em;opacity:.95}#rwDash .row b{font:800 22px/1.15 ui-monospace,monospace;letter-spacing:0;font-variant-numeric:tabular-nums}
+#rwDash .thr{position:relative;width:min(320px,70vw);height:18px;border-radius:9px;background:rgba(20,16,12,.55);overflow:hidden}#rwDash .thr i{position:absolute;left:0;top:0;bottom:0;background:#4aa3ff}#rwDash .thr em{position:absolute;inset:0;font:700 10.5px/18px system-ui,sans-serif;font-style:normal;letter-spacing:.08em;text-align:center}
+#rwDash .warn,#rwDash .ok{padding:5px 16px;border-radius:12px;font:800 18px/1.2 system-ui,sans-serif;letter-spacing:.12em}#rwDash .warn{background:#d83b2e;animation:rwBlink .5s steps(2) infinite}#rwDash .ok{background:#2c9a55}
+@keyframes rwBlink{50%{opacity:.35}}
+#rwDash .hint{font-weight:500;font-size:12px;opacity:.85;text-align:center;padding:4px 12px;border-radius:10px;background:rgba(20,16,12,.4)}
+#rwDrv{display:none}#rw.touch.driving #rwDrv{display:block}#rw.driving #rwBtnJ,#rw.driving #rwBtnR{display:none}
+#rw.touch.driving #rwBtnE{bottom:210px;right:16px;font-size:13px}
+#rwDrv button{position:fixed;border-radius:50%;border:2px solid rgba(255,255,255,.45);background:rgba(20,16,12,.55);color:#fff;font:800 14px system-ui,sans-serif;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none}
+#rwDrv button.on{background:#4aa3ff;border-color:#fff}
+#rwTG{right:16px;bottom:24px;width:84px;height:84px}#rwTB{right:112px;bottom:24px;width:68px;height:68px}#rwTH{right:16px;bottom:120px;width:62px;height:62px;font-size:12px !important}
+#rwTV{right:16px;top:56px;width:50px;height:50px;font-size:11px !important}#rwTT{right:76px;top:56px;width:50px;height:50px;font-size:11px !important;display:none}#rw.drv-plane #rwTT{display:block}

@@ -10,8 +10,17 @@
   /* The whole city sits on one gently rolling plateau (radius = layout.radius()), so streets and houses never meet a slope; outside it the hills grow to full height over 300 m. */
   let CR = -1;
   function setup(radius){ CR = radius; }
-  function height(x, z){ const d = Math.hypot(x, z), w = 1 - sm(CR, CR + 300, d), n = nat(x, z); return n * (1 - w) + n * 0.1 * w; }
+  /* THE RUNWAY: east of the city, along the x axis, flat as a table (the ground is levelled over the strip and ~100 m beyond it). Painted by chunkgen, flown from by drive.js. */
+  const RWY = { gap: 70, len: 800, hw: 20, shoulder: 10, blend: 100 };
+  const rwy = () => CR < 0 ? null : { x0: CR + RWY.gap, x1: CR + RWY.gap + RWY.len, z: 0, hw: RWY.hw, len: RWY.len };
+  function height(x, z){
+    const d = Math.hypot(x, z), w = 1 - sm(CR, CR + 300, d), n = nat(x, z); let h = n * (1 - w) + n * 0.1 * w;
+    if(CR >= 0 && x > CR + RWY.gap - 170 && x < CR + RWY.gap + RWY.len + 170 && Math.abs(z) < RWY.hw + RWY.shoulder + RWY.blend){
+      const ex = Math.max(CR + RWY.gap - 60 - x, x - (CR + RWY.gap + RWY.len + 60), 0), ez = Math.max(Math.abs(z) - (RWY.hw + RWY.shoulder), 0); h *= sm(0, RWY.blend, Math.hypot(ex, ez));   // 0 on the runway, hills again 100 m away
+    }
+    return h;
+  }
   /* 0 = open country, 1 = the middle of the city (tints the ground, keeps forest out) */
   function built(x, z){ return 1 - sm(CR * 0.9, CR + 220, Math.hypot(x, z)); }
-  return { setup, height, built, nat, vn, hh, sm };
+  return { setup, height, built, nat, vn, hh, sm, rwy, RWY };
 });

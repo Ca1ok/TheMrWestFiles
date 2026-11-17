@@ -3,7 +3,7 @@
  *   owned(garage, homeHouse)                  the player's own vehicles: [{ slot, id, style, kind, col, x, z, yaw, hl, hw, where }]
  * Poses: x, z (world metres), yaw (the same convention as people and NPC cars: forward = (sin yaw, -cos yaw)), hl/hw = half length / half width for the collision box.
  * Cars park at the kerb in front of your home (two per house), the rest in the dealership's customer lot; planes stand in the owners' row behind the airport terminal, packed by wingspan.
- * DRIVING-READY: each entry is a plain object {x, z, yaw, speed:0}; a future controller only has to move it (and persist the pose). `RealWorld.vehicles.canDrive()` stays false until then. */
+ * Each entry is a plain object {x, z, yaw, speed:0}; the driving controller in game.js (drive.js physics) moves it and persists the pose in the player's prefs. `canDrive()` is true. */
 (function(root, factory){ if(typeof module === 'object' && module.exports) module.exports = factory(require('./layout.js'), require('../../data/vehicle-data.js')); else root.RWVehicles = factory(root.RWLayout, root.VehicleData); })(typeof self !== 'undefined' ? self : this, function(L, VD){
   const yawOf = d => Math.atan2(d[0], -d[1]), neg = d => [-d[0], -d[1]];
   const dims = v => v.kind === 'plane' ? { hl: v.fly.len / 2, hw: Math.min(v.fly.span, 4.5) / 2 } : { hl: v.drive.len / 2, hw: v.drive.wid / 2 };
@@ -25,5 +25,5 @@
   }
   /* colliders in the engine's stride-8 format [0, x, z, halfW, halfD, cos, sin, top]: a box turned by yaw (its length runs along the heading) */
   function colliders(list, groundAt){ const a = []; list.forEach(q => { const y = groundAt ? groundAt(q.x, q.z) : 0, hx = q.kind === 'plane' ? Math.min(q.hw, 1.3) : q.hw, c = Math.cos(q.yaw), s = Math.sin(q.yaw); a.push(0, q.x, q.z, hx + 0.1, q.hl + 0.1, c, s, y + (q.kind === 'plane' ? 2.6 : 1.5)); }); return a; }
-  return { showcase, owned, colliders, canDrive: () => false };
+  return { showcase, owned, colliders, canDrive: () => true };
 });

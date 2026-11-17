@@ -7,7 +7,7 @@
   const cfg = RW.config = Object.assign({ radius: 8, perfRadius: 5, fov: 72, walk: 4.4, run: 8.4, jump: 5.6, grav: 17, eye: 1.55, pr: 0.36, sens: 0.0022, far: 1700, npcRange: 230, carRange: 480, minScale: 0.55 }, RW.config || {});
   /* landmark id (WorldGen.POIS) → the interior to build when you walk in. Add a line + RealWorld.Interiors.register('<kind>', …) for a new public building. */
   const BUILDINGS = RW.buildings = { bank: { kind: 'bank', name: 'Bank' }, exchange: { kind: 'exchange', name: 'Stock Exchange' }, shop: { kind: 'shop', name: 'WestShop' }, arcade: { kind: 'arcade', name: 'Arcade' }, agency: { kind: 'agency', name: 'Estate Agency' }, hall: { kind: 'hall', name: 'Council Hall' },
-    uni: { kind: 'uni', name: 'University Library' }, lab: { kind: 'lab', name: 'Research Institute' }, ind: { kind: 'ind', name: 'Freight Depot' }, plant: { kind: 'plant', name: 'Power Plant' } };
+    dealer: { kind: 'dealer', name: 'Car Dealership' }, airport: { kind: 'airport', name: 'Private Airport' }, uni: { kind: 'uni', name: 'University Library' }, lab: { kind: 'lab', name: 'Research Institute' }, ind: { kind: 'ind', name: 'Freight Depot' }, plant: { kind: 'plant', name: 'Power Plant' } };
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), TAU = Math.PI * 2, wrapA = a => Math.atan2(Math.sin(a), Math.cos(a)), sleep = ms => new Promise(r => setTimeout(r, ms));
   const hsl = (h, s, l) => { s /= 100; l /= 100; const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l), f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))); return [f(0) * 255, f(8) * 255, f(4) * 255]; };
   const pack = c => (Math.round(c[0]) * 65536 + Math.round(c[1]) * 256 + Math.round(c[2]));
@@ -18,9 +18,9 @@
     const rootEl = document.createElement('div'); rootEl.id = 'rw';
     rootEl.innerHTML = `<canvas id="rwc" tabindex="0"></canvas><div id="rwHud">
       <div class="rw-top"><button class="rw-btn" id="rwPhone" title="Open WestOS (P)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><span>Phone</span></button><button class="rw-btn" id="rwTravel" title="Travel (M)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></svg><span>Travel</span></button><span class="rw-chip" id="rwClock"></span><span class="rw-chip" id="rwCash"></span></div>
-      <div id="rwCompass"><canvas id="rwCompassC" width="560" height="46"></canvas><i></i><div id="rwCompassLbl"></div></div><div id="rwLoc"></div><div id="rwCross"></div><div id="rwTip"></div><div id="rwPrompt"></div><canvas id="rwMap" width="168" height="168"></canvas><div id="rwLabels"></div>
+      <div id="rwCompass"><canvas id="rwCompassC" width="560" height="46"></canvas><i></i><div id="rwCompassLbl"></div></div><div id="rwLoc"></div><div id="rwCross"></div><div id="rwTip"></div><div id="rwPrompt"></div><div id="rwDash"></div><canvas id="rwMap" width="168" height="168"></canvas><div id="rwLabels"></div>
       <div id="rwDlg"></div><div id="rwHelp"><div><b>W A S D</b> walk</div><div><b>Shift</b> run &nbsp; <b>Space</b> jump</div><div><b>Mouse</b> look (click to capture)</div><div><b>E</b> open a door / talk to someone</div><div><b>M</b> map &nbsp; <b>P</b> phone (WestOS)</div><div><b>Esc</b> release the mouse</div></div><div id="rwPause">Click to look around</div>
-      <div id="rwTouch"><div id="rwStick"><i></i></div><button id="rwBtnE">E</button><button id="rwBtnJ">⤒</button><button id="rwBtnR">Run</button></div>
+      <div id="rwTouch"><div id="rwStick"><i></i></div><button id="rwBtnE">E</button><button id="rwBtnJ">⤒</button><button id="rwBtnR">Run</button><div id="rwDrv"><button id="rwTG">Gas</button><button id="rwTB">Brake</button><button id="rwTH">Hand</button><button id="rwTV">View</button><button id="rwTT">Taxi</button></div></div>
       <div id="rwLoad"><div class="t">Stepping outside…</div><div class="bar"><i></i></div></div><div id="rwFade"></div></div>`;
     screen.insertBefore(rootEl, document.getElementById('menubar'));
     const cv = $('#rwc'), S = { running: false, phone: false, mode: 'world', nh: 64, nd: 1, scale: 1, fps: 60, holdUntil: 0, loading: true, t0: 0 };
@@ -32,6 +32,141 @@
     const toast = m => { try{ OS.toast(m); }catch(e){} };
     const perfLow = () => document.documentElement.classList.contains('perf-low');
     const nh = () => { const w = OS.homes.world && OS.homes.world(); const n = w ? Object.keys(w).length : 0; return Math.max(64, n || 512); };
+    /* ---------------- vehicles (vehicles.js): showroom models + your own cars and planes, drawn instanced, solid, and ready to be driven later ---------------- */
+    const V = { list: [], sig: '', cols: null, look: null }, VD = root.VehicleData, VH = root.RWVehicles;
+    function rebuildVehicles(){
+      if(!VH || !VD || dv) return; let garage = []; try{ garage = OS.homes.garage ? OS.homes.garage() : []; }catch(e){}
+      const h = OS.homes.home && OS.homes.home(), hg = h && h.id ? (L.house(+String(h.id).slice(1)) || {}).g : null, sig = garage.map(g => g.slot + g.m + g.col).join() + '|' + (hg ? h.id : '') + '|' + S.nh; if(sig === V.sig) return; V.sig = sig;
+      V.list = VH.showcase('dealer').concat(VH.showcase('airport'), VH.owned(garage, hg || null)); applyParking(garage); V.cols = V.list.length ? Float32Array.from(VH.colliders(V.list, T.height)) : null; V.bufs = null;
+    }
+    const vehBufs = {};
+    function fillVehicles(){
+      const out = {}, px = P.x, pz = P.z, hexOf = i => VD.colorHex(i);
+      for(const q of V.list){ const dx = q.x - px, dz = q.z - pz; if(dx * dx + dz * dz > cfg.npcRange ** 2) continue; const b = vehBufs[q.style] || (vehBufs[q.style] = new Float32Array(8 * 16)); let o = out[q.style]; if(!o) o = out[q.style] = { buf: b, n: 0 };
+        if(o.n * 8 + 8 > o.buf.length){ const nb = new Float32Array(o.buf.length * 2); nb.set(o.buf); o.buf = vehBufs[q.style] = nb; } const rgb = M.rgb(hexOf(q.col)), i = o.n++ * 8, f = o.buf; f[i] = q.x; f[i + 1] = q.y != null ? q.y : T.height(q.x, q.z) + (q.kind === 'plane' ? 0.05 : 0.1); f[i + 2] = q.z; f[i + 3] = q.yaw; f[i + 4] = q.pitch || 0; f[i + 5] = q.roll || 0; f[i + 6] = pack(rgb); f[i + 7] = pack(rgb.map(c => c * 0.5)); }
+      return out;
+    }
+    /* ---------------- driving (drive.js): E on your own car or plane gets you in, E again gets you out ----------------
+     * One control scheme for every device: KEYBOARD (WASD / arrows), MOUSE (cursor offset from the screen centre = steering wheel / stick; with the pointer captured, movement works like a stick that
+     * springs back; left / right button = gas / brake or throttle up / down; wheel = throttle) and TOUCH (the left stick + big on-screen buttons). The physics is os/realworld/drive.js (pure, tested). */
+    const Dr = RW.Drive, mouse = { px: 0, py: 0, sx: 0, sy: 0, l: false, rb: false, at: 0, in: false }, tb = {};
+    let dv = null, dashAt = 0, dashHtml = '';
+    const parkKey = q => q.slot + ':' + (q.t || 0);
+    const parkedAll = () => { try{ return OS.prefs.get('rwVeh') || {}; }catch(e){ return {}; } };
+    /* where you left a vehicle is remembered per garage record (slot + purchase time) in your own prefs — nothing goes to the shared database */
+    function setParked(q, on){ try{ const pk = Object.assign({}, parkedAll()), k = parkKey(q); if(on) pk[k] = [Math.round(q.x * 10) / 10, Math.round(q.z * 10) / 10, Math.round(q.yaw * 100) / 100]; else delete pk[k]; const ks = Object.keys(pk); if(ks.length > 40) delete pk[ks[0]]; OS.prefs.set('rwVeh', pk); }catch(e){} }
+    function applyParking(garage){
+      const pk = parkedAll(), live = {}; let stale = false;
+      V.list.forEach(q => { if(!q.slot) return; const g = garage.find(x => x.slot === q.slot); q.t = g ? g.t : 0; live[parkKey(q)] = 1; const r = pk[parkKey(q)];
+        if(Array.isArray(r) && r.length === 3 && r.every(isFinite) && Math.hypot(r[0], r[1]) < L.radius() + 2200){ q.x = r[0]; q.z = r[1]; q.yaw = r[2]; } });
+      if(garage.length) for(const k in pk) if(!live[k]) stale = true;         // a sold vehicle's spot (never pruned while the garage has not loaded yet)
+      if(stale){ try{ const keep = {}; for(const k in pk) if(live[k]) keep[k] = pk[k]; OS.prefs.set('rwVeh', keep); }catch(e){} }
+    }
+    const lerpA = (a, b, k) => wrapA(a + wrapA(b - a) * k);
+    function startDrive(q){
+      if(dv || !S.running || S.phone || S.cell || S.room || S.busy || S.loading || !Dr) return false; const m = VD.get(q.id); if(!m || !m.driveable) return false;
+      const car = m.kind === 'car', s = car ? Dr.car(m, { x: q.x, z: q.z, yaw: q.yaw }) : Dr.plane(m, { x: q.x, z: q.z, yaw: q.yaw }); s.y = T.height(q.x, q.z);
+      let view = 'chase', inv = false; try{ view = OS.prefs.get('rwView') === 'cockpit' ? 'cockpit' : 'chase'; inv = OS.prefs.get('rwInv') === true; }catch(e){}
+      dv = { q, m, s, kind: m.kind, car, view, inv, cYaw: q.yaw, cPitch: 0, thr: 0, pitchIn: 0, rollIn: 0, t0: performance.now(), shake: 0, edgeAt: 0, hold: false, cam: { pos: [q.x, s.y + 3, q.z], yaw: q.yaw, pitch: -0.1, roll: 0, fov: cfg.fov * Math.PI / 180, near: 0.25, far: cfg.far } };
+      q.driven = true; const rest = V.list.filter(x => x !== q); V.cols = rest.length ? Float32Array.from(VH.colliders(rest, T.height)) : null;
+      S.drive = dv.kind; P.vx = P.vz = P.vy = 0; mouse.in = false; mouse.sx = mouse.sy = 0; mouse.l = mouse.rb = false; closeDialog(true); setPrompt(null); curNpc = curDoor = null; V.look = null;
+      rootEl.classList.add('driving', 'drv-' + dv.kind); $('#rwBtnE').textContent = 'Exit';
+      $('#rwTG').textContent = car ? 'Gas' : 'Thr ▲'; $('#rwTB').textContent = car ? 'Brake' : 'Thr ▼'; $('#rwTH').textContent = car ? 'Hand' : 'Brake';
+      toast(car ? 'Driving the ' + m.name + '.' : 'Flying the ' + m.name + '. Full throttle, then pull back at ' + Math.round(s.P.vr * 3.6) + ' km/h.'); return true;
+    }
+    /* mode: undefined = get out and park where you stand · 'home' = send it back to its parking spot · 'crash' = it was wrecked, towed back */
+    function endDrive(mode, msg){
+      if(!dv) return; const d = dv, q = d.q, s = d.s; dv = null; S.drive = null; rootEl.classList.remove('driving', 'drv-car', 'drv-plane'); $('#rwBtnE').textContent = 'E'; tb.gas = tb.brake = tb.hand = false; mouse.l = mouse.rb = false;
+      q.driven = false; q.pitch = q.roll = 0; q.y = null;
+      if(mode === 'home' || mode === 'crash'){
+        setParked(q, false); V.sig = ''; rebuildVehicles(); const nq = V.list.find(x => x.slot === q.slot && x.t === q.t) || q, rx = Math.cos(nq.yaw), rz = Math.sin(nq.yaw), off = (nq.hw || 1) + 1.6;
+        teleport(nq.x + rx * off, nq.z + rz * off, nq.yaw); if(msg) toast(msg); return;
+      }
+      q.x = s.x; q.z = s.z; q.yaw = s.yaw; setParked(q, true); V.sig = ''; rebuildVehicles();
+      const rx = Math.cos(s.yaw), rz = Math.sin(s.yaw), off = -((d.car ? d.m.drive.wid / 2 : 2.2) + 1.1);       // step out on the left
+      let px = s.x + rx * off, pz = s.z + rz * off, h = T.height(px, pz); try{ const o = Phys.resolve(px, pz, h, collSets(), cells.disabled(), cfg.pr); px = o.x; pz = o.z; h = T.height(px, pz); }catch(e){}
+      P.x = px; P.z = pz; P.yaw = s.yaw; P.pitch = 0; P.vx = P.vz = P.vy = 0; P.y = P.cy = h; P.grounded = true; if(msg) toast(msg);
+    }
+    function exitDrive(){
+      if(!dv) return; const s = dv.s;
+      if(dv.car ? Math.abs(s.u) > 3 : (!s.onGround || s.speed > 5)){ toast(dv.car ? 'Slow down to get out.' : s.onGround ? 'Stop the plane first (Space = brakes).' : 'You cannot get out while flying!'); return; }
+      endDrive();
+    }
+    /* taxi: put the plane at the start of the runway (fades out while the ground streams in) */
+    async function taxiToRunway(){
+      const d = dv, s = d.s, R = T.rwy(); if(!R || d.hold) return; if(!s.onGround || s.speed > 4){ toast('Land and stop first.'); return; }
+      d.hold = true; fade(true); await sleep(280); if(dv !== d) return;
+      s.x = R.x0 + 30; s.z = R.z; s.vx = s.vz = s.vy = 0; s.throttle = 0; d.thr = 0; const b = Dr.basis(Math.PI / 2, 0, 0); s.B.f = b.f; s.B.r = b.r; s.B.u = b.u; s.yaw = Math.PI / 2; s.pitch = s.roll = 0; s.y = T.height(s.x, s.z); s.onGround = true; d.cYaw = s.yaw; P.x = s.x; P.z = s.z;
+      if(st) st.update(P.x, P.z); const t0 = performance.now(); while(!ringReady() && performance.now() - t0 < 4500){ await sleep(60); if(st){ st.update(P.x, P.z); st.upload(3); } }
+      d.hold = false; fade(false); toast('On the runway, facing east.');
+    }
+    function driveKey(k, e){
+      if(k === 'KeyV'){ dv.view = dv.view === 'chase' ? 'cockpit' : 'chase'; try{ OS.prefs.set('rwView', dv.view); }catch(x){} e.preventDefault(); return true; }
+      if(k === 'KeyI' && !dv.car){ dv.inv = !dv.inv; try{ OS.prefs.set('rwInv', dv.inv); }catch(x){} toast(dv.inv ? 'Pitch inverted: push up = nose up.' : 'Pitch: pull back = nose up.'); e.preventDefault(); return true; }
+      if(k === 'KeyT' && !dv.car){ taxiToRunway(); e.preventDefault(); return true; }
+      if(k === 'KeyH'){ endDrive('home', 'Your ' + dv.m.name + ' is back at its parking spot.'); e.preventDefault(); return true; }
+      return false;
+    }
+    const dz = v => Math.abs(v) < 0.1 ? 0 : (v - Math.sign(v) * 0.1) / 0.9, ramp = (cur, tgt, dt, up, dn) => cur + clamp(tgt - cur, -dt * (Math.abs(tgt) < Math.abs(cur) ? dn : up), dt * (Math.abs(tgt) < Math.abs(cur) ? dn : up));
+    /* keyboard + mouse + touch → one set of controls */
+    function readDrive(dt, busy){
+      const d = dv, k = busy ? {} : keys, tc = touch.on && !busy, key = (a, b) => (k[a] || k[b]) ? 1 : 0, lk = locked();
+      if(lk && performance.now() - mouse.at > 160){ const f = Math.exp(-dt * 1.6); mouse.sx *= f; mouse.sy *= f; }
+      const mx = busy ? 0 : dz(lk ? mouse.sx : (mouse.in ? mouse.px : 0)), my = busy ? 0 : dz(lk ? mouse.sy : (mouse.in ? mouse.py : 0)), sx = tc ? touch.mx : 0, sy = tc ? touch.mz : 0;
+      const gas = !busy && (k.KeyW || k.ArrowUp && d.car || tb.gas || mouse.l || sy < -0.35), back = !busy && (k.KeyS || k.ArrowDown && d.car || tb.brake || mouse.rb || sy > 0.35 && d.car);
+      const kRoll = key('KeyD', 'ArrowRight') - key('KeyA', 'ArrowLeft'), roll = kRoll || (Math.abs(sx) > 0.05 ? sx : mx);
+      if(d.car) return { thr: (gas ? 1 : 0) - (back ? 1 : 0), steer: clamp(roll, -1, 1), brake: 0, hand: (!busy && (k.Space || k.ShiftLeft || tb.hand)) ? 1 : 0 };
+      d.thr = clamp(d.thr + ((gas ? 1 : 0) - (back ? 1 : 0)) * dt * 0.45, 0, 1);
+      const kPitch = key('ArrowDown', 'ArrowUp') ? (k.ArrowDown ? 1 : 0) - (k.ArrowUp ? 1 : 0) : 0, raw = kPitch || (tc && Math.abs(sy) > 0.05 ? sy : my), pT = clamp(d.inv ? -raw : raw, -1, 1);
+      d.pitchIn = kPitch ? ramp(d.pitchIn, pT * 0.75, dt, 1.3, 5) : pT;        // keys give up to 75 % of the stick, slowly: a held key cannot zoom the plane into a stall
+      d.rollIn = kRoll ? ramp(d.rollIn, kRoll, dt, 3, 6) : clamp(roll, -1, 1);
+      return { thr: d.thr, pitch: d.pitchIn, roll: d.rollIn, yaw: 0, brake: (!busy && (k.Space || tb.hand)) ? 1 : 0, assist: true };
+    }
+    function driveCamera(dt){
+      const d = dv, s = d.s, c = d.cam, car = d.car, sp = Math.abs(s.speed), m = d.m, len = car ? m.drive.len : m.fly.len;
+      c.fov = (cfg.fov + clamp(sp / (car ? 60 : 110), 0, 1) * (car ? 12 : 8)) * Math.PI / 180; d.shake = Math.max(0, d.shake - dt * 2.5); const sh = d.shake * 0.15;
+      if(d.view === 'cockpit'){
+        let ex, ey, ez; if(car){ const cy = Math.cos(s.yaw), sy = Math.sin(s.yaw); ex = s.x + sy * 0.25 + cy * -0.32; ez = s.z - cy * 0.25 + sy * -0.32; ey = s.y + 1.22; c.yaw = s.yaw; c.pitch = s.pitch * 0.6; c.roll = s.roll * 0.4; }
+        else { const B = s.B, up = 0.55 + m.fly.hgt * 0.62 + 0.55, fw = len * 0.14; ex = s.x + B.f[0] * fw + B.u[0] * up; ey = s.y + B.f[1] * fw + B.u[1] * up; ez = s.z + B.f[2] * fw + B.u[2] * up; c.yaw = s.yaw; c.pitch = s.pitch; c.roll = s.roll; }
+        c.pos = [ex + (Math.random() - 0.5) * sh, ey + (Math.random() - 0.5) * sh, ez]; return;
+      }
+      d.cYaw = lerpA(d.cYaw, s.yaw, 1 - Math.exp(-dt * (car ? 4.5 : 3.2))); d.cPitch += ((car ? 0 : s.pitch * 0.7) - d.cPitch) * (1 - Math.exp(-dt * 3));
+      const dist = car ? 5.4 + len * 0.45 + clamp(sp * 0.03, 0, 3) : 10 + len * 1.1 + clamp(sp * 0.04, 0, 7), cy = Math.cos(d.cYaw), sy = Math.sin(d.cYaw), cp = Math.cos(d.cPitch), spch = Math.sin(d.cPitch);
+      const tx = s.x, ty = s.y + (car ? 1.2 : 1.6), tz = s.z, h = car ? 1.7 + dist * 0.05 : 2.4 + dist * 0.12;
+      let px = tx - sy * cp * dist, py = ty - spch * dist + h, pz = tz + cy * cp * dist; py = Math.max(py, T.height(px, pz) + 0.8);
+      const dx = tx - px, dy = ty - py, dzz = tz - pz; c.pos = [px + (Math.random() - 0.5) * sh, py + (Math.random() - 0.5) * sh, pz]; c.yaw = Math.atan2(dx, -dzz); c.pitch = Math.atan2(dy, Math.hypot(dx, dzz)); c.roll += ((car ? 0 : s.roll * 0.3) - c.roll) * (1 - Math.exp(-dt * 4));
+    }
+    const kmh = v => Math.round(Math.abs(v) * 3.6);
+    function driveHint(d){
+      const s = d.s, tc = touch.on, now = performance.now() - d.t0;
+      if(d.car) return tc ? 'Stick steers · Gas / Brake · Exit' : 'W gas · S brake / reverse · A D steer · Space handbrake · V view · E get out · H back home';
+      if(s.onGround) return tc ? 'Thr ▲ to full, then pull the stick down at ' + kmh(s.P.vr) + ' km/h · Taxi = runway' : 'W throttle up · A D steer · pull back (↓) at ' + kmh(s.P.vr) + ' km/h · Space brakes · T runway · V view · E exit';
+      return tc ? 'Stick: pitch + bank · Thr ▲▼ · land on the runway' : 'Mouse or ↑↓ pitch · A D bank · W S throttle · Space brakes · I invert · V view · H hangar';
+    }
+    function dash(t){
+      if(t - dashAt < 100) return; dashAt = t; const d = dv, s = d.s; let h;
+      if(d.car) h = '<div class="spd"><b>' + kmh(s.u) + '</b><small>km/h' + (s.u < -0.5 ? ' · R' : '') + '</small></div>';
+      else { const warn = s.stallWarn ? '<div class="warn">STALL</div>' : (!s.onGround && s.alt < 70 && s.vy < -7 ? '<div class="warn">PULL UP</div>' : (s.onGround && s.speed > s.P.vr * 0.98 ? '<div class="ok">ROTATE</div>' : ''));
+        h = warn + '<div class="row"><span>SPEED<b>' + kmh(s.ias) + '</b></span><span>ALT<b>' + Math.round(s.alt) + '</b></span><span>V/S<b>' + (s.vy >= 0 ? '+' : '') + s.vy.toFixed(1) + '</b></span></div><div class="thr"><i style="width:' + Math.round(d.thr * 100) + '%"></i><em>THROTTLE ' + Math.round(d.thr * 100) + '%</em></div>'; }
+      h += '<div class="hint">' + esc(driveHint(d)) + '</div>'; if(h !== dashHtml){ dashHtml = h; $('#rwDash').innerHTML = h; }
+    }
+    function driveUpdate(dt, t, busy){
+      const d = dv, s = d.s, q = d.q, inp = readDrive(dt, busy);
+      if(!d.hold){
+        const sets = collSets(), dis = cells.disabled(), world = { ground: T.height, push: (x, z, y, r) => { const o = Phys.resolve(x, z, y, sets, dis, r); return { x: o.x, z: o.z }; } };
+        if(d.car) Dr.stepCar(s, inp, dt, world); else Dr.stepPlane(s, inp, dt, world);
+        if(s.hit > 4) d.shake = Math.max(d.shake, Math.min(1, s.hit / 14));
+        const lim = L.radius() + (d.car ? 450 : 1100), r = Math.hypot(s.x, s.z);          // the invisible edge of the world
+        if(r > lim){ const nx = s.x / r, nz = s.z / r; s.x = nx * lim; s.z = nz * lim; if(d.car){ s.u *= 0.2; s.v *= 0.2; } else { const vo = s.vx * nx + s.vz * nz; if(vo > 0){ s.vx -= vo * nx; s.vz -= vo * nz; } }
+          if(t - d.edgeAt > 4000){ d.edgeAt = t; toast('That is the edge of the map — turn around.'); } }
+      }
+      q.x = s.x; q.z = s.z; q.yaw = s.yaw; q.y = s.y + (d.car ? 0.1 : 0.05); q.pitch = s.pitch; q.roll = s.roll;
+      P.x = s.x; P.z = s.z; P.y = P.cy = s.y; P.vx = P.vz = P.vy = 0; P.inside = false; P.mv = 0; curNpc = curDoor = null; V.look = null;
+      if(s.crashed){ const why = s.crashed; endDrive('crash', why + ' Your ' + d.m.name + ' was towed back to its parking spot.'); return; }
+      driveCamera(dt); P.yaw = d.cam.yaw; P.pitch = 0;
+      if(net) net.tick({ x: P.x, z: P.z, yaw: s.yaw, mv: clamp(Math.abs(s.speed) / cfg.run, 0, 1.2), inside: false }, dt);
+      dash(t);
+    }
     const homeRec = id => ((OS.homes.world && OS.homes.world()) || {})[id] || {};
     const me = () => OS.homes.uid && OS.homes.uid();
 
@@ -51,7 +186,7 @@
     }
     const plazaPose = () => Object.assign({ n: 'Town Square' }, RW.Nav.plazaPose());
     const poiName = id => (G.POIS[id] && G.POIS[id].n) || id;
-    async function teleport(x, z, yaw){ fade(true); await sleep(280); if(!st) return; if(S.room){ if(cells) cells.clear(); S.room = null; S.cell = null; P.inside = false; if(scr) scr.set([]); } P.x = x; P.z = z; P.yaw = yaw || 0; P.vx = P.vz = P.vy = 0; P.y = P.cy = T.height(x, z); P.grounded = true; if(st) st.update(P.x, P.z); const t0 = performance.now(); while(!ringReady() && performance.now() - t0 < 4500){ await sleep(60); if(st) st.update(P.x, P.z); st && st.upload(3); } fade(false); }
+    async function teleport(x, z, yaw){ if(dv) endDrive(); fade(true); await sleep(280); if(!st) return; if(S.room){ if(cells) cells.clear(); S.room = null; S.cell = null; P.inside = false; if(scr) scr.set([]); } P.x = x; P.z = z; P.yaw = yaw || 0; P.vx = P.vz = P.vy = 0; P.y = P.cy = T.height(x, z); P.grounded = true; if(st) st.update(P.x, P.z); const t0 = performance.now(); while(!ringReady() && performance.now() - t0 < 4500){ await sleep(60); if(st) st.update(P.x, P.z); st && st.upload(3); } fade(false); }
     function ringReady(){ if(!st) return false; let n = 0, ok = 0; for(let i = -1; i <= 1; i++) for(let j = -1; j <= 1; j++){ n++; const c = st.chunks.get((Math.floor(P.x / 128) + i) + ',' + (Math.floor(P.z / 128) + j)); if(c && c.cur && c.lod <= 1) ok++; } return ok >= 8; }
     const fade = on => { $('#rwFade').classList.toggle('on', !!on); };
 
@@ -107,7 +242,7 @@
     }
 
     /* ---------------- collisions: see phys.js (boxes with a height, stairs, floors, ceilings) ---------------- */
-    const collSets = () => { const sets = []; if(!S.room){ st.nearCols(P.x, P.z, c => sets.push({ a: c, st: 8 })); if(dynColsA) sets.push({ a: dynColsA, st: 8 }); } if(S.room){ const cs = cells.sets(); for(let i = 0; i < cs.length; i++) sets.push(cs[i]); } return sets; };
+    const collSets = () => { const sets = []; if(!S.room){ st.nearCols(P.x, P.z, c => sets.push({ a: c, st: 8 })); if(dynColsA) sets.push({ a: dynColsA, st: 8 }); if(V.cols) sets.push({ a: V.cols, st: 8 }); } if(S.room){ const cs = cells.sets(); for(let i = 0; i < cs.length; i++) sets.push(cs[i]); } return sets; };
 
     /* ---------------- people & cars ---------------- */
     async function loadBots(){ try{ const m = await (RW.botSource ? RW.botSource() : OS.homes.bots()); botList = Object.keys(m || {}).map(id => { const r = m[id], n = +id.slice(1); return { id, n, b: { n, job: r.j || 'baker', thrift: typeof r.th === 'number' ? r.th : 0.5 }, home: r.h ? G.house(+String(r.h).slice(1)) : null, shirt: pack(hsl(G.h32(n, 19) % 360, 55, 52)), pants: pack(hsl(G.h32(n, 21) % 360, 30, 24)), init: 0, x: 0, z: 0, tx: 0, tz: 0, vx: 0, vz: 0, yaw: 0, ph: 0, mv: 0, vis: false, t: 0 }; }); }catch(e){} }
@@ -244,7 +379,7 @@
     let hudT = 0, hudLoc = '', lastTip = '';
     function hud(t){
       if(t - hudT < 250) return; hudT = t; const loc = districtName(); if(loc !== hudLoc){ hudLoc = loc; const e = $('#rwLoc'); e.textContent = loc; e.classList.add('show'); clearTimeout(e._t); e._t = setTimeout(() => e.classList.remove('show'), 3200); }
-      $('#rwPause').classList.toggle('show', S.running && !S.phone && !uiOpen() && !locked() && !touch.on && !S.loading); $('#rwClock').textContent = clockText(); try{ $('#rwCash').textContent = '$' + Math.round((OS.cash() || 0) / 100).toLocaleString(); }catch(e){}
+      $('#rwPause').classList.toggle('show', S.running && !dv && !S.phone && !uiOpen() && !locked() && !touch.on && !S.loading); $('#rwClock').textContent = clockText(); try{ $('#rwCash').textContent = '$' + (OS.cash() || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }catch(e){}
       const tipEl = $('#rwTip'), tip = lookNpc && S.mode === 'world' ? (G.bot(lookNpc.n).name + ' · ' + lookNpc.b.job + (lookNpc.why ? ' — ' + (G.WHY[lookNpc.why] || '') : '')) : ''; if(tip !== lastTip){ lastTip = tip; tipEl.textContent = tip; tipEl.classList.toggle('show', !!tip); }
     }
 
@@ -252,12 +387,22 @@
     const uiOpen = () => S.phone || S.loading || !!S.dialog || !!document.querySelector('#windows .win:not(.hidden)');
     const locked = () => document.pointerLockElement === cv;
     const onKey = (e, d) => { if(!S.running || S.phone) return; const k = e.code; if(d && k === 'Escape' && S.dialog){ closeDialog(); return; } if(d && (k === 'KeyM') && !uiOpen()){ openMap(); e.preventDefault(); return; } if(d && k === 'KeyP' && !e.ctrlKey && !e.metaKey){ phone(true); e.preventDefault(); return; }
-      if(uiOpen()) return; if(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyE', 'Enter'].includes(k)){ keys[k] = d; e.preventDefault(); if(d && (k === 'KeyE' || k === 'Enter')) interact(); } };
+      if(uiOpen()) return; if(dv && d && driveKey(k, e)) return; if(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyE', 'Enter'].includes(k)){ keys[k] = d; e.preventDefault(); if(d && (k === 'KeyE' || k === 'Enter')) interact(); } };
     window.addEventListener('keydown', e => onKey(e, true)); window.addEventListener('keyup', e => { keys[e.code] = false; onKey(e, false); });
     window.addEventListener('blur', () => { for(const k in keys) keys[k] = false; });
     cv.addEventListener('click', () => { if(!S.running || uiOpen() || touch.on) return; try{ cv.requestPointerLock(); }catch(e){} });
-    document.addEventListener('mousemove', e => { if(!S.running || !locked()) return; P.yaw = wrapA(P.yaw + e.movementX * cfg.sens); P.pitch = clamp(P.pitch - e.movementY * cfg.sens, -1.45, 1.45); });
-    document.addEventListener('pointerlockchange', () => { $('#rwPause').classList.toggle('show', S.running && !uiOpen() && !locked() && !touch.on && !S.loading); });
+    document.addEventListener('mousemove', e => { if(!S.running || !locked()) return; if(dv){ mouse.sx = clamp(mouse.sx + e.movementX / 170, -1, 1); mouse.sy = clamp(mouse.sy + e.movementY / 170, -1, 1); mouse.at = performance.now(); return; } P.yaw = wrapA(P.yaw + e.movementX * cfg.sens); P.pitch = clamp(P.pitch - e.movementY * cfg.sens, -1.45, 1.45); });
+    document.addEventListener('pointerlockchange', () => { $('#rwPause').classList.toggle('show', S.running && !dv && !uiOpen() && !locked() && !touch.on && !S.loading); });
+    // driving: cursor = stick / wheel, buttons = gas / brake, wheel = throttle, on-screen buttons for touch
+    cv.addEventListener('mousedown', e => { if(!dv) return; if(e.button === 0) mouse.l = true; else if(e.button === 2) mouse.rb = true; });
+    window.addEventListener('mouseup', e => { if(e.button === 0) mouse.l = false; else if(e.button === 2) mouse.rb = false; });
+    cv.addEventListener('contextmenu', e => { if(dv) e.preventDefault(); });
+    cv.addEventListener('mousemove', e => { const r = cv.getBoundingClientRect(); mouse.px = ((e.clientX - r.left) / r.width) * 2 - 1; mouse.py = ((e.clientY - r.top) / r.height) * 2 - 1; mouse.in = true; });
+    cv.addEventListener('mouseleave', () => { mouse.in = false; });
+    cv.addEventListener('wheel', e => { if(!dv) return; e.preventDefault(); if(!dv.car) dv.thr = clamp(dv.thr - e.deltaY * 0.0007, 0, 1); }, { passive: false });
+    window.addEventListener('blur', () => { mouse.l = mouse.rb = false; tb.gas = tb.brake = tb.hand = false; });
+    [['#rwTG', 'gas'], ['#rwTB', 'brake'], ['#rwTH', 'hand']].forEach(([sel, key]) => { const b = $(sel), on = e => { e.preventDefault(); tb[key] = true; b.classList.add('on'); }, off = () => { tb[key] = false; b.classList.remove('on'); }; b.addEventListener('pointerdown', on); ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => b.addEventListener(ev, off)); });
+    $('#rwTV').addEventListener('pointerdown', e => { e.preventDefault(); if(dv) driveKey('KeyV', e); }); $('#rwTT').addEventListener('pointerdown', e => { e.preventDefault(); if(dv) driveKey('KeyT', e); });
     // touch: left = move stick, right = look
     const stick = $('#rwStick'), knob = stick.firstElementChild; touch.on = matchMedia('(pointer: coarse)').matches; rootEl.classList.toggle('touch', touch.on);
     cv.addEventListener('touchstart', e => { for(const c of e.changedTouches){ if(c.clientX < innerWidth * 0.45 && !touch.stick){ touch.stick = { id: c.identifier, x: c.clientX, y: c.clientY }; stick.style.display = 'block'; stick.style.left = c.clientX - 55 + 'px'; stick.style.top = c.clientY - 55 + 'px'; } else if(!touch.look) touch.look = { id: c.identifier, x: c.clientX, y: c.clientY }; } e.preventDefault(); }, { passive: false });
@@ -271,7 +416,7 @@
     function openDialog(n){
       S.dialog = n; if(locked()) document.exitPointerLock(); setPrompt(null); const d = $('#rwDlg');
       d.innerHTML = '<div class="n">' + esc(n.name) + '</div><div class="l">' + esc(n.line) + '</div>' + (n.opts || []).map((o, i) => '<button data-i="' + i + '">' + esc(o.label) + '</button>').join('') + '<button class="bye">' + ((n.opts || []).length ? 'Goodbye' : 'Wave goodbye') + '</button>'; d.classList.add('show');
-      d.querySelectorAll('button[data-i]').forEach(b => { b.onclick = () => { const o = n.opts[+b.dataset.i]; closeDialog(); try{ OS.open(o.app); }catch(e){} }; });
+      d.querySelectorAll('button[data-i]').forEach(b => { b.onclick = () => { const o = n.opts[+b.dataset.i]; closeDialog(); try{ if(o.tab) sessionStorage.setItem('assets_tab', o.tab); OS.open(o.app); }catch(e){} }; });
       d.querySelector('.bye').onclick = () => { closeDialog(); if(!touch.on){ try{ cv.requestPointerLock(); }catch(e){} } };
     }
     function closeDialog(){ S.dialog = null; const d = rootEl && rootEl.querySelector('#rwDlg'); if(d) d.classList.remove('show'); }
@@ -279,18 +424,23 @@
     function openMap(){ if(!S.running || S.loading) return; if(locked()) document.exitPointerLock(); closeDialog(true); try{ OS.open('WestMap'); }catch(e){} }
 
     /* ---------------- interaction ---------------- */
-    function interact(){ if(!S.running || S.loading || S.dialog) return; if(uiOpen()) return; if(curNpc){ openDialog(curNpc); return; } if(curDoor && curDoor.exit){ exitRoom(); return; } if(curDoor && curDoor.info){ if(curDoor.info.enter) enterRoom(curDoor.d, curDoor.info.spec); else if(curDoor.info.go) curDoor.info.go(); } }
+    function interact(){ if(!S.running || S.loading || S.dialog) return; if(dv){ exitDrive(); return; } if(uiOpen()) return; if(curNpc){ openDialog(curNpc); return; } if(curDoor && curDoor.exit){ exitRoom(); return; }
+      if(!curDoor && V.look){ const q = V.look; if(q.slot){ if(!startDrive(q)) toast('You cannot get in right now.'); } else { try{ sessionStorage.setItem('assets_tab', q.kind === 'plane' ? 'planes' : 'cars'); OS.open('RealEstate'); }catch(e){} } return; }
+      if(curDoor && curDoor.info){ if(curDoor.info.enter) enterRoom(curDoor.d, curDoor.info.spec); else if(curDoor.info.go) curDoor.info.go(); } }
     function findInteraction(){
       curNpc = null; curDoor = null; const fx = Math.sin(P.yaw), fz = -Math.cos(P.yaw);
       if(S.cell){ let bd = 3.4; S.cell.npcs.forEach(n => { if(Math.abs(n.y - P.y) > 2.4) return; const dx = n.x - P.x, dz = n.z - P.z, d = Math.hypot(dx, dz); if(d < bd && (dx * fx + dz * fz) / (d || 1) > 0.25){ bd = d; curNpc = n; } }); if(curNpc) setPrompt('Talk to ' + curNpc.name, curNpc.opts.length ? curNpc.opts.map(o => o.label.split(' · ')[0]).join(' · ') : ''); else if(S.room && Math.hypot(P.x - S.room.door.x, P.z - S.room.door.z) < 4){ curDoor = { exit: true }; setPrompt('Leave'); } else setPrompt(null); return; }
       if(lookNpc && Math.hypot(lookNpc.x - P.x, lookNpc.z - P.z) < 5){ curNpc = { name: G.bot(lookNpc.n).name, line: outLine(lookNpc), opts: [], bot: lookNpc }; }
       let bd = 3.2; allDoorsNear(P.x, P.z, 3.4).forEach(d => { const dist = Math.hypot(d.x - P.x, d.z - P.z); if(dist < bd){ const i = doorInfo(d); if(i){ bd = dist; curDoor = { d, info: i, dist }; } } });
+      V.look = null; if(!curDoor && !curNpc && !S.cell){ let vd = 4.2; for(const q of V.list){ const d = Math.hypot(q.x - P.x, q.z - P.z); if(d < vd){ vd = d; V.look = q; } } }
+      if(V.look && !curDoor && !curNpc){ const m = VD.get(V.look.id); setPrompt(V.look.slot ? 'Your ' + m.name : m.name + ' · ' + (m.price / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }), V.look.slot ? (m.kind === 'plane' ? 'Get in and fly' : 'Get in and drive') : 'E: see it in Assets'); return; }
       if(curDoor){ curNpc = null; setPrompt(curDoor.info.label); } else if(curNpc) setPrompt('Talk to ' + curNpc.name); else setPrompt(null);
     }
 
     /* ---------------- per-frame update ---------------- */
     function update(dt, t){
       cooldown = Math.max(0, cooldown - dt); if(locked() && uiOpen()) document.exitPointerLock(); const busy = uiOpen() || S.loading; let ix = 0, iz = 0, run = false;
+      if(dv){ driveUpdate(dt, t, busy); return; }
       if(!busy){ ix = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0); iz = (keys.KeyS || keys.ArrowDown ? 1 : 0) - (keys.KeyW || keys.ArrowUp ? 1 : 0); run = !!(keys.ShiftLeft || keys.ShiftRight) || touch.run; if(touch.on){ ix += touch.mx; iz += touch.mz; } const l = Math.hypot(ix, iz); if(l > 1){ ix /= l; iz /= l; } if(keys.ArrowLeft && keys.ShiftLeft){ } }
       if(!busy && (keys.ArrowLeft || keys.ArrowRight) && false) P.yaw += 0;
       const sp = (run ? cfg.run : cfg.walk) * (S.cell ? 0.8 : 1), fx = Math.sin(P.yaw), fz = -Math.cos(P.yaw), rx = Math.cos(P.yaw), rz = Math.sin(P.yaw), tvx = (rx * ix - fx * iz) * sp, tvz = (rz * ix - fz * iz) * sp, a = Math.min(1, dt * (Math.hypot(tvx, tvz) > 0.1 ? 11 : 9));
@@ -310,14 +460,14 @@
       const dpr = Math.min(window.devicePixelRatio || 1, perfLow() ? 1 : 1.5) * S.scale; gfx.resize(cv.clientWidth, cv.clientHeight, dpr);
       if(!env || t - envAt > 250){ envAt = t; grade = K.skin && K.skin(); env = RW.Env.state(OS.now() + (RW.timeShift || 0), grade && grade.three); S.env = env; }
       st.update(S.room ? S.room.sx : P.x, S.room ? S.room.sz : P.z); st.upload(2); st.step(dt);
-      if(t - sunTick > 2000){ sunTick = t; const n2 = nh(); if(n2 !== S.nh){ S.nh = n2; S.nd = G.districtCount(n2); L.setup(n2); T.setup(L.radius()); st.setNH(n2); } if(S.nh) rebuildDyn(); }
+      if(t - sunTick > 2000){ sunTick = t; const n2 = nh(); if(n2 !== S.nh){ S.nh = n2; S.nd = G.districtCount(n2); L.setup(n2); T.setup(L.radius()); st.setNH(n2); } if(S.nh){ rebuildDyn(); rebuildVehicles(); } }
       if(t - botsAt > 90000){ botsAt = t; loadBots(); } stepNPCs(t, dt);
-      const e = env, bob = Math.sin(P.bob * 2.2) * 0.03 * P.mv, cam = { pos: [P.x, P.cy + cfg.eye + bob, P.z], yaw: P.yaw, pitch: P.pitch, fov: cfg.fov * Math.PI / 180, near: 0.25, far: cfg.far };
+      const e = env, bob = Math.sin(P.bob * 2.2) * 0.03 * P.mv, cam = dv ? dv.cam : { pos: [P.x, P.cy + cfg.eye + bob, P.z], yaw: P.yaw, pitch: P.pitch, fov: cfg.fov * Math.PI / 180, near: 0.25, far: cfg.far };
       gfx.begin(cam, e, t / 1000);
       if(!S.room){ gfx.sky(e.cloud); gfx.startWorld(); S.drawn = st.draw(P.x, P.z, cfg.far); if(dyn.plots) gfx.draw(dyn.plots, 1, 1); if(dyn.marks) gfx.draw(dyn.marks, 1, 1);
         S.props = st.drawProps(perfLow() ? 260 : 430, perfLow() ? 380 : 570); }                      // trees, lamps, benches: one instanced call per kind
       if(cells.cells.size){ gfx.env = RW.Env.INDOOR; gfx.startWorld(); cells.draw(); gfx.env = e; if(S.cell){ scr.tick(P.x, P.z, t); scr.draw(); } }   // insides: only loaded ones, indoor light
-      ensureModels(); const [np, nc] = fillActors(); drawPeople(actorBuf, np); if(nc) drawCars(carBuf, nc);
+      ensureModels(); const [np, nc] = fillActors(); drawPeople(actorBuf, np); if(nc) drawCars(carBuf, nc); if(VD){ const vb = fillVehicles(); for(const k in vb) gfx.actors(k, vb[k].buf, vb[k].n, 0.9); }
       if(S.cell){ const ni = fillInside(); if(ni){ gfx.env = RW.Env.INDOOR; drawPeople(inBuf, ni); gfx.env = e; } }
       const fx = grade && grade.fx; if(fx && !P.inside && (fx.kind === 'snow' || fx.kind === 'embers')) gfx.particles(fx, cv.height * 0.9);
       labels(); minimap(t); compass(t); hud(t);
@@ -339,7 +489,7 @@
       if(net) net.start(P.x, P.z); last = performance.now(); fpsT = last; raf = requestAnimationFrame(loop); setTimeout(() => { if(net && !net.on && S.running) net.start(P.x, P.z); }, 4000); return true;
     }
     function exit(){
-      if(!S.running) return; S.running = false; cancelAnimationFrame(raf); document.exitPointerLock && document.exitPointerLock(); try{ OS.prefs.set('rwPos', { x: Math.round(S.room ? S.room.ret.x : P.x), z: Math.round(S.room ? S.room.ret.z : P.z), yaw: Math.round(P.yaw * 100) / 100 }); }catch(e){}
+      if(!S.running) return; if(dv) endDrive(); S.running = false; cancelAnimationFrame(raf); document.exitPointerLock && document.exitPointerLock(); try{ OS.prefs.set('rwPos', { x: Math.round(S.room ? S.room.ret.x : P.x), z: Math.round(S.room ? S.room.ret.z : P.z), yaw: Math.round(P.yaw * 100) / 100 }); }catch(e){}
       screen.classList.remove('rw-on', 'rw-phone'); S.phone = false; try{ OS.homes.watchMap(false); }catch(e){} gpuDown();
     }
     function phone(on){ if(!S.running) return; S.phone = on; screen.classList.toggle('rw-phone', on); if(on){ document.exitPointerLock && document.exitPointerLock(); $('#rwPause').classList.remove('show'); } else { last = performance.now(); $('#rwPause').classList.toggle('show', !touch.on); } }
@@ -347,6 +497,9 @@
     function travelTo(x, z, yaw){ if(!S.running) return false; if(S.phone) phone(false); return teleport(x, z, yaw); }
     /* WestMap calls this about once a second while it is open: the world stops drawing under it (no second 3-D scene burning the GPU) */
     const hold = on => { S.holdUntil = on === false ? 0 : performance.now() + 2500; };
-    return { enter, exit, phone, active: () => S.running, inPhone: () => S.phone, teleport, travelTo, hold, openMap, state: () => ({ x: P.x, y: P.y, z: P.z, yaw: P.yaw, mode: S.mode, fps: S.fps, scale: S.scale, radius: st && st.radius, chunks: st && st.chunks.size, calls: gfx && gfx.calls, tris: gfx && Math.round(gfx.tris), built: st && st.built, bots: botList.length, others: net ? net.others.size : 0, loading: S.loading, drawn: S.drawn, props: S.props, inside: S.cell ? S.cell.name : null, cells: cells ? cells.cells.size : 0, nh: S.nh }), _P: P, _S: S, _st: () => st, _cells: () => cells };
+    /* vehicles: public read-only view + the door to the driving controller (startDrive / endDrive) */
+    const vehicles = { list: () => V.list.slice(), mine: () => V.list.filter(q => q.slot), canDrive: () => VH.canDrive(), enter: slot => { const q = V.list.find(x => x.slot === slot); return !!(q && VH.canDrive() && startDrive(q)); }, exit: () => { if(dv) endDrive(); return !dv; }, _drive: q => startDrive(q),   /* _drive = test hook (tests/e2e-drive.test.js drives the showcase plane, which nobody can afford with the $100k grant) */ driving: () => dv ? { kind: dv.kind, id: dv.m.id, slot: dv.q.slot, speed: dv.s.speed, x: dv.s.x, z: dv.s.z, yaw: dv.s.yaw, alt: dv.s.alt || 0, onGround: dv.kind === 'car' ? true : dv.s.onGround } : null,
+      at: id => { const p = L.poi(id); return !!(S.running && p && Math.hypot(p.x - P.x, p.z - P.z) < 48); } };
+    return { enter, exit, phone, vehicles, active: () => S.running, inPhone: () => S.phone, teleport, travelTo, hold, openMap, state: () => ({ x: P.x, y: P.y, z: P.z, yaw: P.yaw, mode: S.mode, fps: S.fps, scale: S.scale, radius: st && st.radius, chunks: st && st.chunks.size, calls: gfx && gfx.calls, tris: gfx && Math.round(gfx.tris), built: st && st.built, bots: botList.length, others: net ? net.others.size : 0, loading: S.loading, drawn: S.drawn, props: S.props, inside: S.cell ? S.cell.name : null, cells: cells ? cells.cells.size : 0, nh: S.nh }), _P: P, _S: S, _dv: () => dv, _st: () => st, _cells: () => cells };
   };
 })(typeof self !== 'undefined' ? self : this);

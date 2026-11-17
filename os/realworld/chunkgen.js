@@ -82,7 +82,7 @@
     const lx = best ? best.x : 0, ly = best ? best.y : S.d / 2, ly2 = ly + 1.7, nx = -sd * s0 * 1, nz = sd * c0;   // outward = local +y turned
     return { x: X + lx * c0 - ly2 * sd * s0, z: Z + lx * s0 + ly2 * sd * c0, nx, nz, y: base, lx, ly };
   }
-  const LMF = { bank: 1, exchange: 1, shop: 1, arcade: 1, agency: 1, hall: 1, uni: 1, lab: 1, ind: 1, plant: 1 };
+  const LMF = { bank: 1, exchange: 1, shop: 1, arcade: 1, agency: 1, hall: 1, uni: 1, lab: 1, ind: 1, plant: 1, dealer: 1, airport: 1 };
 
 
   /* ---------------- baked models (Kenney city kits via models.js) ---------------- */
@@ -112,11 +112,24 @@
     };
   }
 
+  /* the airfield runway (terrain.js RWY): asphalt, edge lines, centre dashes, threshold bars and aiming blocks. Pieces are clipped to this chunk, markings belong to the chunk holding their centre. */
+  function runway(mb, x0, z0, lod){
+    const R = T.rwy && T.rwy(); if(!R || lod === 3 || x0 > R.x1 || x0 + CH < R.x0 || z0 > R.z + R.hw || z0 + CH < R.z - R.hw) return;
+    const xa = Math.max(x0, R.x0), xb = Math.min(x0 + CH, R.x1), za = Math.max(z0, R.z - R.hw), zb = Math.min(z0 + CH, R.z + R.hw), y = T.height((xa + xb) / 2, (za + zb) / 2) + 0.06 * (lod + 1);
+    mb.boxR((xa + xb) / 2, (za + zb) / 2, (xb - xa) / 2, (zb - za) / 2, 0, y, y + 0.05, C.hwy, C.hwy);
+    if(lod > 1) return; const yy = y + 0.05, bar = (x, z, hl, hw) => { if(x >= x0 && x < x0 + CH && z >= z0 && z < z0 + CH) mb.boxR(x, z, hl, hw, 0, yy, yy + 0.03, C.mark, C.mark); };
+    for(const s of [-1, 1]) for(let x = R.x0; x < R.x1; x += 40) bar(x + 10, R.z + s * (R.hw - 0.8), 10, 0.18);        // edge lines
+    for(let x = R.x0 + 90; x < R.x1 - 90; x += 50) bar(x + 12, R.z, 12, 0.3);                                         // centre dashes
+    for(const e of [0, 1]){ const x = e ? R.x1 - 8 : R.x0 + 8; for(let k = -4; k <= 4; k++) if(k) bar(x, R.z + k * 2.0, 6, 0.7);   // threshold bars
+      const ax = e ? R.x1 - 150 : R.x0 + 150; bar(ax, R.z - 8, 10, 1.6); bar(ax, R.z + 8, 10, 1.6); }                 // aiming blocks
+  }
+
   function build(cx, cz, lod, nh){
     L.setup(nh); T.setup(L.radius());
     const x0 = cx * CH, z0 = cz * CH, inC = (x, z) => x >= x0 && x < x0 + CH && z >= z0 && z < z0 + CH;
     const mb = new MB(lod === 0 ? 16384 : 4096), cols = [], doors = [], props = [], stats = { houses: 0, blds: 0 }, ex = makeExtra(lod, cols, props), fine = lod === 0 ? 8 : 16;
     terrain(mb, x0, z0, lod); roads(mb, x0, z0, lod);
+    runway(mb, x0, z0, lod);
     const box = (X, Z, w, d, ang, top) => cols.push(0, X, Z, w / 2 + 0.3, d / 2 + 0.3, Math.cos(ang), Math.sin(ang), top);
     L.blocksNear(x0, z0, x0 + CH, z0 + CH).forEach(b => {
       // ground covers
@@ -142,6 +155,8 @@
         box(p.x, p.z, S.w, S.d, p.ang, base + S.h);
         if(lod <= 1){ bakeShape(mb, S, p.x, p.z, p.ang, 1, base, lod); const dr = doorOf(S, p.x, p.z, p.ang, 1, base); doors.push({ k: 'poi', id: p.id, x: dr.x, z: dr.z, nx: dr.nx, nz: dr.nz, y: base, name: G.POIS[p.id] && G.POIS[p.id].n, bx: p.x, bz: p.z, rw: S.w, rd: dr.ly + S.d / 2, fl: S.fl, bh: S.h }); }
         else bakeBox(mb, p.x, p.z, S.w, S.d, p.ang, base, S.h, rgb(S.pal.wall), rgb(S.pal.roof), lod); });
+      // painted markings on the dealership forecourt / airport apron (layout c.strips: flat boxes just above the paving)
+      if(lod <= 1 && b.strips) b.strips.forEach(q => { if(!inC(q.x, q.z)) return; const y = T.height(q.x, q.z) + 0.07 * (lod + 1) + 0.03; mb.boxR(q.x, q.z, q.w / 2, q.l / 2, q.ang, y, y + 0.03, q.col, q.col); });
       // downtown infill towers
       b.fillers.forEach((f, fi) => { if(!inC(f.x, f.z)) return; stats.blds++; const base = footBase(f.x, f.z, f.ang, f.w, f.d), hgt = f.fl * 3.1 + 2, R = lod <= 3 ? MD() : null, sd = f.side > 0 ? 1 : -1;
         const pk = R && R.pick(R.ofKind('tower').concat(R.ofKind('mid')), f.w, f.d, 0, G.h32(f.v, 31), { maxK: 1, minK: 1, minCover: 0.45 });
@@ -155,7 +170,7 @@
       b.benches.forEach(q => { if(inC(q[0], q[1])) ex.bench(q[0], q[1], q[2]); });
     });
     // wild trees outside the built-up area (never inside the city: the plateau and its streets end well before)
-    if(lod <= 1) for(let i = 0; i < 8; i++) for(let j = 0; j < 8; j++){ const x = x0 + i * 16 + f01(cx * 8 + i, cz * 8 + j) * 14, z = z0 + j * 16 + f01(cz * 8 + j, cx * 8 + i + 99) * 14; const bl = T.built(x, z); if(bl > 0.12) continue; const fa = forestAmt(x, z, bl), r = f01(cx * 8 + i + 400, cz * 8 + j); if(r < 0.06 + fa * 0.6) ex.tree(x, z, 0.8 + f01(i, j + cx) * 0.7, i * 8 + j); }
+    if(lod <= 1) for(let i = 0; i < 8; i++) for(let j = 0; j < 8; j++){ const x = x0 + i * 16 + f01(cx * 8 + i, cz * 8 + j) * 14, z = z0 + j * 16 + f01(cz * 8 + j, cx * 8 + i + 99) * 14; const bl = T.built(x, z); if(bl > 0.12 || (T.rwy && (rw => rw && x > rw.x0 - 70 && x < rw.x1 + 70 && Math.abs(z - rw.z) < rw.hw + 45)(T.rwy()))) continue; const fa = forestAmt(x, z, bl), r = f01(cx * 8 + i + 400, cz * 8 + j); if(r < 0.06 + fa * 0.6) ex.tree(x, z, 0.8 + f01(i, j + cx) * 0.7, i * 8 + j); }
     return { cx, cz, lod, mesh: mb.finish(), cols: new Float32Array(cols), doors, props: new Float32Array(props), stats };
   }
   return { CH, build, RES };

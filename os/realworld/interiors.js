@@ -87,6 +87,15 @@
     for(let i = 0; i < 6; i++) for(let j = 0; j < 4; j++){ const h = 0.2 + ((i * 5 + j * 3) % 5) * 0.12; r.mb.boxAA(6 + i * 0.9, 0.9, 3.4 + j * 0.9, 6.7 + i * 0.9, 0.9 + h, 4.1 + j * 0.9, J(i + j), J(i + j)); } r.box(5.6, 3, 5.8, 4, 0.9, '#6b4b32', '#8a6a48');
     r.screen('listings', 0.04, 1.5, 7, 3.4, 1.9, 'e'); r.screen('listings', 17.96, 1.5, 7, 3.4, 1.9, 'w');
     r.npc(9, 10.3, Math.PI, 'Agent Quinn', 'Looking to buy, rent or sell? I know every house in town.', '#c98a62', null, [{ label: 'Browse properties', app: 'RealEstate' }, { label: 'Show me the map', app: 'WestMap' }]); r.plant(1.2, 1.2); r.plant(16.8, 12.8); return r; });
+  /* car dealership + private airport: a clerk sells through the Assets app (tab opens on cars / planes), a wall screen lists the catalogue. Buying itself is gated on standing here (OS.realworld.at). */
+  register('dealer', c => { const r = new Room(24, 18, 4.8, { name: 'Car Dealership', floor: '#d9d6cf', floor2: '#c9c5bc', wall: '#f3efe6', base: '#a63c36' });
+    r.box(8, 12.2, 8, 1.1, 1.1, '#5e5a52', '#7a756a'); r.box(3, 3, 6.5, 3.2, 0.12, '#2b2c30', '#3a3b40'); r.box(14.5, 3, 6.5, 3.2, 0.12, '#2b2c30', '#3a3b40');
+    r.screen('cars', 0.04, 1.4, 8.5, 5.6, 2.4, 'e'); r.screen('cars', 23.96, 1.4, 8.5, 5.6, 2.4, 'w');
+    r.npc(12, 11.0, Math.PI, 'Sales Rex', 'Looking for wheels? Every car here is yours to drive the moment you buy it.', '#d9534f', null, [{ label: 'Browse & buy cars', app: 'RealEstate', tab: 'cars' }, { label: 'My vehicles', app: 'RealEstate', tab: 'garage' }]); r.plant(1.4, 1.4); r.plant(22.6, 1.4); return r; });
+  register('airport', c => { const r = new Room(24, 18, 6.4, { name: 'Private Airport', floor: '#cfd8e3', floor2: '#bcc7d6', wall: '#e8eef5', base: '#3b7fb0' });
+    r.box(7, 11.6, 10, 1.2, 1.1, '#46586b', '#5f758c'); r.bench(3, 3, 5, 1, '#46586b'); r.bench(16, 3, 5, 1, '#46586b');
+    r.screen('planes', 0.04, 1.6, 8.5, 5.6, 2.4, 'e'); r.screen('planes', 23.96, 1.6, 8.5, 5.6, 2.4, 'w');
+    r.npc(12, 10.4, Math.PI, 'Captain Vale', 'Runway is east of the city. Mind the crosswind, and never skip the pre-flight check.', '#4aa3d9', null, [{ label: 'Browse & buy planes', app: 'RealEstate', tab: 'planes' }, { label: 'My vehicles', app: 'RealEstate', tab: 'garage' }]); r.plant(1.4, 1.4); r.plant(22.6, 1.4); return r; });
   register('hall', c => { const r = new Room(26, 20, 6, { name: 'Council Hall', floor: '#cfd3da', floor2: '#aab0bb', wall: '#e4e7ee', base: '#6b7280' });
     for(let i = 0; i < 4; i++){ r.box(3 + i * 6.7, 3, 0.8, 0.8, 6, '#f1f2f6', '#f1f2f6'); } r.box(8, 1, 10, 2.4, 0.5, '#6b4b32', '#8a6a48'); r.box(10, 1.3, 6, 0.9, 1.1, '#8a6a48', '#a98a64');
     r.npc(13, 2.9, Math.PI, 'Mayor Ada', 'Taxes keep the city running. Bills can be paid at the bank.', '#7c8696', null, [{ label: 'Taxes & bills', app: 'Bank' }]);

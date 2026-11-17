@@ -39,7 +39,7 @@ function vehicleSheet(v, after){
     const pic = h('div', { html: art(v.model, VD.colorHex(v.col)) }); b.append(pic);
     b.append(group(row({ title: v.model.tag, sub: spec(v.model).join(' · ') }), row({ title: 'You paid', sub: money(v.paid, { dp: 0 }) }), row({ title: 'Dealer buy-back (70%)', sub: money(v.value, { dp: 0 }) }),
       row({ title: v.model.kind === 'car' ? 'Parked' : 'Hangared', sub: v.model.kind === 'car' ? 'Outside your home, or in the dealership’s customer lot' : 'On the apron behind the airport terminal' }),
-      row({ title: v.model.kind === 'car' ? 'Driving' : 'Flying', sub: 'Arrives in a future update — your ' + v.model.name + ' is already parked in WestCountry.' })));
+      row({ title: v.model.kind === 'car' ? 'Driving' : 'Flying', sub: 'Walk up to your ' + v.model.name + ' in WestCountry and press E to get in' + (v.model.kind === 'plane' ? ' — the runway is east of the city.' : '.') })));
     b.append(h('div', { class: 'section-label' }, 'Paint'));
     b.append(swatches(v.col, async c => { const r = await H.repaintVehicle(v.slot, c); if(r.ok) pic.innerHTML = art(v.model, VD.colorHex(c)); else Kit.toast(r.msg, 'bad'); }));
     b.append(h('button', { class: 'btn block tinted', style: { marginTop: '10px', color: 'var(--bad, #ff6b6b)' }, onclick: async () => { if(!(await Kit.confirm({ title: 'Sell the ' + v.model.name + '?', msg: 'The dealer pays ' + money(v.value, { dp: 0 }) + ' (70% of what you paid).', ok: 'Sell', destructive: true }))) return; const r = await H.sellVehicle(v.slot); Kit.toast(r.ok ? 'Sold for ' + money(r.price, { dp: 0 }) : r.msg, r.ok ? 'good' : 'bad'); if(r.ok){ api.close(); after(); } } }, 'Sell back to the dealer')); } });
@@ -88,7 +88,7 @@ Kit.app({ title: 'Assets', build: (body) => {
       const k = tab === 'cars' ? 'car' : 'plane', mineK = k === 'car' ? cars : planes;
       box.append(h('h2', { class: 'sec' }, k === 'car' ? 'Your cars' : 'Your planes')); box.append(vlist(mineK) || h('div', { class: 'card empty' }, k === 'car' ? 'No cars yet.' : 'No planes yet.'));
       box.append(showroom(k, paint));
-      box.append(h('div', { class: 'card' }, h('b', null, 'Good to know'), h('p', { class: 'sub', style: { margin: '6px 0 0' } }, 'The dealer buys a ' + (k === 'car' ? 'car' : 'plane') + ' back at ' + (VD.SELL_BP / 100) + '% of what you paid. Up to ' + VD.MAX_SLOTS + ' vehicles in total. ' + (k === 'car' ? 'Your first two cars park outside your home; the rest in the dealership’s lot.' : 'Your planes stand on the apron behind the terminal.') + ' Driving and flying arrive in a future update.')));
+      box.append(h('div', { class: 'card' }, h('b', null, 'Good to know'), h('p', { class: 'sub', style: { margin: '6px 0 0' } }, 'The dealer buys a ' + (k === 'car' ? 'car' : 'plane') + ' back at ' + (VD.SELL_BP / 100) + '% of what you paid. Up to ' + VD.MAX_SLOTS + ' vehicles in total. ' + (k === 'car' ? 'Your first two cars park outside your home; the rest in the dealership’s lot.' : 'Your planes stand on the apron behind the terminal.') + ' Walk up to your own vehicle in WestCountry and press E to drive or fly it.')));
     }
   }
   paint(); ['props', 'home', 'cash', 'world', 'garage'].forEach(e => Kit.live(e, Kit.debounce(paint, 200))); setInterval(paint, 60000);

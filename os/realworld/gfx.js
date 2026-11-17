@@ -9,7 +9,8 @@
   const m4 = {
     perspective(fovy, asp, n, f){ const t = 1 / Math.tan(fovy / 2), o = new Float32Array(16); o[0] = t / asp; o[5] = t; o[10] = (f + n) / (n - f); o[11] = -1; o[14] = 2 * f * n / (n - f); return o; },
     /* camera at p looking along yaw (0 = north = -z) and pitch */
-    view(p, yaw, pitch){ const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch), f = [sy * cp, sp, -cy * cp], r = [cy, 0, sy], u = [r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]], o = new Float32Array(16);
+    view(p, yaw, pitch, roll){ const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch), f = [sy * cp, sp, -cy * cp], r0 = [cy, 0, sy], u0 = [r0[1] * f[2] - r0[2] * f[1], r0[2] * f[0] - r0[0] * f[2], r0[0] * f[1] - r0[1] * f[0]], o = new Float32Array(16);
+      const cr = Math.cos(roll || 0), sr = Math.sin(roll || 0), r = [r0[0] * cr - u0[0] * sr, r0[1] * cr - u0[1] * sr, r0[2] * cr - u0[2] * sr], u = [u0[0] * cr + r0[0] * sr, u0[1] * cr + r0[1] * sr, u0[2] * cr + r0[2] * sr];   // roll > 0: right side down (used by the cockpit view of a banking plane)
       o[0] = r[0]; o[4] = r[1]; o[8] = r[2]; o[12] = -(r[0] * p[0] + r[1] * p[1] + r[2] * p[2]); o[1] = u[0]; o[5] = u[1]; o[9] = u[2]; o[13] = -(u[0] * p[0] + u[1] * p[1] + u[2] * p[2]); o[2] = -f[0]; o[6] = -f[1]; o[10] = -f[2]; o[14] = f[0] * p[0] + f[1] * p[1] + f[2] * p[2]; o[15] = 1; return { m: o, f, r, u }; },
     mul(a, b){ const o = new Float32Array(16); for(let i = 0; i < 4; i++) for(let j = 0; j < 4; j++){ let s = 0; for(let k = 0; k < 4; k++) s += a[k * 4 + j] * b[i * 4 + k]; o[i * 4 + j] = s; } return o; }
   };
@@ -54,12 +55,13 @@ void main(){ float f = 1.0 - smoothstep(uFar.x, uFar.y, length(vWP - uCam)); if(
   oCol = vec4(outc(shadeIt(lin(base), normalize(vN), vWP, vC.a < 0.9 ? 1.0 : 0.0)), 1.0); }`;
   const ACT_VS = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec4 aMeta; layout(location=3) in vec4 iPos; layout(location=4) in vec4 iAn; layout(location=5) in vec4 aBake;
-uniform mat4 uVP; uniform vec2 uPiv; out vec3 vN; out vec3 vC; out vec3 vWP;
+uniform mat4 uVP; uniform vec2 uPiv; uniform vec2 uVeh; out vec3 vN; out vec3 vC; out vec3 vWP;
 vec3 unpackC(float p){ return vec3(floor(p / 65536.0), floor(mod(p, 65536.0) / 256.0), mod(p, 256.0)) / 255.0; }
 void main(){ vec3 p = aPos, n = aNrm; float part = aMeta.x, sw = sin(iAn.x) * iAn.y, ang = 0.0, pv = uPiv.x;
   if(part > 0.5 && part < 1.5) ang = sw * 0.75; else if(part < 2.5 && part > 1.5) ang = -sw * 0.75; else if(part < 3.5 && part > 2.5){ ang = -sw * 0.6; pv = uPiv.y; } else if(part < 4.5 && part > 3.5){ ang = sw * 0.6; pv = uPiv.y; }
   if(part > 0.5 && part < 4.5){ float c = cos(ang), s = sin(ang), y = p.y - pv; p = vec3(p.x, y * c - p.z * s + pv, y * s + p.z * c); n = vec3(n.x, n.y * c - n.z * s, n.y * s + n.z * c); }
-  p.y += abs(sin(iAn.x)) * iAn.y * 0.05 * step(part, 4.5);
+  if(uVeh.x > 0.5){ float cp = cos(iAn.x), sp = sin(iAn.x), cr = cos(iAn.y), sr = sin(iAn.y); p.y -= uVeh.y; p = vec3(p.x * cr + p.y * sr, -p.x * sr + p.y * cr, p.z); n = vec3(n.x * cr + n.y * sr, -n.x * sr + n.y * cr, n.z); p = vec3(p.x, p.y * cp - p.z * sp, p.y * sp + p.z * cp); n = vec3(n.x, n.y * cp - n.z * sp, n.y * sp + n.z * cp); p.y += uVeh.y; }   // vehicles: floats 5 / 6 are pitch (nose up +) and roll (right side down +) about the pivot height
+  else p.y += abs(sin(iAn.x)) * iAn.y * 0.05 * step(part, 4.5);
   float th = -iPos.w, ct = cos(th), st = sin(th); p = vec3(p.x * ct + p.z * st, p.y, -p.x * st + p.z * ct); n = vec3(n.x * ct + n.z * st, n.y, -n.x * st + n.z * ct);
   vec3 shirt = unpackC(iAn.z), pants = unpackC(iAn.w), skin = mix(vec3(0.95, 0.76, 0.62), vec3(0.45, 0.30, 0.22), fract(iAn.z * 0.000173)); float sl = aMeta.y;
   vC = sl < 0.5 ? skin : sl < 1.5 ? shirt : sl < 2.5 ? pants : sl < 3.5 ? vec3(0.13, 0.1, 0.08) * (0.6 + fract(iAn.w * 0.00031)) : sl < 4.5 ? vec3(0.07) : sl < 5.5 ? shirt : vec3(0.3, 0.42, 0.55);
@@ -103,7 +105,16 @@ precision mediump float; in vec2 vUV; uniform sampler2D uTex; out vec4 oCol; voi
     const Cr = mk(); // car, facing -z
     box(Cr, -0.95, 0.3, -2.1, 0.95, 0.95, 2.1, 0, 5); box(Cr, -0.8, 0.95, -0.9, 0.8, 1.5, 1.5, 0, 6); box(Cr, -0.76, 1.48, -0.8, 0.76, 1.54, 1.4, 0, 5);
     [[-0.95, -1.35], [0.8, -1.35], [-0.95, 1.3], [0.8, 1.3]].forEach(w => box(Cr, w[0], 0, w[1] - 0.32, w[0] + 0.15, 0.62, w[1] + 0.32, 0, 4));
-    return { person: P, car: Cr };
+    /* ---- vehicle bodies (cars face -z; planes face -z). slot 5 = body colour (shirt), 2 = accent (pants), 4 = tyres, 6 = glass ---- */
+    const bx = (M, x0, y0, z0, x1, y1, z1, slot) => box(M, x0, y0, z0, x1, y1, z1, 0, slot);
+    const carM = (len, wid, hgt, cab0, cab1, cabH, bed) => { const M = mk(), l = len / 2, w = wid / 2; bx(M, -w, 0.28, -l, w, hgt, l, 5); if(bed) bx(M, -w + 0.1, hgt, l - bed, w - 0.1, hgt + 0.25, l, 2); bx(M, -w + 0.12, hgt, -l + cab0, w - 0.12, hgt + cabH, -l + cab1, 6); bx(M, -w + 0.16, hgt + cabH, -l + cab0 + 0.1, w - 0.16, hgt + cabH + 0.05, -l + cab1 - 0.1, 5);
+      [[-1, -0.3], [1, -0.3], [-1, 0.3], [1, 0.3]].forEach((q, i) => { const z = q[1] < 0 ? -l + 0.75 : l - 0.8; bx(M, q[0] < 0 ? -w - 0.02 : w - 0.2, 0, z - 0.33, q[0] < 0 ? -w + 0.2 : w + 0.02, 0.66, z + 0.33, 4); }); bx(M, -w + 0.2, 0.55, -l - 0.02, w - 0.2, 0.7, -l + 0.05, 2); return M; };
+    const planeM = (len, span, hgt, jet, twin) => { const M = mk(), l = len / 2, f = hgt * 0.5, fy = 0.55 + hgt * 0.3; bx(M, -f * 0.55, fy - f * 0.5, -l, f * 0.55, fy + f * 0.5, l, 5); bx(M, -f * 0.5, fy + f * 0.05, -l + 0.6, f * 0.5, fy + f * 0.3, -l + len * 0.3, 6); bx(M, -f * 0.56, fy - f * 0.04, -l + len * 0.25, f * 0.56, fy + f * 0.06, l - 0.4, 2);
+      const wy = jet ? fy - f * 0.35 : fy + f * 0.5, ch = len * (jet ? 0.2 : 0.14); bx(M, -span / 2, wy, -ch * 0.2, span / 2, wy + 0.14, ch * 0.8, 5); bx(M, -span * 0.18, fy + f * 0.45, l - len * 0.14, span * 0.18, fy + f * 0.55, l, 5); bx(M, -0.07, fy, l - len * 0.16, 0.07, fy + hgt * 0.9, l, 5);
+      if(jet){ [-1, 1].forEach(q => bx(M, q * f * 0.75 - 0.3, fy, l - len * 0.28, q * f * 0.75 + 0.3, fy + 0.6, l - len * 0.05, 4)); } else if(twin){ [-1, 1].forEach(q => bx(M, q * span * 0.22 - 0.25, wy - 0.2, -ch - 0.8, q * span * 0.22 + 0.25, wy + 0.4, ch * 0.5, 4)); } else bx(M, -0.25, fy - 0.25, -l - 0.3, 0.25, fy + 0.25, -l, 4);
+      bx(M, -0.09, 0, -l * 0.45, 0.09, fy - f * 0.5, -l * 0.45 + 0.2, 4); bx(M, -f * 0.5, 0, l * 0.1 - 0.15, -f * 0.5 + 0.2, fy - f * 0.5, l * 0.1 + 0.15, 4); bx(M, f * 0.5 - 0.2, 0, l * 0.1 - 0.15, f * 0.5, fy - f * 0.5, l * 0.1 + 0.15, 4); return M; };
+    return { person: P, car: Cr, sedan: carM(4.5, 1.8, 0.95, 1.3, 3.4, 0.55, 0), hatch: carM(3.7, 1.7, 1.0, 1.0, 3.5, 0.6, 0), coupe: carM(4.5, 1.9, 0.8, 1.7, 3.3, 0.45, 0), suv: carM(4.9, 2.0, 1.15, 1.0, 4.6, 0.7, 0), pickup: carM(5.4, 2.0, 1.1, 1.0, 2.9, 0.65, 2.0),
+      prop: planeM(6.8, 9.5, 2.0, false, false), turbo: planeM(10.5, 12.5, 2.4, false, true), jet: planeM(15.5, 13.5, 2.6, true, false) };
   }
 
   /* ---------------- the engine ---------------- */
@@ -115,7 +126,7 @@ precision mediump float; in vec2 vUV; uniform sampler2D uTex; out vec4 oCol; voi
     const prog = (vs, fs, names) => { const p = gl.createProgram(); gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if(!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(p)); const u = {}; names.split(' ').forEach(n => { u[n] = gl.getUniformLocation(p, n); }); p.u = u; return p; };
     const ENV = 'uCam uSunDir uSunCol uSky uGround uFogCol uFogD uNight uTime';
     let pW, pA, pS, pP, pT, pI;
-    function compile(){ pW = prog(WORLD_VS, WORLD_FS, 'uVP uFade uFadeDir ' + ENV); pA = prog(ACT_VS, ACT_FS, 'uVP uPiv ' + ENV); pS = prog(SKY_VS, SKY_FS, 'uF uR uU uCam uSunDir uZen uHor uSunCol uTan uAsp uNight uTime uCloud'); pP = prog(PT_VS, PT_FS, 'uVP uCam uTime uFall uSize uScale uSpread uCol'); pT = prog(SCR_VS, SCR_FS, 'uVP uTex'); pI = prog(PROP_VS, PROP_FS, 'uVP uFar ' + ENV); }
+    function compile(){ pW = prog(WORLD_VS, WORLD_FS, 'uVP uFade uFadeDir ' + ENV); pA = prog(ACT_VS, ACT_FS, 'uVP uPiv uVeh ' + ENV); pS = prog(SKY_VS, SKY_FS, 'uF uR uU uCam uSunDir uZen uHor uSunCol uTan uAsp uNight uTime uCloud'); pP = prog(PT_VS, PT_FS, 'uVP uCam uTime uFall uSize uScale uSpread uCol'); pT = prog(SCR_VS, SCR_FS, 'uVP uTex'); pI = prog(PROP_VS, PROP_FS, 'uVP uFar ' + ENV); }
     compile();
     const emptyVAO = gl.createVertexArray();
     function setEnv(p){ const e = G.env, u = p.u; gl.uniform3fv(u.uCam, G.cam); gl.uniform3fv(u.uSunDir, e.sunDir); gl.uniform3fv(u.uSunCol, e.sunCol); gl.uniform3fv(u.uSky, e.sky); gl.uniform3fv(u.uGround, e.ground); gl.uniform3fv(u.uFogCol, e.fog); gl.uniform1f(u.uFogD, e.fogD); gl.uniform1f(u.uNight, e.night); gl.uniform1f(u.uTime, G.time); }
@@ -130,7 +141,7 @@ precision mediump float; in vec2 vUV; uniform sampler2D uTex; out vec4 oCol; voi
     /* ---- frame ---- */
     G.resize = function(w, h, dpr){ dpr = dpr || 1; const W = Math.max(2, Math.round(w * dpr)), H = Math.max(2, Math.round(h * dpr)); if(canvas.width !== W || canvas.height !== H){ canvas.width = W; canvas.height = H; } G.W = W; G.H = H; };
     G.begin = function(cam, env, t){
-      G.env = env; G.time = t; G.cam = cam.pos; G.fov = cam.fov; const asp = G.W / G.H, P = m4.perspective(cam.fov, asp, cam.near || 0.3, cam.far || 1600), V = m4.view(cam.pos, cam.yaw, cam.pitch); G.V = V; G.asp = asp;
+      G.env = env; G.time = t; G.cam = cam.pos; G.fov = cam.fov; const asp = G.W / G.H, P = m4.perspective(cam.fov, asp, cam.near || 0.3, cam.far || 1600), V = m4.view(cam.pos, cam.yaw, cam.pitch, cam.roll); G.V = V; G.asp = asp;
       G.vp = m4.mul(P, V.m); G.planes = planes(G.vp); G.tris = 0; G.calls = 0;
       gl.viewport(0, 0, G.W, G.H); gl.clearColor(env.fog[0], env.fog[1], env.fog[2], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     };
@@ -154,9 +165,9 @@ precision mediump float; in vec2 vUV; uniform sampler2D uTex; out vec4 oCol; voi
       for(let i = 0; i < n; i++){ M.p[i * 3] = f[i * 5]; M.p[i * 3 + 1] = f[i * 5 + 1]; M.p[i * 3 + 2] = f[i * 5 + 2]; M.n[i * 3] = i8[i * 20 + 12] / 127; M.n[i * 3 + 1] = i8[i * 20 + 13] / 127; M.n[i * 3 + 2] = i8[i * 20 + 14] / 127;
         const part = u8[i * 20 + 19] - 200; M.m[i * 4] = part >= 0 && part <= 4 ? part : 0; M.m[i * 4 + 1] = 7; M.m[i * 4 + 2] = 255; M.c[i * 3] = u8[i * 20 + 16]; M.c[i * 3 + 1] = u8[i * 20 + 17]; M.c[i * 3 + 2] = u8[i * 20 + 18]; }
       AM[kind] = M; if(meshes[kind]){ gl.deleteVertexArray(meshes[kind].vao); gl.deleteBuffer(meshes[kind].inst); delete meshes[kind]; } return true; };
-    /* floats = 8 per instance: x y z yaw | phase move shirt pants */
-    G.actors = function(kind, floats, count){ if(!count) return; let m = meshes[kind]; if(!m) m = meshes[kind] = actorGPU(AM[kind]);
-      gl.useProgram(pA); gl.uniformMatrix4fv(pA.u.uVP, false, G.vp); gl.uniform2f(pA.u.uPiv, m.piv[0], m.piv[1]); setEnv(pA); gl.bindVertexArray(m.vao); gl.bindBuffer(gl.ARRAY_BUFFER, m.inst);
+    /* floats = 8 per instance: x y z yaw | phase move shirt pants. Vehicles pass a `pivot` height: floats 5 and 6 of each instance are then PITCH (nose up +) and ROLL (right side down +) instead of phase / move */
+    G.actors = function(kind, floats, count, pivot){ if(!count) return; let m = meshes[kind]; if(!m) m = meshes[kind] = actorGPU(AM[kind]);
+      gl.useProgram(pA); gl.uniformMatrix4fv(pA.u.uVP, false, G.vp); gl.uniform2f(pA.u.uPiv, m.piv[0], m.piv[1]); gl.uniform2f(pA.u.uVeh, pivot == null ? 0 : 1, pivot || 0); setEnv(pA); gl.bindVertexArray(m.vao); gl.bindBuffer(gl.ARRAY_BUFFER, m.inst);
       if(count * 8 > m.cap){ m.cap = Math.max(count * 8, m.cap * 2, 512); gl.bufferData(gl.ARRAY_BUFFER, m.cap * 4, gl.DYNAMIC_DRAW); } gl.bufferSubData(gl.ARRAY_BUFFER, 0, floats, 0, count * 8);
       gl.drawElementsInstanced(gl.TRIANGLES, m.ni, gl.UNSIGNED_SHORT, 0, count); G.tris += m.ni / 3 * count; G.calls++; curW = false; };
 
