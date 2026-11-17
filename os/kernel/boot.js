@@ -9,7 +9,7 @@
   Object.freeze(K.facade.factory.market); Object.freeze(K.facade.admin.gallery); Object.freeze(K.facade.admin);
   window.OS = Object.freeze(K.facade);
   const SDK = ['https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js', 'https://www.gstatic.com/firebasejs/10.7.0/firebase-database-compat.js', 'https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js'];
-  const load = src => new Promise(res => { const s = document.createElement('script'); s.src = src; s.onload = () => res(true); s.onerror = () => res(false); document.head.appendChild(s); });
+  const load1 = src => new Promise(res => { const s = document.createElement('script'); s.src = src; s.onload = () => res(true); s.onerror = () => { s.remove(); res(false); }; document.head.appendChild(s); }), load = async src => (await load1(src)) || (await new Promise(r => setTimeout(r, 700))) || (await load1(src + '?retry=' + Date.now()));   // one retry: a hiccup on the CDN must not switch sign-in off for the whole session
   (async () => {
     const results = []; for(const s of SDK) results.push(await load(s));          // sequential: app → database → auth (compat SDK needs this order)
     if(!results.every(Boolean)) window.firebase = undefined;

@@ -177,7 +177,7 @@
   function loadPrefsFromCloud(p){ if(!p || typeof p !== 'object') return; K.prefs = normPrefs(Object.assign({}, K.prefs, p)); try{ localStorage.setItem(PREF_KEY, JSON.stringify(K.prefs)); }catch(e){} K.emit('prefs', '*'); }
 
   /* ---- auth actions ---- */
-  C.signInGoogle = async () => { const p = new firebase.auth.GoogleAuthProvider(); const r = await C.auth.signInWithPopup(p); return r.user; };
+  C.signInGoogle = async () => { if(typeof firebase === 'undefined' || !firebase.auth || !C.auth) throw new Error('Sign-in is unavailable: the Firebase SDK did not load (network, ad-blocker or firewall). Reload the page and try again.'); const p = new firebase.auth.GoogleAuthProvider(); const r = await C.auth.signInWithPopup(p); return r.user; };
   C.signInEmail = async (email, pw, create) => { const r = create ? await C.auth.createUserWithEmailAndPassword(email, pw) : await C.auth.signInWithEmailAndPassword(email, pw); return r.user; };
   C.signOut = async () => { await C.flushNow(); await C.auth.signOut(); };
   C.resetPassword = email => C.auth.sendPasswordResetEmail(email);

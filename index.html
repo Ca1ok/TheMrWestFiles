@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0e0b08">
 <meta name="mobile-web-app-capable" content="yes">
 <!-- CACHE RESET: runs before anything else. version.json (stamped by tools/stamp-version.js) changes whenever any file changes; if this browser last saw a different one it drops Cache Storage +
-     service workers, re-downloads the changed files bypassing the HTTP cache, then reloads — an old version is never run. Also re-checks when you come back to the tab. -->
+     service workers, re-downloads the changed files bypassing the HTTP cache, then reloads — an old version is never run. It only ever runs at page load (never mid-session), and it never touches sign-in data: only Cache Storage, service workers and the HTTP cache are cleared — not localStorage/IndexedDB where Firebase keeps the login. -->
 <script>(function(){
   var KV='westos.build', KF='westos.files';
   function getVer(){ try{ var x=new XMLHttpRequest(); x.open('GET','version.json?t='+Date.now(),false); x.send(); if(x.status===200) return JSON.parse(x.responseText); }catch(e){} return null; }
@@ -27,8 +27,7 @@
   document.documentElement.style.visibility='hidden'; try{ window.stop(); }catch(e){}
   purge(man,function(){ location.reload(); });
 })();
-(function(){ var T=0; function check(){ if(Date.now()-T<300000) return; T=Date.now(); fetch('version.json?t='+T,{cache:'no-store'}).then(function(r){ return r.json(); }).then(function(m){ var s=null; try{ s=localStorage.getItem('westos.build'); }catch(e){} if(m&&m.v&&s&&s!==m.v) location.reload(); }).catch(function(){}); }
-  document.addEventListener('visibilitychange',function(){ if(!document.hidden) check(); }); window.addEventListener('focus',check); T=Date.now(); })();</script>
+</script>
 <title>WestOS — The Mr West Files</title>
 <link rel="icon" type="image/png" href="assets/icons/WestOS.png">
 <link rel="stylesheet" href="os/tokens.css?v=20261105b">
