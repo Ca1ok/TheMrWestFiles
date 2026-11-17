@@ -5,6 +5,7 @@ Static site on GitHub Pages (no build step, no npm deps at runtime). A browser "
 ## 0. Owner's standing rules (follow without being told)
 - **Deliver changed files only, in repo folder structure, as a `.zip`** the owner drag-drops over the repo. Zips can't delete: list files to delete in the reply.
 - Do NOT add/bump `?v=` cache-busting query strings on script/link tags (the owner removed them; `index.html` still has old ones — leave alone).
+- **Cache reset / versioning is part of every delivery:** if you changed any file the browser loads, finish by running `node tools/stamp-version.js` and put the new `version.json` in the zip (full rules in §10b). Never hand-edit it, never invent a hash.
 - Keep the architecture (multi-file, `OS` facade, kernel/app split). Add features by adding files + one registry line, not by rewriting.
 - Money must stay **balanced** and work through the one wallet (see §6). Free Firebase tier: keep reads/writes minimal.
 - Reply short: what changed, what's untested, files to delete. No fluff.
@@ -127,7 +128,19 @@ cd <repo>; (python3 -m http.server 8123 >/dev/null 2>&1 &); sleep 1.5; python3 t
 Python Playwright + Chromium are preinstalled (`from playwright.sync_api import sync_playwright`). Pattern: `pg.goto('http://localhost:8123/index.html')`, wait ~2 s, `pg.evaluate("OS.open('Games')")`, find the app frame with `[f for f in pg.frames if 'Games.html' in f.url][0]`, drive DOM, `pg.screenshot(path)`, collect `pageerror`. Set prefs for layout tests with `OS.prefs.set('layout',[...]); OS.shell.relayout()`. Firebase/Google hosts are unreachable offline (expected `ERR_NAME_NOT_RESOLVED` console noise; play is signed-out). Pure libs: `node tests/<name>.test.js`. Syntax check: `node -e "new Function(require('fs').readFileSync(f,'utf8'))"`.
 
 ## 10. Delivery checklist
-1. Edit under `os/`, `apps/`, `data/` only. 2. Syntax-check + headless-run the feature. 3. `zip -q out.zip <changed files>` from repo root (paths relative to root). 4. Reply: what changed, tested vs untested, files to delete, any required Firebase rules change (full JSON). 5. If behaviour changes in a durable way, update this file.
+1. Edit under `os/`, `apps/`, `data/` only. 2. Syntax-check + headless-run the feature. 3. Run `node tools/stamp-version.js` (§10b), then `zip -q out.zip <changed files> [version.json]` from repo root (paths relative to root). 4. Reply: what changed, tested vs untested, files to delete, any required Firebase rules change (full JSON). 5. If behaviour changes in a durable way, update this file.
+
+## 10b. Cache reset / versioning (`version.json`) — ship it with every delivery
+- `tools/stamp-version.js` writes `version.json` = `{ v, files }`: a content hash (SHA-1, 10 chars per file; `v` = 12 chars over all of them) of every file the browser loads. It skips `.git .github node_modules tests tools lab-cache market`, `version.json CNAME robots.txt` and every `*.md` / `*.py`. So `v` changes whenever any loaded file changes (incl. new files and the stale root-level copies).
+- `index.html` has a CACHE RESET script at the very top: it fetches `version.json` on every page load; if `v` differs from what that browser stored (`localStorage` `westos.build` / `westos.files`) it clears Cache Storage + service workers, re-fetches the changed files bypassing the HTTP cache, then reloads. Only at page load, never mid-session, and it never touches sign-in data. **A change shipped without a new `version.json` can keep running the OLD code in players' browsers.**
+- `.github/workflows/stamp-version.yml` re-stamps and commits `version.json` on every push to `main` (it ignores pushes that only touch `version.json`, `market/**`, `lab-cache/**`, `data/market-data.json`). Don't rely on it: ship the stamp yourself; when the hash is right the Action finds "version unchanged" and does nothing.
+- **Agent rule (do this last, after every edit is final):** from the repo root run `node tools/stamp-version.js`.
+  - Prints `version.json → <hash> (N files)` → add `version.json` (repo root) to the zip. It is the only file the script writes.
+  - Prints `version unchanged` → nothing to include.
+  - Edited anything afterwards? Re-run it. A stale stamp is worse than none. Never hand-edit `version.json`, never invent a hash, never use `?v=` query strings (§0).
+  - Only `.md` / `tests/` / `tools/` / `.github/` / `market/` / `lab-cache/` changed → the hash doesn't move, no `version.json` needed.
+  - Working from a partial copy of the repo (owner sent only some files)? The stamp would hash only what you have and be wrong: do NOT ship `version.json`; tell the owner to run the script (or let the Action do it).
+  - Say in the reply that `version.json` is included (and the new `v`), or why it isn't.
 
 ## 11. Gotchas learned
 - **"OS.<obj>.<fn> is not a function"** = the function exists in a kernel file but was never added to the facade in `os/kernel/api.js`. Grep the name in api.js first; check every `OS.admin.*` call in apps has a matching entry (`grep -oh "OS\.admin\.[a-zA-Z]*" -r apps | sort -u`).
