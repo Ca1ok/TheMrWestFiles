@@ -1,0 +1,25 @@
+name: Stamp version (cache reset)
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['version.json', 'market/**', 'lab-cache/**', 'data/market-data.json']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: stamp-version
+  cancel-in-progress: true
+jobs:
+  stamp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: node tools/stamp-version.js
+      - name: Commit version.json
+        run: |
+          git config user.name "westos-bot"; git config user.email "actions@github.com"
+          git add version.json; git diff --cached --quiet && exit 0
+          git commit -m "stamp version [skip ci]"
+          for i in 1 2 3; do git pull --rebase -q && git push -q && break || sleep 3; done

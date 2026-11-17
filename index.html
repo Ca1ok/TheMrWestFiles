@@ -5,6 +5,30 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0e0b08">
 <meta name="mobile-web-app-capable" content="yes">
+<!-- CACHE RESET: runs before anything else. version.json (stamped by tools/stamp-version.js) changes whenever any file changes; if this browser last saw a different one it drops Cache Storage +
+     service workers, re-downloads the changed files bypassing the HTTP cache, then reloads — an old version is never run. Also re-checks when you come back to the tab. -->
+<script>(function(){
+  var KV='westos.build', KF='westos.files';
+  function getVer(){ try{ var x=new XMLHttpRequest(); x.open('GET','version.json?t='+Date.now(),false); x.send(); if(x.status===200) return JSON.parse(x.responseText); }catch(e){} return null; }
+  function purge(man, then){
+    var old={}; try{ old=JSON.parse(localStorage.getItem(KF)||'{}'); }catch(e){}
+    var first=!Object.keys(old).length, list=['index.html'], files=man.files||{};
+    Object.keys(files).forEach(function(f){ if(old[f]===files[f]) return; if(first && /\.(glb|png|jpe?g|webp|mp3|ogg|wav|woff2?)$/i.test(f)) return; list.push(f); });
+    var jobs=[];
+    try{ if(window.caches&&caches.keys) jobs.push(caches.keys().then(function(k){ return Promise.all(k.map(function(n){ return caches.delete(n); })); })); }catch(e){}
+    try{ if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations) jobs.push(navigator.serviceWorker.getRegistrations().then(function(r){ return Promise.all(r.map(function(g){ return g.unregister(); })); })); }catch(e){}
+    var i=0; function pump(){ var out=[]; while(i<list.length&&out.length<8){ out.push(fetch(list[i++],{cache:'reload'}).catch(function(){})); } return Promise.all(out).then(function(){ return i<list.length?pump():0; }); }
+    jobs.push(pump());
+    var done=false, fin=function(){ if(done) return; done=true; try{ localStorage.setItem(KV,man.v); localStorage.setItem(KF,JSON.stringify(files)); }catch(e){} then(); };
+    Promise.all(jobs).then(fin,fin); setTimeout(fin,15000);
+  }
+  var man=getVer(); if(!man||!man.v) return; var seen=null; try{ seen=localStorage.getItem(KV); }catch(e){}
+  if(seen===man.v) return;
+  document.documentElement.style.visibility='hidden'; try{ window.stop(); }catch(e){}
+  purge(man,function(){ location.reload(); });
+})();
+(function(){ var T=0; function check(){ if(Date.now()-T<300000) return; T=Date.now(); fetch('version.json?t='+T,{cache:'no-store'}).then(function(r){ return r.json(); }).then(function(m){ var s=null; try{ s=localStorage.getItem('westos.build'); }catch(e){} if(m&&m.v&&s&&s!==m.v) location.reload(); }).catch(function(){}); }
+  document.addEventListener('visibilitychange',function(){ if(!document.hidden) check(); }); window.addEventListener('focus',check); T=Date.now(); })();</script>
 <title>WestOS — The Mr West Files</title>
 <link rel="icon" type="image/png" href="assets/icons/WestOS.png">
 <link rel="stylesheet" href="os/tokens.css?v=20261105b">
