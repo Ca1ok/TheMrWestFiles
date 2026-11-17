@@ -2,7 +2,7 @@ name: Export WestLab discoveries
 
 on:
   schedule:
-    - cron: '17 * * * *'     # hourly
+    - cron: '7,22,37,52 * * * *'     # every 15 minutes (new steps / discoveries reach everyone quickly; the live feed in the app shows them instantly)
   workflow_dispatch:
 
 permissions:

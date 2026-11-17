@@ -11,6 +11,36 @@ const DB = 'https://mrwestfiles-default-rtdb.asia-southeast1.firebasedatabase.ap
 const getJSON = async u => { const r = await fetch(DB + u); if(!r.ok) throw new Error(u + ' -> ' + r.status); return r.json(); };
 const write = (f, o) => { const next = JSON.stringify(o); if(fs.existsSync(f) && fs.readFileSync(f, 'utf8') === next) return false; fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, next); return true; };
 
+/* ---- synthesis steps (os/lib/synth*.js) ---- */
+const SYN = load(ROOT), Synth = SYN.Synth, SV = Synth.VER, SY = path.join(OUTD, 'synth');
+// a synthesis discovery is kept only if its product really is the product of a verified card in lab-cache/synth (written by steps() below, which runs first)
+let SYNTH_PRODUCTS = null;
+const synthProducts = () => { if(SYNTH_PRODUCTS) return SYNTH_PRODUCTS; SYNTH_PRODUCTS = new Set(); try{ const ix = JSON.parse(fs.readFileSync(path.join(SY, 'index.json'), 'utf8')); Object.keys(ix).forEach(k => SYNTH_PRODUCTS.add(k)); }catch(e){} return SYNTH_PRODUCTS; };
+const verifySynthDiscovery = d => { const k = String(d.n || '').split(',')[0]; return !!k && synthProducts().has(k) && Synth.validate && true; };
+async function steps(){
+  const stateF = path.join(SY, '_state.json'), state = fs.existsSync(stateF) ? JSON.parse(fs.readFileSync(stateF, 'utf8')) : { t: 0 }; const stale = state.sv !== SV; if(stale) state.t = 0;
+  let sub; try{ sub = (await getJSON('/labStep.json?orderBy="t"&startAt=' + (state.t + 1))) || {}; }catch(e){ sub = (await getJSON('/labStep.json')) || {}; }
+  const shards = {}, getShard = id => shards[id] || (shards[id] = (() => { const f = path.join(SY, id + '.json'); if(!fs.existsSync(f)) return {}; const o = JSON.parse(fs.readFileSync(f, 'utf8')); Object.keys(o).forEach(k => { const v = Synth.validate(o[k]); if(!v.ok || o[k].ev !== SV) delete o[k]; }); return o; })());
+  if(stale && fs.existsSync(SY)) fs.readdirSync(SY).filter(f => /^[0-9a-f]{2}\.json$/.test(f)).forEach(f => getShard(f.slice(0, 2)));
+  let added = 0, rejected = 0, maxT = state.t;
+  Object.keys(sub).sort((a, b) => (sub[a].t || 0) - (sub[b].t || 0)).forEach(id => {
+    const s = sub[id]; if(!s || typeof s !== 'object') return; maxT = Math.max(maxT, +s.t || 0);
+    const keys = Array.isArray(s.r) ? s.r.filter(x => typeof x === 'string' && x.length < 200).slice(0, 4) : []; if(!keys.length) { rejected++; return; }
+    const a = { keys, solv: typeof s.s === 'string' ? s.s : '', cat: typeof s.k === 'string' ? s.k : '', T: Math.round(+s.T), P: +s.P || 1, atm: s.a || 'air', vessel: s.v || 'flask', stir: (s.f & 1) ? 1 : 0, dean: (s.f & 2) ? 1 : 0, slow: (s.f & 4) ? 1 : 0, time: Math.round(+s.m) || 60, workup: s.w || 'none' };
+    let card; try{ card = Synth.card(a); }catch(e){ rejected++; return; }
+    if(!card || !card.ok){ rejected++; return; }
+    const v = Synth.validate(card); if(!v.ok){ rejected++; console.log('Rejected card ' + id + ': ' + v.why); return; }
+    if(Synth.fnv(card.key) !== id){ rejected++; return; }                      // the id must be the hash of the recomputed key
+    const sh = getShard(Synth.shardOf(card.key)); if(sh[card.key]) return; sh[card.key] = card; added++;
+  });
+  let changed = 0; fs.mkdirSync(SY, { recursive: true }); Object.keys(shards).forEach(id => { if(write(path.join(SY, id + '.json'), shards[id])) changed++; });
+  // product -> best cards index (used by the in-game "find a route" search)
+  const ix = {}; fs.readdirSync(SY).filter(f => /^[0-9a-f]{2}\.json$/.test(f)).forEach(f => { const o = shards[f.slice(0, 2)] || JSON.parse(fs.readFileSync(path.join(SY, f), 'utf8')); Object.keys(o).forEach(k => { const c = o[k]; if(!c || !c.ok) return; c.Pr.forEach(p => { if(p.role === 'co' && !(p.comp && p.comp.C)) return; (ix[p.key] = ix[p.key] || []).push([c.eta, k]); }); }); });
+  const out = {}; Object.keys(ix).sort().forEach(p => { out[p] = ix[p].sort((x, y) => y[0] - x[0] || (x[1] < y[1] ? -1 : 1)).slice(0, 3).map(x => x[1]); }); if(write(path.join(SY, 'index.json'), out)) changed++;
+  SYNTH_PRODUCTS = new Set(Object.keys(out));
+  if(maxT !== state.t || stale) write(stateF, { t: maxT, sv: SV });
+  console.log('Synthesis library: ' + added + ' added, ' + rejected + ' rejected, ' + changed + ' file(s) written, ' + Object.keys(out).length + ' products indexed.');
+}
 async function discoveries(){
   // The registry only keeps what the CURRENT engine can still reproduce. Each kept entry is stamped with the engine version it was verified under; entries recorded by an older engine
   // (e.g. reactions between free F/H/N/O atoms) are re-derived once per version and dropped if the engine no longer makes them. Firebase keeps the raw record; this file is the checked view.
@@ -20,6 +50,7 @@ async function discoveries(){
   const data = (await getJSON('/labCache.json')) || {}, clean = {}; let checked = 0, dropped = 0;
   Object.keys(data).filter(k => data[k] && typeof data[k].by === 'string').sort((a, b) => (data[b].t || 0) - (data[a].t || 0)).slice(0, 300).forEach(k => {
     const d = data[k]; if(rej.keys[k]) { dropped++; return; }
+    if(k.slice(0, 2) === 's:'){ const ok = verifySynthDiscovery(d); if(!ok){ rej.keys[k] = 1; dropped++; console.log('Dropped synth discovery (not reproducible): ' + k); return; } clean[k] = { by: String(d.by).slice(0, 20), t: +d.t || 0, eq: String(d.eq || '').slice(0, 240), n: String(d.n || '').slice(0, 240), rc: String(d.rc || '').slice(0, 300), ev: 's' + SV }; return; }
     let eq = prev[k] && prev[k].ev === EV ? prev[k].eq : null;
     if(!eq){ checked++; eq = verifyDiscovery(Phys, k); if(!eq){ rej.keys[k] = 1; dropped++; console.log('Dropped (current engine does not make it): ' + k + '  [' + String(d.eq || '').slice(0, 80) + ']'); return; } }
     clean[k] = { by: String(d.by).slice(0, 20), t: +d.t || 0, eq: eq.slice(0, 240), n: String(d.n || '').slice(0, 240), ev: EV };
@@ -52,4 +83,4 @@ async function reactions(){
   console.log('Reaction library: ' + added + ' added, ' + rejected + ' rejected, ' + changed + ' shard file(s) written.');
   return fresh;
 }
-(async () => { await discoveries(); await reactions(); })().catch(e => { console.error(e); process.exit(1); });
+(async () => { await steps(); await discoveries(); await reactions(); })().catch(e => { console.error(e); process.exit(1); });
