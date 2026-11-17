@@ -41,7 +41,7 @@
       st = RW.Streamer.create(gfx, { nh: S.nh, radius: perfLow() ? cfg.perfRadius : cfg.radius, base: 'os/realworld/' }); gfx.onRestore = () => { st.free(); st = RW.Streamer.create(gfx, { nh: S.nh, radius: cfg.radius }); };
       net = RW.Net.create(K); cells = RW.Cells.create(gfx); if(RW.Assets && !RW.Assets.tried){ RW.Assets.tried = true; RW.Assets.load('assets/world/').catch(() => {}); } return true;
     }
-    function gpuDown(){ if(!gfx) return; try{ if(net) net.stop(); if(st) st.free(); if(scr) scr.clear(); if(cells) cells.clear(); if(dyn.plots) gfx.free(dyn.plots); if(dyn.marks) gfx.free(dyn.marks); gfx.destroy(); }catch(e){} gfx = st = net = scr = npcs = cells = null; S.cell = null; P.inside = false; closeDialog(true); dyn = { plots: null, marks: null, sig: '' }; const c2 = cv.cloneNode(false); cv.replaceWith(c2); }
+    function gpuDown(){ if(!gfx) return; try{ if(net) net.stop(); if(st) st.free(); if(scr) scr.clear(); if(cells) cells.clear(); if(dyn.plots) gfx.free(dyn.plots); if(dyn.marks) gfx.free(dyn.marks); gfx.destroy(); }catch(e){} gfx = st = net = scr = npcs = cells = null; S.cell = null; S.room = null; S.busy = false; P.inside = false; closeDialog(true); dyn = { plots: null, marks: null, sig: '' }; const c2 = cv.cloneNode(false); cv.replaceWith(c2); }
 
     /* ---------------- spawn / travel ---------------- */
     const homePose = () => { const h = OS.homes.home && OS.homes.home(); if(!h || !h.g) return null; const p = RW.Nav.housePose(+String(h.id).slice(1)); return p ? Object.assign({ n: 'Home · ' + p.name }, p) : null; };
@@ -51,7 +51,7 @@
     }
     const plazaPose = () => Object.assign({ n: 'Town Square' }, RW.Nav.plazaPose());
     const poiName = id => (G.POIS[id] && G.POIS[id].n) || id;
-    async function teleport(x, z, yaw){ fade(true); await sleep(280); if(!st) return; P.x = x; P.z = z; P.yaw = yaw || 0; P.vx = P.vz = P.vy = 0; P.y = P.cy = T.height(x, z); P.grounded = true; if(st) st.update(P.x, P.z); const t0 = performance.now(); while(!ringReady() && performance.now() - t0 < 4500){ await sleep(60); if(st) st.update(P.x, P.z); st && st.upload(3); } fade(false); }
+    async function teleport(x, z, yaw){ fade(true); await sleep(280); if(!st) return; if(S.room){ if(cells) cells.clear(); S.room = null; S.cell = null; P.inside = false; if(scr) scr.set([]); } P.x = x; P.z = z; P.yaw = yaw || 0; P.vx = P.vz = P.vy = 0; P.y = P.cy = T.height(x, z); P.grounded = true; if(st) st.update(P.x, P.z); const t0 = performance.now(); while(!ringReady() && performance.now() - t0 < 4500){ await sleep(60); if(st) st.update(P.x, P.z); st && st.upload(3); } fade(false); }
     function ringReady(){ if(!st) return false; let n = 0, ok = 0; for(let i = -1; i <= 1; i++) for(let j = -1; j <= 1; j++){ n++; const c = st.chunks.get((Math.floor(P.x / 128) + i) + ',' + (Math.floor(P.z / 128) + j)); if(c && c.cur && c.lod <= 1) ok++; } return ok >= 8; }
     const fade = on => { $('#rwFade').classList.toggle('on', !!on); };
 
@@ -78,7 +78,7 @@
       return null;
     }
     function doorInfo(d){
-      const sp = cellSpec(d); if(sp) return { label: d.k === 'poi' ? (d.name || (BUILDINGS[d.id] || {}).name) + ' · walk in' : d.k === 'house' ? d.addr + (sp.own ? ' (yours)' : ' (rented)') + ' · walk in' : 'Your ' + sp.name + ' · walk in', enter: true, spec: sp };
+      const sp = cellSpec(d); if(sp) return { label: d.k === 'poi' ? (d.name || (BUILDINGS[d.id] || {}).name) + ' · press E' : d.k === 'house' ? d.addr + (sp.own ? ' (yours)' : ' (rented)') + ' · press E' : 'Your ' + sp.name + ' · press E', enter: true, spec: sp };
       if(d.k === 'house'){ const r = homeRec(d.id), sale = r.o === 'bank' || r.a > 0, who = r.o === 'bank' ? 'City-owned' : r.on ? 'Owned by ' + r.on : 'Private'; return { label: d.addr + ' · ' + d.type + ' · ' + who + (sale ? ' · for sale — E to view' : ' · locked'), go: () => sale ? OS.open('RealEstate') : toast('This home is private.') }; }
       if(d.k === 'plot'){ const lab = d.kind === 'l'; return { label: 'Private ' + (lab ? 'laboratory' : 'factory'), go: () => toast('Only the owner can go in.') }; }
       return null;
@@ -86,16 +86,28 @@
 
     /* ---------------- interiors: seamless cells (see cells.js) ---------------- */
     /* build the inside of every enterable building within ~32 m (one per tick, so a frame never stalls), drop the ones you left (> 62 m). A closed building far away costs nothing. */
-    let cellAt = 0;
-    function cellsUpdate(t){
-      if(t - cellAt < 150 || !cells) return; cellAt = t; const want = new Map(); allDoorsNear(P.x, P.z, 32).forEach(d => { const sp = cellSpec(d); if(sp) want.set(sp.key, { sp, d }); });
-      for(const [k, v] of want){ if(!cells.cells.has(k)){ cells.ensure(k, v.sp.kind, v.sp.ctx, v.d); break; } }
-      [...cells.cells.keys()].forEach(k => { const c = cells.cells.get(k); if(!want.has(k) && Math.hypot(c.door.x - P.x, c.door.z - P.z) > 62) cells.drop(k); });
-      const c = cells.inside(P.x, P.y, P.z); if(c !== S.cell){ S.cell = c; P.inside = !!c; closeDialog(true); scr.set(c ? c.screens : []); if(c){ const nm = $('#rwLoc'); nm.textContent = c.name; nm.classList.add('show'); clearTimeout(nm._t); nm._t = setTimeout(() => nm.classList.remove('show'), 2600); } hudLoc = ''; }
+    /* INTERIORS ARE SEPARATE ROOMS: E at a door → quick fade → the room (built by interiors.js for that building kind/house type) stands in an empty pocket far from the city (RX,RZ), so it can never clip the outside.
+     * Leave by walking out of the doorway or pressing E near it → fade → back on the street at the door. The street keeps streaming around the door meanwhile. */
+    const RX = 30000, RZ = 30000;
+    function cellsUpdate(){
+      const c = S.room ? S.room.cell : null; if(c === S.cell) return; S.cell = c; P.inside = !!c; closeDialog(true); scr.set(c ? c.screens : []);
+      if(c){ const nm = $('#rwLoc'); nm.textContent = c.name; nm.classList.add('show'); clearTimeout(nm._t); nm._t = setTimeout(() => nm.classList.remove('show'), 2600); } hudLoc = '';
+    }
+    async function enterRoom(d, sp){
+      if(S.busy || S.room || !cells) return; S.busy = true; fade(true); await sleep(280); if(!cells){ S.busy = false; return; }
+      cells.clear(); const gy = 0, door = { x: RX, z: RZ, nx: 0, nz: 1, y: gy }, c = cells.ensure('in:' + sp.key, sp.kind, sp.ctx, door);
+      if(!c){ toast('Could not open this building.'); fade(false); S.busy = false; return; }
+      S.room = { cell: c, door, gy, ret: { x: d.x, z: d.z, nx: d.nx, nz: d.nz, y: d.y }, sx: P.x, sz: P.z }; P.x = RX; P.z = RZ - 3.2; P.y = P.cy = gy + 0.1; P.vx = P.vz = P.vy = 0; P.yaw = 0; P.pitch = 0; P.grounded = true; cellsUpdate();
+      await sleep(120); fade(false); S.busy = false;
+    }
+    async function exitRoom(){
+      if(S.busy || !S.room) return; S.busy = true; fade(true); await sleep(280); const r = S.room.ret; if(cells) cells.clear(); S.room = null; S.cell = null; P.inside = false; if(scr) scr.set([]);
+      P.x = r.x; P.z = r.z; P.vx = P.vz = P.vy = 0; P.y = P.cy = T.height(P.x, P.z); P.yaw = Math.atan2(r.nx, -r.nz); P.pitch = 0; P.grounded = true; hudLoc = ''; if(st) st.update(P.x, P.z);
+      await sleep(120); fade(false); S.busy = false;
     }
 
     /* ---------------- collisions: see phys.js (boxes with a height, stairs, floors, ceilings) ---------------- */
-    const collSets = () => { const sets = []; st.nearCols(P.x, P.z, c => sets.push({ a: c, st: 8 })); if(dynColsA) sets.push({ a: dynColsA, st: 8 }); const cs = cells.sets(); for(let i = 0; i < cs.length; i++) sets.push(cs[i]); return sets; };
+    const collSets = () => { const sets = []; if(!S.room){ st.nearCols(P.x, P.z, c => sets.push({ a: c, st: 8 })); if(dynColsA) sets.push({ a: dynColsA, st: 8 }); } if(S.room){ const cs = cells.sets(); for(let i = 0; i < cs.length; i++) sets.push(cs[i]); } return sets; };
 
     /* ---------------- people & cars ---------------- */
     async function loadBots(){ try{ const m = await (RW.botSource ? RW.botSource() : OS.homes.bots()); botList = Object.keys(m || {}).map(id => { const r = m[id], n = +id.slice(1); return { id, n, b: { n, job: r.j || 'baker', thrift: typeof r.th === 'number' ? r.th : 0.5 }, home: r.h ? G.house(+String(r.h).slice(1)) : null, shirt: pack(hsl(G.h32(n, 19) % 360, 55, 52)), pants: pack(hsl(G.h32(n, 21) % 360, 30, 24)), init: 0, x: 0, z: 0, tx: 0, tz: 0, vx: 0, vz: 0, yaw: 0, ph: 0, mv: 0, vis: false, t: 0 }; }); }catch(e){} }
@@ -188,15 +200,10 @@
     function openMap(){ if(!S.running || S.loading) return; if(locked()) document.exitPointerLock(); closeDialog(true); try{ OS.open('WestMap'); }catch(e){} }
 
     /* ---------------- interaction ---------------- */
-    /* E at an enterable door: build the cell if it is not loaded yet, then step the player through the doorway (facing in). Walking in still works too. */
-    function stepIn(d, sp){
-      if(!cells) return; let c = cells.cells.get(sp.key) || cells.ensure(sp.key, sp.kind, sp.ctx, d); if(!c) return toast('Could not open this building.');
-      const x = d.x - d.nx * 2.6, z = d.z - d.nz * 2.6; P.x = x; P.z = z; P.y = P.cy = d.y + 0.1; P.vx = P.vz = P.vy = 0; P.grounded = true; P.yaw = Math.atan2(-d.nx, d.nz); P.pitch = 0; cellAt = 0; cellsUpdate(performance.now());
-    }
-    function interact(){ if(!S.running || S.loading || S.dialog) return; if(uiOpen()) return; if(curNpc){ openDialog(curNpc); return; } if(curDoor && curDoor.info){ if(curDoor.info.enter) stepIn(curDoor.d, curDoor.info.spec); else if(curDoor.info.go) curDoor.info.go(); } }
+    function interact(){ if(!S.running || S.loading || S.dialog) return; if(uiOpen()) return; if(curNpc){ openDialog(curNpc); return; } if(curDoor && curDoor.exit){ exitRoom(); return; } if(curDoor && curDoor.info){ if(curDoor.info.enter) enterRoom(curDoor.d, curDoor.info.spec); else if(curDoor.info.go) curDoor.info.go(); } }
     function findInteraction(){
       curNpc = null; curDoor = null; const fx = Math.sin(P.yaw), fz = -Math.cos(P.yaw);
-      if(S.cell){ let bd = 3.4; S.cell.npcs.forEach(n => { if(Math.abs(n.y - P.y) > 2.4) return; const dx = n.x - P.x, dz = n.z - P.z, d = Math.hypot(dx, dz); if(d < bd && (dx * fx + dz * fz) / (d || 1) > 0.25){ bd = d; curNpc = n; } }); if(curNpc) setPrompt('Talk to ' + curNpc.name, curNpc.opts.length ? curNpc.opts.map(o => o.label.split(' · ')[0]).join(' · ') : ''); else setPrompt(null); return; }
+      if(S.cell){ let bd = 3.4; S.cell.npcs.forEach(n => { if(Math.abs(n.y - P.y) > 2.4) return; const dx = n.x - P.x, dz = n.z - P.z, d = Math.hypot(dx, dz); if(d < bd && (dx * fx + dz * fz) / (d || 1) > 0.25){ bd = d; curNpc = n; } }); if(curNpc) setPrompt('Talk to ' + curNpc.name, curNpc.opts.length ? curNpc.opts.map(o => o.label.split(' · ')[0]).join(' · ') : ''); else if(S.room && Math.hypot(P.x - S.room.door.x, P.z - S.room.door.z) < 4){ curDoor = { exit: true }; setPrompt('Leave'); } else setPrompt(null); return; }
       if(lookNpc && Math.hypot(lookNpc.x - P.x, lookNpc.z - P.z) < 5){ curNpc = { name: G.bot(lookNpc.n).name, line: outLine(lookNpc), opts: [], bot: lookNpc }; }
       let bd = 3.2; allDoorsNear(P.x, P.z, 3.4).forEach(d => { const dist = Math.hypot(d.x - P.x, d.z - P.z); if(dist < bd){ const i = doorInfo(d); if(i){ bd = dist; curDoor = { d, info: i, dist }; } } });
       if(curDoor){ curNpc = null; setPrompt(curDoor.info.label); } else if(curNpc) setPrompt('Talk to ' + curNpc.name); else setPrompt(null);
@@ -210,10 +217,11 @@
       const sp = (run ? cfg.run : cfg.walk) * (S.cell ? 0.8 : 1), fx = Math.sin(P.yaw), fz = -Math.cos(P.yaw), rx = Math.cos(P.yaw), rz = Math.sin(P.yaw), tvx = (rx * ix - fx * iz) * sp, tvz = (rz * ix - fz * iz) * sp, a = Math.min(1, dt * (Math.hypot(tvx, tvz) > 0.1 ? 11 : 9));
       P.vx += (tvx - P.vx) * a; P.vz += (tvz - P.vz) * a;
       const jump = (keys.Space || touch.jump) && !busy ? cfg.jump : 0; touch.jump = false;
-      Phys.step(P, dt, { sets: collSets(), disabled: cells.disabled(), ground: T.height, grav: cfg.grav, jump });
-      { const d = Math.hypot(P.x, P.z), mx = L.radius() + 450; if(d > mx){ P.x *= mx / d; P.z *= mx / d; P.vx = P.vz = 0; } }
+      Phys.step(P, dt, { sets: collSets(), disabled: cells.disabled(), ground: S.room ? (() => S.room.gy) : T.height, grav: cfg.grav, jump });
+      if(!S.room){ const d = Math.hypot(P.x, P.z), mx = L.radius() + 450; if(d > mx){ P.x *= mx / d; P.z *= mx / d; P.vx = P.vz = 0; } }
+      if(S.room && !S.busy){ const r = S.room.door; if((P.x - r.x) * r.nx + (P.z - r.z) * r.nz > -1.5) exitRoom(); }
       const dy = P.y - P.cy; P.cy = Math.abs(dy) > 1.2 ? P.y : P.cy + dy * Math.min(1, dt * 16);   // stairs and kerbs glide instead of snapping
-      const spd = Math.hypot(P.vx, P.vz); P.mv = clamp(spd / cfg.run, 0, 1.2); P.bob += dt * spd * 1.9; cellsUpdate(t); findInteractionThrottled(t);
+      const spd = Math.hypot(P.vx, P.vz); P.mv = clamp(spd / cfg.run, 0, 1.2); P.bob += dt * spd * 1.9; cellsUpdate(); findInteractionThrottled(t);
       if(net) net.tick({ x: P.x, z: P.z, yaw: P.yaw, mv: P.inside ? 0 : spd / cfg.run, inside: P.inside }, dt);
     }
     let fiAt = 0; const findInteractionThrottled = t => { if(t - fiAt > 60){ fiAt = t; findInteraction(); } };
@@ -222,13 +230,13 @@
     function render(dt, t){
       const dpr = Math.min(window.devicePixelRatio || 1, perfLow() ? 1 : 1.5) * S.scale; gfx.resize(cv.clientWidth, cv.clientHeight, dpr);
       if(!env || t - envAt > 250){ envAt = t; grade = K.skin && K.skin(); env = RW.Env.state(OS.now() + (RW.timeShift || 0), grade && grade.three); S.env = env; }
-      st.update(P.x, P.z); st.upload(2); st.step(dt);
+      st.update(S.room ? S.room.sx : P.x, S.room ? S.room.sz : P.z); st.upload(2); st.step(dt);
       if(t - sunTick > 2000){ sunTick = t; const n2 = nh(); if(n2 !== S.nh){ S.nh = n2; S.nd = G.districtCount(n2); L.setup(n2); T.setup(L.radius()); st.setNH(n2); } if(S.nh) rebuildDyn(); }
       if(t - botsAt > 90000){ botsAt = t; loadBots(); } stepNPCs(t, dt);
       const e = env, bob = Math.sin(P.bob * 2.2) * 0.03 * P.mv, cam = { pos: [P.x, P.cy + cfg.eye + bob, P.z], yaw: P.yaw, pitch: P.pitch, fov: cfg.fov * Math.PI / 180, near: 0.25, far: cfg.far };
       gfx.begin(cam, e, t / 1000);
-      gfx.sky(e.cloud); gfx.startWorld(); S.drawn = st.draw(P.x, P.z, cfg.far); if(dyn.plots) gfx.draw(dyn.plots, 1, 1); if(dyn.marks) gfx.draw(dyn.marks, 1, 1);
-      S.props = st.drawProps(perfLow() ? 260 : 430, perfLow() ? 380 : 570);                      // trees, lamps, benches: one instanced call per kind
+      if(!S.room){ gfx.sky(e.cloud); gfx.startWorld(); S.drawn = st.draw(P.x, P.z, cfg.far); if(dyn.plots) gfx.draw(dyn.plots, 1, 1); if(dyn.marks) gfx.draw(dyn.marks, 1, 1);
+        S.props = st.drawProps(perfLow() ? 260 : 430, perfLow() ? 380 : 570); }                      // trees, lamps, benches: one instanced call per kind
       if(cells.cells.size){ gfx.env = RW.Env.INDOOR; gfx.startWorld(); cells.draw(); gfx.env = e; if(S.cell){ scr.tick(P.x, P.z, t); scr.draw(); } }   // insides: only loaded ones, indoor light
       ensureModels(); const [np, nc] = fillActors(); drawPeople(actorBuf, np); if(nc) drawCars(carBuf, nc);
       if(S.cell){ const ni = fillInside(); if(ni){ gfx.env = RW.Env.INDOOR; drawPeople(inBuf, ni); gfx.env = e; } }
@@ -252,7 +260,7 @@
       if(net) net.start(P.x, P.z); last = performance.now(); fpsT = last; raf = requestAnimationFrame(loop); setTimeout(() => { if(net && !net.on && S.running) net.start(P.x, P.z); }, 4000); return true;
     }
     function exit(){
-      if(!S.running) return; S.running = false; cancelAnimationFrame(raf); document.exitPointerLock && document.exitPointerLock(); try{ OS.prefs.set('rwPos', { x: Math.round(P.x), z: Math.round(P.z), yaw: Math.round(P.yaw * 100) / 100 }); }catch(e){}
+      if(!S.running) return; S.running = false; cancelAnimationFrame(raf); document.exitPointerLock && document.exitPointerLock(); try{ OS.prefs.set('rwPos', { x: Math.round(S.room ? S.room.ret.x : P.x), z: Math.round(S.room ? S.room.ret.z : P.z), yaw: Math.round(P.yaw * 100) / 100 }); }catch(e){}
       screen.classList.remove('rw-on', 'rw-phone'); S.phone = false; try{ OS.homes.watchMap(false); }catch(e){} gpuDown();
     }
     function phone(on){ if(!S.running) return; S.phone = on; screen.classList.toggle('rw-phone', on); if(on){ document.exitPointerLock && document.exitPointerLock(); $('#rwPause').classList.remove('show'); } else { last = performance.now(); $('#rwPause').classList.toggle('show', !touch.on); } }
