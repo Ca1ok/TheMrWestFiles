@@ -1,7 +1,7 @@
 # The real world (3D, first person)
 
-Close WestOS with the red ✕ left of "WestOS" in the menu bar and you are standing in WestCountry: the same city the WestMap shows, walkable.
-Phone button / `P` brings WestOS back as your phone; ✕ again returns to the street. `M` = WestMap (click a spot, click the pin again, you are there). `E` = use / open doors. Touch screens get a stick + buttons.
+Click the WestOS name in the menu bar → **Touch grass** (the icon turns into the outdoors icon) and you are standing in WestCountry: the same city the WestMap shows, walkable.
+Phone button / `P` brings WestOS back as your phone; the same menu ("Back outside") returns to the street. `M` = WestMap (click a spot, click the pin again, you are there). `E` = use / open doors. Touch screens get a stick + buttons.
 
 ## Why it is cheap
 * **Nothing is downloaded.** No models, no textures. Every street, building, tree and hill is generated: the street plan by `layout.js`, building shapes by `os/lib/buildgen.js`, the roster/timetable by `os/lib/worldgen.js`. (The 3D street layout is independent of the 2D map; the map is meant to follow it later.)
@@ -26,7 +26,7 @@ Trees, street lamps and benches are **instanced**: the chunk worker only emits 3
 ## Files
 | file | job |
 |---|---|
-| `boot.js` | OSM module: ✕ button, `OS.realworld`, lazy loader |
+| `boot.js` | OSM module: WestOS menu "Touch grass", `OS.realworld`, lazy loader |
 | `layout.js` | THE STREET PLAN: lattice of blocks bent by one smooth warp; streets, lots, houses, landmarks, plots, trees, lamps, street routing (pure) |
 | `terrain.js` | `height(x,z)`: rolling hills, with the city on a flat plateau (pure) |
 | `mesh.js` | vertex-colour mesh builder (box/cyl/cone/ribbon/poly), glow flag |

@@ -255,3 +255,20 @@ html.reduce-motion #screen[data-dock=hide] .dock{ transition:none; }
 .mbtn.mb-close{ width:20px; height:20px; padding:0; border-radius:50%; margin:0 4px 0 2px; display:inline-grid; place-items:center; background:#ff5f57; color:rgba(80,10,6,0); min-width:0; height:20px; border:0; box-shadow:inset 0 0 0 .5px rgba(0,0,0,.25); transition:color .12s,transform .2s var(--spring),filter .15s; }
 .mbtn.mb-close:hover{ background:#ff5f57; color:rgba(80,10,6,.85); filter:brightness(1.08); } .mbtn.mb-close:active{ transform:scale(.9); } .mb-close.busy{ opacity:.5; cursor:progress; }
 .mb-close svg{ display:block; }
+
+/* WestOS brand menu: click → "Touch grass" → the icon turns into the outdoors icon and the real world loads */
+.mb-brandwrap{ position:relative; display:flex; align-items:center; }
+button.mb-brand{ border:0; background:transparent; color:inherit; font:inherit; font-weight:700; cursor:pointer; transition:background .15s; }
+button.mb-brand:hover,button.mb-brand[aria-expanded=true]{ background:rgba(255,255,255,.16); } html[data-theme=light] button.mb-brand:hover,html[data-theme=light] button.mb-brand[aria-expanded=true]{ background:rgba(60,42,20,.1); }
+button.mb-brand:focus-visible{ outline:2px solid rgba(255,255,255,.5); outline-offset:1px; }
+.mb-ico{ position:relative; width:17px; height:17px; display:block; } .mb-ico img,.mb-ico .mb-out{ position:absolute; inset:0; width:17px; height:17px; border-radius:4px; transition:opacity .3s,transform .35s var(--spring); }
+.mb-ico .mb-out{ opacity:0; transform:scale(.4) rotate(-25deg); } .mb-brand.out .mb-ico img{ opacity:0; transform:scale(.4) rotate(25deg); } .mb-brand.out .mb-ico .mb-out{ opacity:1; transform:none; }
+.mb-caret{ opacity:.65; margin-left:-2px; transition:transform .2s; } .mb-brand[aria-expanded=true] .mb-caret{ transform:rotate(180deg); }
+#rwMenu{ position:absolute; top:calc(100% + 6px); left:0; min-width:230px; padding:5px; border-radius:12px; z-index:90; background:rgba(28,22,16,.92); backdrop-filter:blur(24px) saturate(1.5); -webkit-backdrop-filter:blur(24px) saturate(1.5); box-shadow:0 12px 32px rgba(0,0,0,.4),inset 0 0 0 .5px rgba(255,255,255,.14); color:#fff; animation:rwMenuIn .16s var(--spring); }
+html[data-theme=light] #rwMenu{ background:rgba(252,247,236,.95); color:var(--label); box-shadow:0 12px 32px rgba(60,42,20,.22),inset 0 0 0 .5px rgba(60,42,20,.16); }
+#rwMenu[hidden]{ display:none; }
+#rwGo{ display:flex; align-items:center; gap:11px; width:100%; padding:9px 11px; border:0; border-radius:8px; background:transparent; color:inherit; text-align:left; cursor:pointer; font:inherit; }
+#rwGo:hover,#rwGo:focus-visible{ background:rgba(79,174,90,.28); outline:0; } #rwGo svg{ flex:none; color:#6fcf7c; } #rwGo b{ display:block; font-size:13px; font-weight:650; } #rwGo small{ display:block; margin-top:2px; font-size:11px; opacity:.65; font-weight:400; }
+#rwGo.busy{ opacity:.55; cursor:progress; } .mb-brand.switching .mb-ico{ animation:rwPulse .8s ease-in-out infinite; }
+@keyframes rwMenuIn{ from{ opacity:0; transform:translateY(-6px) scale(.97); } to{ opacity:1; transform:none; } } @keyframes rwPulse{ 50%{ transform:scale(1.18); } }
+@media (pointer:coarse){ #rwGo{ padding:12px 13px; } }

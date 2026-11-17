@@ -1,9 +1,9 @@
-/* REALWORLD · boot — the only part of the real world that loads with WestOS (≈2 KB). It adds the close button (✕, left of "WestOS" in the menu bar) and OS.realworld.
+/* REALWORLD · boot — the only part of the real world that loads with WestOS (≈2 KB). It wires the WestOS menu (click the brand → "Touch grass") and OS.realworld.
  * The engine (≈110 KB of JS + CSS) is fetched the first time somebody actually steps outside, then cached by the browser; nothing is downloaded for players who stay in WestOS.
  * Read os/realworld/README.md before changing anything. */
 (window.__OSM = window.__OSM || []).push(function(K){
   const OS = K.facade, FILES = ['terrain', 'mesh', 'layout', 'vehicles', 'nav', 'chunkgen', 'env', 'gfx', 'screens', 'interiors', 'cells', 'props', 'glb', 'phys', 'npcs', 'net', 'streamer', 'game'].map(f => 'os/realworld/' + f + '.js');
-  let api = null, loading = null; const btn = document.getElementById('rwExit'), screen = document.getElementById('screen');
+  let api = null, loading = null; const btn = document.getElementById('rwGo'), brand = document.getElementById('rwBrand'), menu = document.getElementById('rwMenu'), screen = document.getElementById('screen');
   const add = (tag, attrs) => new Promise((res, rej) => { const e = document.createElement(tag); Object.assign(e, attrs); e.onload = res; e.onerror = () => rej(new Error('Could not load ' + (attrs.src || attrs.href))); document.head.appendChild(e); });
   function ensure(){
     if(api) return Promise.resolve(api);
@@ -21,6 +21,13 @@
     if(api && api.active()) return api.travelTo(x, z, yaw);
     try{ OS.prefs.set('rwPos', { x: Math.round(x), z: Math.round(z), yaw: Math.round((yaw || 0) * 100) / 100 }); }catch(e){} return enter();
   }
-  if(btn) btn.addEventListener('click', enter);
-  OS.realworld = { at: id => !!(api && api.active() && api.vehicles && api.vehicles.at(id)), vehicles: () => api && api.vehicles, travelTo, hold: on => { if(api && api.active()) api.hold(on); }, openMap: () => { if(api && api.active()) api.openMap(); else OS.open('WestMap'); }, enter, exit: () => { if(api) api.exit(); }, phone: on => { if(api) api.phone(on); }, active: () => !!(api && api.active()), state: () => api && api.state(), api: () => api };
+  /* WestOS menu: click the brand → dropdown → "Touch grass" (or "Back outside" once you are already out). The brand icon turns into the outdoors icon while the real world is open. */
+  const txt = document.getElementById('rwGoTxt'), sub = document.getElementById('rwGoSub');
+  const out = () => !!(api && api.active());
+  function refresh(){ const o = out(); if(brand) brand.classList.toggle('out', o); if(txt) txt.textContent = o ? 'Back outside' : 'Touch grass'; if(sub) sub.textContent = o ? 'Return to the street' : 'Step outside into WestCountry'; }
+  function toggle(on){ if(!menu || !brand) return; on = on === undefined ? menu.hidden : on; if(on) refresh(); menu.hidden = !on; brand.setAttribute('aria-expanded', on ? 'true' : 'false'); }
+  if(brand){ brand.addEventListener('click', e => { e.stopPropagation(); toggle(); }); document.addEventListener('click', e => { if(menu && !menu.hidden && !menu.contains(e.target)) toggle(false); }); document.addEventListener('keydown', e => { if(e.key === 'Escape' && menu && !menu.hidden){ toggle(false); brand.focus(); } }); }
+  if(btn) btn.addEventListener('click', async () => { toggle(false); if(brand && !out()) brand.classList.add('out', 'switching'); const ok = await enter(); if(brand) brand.classList.remove('switching'); refresh(); if(!ok && !out() && brand) brand.classList.remove('out'); });
+  refresh();
+  OS.realworld = { at: id => !!(api && api.active() && api.vehicles && api.vehicles.at(id)), vehicles: () => api && api.vehicles, travelTo, hold: on => { if(api && api.active()) api.hold(on); }, openMap: () => { if(api && api.active()) api.openMap(); else OS.open('WestMap'); }, enter, exit: () => { if(api) api.exit(); refresh(); }, phone: on => { if(api) api.phone(on); }, active: () => !!(api && api.active()), state: () => api && api.state(), api: () => api };
 });
