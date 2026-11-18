@@ -226,11 +226,21 @@
    * A vehicle is a record in world/garage/<uid>/<v1..v12> = { m: model id, c: cents paid, t: server time, col: colour 0..7 } (catalogue: data/vehicle-data.js).
    * Buying is ONE atomic update like the plots: the garage record + the account paying the city the exact catalogue price (hop 'veh+', lop = the slot).
    * Selling deletes the record while the city pays back 70 % of what was paid (hop 'veh-'). Repainting only changes `col` and moves no money.
+   * RENTING (L.rentVehicle): the day price (VD.rent) instead of the catalogue price, record gets r:1, lasts VD.RENT_MS (24 h) then is swept; never refunded / sold / repainted.
    * database.rules.json checks all of it (tests/rules.test.js). Where you may BUY (standing in the dealership / airport) is a client-side rule, like the plot gate. */
   const VD = VehicleData;
   L.garage = {};
-  function listenGarage(u){ C.db.ref('world/garage/' + u).on('value', s => { L.garage = s.val() || {}; K.emit('garage'); K.emit('props'); K.emit('cash'); }, e => D.error('ledger.garage', e)); }
-  L.vehicles = () => VD.slotIds().filter(id => L.garage && L.garage[id] && VD.get(L.garage[id].m)).map(slot => { const r = L.garage[slot], model = VD.get(r.m); return { slot, m: r.m, col: r.col | 0, paid: dollars(r.c), t: r.t, model, value: dollars(VD.resale(r.c)) }; });
+  /* RENTALS: a garage record with r:1 is a 24 h hire (VD.RENT_MS from its server time t). Once expired it is hidden at once (L.vehicles), the record is deleted (the rules allow that for an expired rental, no money moves) and a timer wakes the world / apps at the exact moment. */
+  const rentLeft = r => r && r.r ? r.t + VD.RENT_MS - K.now() : Infinity;
+  let rentTimer = null;
+  function sweepRentals(u){
+    clearTimeout(rentTimer); rentTimer = null; let next = Infinity;
+    VD.slotIds().forEach(slot => { const r = L.garage && L.garage[slot]; if(!r || !r.r) return; const left = rentLeft(r);
+      if(left <= 0){ try{ C.db.ref('world/garage/' + u + '/' + slot).remove().catch(() => {}); }catch(e){} } else next = Math.min(next, left); });
+    if(next < Infinity) rentTimer = setTimeout(() => { sweepRentals(u); K.emit('garage'); K.emit('props'); K.emit('cash'); K.emit('notify', { app: 'RealEstate', title: 'Rental ended', body: 'Your rental has been returned to the dealer.' }); }, Math.min(next + 800, 2147483000));
+  }
+  function listenGarage(u){ C.db.ref('world/garage/' + u).on('value', s => { L.garage = s.val() || {}; sweepRentals(u); K.emit('garage'); K.emit('props'); K.emit('cash'); }, e => D.error('ledger.garage', e)); }
+  L.vehicles = () => VD.slotIds().filter(id => L.garage && L.garage[id] && VD.get(L.garage[id].m) && rentLeft(L.garage[id]) > 0).map(slot => { const r = L.garage[slot], model = VD.get(r.m), rental = !!r.r; return { slot, m: r.m, col: r.col | 0, paid: dollars(r.c), t: r.t, model, rental, expires: rental ? r.t + VD.RENT_MS : 0, value: rental ? 0 : dollars(VD.resale(r.c)) }; });
   L.vehValue = () => L.vehicles().reduce((n, v) => n + v.value, 0);
   K.vehValue = L.vehValue;
   L.buyVehicle = (model, col) => needExec(async () => {
@@ -240,13 +250,24 @@
     L.acct.hop = 'veh+'; L.acct.lop = slot; logTx(-dollars(m.price), m.name); changed();
     return { paths: { ['world/garage/' + uid() + '/' + slot]: { m: m.id, c: m.price, t: TS(), col } }, result: { slot, name: m.name, price: dollars(m.price) } };
   });
+  /* Rent a car / plane for ONE real day (VD.RENT_MS): the day price (cents, VD.rent) goes to the city, a garage record with r:1 appears (Pearl white, never refunded, cannot be sold or repainted).
+   * One rental at a time. Only the entry models are in the rental fleet — everything else has to be bought. Same atomic update + hop 'veh+' as a purchase. */
+  L.rentVehicle = model => needExec(async () => {
+    const m = VD.get(model); if(!m || !m.rent) return { error: 'That model is not in the rental fleet — it is for sale only.' };
+    const cur = (await fresh('world/garage/' + uid())) || {}, live = VD.slotIds().filter(x => cur[x] && cur[x].r && rentLeft(cur[x]) > 0);
+    if(live.length){ const left = rentLeft(cur[live[0]]), h = Math.max(1, Math.ceil(left / HOUR)); return { error: 'You already have a rental on hire (about ' + h + ' h left). Only one at a time — it goes back to the dealer when it expires.' }; }
+    const slot = VD.slotIds().find(x => !cur[x]); if(!slot) return { error: 'Your garage is full (' + VD.MAX_SLOTS + ' vehicles). Sell one first.' };
+    if(!move('city', m.rent)) return { error: 'Renting the ' + m.name + ' for a day costs $' + dollars(m.rent).toLocaleString() + '.' };
+    L.acct.hop = 'veh+'; L.acct.lop = slot; logTx(-dollars(m.rent), 'Rented ' + m.name); changed();
+    return { paths: { ['world/garage/' + uid() + '/' + slot]: { m: m.id, c: m.rent, t: TS(), col: VD.RENT_COLOR, r: 1 } }, result: { slot, name: m.name, price: dollars(m.rent), hours: 24 } };
+  });
   L.sellVehicle = slot => needExec(async () => {
-    const r = await fresh('world/garage/' + uid() + '/' + slot); if(!r) return { error: 'That vehicle is gone.' }; const m = VD.get(r.m), back = VD.resale(r.c);
+    const r = await fresh('world/garage/' + uid() + '/' + slot); if(!r) return { error: 'That vehicle is gone.' }; if(r.r) return { error: 'A rental cannot be sold — it goes back to the dealer when the day is up.' }; const m = VD.get(r.m), back = VD.resale(r.c);
     move('city', -back); L.acct.hop = 'veh-'; L.acct.lop = slot; logTx(dollars(back), 'Sold ' + (m ? m.name : 'vehicle')); changed();
     return { paths: { ['world/garage/' + uid() + '/' + slot]: null }, result: { name: m ? m.name : 'vehicle', price: dollars(back) } };
   });
   L.repaintVehicle = (slot, col) => L.exec(async () => {
-    const r = await fresh('world/garage/' + uid() + '/' + slot); if(!r) return { error: 'That vehicle is gone.' }; col = Math.max(0, Math.min(VD.COLORS.length - 1, col | 0));
+    const r = await fresh('world/garage/' + uid() + '/' + slot); if(!r) return { error: 'That vehicle is gone.' }; if(r.r) return { error: 'Rentals only come in Pearl white.' }; col = Math.max(0, Math.min(VD.COLORS.length - 1, col | 0));
     return { paths: { ['world/garage/' + uid() + '/' + slot]: { m: r.m, c: r.c, t: r.t, col } } };
   });
 

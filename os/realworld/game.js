@@ -57,7 +57,7 @@
     function setParked(q, on){ try{ const pk = Object.assign({}, parkedAll()), k = parkKey(q); if(on) pk[k] = [Math.round(q.x * 10) / 10, Math.round(q.z * 10) / 10, Math.round(q.yaw * 100) / 100]; else delete pk[k]; const ks = Object.keys(pk); if(ks.length > 40) delete pk[ks[0]]; OS.prefs.set('rwVeh', pk); }catch(e){} }
     function applyParking(garage){
       const pk = parkedAll(), live = {}; let stale = false;
-      V.list.forEach(q => { if(!q.slot) return; const g = garage.find(x => x.slot === q.slot); q.t = g ? g.t : 0; live[parkKey(q)] = 1; const r = pk[parkKey(q)];
+      V.list.forEach(q => { if(!q.slot) return; const g = garage.find(x => x.slot === q.slot); q.t = g ? g.t : 0; q.rentEnd = g && g.expires ? g.expires : 0; live[parkKey(q)] = 1; const r = pk[parkKey(q)];
         if(Array.isArray(r) && r.length === 3 && r.every(isFinite) && Math.hypot(r[0], r[1]) < L.radius() + 2200){ q.x = r[0]; q.z = r[1]; q.yaw = r[2]; } });
       if(garage.length) for(const k in pk) if(!live[k]) stale = true;         // a sold vehicle's spot (never pruned while the garage has not loaded yet)
       if(stale){ try{ const keep = {}; for(const k in pk) if(live[k]) keep[k] = pk[k]; OS.prefs.set('rwVeh', keep); }catch(e){} }
@@ -162,6 +162,7 @@
       }
       q.x = s.x; q.z = s.z; q.yaw = s.yaw; q.y = s.y + (d.car ? 0.1 : 0.05); q.pitch = s.pitch; q.roll = s.roll;
       P.x = s.x; P.z = s.z; P.y = P.cy = s.y; P.vx = P.vz = P.vy = 0; P.inside = false; P.mv = 0; curNpc = curDoor = null; V.look = null;
+      if(q.rentEnd && OS.now() >= q.rentEnd){ endDrive('home', 'Your rental ' + d.m.name + ' has been returned to the dealer — the day is up.'); return; }       // a 24 h rental ends even while you are at the wheel
       if(s.crashed){ const why = s.crashed; endDrive('crash', why + ' Your ' + d.m.name + ' was towed back to its parking spot.'); return; }
       driveCamera(dt); P.yaw = d.cam.yaw; P.pitch = 0;
       if(net) net.tick({ x: P.x, z: P.z, yaw: s.yaw, mv: clamp(Math.abs(s.speed) / cfg.run, 0, 1.2), inside: false }, dt);

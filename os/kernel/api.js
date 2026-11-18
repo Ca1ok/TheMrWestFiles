@@ -230,7 +230,7 @@
     watchMap: on => LG.watchMap(!!on), plots: () => LG.plots || {}, locs: () => LG.locs || {}, allHomes: () => LG.homes || {},
     /* cars and planes (data/vehicle-data.js): the garage, and the dealership / airport purchases (the app only offers Buy while you stand there in the real world) */
     garage: () => LG.vehicles(), garageValue: () => LG.vehValue(), vehicleCatalogue: () => VehicleData,
-    buyVehicle: (model, col) => R(LG.buyVehicle(model, col)), sellVehicle: slot => R(LG.sellVehicle(slot)), repaintVehicle: (slot, col) => R(LG.repaintVehicle(slot, col))
+    buyVehicle: (model, col) => R(LG.buyVehicle(model, col)), rentVehicle: model => R(LG.rentVehicle(model)), sellVehicle: slot => R(LG.sellVehicle(slot)), repaintVehicle: (slot, col) => R(LG.repaintVehicle(slot, col))
   };
   const loans = { list: () => LG.loanList(), plans: () => LG.plans(), limit: () => LG.loanLimit(), owed: () => LG.debt(), take: (plan, d) => R(LG.takeLoan(plan, d)), repay: (slot, d) => R(LG.repay(slot, d)) };
   /* the old fixed-property API now only reports your houses (kept so older widgets keep working) */
@@ -314,7 +314,7 @@
   mguard(appG('WestShop'), shop, ['buy', 'sell']);
   mguard(appG('WestLab'), lab, ['buyTool', 'run', 'collect', 'collectAll']); mguard(appG('WestLab'), lab.step, ['run']);
   mguard(appG('WestMap'), homes, ['buy', 'sellToCity', 'setAsk', 'setRent', 'evict', 'rent', 'topUp', 'leave', 'setHome', 'requestHousing', 'buyLicence', 'build']);
-  mguard(appG('RealEstate'), homes, ['buyVehicle', 'sellVehicle', 'repaintVehicle']);
+  mguard(appG('RealEstate'), homes, ['buyVehicle', 'rentVehicle', 'sellVehicle', 'repaintVehicle']);
   mguard(appG('Stocks'), stock, ['buy', 'sell', 'sellQty', 'sellFraction', 'buyFraction', 'sellAll']); mguard(sysG('trading'), stock, ['buy', 'sell', 'sellQty', 'sellFraction', 'buyFraction', 'sellAll']);
   mguard(appG('WestFactory'), factory, ['addLine', 'buySlot', 'upgrade', 'setRate', 'setOn', 'setAuto', 'setReserve', 'gAdd', 'gDel', 'gWire', 'gUnwire', 'gAuto', 'gClear', 'setRoute', 'setPrice', 'sellNow', 'remove', 'collect', 'withdraw']);
   mguard(sysG('market'), factory.market, ['buy']); mguard(appG('WestShop'), factory.market, ['buy']);

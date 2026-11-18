@@ -33,10 +33,14 @@ function preview(x){ const BG = H.gen.BuildGen, g = x.g; if(!BG || !window.House
     b.append(group(row({ title: g.typeName + (g.beds ? ' · ' + g.beds + ' bed' : ''), sub: g.district }), row({ title: 'Value', sub: money(x.v / 100, { dp: 0 }) }), row({ title: 'Status', sub: x.t ? 'Rented to ' + (x.tn || 'a tenant') : x.a > 0 ? 'For sale' : x.rh > 0 ? 'For rent ' + money(x.rh * 24 / 100, { dp: 2 }) + '/day' : 'Yours to live in' })));
     b.append(h('button', { class: 'cta', onclick: () => { try{ localStorage.setItem('westmap_focus', x.id); }catch(e){} OS.open('WestMap'); api.close(); } }, 'Show on WestMap')); } }); }
 
+const leftTxt = t => { const ms = Math.max(0, t - OS.now()), h = Math.floor(ms / 3600000), m = Math.floor(ms % 3600000 / 60000); return h + ' h ' + String(m).padStart(2, '0') + ' min'; };
 /* ---------- one of your vehicles ---------- */
 function vehicleSheet(v, after){
   Kit.sheet({ title: v.model.name, tall: true, build: (b, api) => {
     const pic = h('div', { html: art(v.model, VD.colorHex(v.col)) }); b.append(pic);
+    if(v.rental){ b.append(group(row({ title: v.model.tag, sub: spec(v.model).join(' · ') }), row({ title: 'Rental — time left', sub: leftTxt(v.expires) }), row({ title: 'Paid', sub: money(v.paid, { dp: 0 }) + ' for 24 hours — not refundable' }),
+        row({ title: 'Returned automatically', sub: 'At the end of the day it goes back to the ' + (v.model.kind === 'car' ? 'dealership' : 'airport') + ', wherever you left it. It cannot be sold or repainted.' }),
+        row({ title: v.model.kind === 'car' ? 'Driving' : 'Flying', sub: 'Walk up to it in WestCountry and press E.' }))); b.append(h('div', { class: 'sub', style: { marginTop: '10px' } }, 'Want it for good? Buy one at the ' + (v.model.kind === 'car' ? 'Car Dealership' : 'Private Airport') + ' — owners keep it, repaint it and get 70% back when selling.')); return; }
     b.append(group(row({ title: v.model.tag, sub: spec(v.model).join(' · ') }), row({ title: 'You paid', sub: money(v.paid, { dp: 0 }) }), row({ title: 'Dealer buy-back (70%)', sub: money(v.value, { dp: 0 }) }),
       row({ title: v.model.kind === 'car' ? 'Parked' : 'Hangared', sub: v.model.kind === 'car' ? 'Outside your home, or in the dealership’s customer lot' : 'On the apron behind the airport terminal' }),
       row({ title: v.model.kind === 'car' ? 'Driving' : 'Flying', sub: 'Walk up to your ' + v.model.name + ' in WestCountry and press E to get in' + (v.model.kind === 'plane' ? ' — the runway is east of the city.' : '.') })));
@@ -54,7 +58,10 @@ function showroom(kind, after){
   const cards = h('div', { class: 'cards' }); box.append(cards);
   list.forEach(m => { let col = m.id.length % 8; const pic = h('div', { html: art(m, VD.colorHex(col)) }), cash = OS.cash() >= m.price / 100;
     cards.append(h('div', { class: 'vc' }, pic, h('b', null, m.name), h('div', { class: 'sub' }, m.tag + ' — ' + m.blurb), h('div', { class: 'sp' }, ...spec(m).map(t => h('span', null, t))), swatches(col, c => { col = c; pic.innerHTML = art(m, VD.colorHex(c)); }), h('div', { class: 'pr' }, usd(m.price)),
-      h('button', { class: 'cta', style: { margin: '4px 0 0' }, disabled: !can || OS.homes.garage().length >= VD.MAX_SLOTS || !cash, onclick: async () => { if(!(await Kit.confirm({ title: 'Buy the ' + m.name + '?', msg: usd(m.price) + ' will be paid to the city.', ok: 'Buy' }))) return; const r = await H.buyVehicle(m.id, col); Kit.toast(r.ok ? 'The ' + m.name + ' is yours' : r.msg, r.ok ? 'good' : 'bad'); if(r.ok) after(); } }, !can ? 'Visit to buy' : OS.homes.garage().length >= VD.MAX_SLOTS ? 'Garage full' : !cash ? 'Not enough cash' : 'Buy'))); });
+      h('button', { class: 'cta', style: { margin: '4px 0 0' }, disabled: !can || OS.homes.garage().length >= VD.MAX_SLOTS || !cash, onclick: async () => { if(!(await Kit.confirm({ title: 'Buy the ' + m.name + '?', msg: usd(m.price) + ' will be paid to the city.', ok: 'Buy' }))) return; const r = await H.buyVehicle(m.id, col); Kit.toast(r.ok ? 'The ' + m.name + ' is yours' : r.msg, r.ok ? 'good' : 'bad'); if(r.ok) after(); } }, !can ? 'Visit to buy' : OS.homes.garage().length >= VD.MAX_SLOTS ? 'Garage full' : !cash ? 'Not enough cash' : 'Buy'),
+      !m.rent ? null : h('button', { class: 'btn block tinted', style: { marginTop: '6px' }, disabled: !can || !!OS.homes.garage().some(g => g.rental) || OS.homes.garage().length >= VD.MAX_SLOTS || OS.cash() < m.rent / 100,
+        onclick: async () => { if(!(await Kit.confirm({ title: 'Rent the ' + m.name + ' for 24 hours?', msg: usd(m.rent) + ' goes to the city and is not refunded. It is returned automatically after one real day — it cannot be sold or repainted.', ok: 'Rent' }))) return; const r = await H.rentVehicle(m.id); Kit.toast(r.ok ? 'The ' + m.name + ' is yours for 24 h' : r.msg, r.ok ? 'good' : 'bad'); if(r.ok) after(); } },
+        !can ? 'Visit to rent · ' + usd(m.rent) + ' / day' : OS.homes.garage().some(g => g.rental) ? 'You already have a rental' : OS.cash() < m.rent / 100 ? 'Not enough cash to rent' : 'Rent for 24 h · ' + usd(m.rent)))); });
   return box;
 }
 
@@ -63,9 +70,9 @@ Kit.app({ title: 'Assets', build: (body) => {
   let tab = 'overview'; try{ const t = sessionStorage.getItem('assets_tab'); sessionStorage.removeItem('assets_tab'); if(t) tab = t === 'garage' ? 'overview' : t; }catch(e){}
   if(!TABS.some(x => x.id === tab)) tab = 'overview';
   const bar = Kit.seg(TABS, tab, t => { tab = t; paint(); }), box = h('div'); body.append(bar, box);
-  const owned = k => H.garage().filter(v => v.model.kind === k), vrows = list => list.map(v => row({ title: v.model.name, sub: v.model.tag + ' · worth ' + money(v.value, { dp: 0 }), chev: true, onClick: () => vehicleSheet(v, paint) }));
+  const owned = k => H.garage().filter(v => v.model.kind === k), vrows = list => list.map(v => row({ title: v.model.name, sub: v.rental ? v.model.tag + ' · rental, ' + leftTxt(v.expires) + ' left' : v.model.tag + ' · worth ' + money(v.value, { dp: 0 }), chev: true, onClick: () => vehicleSheet(v, paint) }));
   const art2 = v => h('div', { class: 'mini', html: art(v.model, VD.colorHex(v.col)) });
-  const vlist = list => list.length ? group(list.map(v => { const r = row({ title: v.model.name, sub: v.model.tag + ' · worth ' + money(v.value, { dp: 0 }), chev: true, onClick: () => vehicleSheet(v, paint) }); r.prepend(art2(v)); return r; })) : null;
+  const vlist = list => list.length ? group(list.map(v => { const r = row({ title: v.model.name, sub: v.rental ? v.model.tag + ' · rental, ' + leftTxt(v.expires) + ' left' : v.model.tag + ' · worth ' + money(v.value, { dp: 0 }), chev: true, onClick: () => vehicleSheet(v, paint) }); r.prepend(art2(v)); return r; })) : null;
   function paint(){
     bar.set(tab); box.innerHTML = '';
     if(!H.ready()){ box.append(h('div', { class: 'card empty' }, 'Sign in (and wait for the economy to start) to own houses, cars and planes.')); return; }

@@ -195,6 +195,25 @@ const apply = r => r.tree;
   assert.strictEqual(H.read(tg, 'world/garage/u1', NOW, U).ok, true, 'the owner reads their garage'); assert.strictEqual(H.read(tg, 'world/garage/u1', NOW, V).ok, false, 'other players cannot read a garage'); assert.strictEqual(H.read(tg, 'world/garage/u1', NOW, ANON).ok, false, 'anonymous sessions cannot read a garage');
   // the city rule still refuses everything else
   no(run(t0, 'u1', a => { mv(a, 'city', VD.price('wren')); a.hop = 'veh+'; a.lop = 'v1'; }, { 'world/garage/u1/v1': rec('wren'), 'world/plot/u1/f': NOW }), 'smuggling a plot into a vehicle purchase');
+  // ---- RENTALS: 24 h hire of the entry models ($100 hatch / $1,000 trainer), r:1, never refunded, gone after a real day ----
+  assert.strictEqual(VD.rentPrice('wren'), 10000); assert.strictEqual(VD.rentPrice('skylark'), 100000); assert.strictEqual(VD.rentPrice('apex'), 0, 'only the entry models are in the rental fleet');
+  const rrec = (m, c, col) => ({ m, c: c === undefined ? VD.rentPrice(m) : c, t: NOW, col: col === undefined ? VD.RENT_COLOR : col, r: 1 });
+  const rent = (tree, slot, r, pay, hop) => run(tree, 'u1', a => { mv(a, 'city', pay === undefined ? r.c : pay); a.hop = hop || 'veh+'; a.lop = slot; }, { ['world/garage/u1/' + slot]: r });
+  ok(rent(t0, 'v1', rrec('wren')), 'renting the hatchback for a day ($100)'); ok(rent(t0, 'v1', rrec('skylark')), 'renting the trainer plane for a day ($1,000)');
+  no(rent(t0, 'v1', rrec('alder', VD.price('alder'))), 'renting a model that is not in the rental fleet'); no(rent(t0, 'v1', rrec('apex', VD.price('apex'))), 'renting the supercar');
+  no(rent(t0, 'v1', rrec('wren', VD.price('wren'))), 'a rental record that claims the full price (so it could be sold back)'); no(rent(t0, 'v1', rrec('skylark', 10000)), 'renting a plane at the car price');
+  no(rent(t0, 'v1', rrec('wren', 9999)), 'renting a car one cent under the day price'); no(rent(t0, 'v1', rrec('wren'), 9999), 'paying the city one cent too little for a rental');
+  no(rent(t0, 'v1', rrec('wren', undefined, 5)), 'a rental in a colour other than Pearl white'); no(rent(t0, 'v1', Object.assign(rrec('wren'), { r: 2 })), 'a rental flag that is not 1');
+  no(rent(t0, 'v1', rrec('wren'), undefined, 'veh-'), 'a rental filed as a sale'); no(H.update(t0, { 'world/garage/u1/v1': rrec('wren') }, NOW, U), 'a free rental (no payment at all)');
+  // a rental is never sold back, never deleted early, never extended or turned into an owned car
+  const tr = apply(rent(t0, 'v1', rrec('wren')));
+  no(run(tr, 'u1', a => { mv(a, 'city', -Math.floor(10000 * 7000 / 10000)); a.hop = 'veh-'; a.lop = 'v1'; }, { 'world/garage/u1/v1': null }), 'selling a rental back for 70 %');
+  no(H.update(tr, { 'world/garage/u1/v1': null }, NOW + 3600000, U), 'returning a rental after one hour (deleting it early)'); no(H.update(tr, { 'world/garage/u1/v1': null }, NOW + VD.RENT_MS - 1, U), 'deleting a rental one millisecond before the day is up');
+  ok(H.update(tr, { 'world/garage/u1/v1': null }, NOW + VD.RENT_MS, U), 'the expired rental is swept (no money moves)'); no(H.update(tr, { 'world/garage/u1/v1': null }, NOW + VD.RENT_MS, V), 'sweeping somebody else’s rental');
+  no(H.update(tr, { 'world/garage/u1/v1': Object.assign({}, tr.world.garage.u1.v1, { r: null }) }, NOW + 1000, U), 'stripping the rental flag to keep the car forever');
+  no(H.update(tr, { 'world/garage/u1/v1': Object.assign({}, tr.world.garage.u1.v1, { t: NOW + 80000000 }) }, NOW + 1000, U), 'pushing the rental start time forward to extend it');
+  // an owned car is unaffected: it can never be deleted without the refund, even after a day
+  no(H.update(tg, { 'world/garage/u1/v1': null }, NOW + VD.RENT_MS * 5, U), 'deleting an owned car for free after a day (only rentals expire)');
 }
 // ---- industrial plots (WestFactory), University Quarter labs (WestLab) and the map presence node ----
 { const t0 = apply(run(world(), 'u1', a => { mv(a, 'pool', -10000000); a.ob = 1; })); t0.eco.acct.u1.b += 90000000; t0.eco.acct.u1.sys.pool -= 90000000; const plot = (tree, kind, fee, tv, hop) => run(tree, 'u1', a => { mv(a, 'city', fee); a.hop = hop || 'plot-' + kind; }, { ['world/plot/u1/' + kind]: tv });

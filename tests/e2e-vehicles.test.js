@@ -46,6 +46,19 @@ const ev = (p, fn, arg) => p.evaluate(fn, arg);
     const cash1 = tree.eco.acct.u1.b; const s1 = await ev(pg, () => OS.homes.sellVehicle('v1')); assert.ok(s1.ok, s1.msg); assert.ok(!tree.world.garage.u1.v1); assert.strictEqual(tree.eco.acct.u1.b - cash1, VD.resale(VD.price('wren'))); audit(); log('✓ sold the Wren back for 70%, ledger intact');
     // a hand-forged write straight at the database is refused by the real rules
     const forged = await ev(pg, () => OS.homes.buyVehicle('wren', 0).then(r => r)); assert.ok(forged.ok); audit();
+    /* ---- RENTALS: $100 hatch / $1,000 trainer for 24 h, one at a time, never sold / repainted / worth anything ---- */
+    { const b1 = tree.eco.acct.u1.b; const rr = await ev(pg, () => OS.homes.rentVehicle('wren')); assert.ok(rr.ok, 'rent wren: ' + rr.msg); const slot = rr.slot || Object.keys(tree.world.garage.u1).find(k => tree.world.garage.u1[k].r);
+      const rec = tree.world.garage.u1[slot]; assert.strictEqual(rec.r, 1); assert.strictEqual(rec.m, 'wren'); assert.strictEqual(rec.c, 10000, 'the hatch rents for $100'); assert.strictEqual(rec.col, VD.RENT_COLOR); assert.strictEqual(b1 - tree.eco.acct.u1.b, 10000, 'exactly $100 left the wallet'); audit();
+      await pg.waitForTimeout(1500); const rg = await ev(pg, () => OS.homes.garage().filter(v => v.rental).map(v => ({ slot: v.slot, value: v.value, left: v.expires - OS.now() }))); assert.strictEqual(rg.length, 1, 'the rental shows in the garage'); assert.strictEqual(rg[0].value, 0, 'a rental is worth nothing'); assert.ok(rg[0].left > 23.9 * 3600000 && rg[0].left <= 24 * 3600000 + 5000, '24 h on the clock: ' + rg[0].left);
+      const again = await ev(pg, () => OS.homes.rentVehicle('wren')); assert.ok(!again.ok && /already have a rental/i.test(again.msg), 'one rental at a time: ' + again.msg);
+      const plane2 = await ev(pg, () => OS.homes.rentVehicle('skylark')); assert.ok(!plane2.ok, 'no second rental of another kind either'); const apx = await ev(pg, () => OS.homes.rentVehicle('apex')); assert.ok(!apx.ok && /not in the rental fleet/i.test(apx.msg), 'the supercar is sale only');
+      const sl = await ev(pg, s => OS.homes.sellVehicle(s), slot); assert.ok(!sl.ok && /rental/i.test(sl.msg), 'a rental cannot be sold'); const rpn = await ev(pg, s => OS.homes.repaintVehicle(s, 5), slot); assert.ok(!rpn.ok, 'a rental cannot be repainted'); assert.ok(tree.world.garage.u1[slot], 'still there'); audit();
+      const nw = await ev(pg, () => OS.homes.garageValue()); const own = Object.values(tree.world.garage.u1).filter(r => !r.r).reduce((n, r) => n + VD.resale(r.c), 0) / 100; assert.ok(Math.abs(nw - own) < 0.01, 'rentals add nothing to net worth: ' + nw + ' vs ' + own);
+      log('✓ rentals: $100 hatch for 24 h, one at a time, no sale / repaint / net worth');
+      /* the day is up: the rental disappears from the garage by itself, its record is swept (no money moves), and a new one can be hired */
+      const b2 = tree.eco.acct.u1.b; tree.world.garage.u1[slot].t = Date.now() - 25 * 3600000; await pg.evaluate(() => window.__fbChanged()); await pg.waitForTimeout(2500);
+      const gone = await ev(pg, () => OS.homes.garage().filter(v => v.rental).length); assert.strictEqual(gone, 0, 'an expired rental is hidden'); assert.ok(!tree.world.garage.u1[slot], 'the expired record was swept from the database'); assert.strictEqual(tree.eco.acct.u1.b, b2, 'sweeping moves no money'); audit();
+      const rr2 = await ev(pg, () => OS.homes.rentVehicle('wren')); assert.ok(rr2.ok, 'a fresh rental after the old one expired: ' + rr2.msg); audit(); log('✓ rental expiry: hidden, swept, money untouched, re-hire works'); }
     /* ---- the Assets app ---- */
     await pg.evaluate(() => OS.open('RealEstate')); await pg.waitForTimeout(2500); const fr = pg.frames().find(f => /RealEstate\.html/.test(f.url())); assert.ok(fr, 'app frame');
     await pg.screenshot({ path: '/tmp/assets-overview.png' });
