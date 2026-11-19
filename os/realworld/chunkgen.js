@@ -11,16 +11,25 @@
   const CH = 128, { MB, rgb, shade, mix, GLOW } = M, f01 = G.f01, h32 = G.h32, sm = T.sm;
   const RAISE = [0.07, 0.13, 0.32, 0.8, 0.9], SK = [2, 4, 7, 12, 14], RES = [32, 16, 8, 4, 4];   // LOD 4 = the MAP level: every road and building as a plain shape, flat colours, used only by the map view
   const C = { asphalt: [58, 60, 66], hwy: [70, 72, 78], kerb: [172, 170, 162], mark: [228, 222, 190], plaza: [186, 178, 164], park: [88, 158, 70], pad: [150, 148, 142], water: [76, 150, 190], bark: [96, 70, 48], lamp: [70, 74, 82], lampGlow: [255, 224, 160],
-    leaf: [[70, 130, 62], [88, 148, 66], [58, 112, 70], [104, 150, 58], [150, 130, 52]], grass: [98, 150, 76], dry: [136, 150, 84], urban: [152, 152, 148], forest: [58, 106, 54] };
+    leaf: [[70, 130, 62], [88, 148, 66], [58, 112, 70], [104, 150, 58], [150, 130, 52]], grass: [98, 150, 76], dry: [136, 150, 84], urban: [152, 152, 148], forest: [58, 106, 54], alpine: [112, 140, 84], rock: [124, 119, 112], rock2: [92, 88, 87], scree: [150, 143, 132], snow: [206, 214, 226] };
   const SLOT = BG.SLOT;
 
   /* ---------------- ground ---------------- */
-  function forestAmt(x, z, b){ return sm(0.5, 0.7, T.vn(x / 70 + 40, z / 70 + 13)) * (1 - sm(0.04, 0.3, b)); }
-  function groundColor(x, z, b){
+  /* h = ground height, ny = the surface normal's y (1 flat … 0 vertical): forests stop at the tree line (~60-105 m up) and on steep faces */
+  function forestAmt(x, z, b, h, ny){ let f = sm(0.5, 0.7, T.vn(x / 70 + 40, z / 70 + 13)) * (1 - sm(0.04, 0.3, b)); if(h !== undefined) f *= (1 - sm(55, 105, h)) * sm(0.62, 0.82, ny === undefined ? 1 : ny); return f; }
+  function groundColor(x, z, b, h, ny){
     const n1 = T.vn(x / 23 + 5, z / 23 + 1), n2 = T.vn(x / 5 + 2, z / 5 + 8); let c = mix(C.grass, C.dry, sm(0.5, 0.85, T.vn(x / 90, z / 90 + 3)));
-    const fa = forestAmt(x, z, b); if(fa > 0) c = mix(c, C.forest, fa * 0.8);
+    const fa = forestAmt(x, z, b, h, ny); if(fa > 0) c = mix(c, C.forest, fa * 0.8);
     const u = 1 - sm(110, 270, Math.hypot(x, z * 1.35)); if(u > 0.02) c = mix(c, C.urban, u * 0.55);
-    return shade(c, 0.9 + 0.17 * n1 + 0.05 * n2);
+    let k = 0.9 + 0.17 * n1 + 0.05 * n2;
+    if(h !== undefined && b < 0.9){                                                      // the mountains: alpine meadow → bare rock (and rock on every steep face) → snow above the snow line, never on cliffs
+      const hn = h + 22 * (T.vn(x / 120 + 9, z / 120 + 4) - 0.5), y = ny === undefined ? 1 : ny;
+      c = mix(c, C.alpine, sm(28, 75, hn) * 0.75 * (1 - fa));
+      const rock = Math.max(sm(78, 138, hn), 1 - sm(0.66, 0.9, y)), rn = T.vn(x / 11 + 6, z / 11 + 2);
+      if(rock > 0.01){ c = mix(c, mix(C.rock, C.rock2, sm(0.35, 0.8, rn)), Math.min(1, rock)); if(y > 0.75 && y < 0.93) c = mix(c, C.scree, 0.35 * rn); k = 0.86 + 0.2 * n1 + 0.1 * rn; }
+      const line = 150 + 34 * (T.vn(x / 85 + 1, z / 85 + 14) - 0.5), snow = sm(line, line + 30, hn) * sm(0.5, 0.78, y); if(snow > 0.01){ c = mix(c, C.snow, snow); k = (0.86 + 0.14 * n1 + 0.04 * n2) * (0.93 + 0.1 * T.vn(x / 2.5 + 4, z / 7 + 1)); }   // wind-sculpted ripples
+    }
+    return shade(c, k);
   }
   function terrain(mb, x0, z0, lod){
     const res = RES[lod], st = CH / res, rows = res + 1, H = new Float32Array(rows * rows), base = mb.n;
@@ -28,11 +37,11 @@
     const hAt = (i, j) => (i >= 0 && j >= 0 && i < rows && j < rows) ? H[j * rows + i] : T.height(x0 + i * st, z0 + j * st);
     for(let j = 0; j < rows; j++) for(let i = 0; i < rows; i++){
       const x = x0 + i * st, z = z0 + j * st, nx = (hAt(i - 1, j) - hAt(i + 1, j)) / (2 * st), nz = (hAt(i, j - 1) - hAt(i, j + 1)) / (2 * st), l = Math.hypot(nx, 1, nz);
-      mb.v(x, H[j * rows + i], z, nx / l, 1 / l, nz / l, groundColor(x, z, T.built(x, z)));
+      mb.v(x, H[j * rows + i], z, nx / l, 1 / l, nz / l, groundColor(x, z, T.built(x, z), H[j * rows + i], 1 / l));
     }
     for(let j = 0; j < res; j++) for(let i = 0; i < res; i++){ const a = base + j * rows + i, b = a + 1, c = a + rows, d = c + 1; mb.tri(a, c, b); mb.tri(b, c, d); }
     const sk = SK[lod];   // skirts hide the cracks between neighbouring levels of detail
-    for(let i = 0; i < res; i++){ const xa = x0 + i * st, xb = xa + st, ca = groundColor(xa, z0, 0.5), ha = H[i], hb = H[i + 1], hc = H[res * rows + i], hd = H[res * rows + i + 1];
+    for(let i = 0; i < res; i++){ const xa = x0 + i * st, xb = xa + st, ha = H[i], ca = groundColor(xa, z0, T.built(xa, z0), ha, 0.85), hb = H[i + 1], hc = H[res * rows + i], hd = H[res * rows + i + 1];
       mb.quad([xa, ha, z0], [xb, hb, z0], [xb, hb - sk, z0], [xa, ha - sk, z0], [0, 0, -1], ca); mb.quad([xa, hc, z0 + CH], [xb, hd, z0 + CH], [xb, hd - sk, z0 + CH], [xa, hc - sk, z0 + CH], [0, 0, 1], ca);
       const za = z0 + i * st, zb = za + st, he = H[i * rows], hf = H[(i + 1) * rows], hg = H[i * rows + res], hh = H[(i + 1) * rows + res];
       mb.quad([x0, he, za], [x0, hf, zb], [x0, hf - sk, zb], [x0, he - sk, za], [-1, 0, 0], ca); mb.quad([x0 + CH, hg, za], [x0 + CH, hh, zb], [x0 + CH, hh - sk, zb], [x0 + CH, hg - sk, za], [1, 0, 0], ca); }
@@ -170,7 +179,7 @@
       b.benches.forEach(q => { if(inC(q[0], q[1])) ex.bench(q[0], q[1], q[2]); });
     });
     // wild trees outside the built-up area (never inside the city: the plateau and its streets end well before)
-    if(lod <= 1) for(let i = 0; i < 8; i++) for(let j = 0; j < 8; j++){ const x = x0 + i * 16 + f01(cx * 8 + i, cz * 8 + j) * 14, z = z0 + j * 16 + f01(cz * 8 + j, cx * 8 + i + 99) * 14; const bl = T.built(x, z); if(bl > 0.12 || (T.rwy && (rw => rw && x > rw.x0 - 70 && x < rw.x1 + 70 && Math.abs(z - rw.z) < rw.hw + 45)(T.rwy()))) continue; const fa = forestAmt(x, z, bl), r = f01(cx * 8 + i + 400, cz * 8 + j); if(r < 0.06 + fa * 0.6) ex.tree(x, z, 0.8 + f01(i, j + cx) * 0.7, i * 8 + j); }
+    if(lod <= 1) for(let i = 0; i < 8; i++) for(let j = 0; j < 8; j++){ const x = x0 + i * 16 + f01(cx * 8 + i, cz * 8 + j) * 14, z = z0 + j * 16 + f01(cz * 8 + j, cx * 8 + i + 99) * 14; const bl = T.built(x, z); if(bl > 0.12 || (T.rwy && (rw => rw && x > rw.x0 - 70 && x < rw.x1 + 70 && Math.abs(z - rw.z) < rw.hw + 45)(T.rwy()))) continue; const th = T.height(x, z), tn = 1 / Math.hypot(1, T.slope(x, z)), fa = forestAmt(x, z, bl, th, tn), r = f01(cx * 8 + i + 400, cz * 8 + j); if(tn > 0.72 && th < 108 && r < (0.06 + fa * 0.6) * (1 - sm(55, 108, th))) ex.tree(x, z, 0.8 + f01(i, j + cx) * 0.7, i * 8 + j); }
     return { cx, cz, lod, mesh: mb.finish(), cols: new Float32Array(cols), doors, props: new Float32Array(props), stats };
   }
   return { CH, build, RES };

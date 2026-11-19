@@ -20,7 +20,12 @@ L.setup(NH); const h5 = L.house(5), h5b = (L.setup(5000), L.house(5)); assert.de
 ['bank', 'exchange', 'shop', 'arcade', 'agency', 'hall', 'uni', 'lab', 'ind', 'plant', 'park', 'dealer', 'airport'].forEach(id => assert(L.poi(id), 'landmark ' + id));
 for(let i = 0; i < NH; i++) assert(L.house(i), 'house ' + i);
 // terrain: gentle and deterministic
-let maxSlope = 0; for(let x = -1500; x < 1500; x += 13) for(let z = -1500; z < 1500; z += 13){ const h = T.height(x, z); assert(isFinite(h) && Math.abs(h) < 12); maxSlope = Math.max(maxSlope, Math.abs(T.height(x + 1, z) - h), Math.abs(T.height(x, z + 1) - h)); } assert(maxSlope < 0.15, 'terrain too steep ' + maxSlope);
+let maxSlope = 0, hMin = 1e9, hMax = -1e9, cityH = 0, cityS = 0; const CRr = L.radius();
+for(let x = -4000; x <= 4000; x += 13) for(let z = -4000; z <= 4000; z += 13){ const h = T.height(x, z); assert(isFinite(h) && h > -40 && h < 320, 'terrain height out of range ' + h); hMin = Math.min(hMin, h); hMax = Math.max(hMax, h); const s = T.slope(x, z); maxSlope = Math.max(maxSlope, s);
+  if(Math.hypot(x, z) < CRr + 60){ cityH = Math.max(cityH, Math.abs(h)); cityS = Math.max(cityS, s); } }
+assert(cityH < 1 && cityS < 0.05, 'the city plateau stays flat: |h| ' + cityH.toFixed(2) + ' slope ' + cityS.toFixed(3)); assert(hMax > 120 && hMin < -5, 'the country has real relief: ' + hMin.toFixed(0) + ' … ' + hMax.toFixed(0) + ' m');
+{ const R = T.rwy(); for(let x = R.x0 - 150; x < R.x1 + 250; x += 7) for(let z = -150; z <= 150; z += 7) assert(Math.abs(T.height(x, z)) < 5.2, 'open ground around the runway'); for(let x = R.x0; x <= R.x1; x += 5) for(let z = -R.hw; z <= R.hw; z += 5) assert(Math.abs(T.height(x, z)) < 1e-6, 'the runway is flat'); }
+assert(T.height(1234.5, -987.6) === T.height(1234.5, -987.6), 'terrain is a pure function');
 // chunks: valid at all LODs, shrinking, with doors and colliders
 const keys = [[0, 0], [-1, 0], [1, 1], [0, 2], [-4, 0], [3, 2]]; let tris = [0, 0, 0, 0], doors = 0, houses = 0;
 keys.forEach(([cx, cz]) => { for(let lod = 0; lod < 4; lod++){ const r = C.build(cx, cz, lod, NH), m = r.mesh, f = new Float32Array(m.vb); for(let i = 0; i < m.n; i++) assert(isFinite(f[i * 5] + f[i * 5 + 1] + f[i * 5 + 2])); for(let i = 0; i < m.ni; i++) assert(m.ib[i] < m.n); assert(r.cols.length % 8 === 0); tris[lod] += m.ni / 3; if(lod === 0){ doors += r.doors.length; houses += r.stats.houses; r.doors.forEach(d => assert(Math.abs(Math.hypot(d.nx, d.nz) - 1) < 1e-6)); } } });
@@ -35,7 +40,7 @@ I.kinds().forEach(k => { const r = I.build(k, { w: 12, dp: 10, beds: 3, type: 'h
 const N = RealWorld.NPC.create(G, L), now = 1.7e12; let moving = 0; for(let n = 0; n < 30; n++) for(let k = 0; k < 60; k++){ const s = N.state({ n, job: 'baker', thrift: 0.5 }, G.house(n * 7), now + k * 2000, NH); assert(isFinite(s.x + s.z)); if(s.moving){ moving++; assert(Math.hypot(s.x, s.z) < L.radius() + 50); } } assert(moving > 50, 'NPCs move');
 assert.deepStrictEqual(N.state({ n: 3, job: 'baker', thrift: 0.5 }, G.house(9), now, NH), N.state({ n: 3, job: 'baker', thrift: 0.5 }, G.house(9), now, NH));
 const E = RealWorld.Env; assert(E.state(E.DAY * 0.05).night > 0.95 && E.state(E.DAY * 0.6).night < 0.05);
-console.log('realworld ok · slope ' + maxSlope.toFixed(3) + ' · tris/LOD ' + tris.map(Math.round).join('/') + ' · radius ' + Math.round(L.radius()) + ' m');
+console.log('realworld ok · terrain ' + hMin.toFixed(0) + ' … ' + hMax.toFixed(0) + ' m, steepest ' + maxSlope.toFixed(2) + ' · tris/LOD ' + tris.map(Math.round).join('/') + ' · radius ' + Math.round(L.radius()) + ' m');
 /* ---- added with the open-world pass: the map level (LOD 4), instanced props, door data for in-place interiors ---- */
 { const a = C.build(0, 0, 0, 512), m = C.build(0, 0, 4, 512), f = C.build(-1, 0, 2, 512);
   assert(m.mesh.vb.byteLength + m.mesh.ib.byteLength < 40e3, 'a map-level chunk stays tiny: ' + (m.mesh.vb.byteLength + m.mesh.ib.byteLength));

@@ -4,7 +4,7 @@
  * RealWorld.start(K) is called once by boot.js the first time the player steps outside; it returns the public API (enter / exit / phone / travel …). */
 (function(root){
   const RW = root.RealWorld, Phys = RW.Phys, G = root.WorldGen, BG = root.BuildGen, T = root.RWTerrain, M = root.RWMesh, L = root.RWLayout;
-  const cfg = RW.config = Object.assign({ radius: 8, perfRadius: 5, fov: 72, walk: 4.4, run: 8.4, jump: 5.6, grav: 17, eye: 1.55, pr: 0.36, sens: 0.0022, far: 1700, npcRange: 230, carRange: 480, minScale: 0.55 }, RW.config || {});
+  const cfg = RW.config = Object.assign({ radius: 10, perfRadius: 5, fov: 72, walk: 4.4, run: 8.4, jump: 5.6, grav: 17, eye: 1.55, pr: 0.36, sens: 0.0022, far: 1700, npcRange: 230, carRange: 480, minScale: 0.55 }, RW.config || {});
   /* landmark id (WorldGen.POIS) → the interior to build when you walk in. Add a line + RealWorld.Interiors.register('<kind>', …) for a new public building. */
   const BUILDINGS = RW.buildings = { bank: { kind: 'bank', name: 'Bank' }, exchange: { kind: 'exchange', name: 'Stock Exchange' }, shop: { kind: 'shop', name: 'WestShop' }, arcade: { kind: 'arcade', name: 'Arcade' }, agency: { kind: 'agency', name: 'Estate Agency' }, hall: { kind: 'hall', name: 'Council Hall' },
     dealer: { kind: 'dealer', name: 'Car Dealership' }, airport: { kind: 'airport', name: 'Private Airport' }, uni: { kind: 'uni', name: 'University Library' }, lab: { kind: 'lab', name: 'Research Institute' }, ind: { kind: 'ind', name: 'Freight Depot' }, plant: { kind: 'plant', name: 'Power Plant' } };
@@ -184,7 +184,7 @@
         const sets = collSets(), dis = cells.disabled(), world = { ground: T.height, push: (x, z, y, r) => { const o = Phys.resolve(x, z, y, sets, dis, r); return { x: o.x, z: o.z }; } };
         if(d.car) Dr.stepCar(s, inp, dt, world); else Dr.stepPlane(s, inp, dt, world);
         if(s.hit > 4) d.shake = Math.max(d.shake, Math.min(1, s.hit / 14));
-        const lim = L.radius() + (d.car ? 450 : 1100), r = Math.hypot(s.x, s.z);          // the invisible edge of the world
+        const lim = L.radius() + (d.car ? 800 : 1800), r = Math.hypot(s.x, s.z);          // the invisible edge of the world
         if(r > lim){ const nx = s.x / r, nz = s.z / r; s.x = nx * lim; s.z = nz * lim; if(d.car){ s.u *= 0.2; s.v *= 0.2; } else { const vo = s.vx * nx + s.vz * nz; if(vo > 0){ s.vx -= vo * nx; s.vz -= vo * nz; } }
           if(t - d.edgeAt > 4000){ d.edgeAt = t; toast('That is the edge of the map — turn around.'); } }
       }
@@ -476,9 +476,12 @@
       if(!busy && (keys.ArrowLeft || keys.ArrowRight) && false) P.yaw += 0;
       const sp = (run ? cfg.run : cfg.walk) * (S.cell ? 0.8 : 1), fx = Math.sin(P.yaw), fz = -Math.cos(P.yaw), rx = Math.cos(P.yaw), rz = Math.sin(P.yaw), tvx = (rx * ix - fx * iz) * sp, tvz = (rz * ix - fz * iz) * sp, a = Math.min(1, dt * (Math.hypot(tvx, tvz) > 0.1 ? 11 : 9));
       P.vx += (tvx - P.vx) * a; P.vz += (tvz - P.vz) * a;
+      if(!S.room && !S.cell){                                                                  // hills: climbing slows you down, and sheer faces (slope > ~50°) cannot be climbed at all
+        const gx = (T.height(P.x + 1.2, P.z) - T.height(P.x - 1.2, P.z)) / 2.4, gz = (T.height(P.x, P.z + 1.2) - T.height(P.x, P.z - 1.2)) / 2.4, gl = Math.hypot(gx, gz), sp2 = Math.hypot(P.vx, P.vz);
+        if(gl > 0.3 && sp2 > 0.1){ const up = (P.vx * gx + P.vz * gz) / (gl * sp2); if(up > 0){ const k = 1 - 0.55 * Math.min(1, (gl - 0.3) / 0.7) * up; P.vx *= k; P.vz *= k; if(gl > 1.2){ const cut = (P.vx * gx + P.vz * gz) / gl; P.vx -= gx / gl * cut; P.vz -= gz / gl * cut; } } } }
       const jump = (keys.Space || touch.jump) && !busy ? cfg.jump : 0; touch.jump = false;
       Phys.step(P, dt, { sets: collSets(), disabled: cells.disabled(), ground: S.room ? (() => S.room.gy) : T.height, grav: cfg.grav, jump });
-      if(!S.room){ const d = Math.hypot(P.x, P.z), mx = L.radius() + 450; if(d > mx){ P.x *= mx / d; P.z *= mx / d; P.vx = P.vz = 0; } }
+      if(!S.room){ const d = Math.hypot(P.x, P.z), mx = L.radius() + 800; if(d > mx){ P.x *= mx / d; P.z *= mx / d; P.vx = P.vz = 0; } }
       if(S.room && !S.busy){ const r = S.room.door; if((P.x - r.x) * r.nx + (P.z - r.z) * r.nz > -1.5) exitRoom(); }
       const dy = P.y - P.cy; P.cy = Math.abs(dy) > 1.2 ? P.y : P.cy + dy * Math.min(1, dt * 16);   // stairs and kerbs glide instead of snapping
       const spd = Math.hypot(P.vx, P.vz); P.mv = clamp(spd / cfg.run, 0, 1.2); P.bob += dt * spd * 1.9; cellsUpdate(); findInteractionThrottled(t);
