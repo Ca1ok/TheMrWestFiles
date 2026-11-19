@@ -17,9 +17,9 @@
     const OS = root.OS, $ = s => rootEl.querySelector(s), screen = document.getElementById('screen');
     const rootEl = document.createElement('div'); rootEl.id = 'rw';
     rootEl.innerHTML = `<canvas id="rwc" tabindex="0"></canvas><div id="rwHud">
-      <div class="rw-top"><button class="rw-btn" id="rwPhone" title="Open WestOS (P)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><span>Phone</span></button><button class="rw-btn" id="rwTravel" title="Travel (M)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></svg><span>Travel</span></button><span class="rw-chip" id="rwClock"></span><span class="rw-chip" id="rwCash"></span></div>
+      <div class="rw-top"><button class="rw-btn" id="rwPhone" title="Open WestOS (P)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><span>Phone</span></button><button class="rw-btn" id="rwTravel" title="Travel (M)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></svg><span>Travel</span></button><button class="rw-btn" id="rwUnstuck" title="Stuck? Move to the nearest clear ground (U)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v5M12 16v5M3 12h5M16 12h5"/><circle cx="12" cy="12" r="2"/></svg><span>Unstuck</span></button><button class="rw-btn" id="rwGfx" title="Graphics (G)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/></svg><span>Auto</span></button><span class="rw-chip" id="rwClock"></span><span class="rw-chip" id="rwCash"></span></div>
       <div id="rwCompass"><canvas id="rwCompassC" width="560" height="46"></canvas><i></i><div id="rwCompassLbl"></div></div><div id="rwLoc"></div><div id="rwCross"></div><div id="rwTip"></div><div id="rwPrompt"></div><div id="rwDash"></div><canvas id="rwMap" width="168" height="168"></canvas><div id="rwLabels"></div>
-      <div id="rwDlg"></div><div id="rwHelp"><div><b>W A S D</b> walk</div><div><b>Shift</b> run &nbsp; <b>Space</b> jump</div><div><b>Mouse</b> look (click to capture)</div><div><b>E</b> open a door / talk to someone</div><div><b>M</b> map &nbsp; <b>P</b> phone (WestOS)</div><div><b>Esc</b> release the mouse</div></div><div id="rwPause">Click to look around</div>
+      <div id="rwDlg"></div><div id="rwHelp"><div><b>W A S D</b> walk</div><div><b>Shift</b> run &nbsp; <b>Space</b> jump</div><div><b>Mouse</b> look (click to capture)</div><div><b>E</b> open a door / talk to someone</div><div><b>U</b> stuck? move to clear ground</div><div><b>G</b> graphics: Auto / Low / Medium / High / Ultra</div><div><b>M</b> map &nbsp; <b>P</b> phone (WestOS)</div><div><b>Esc</b> release the mouse</div></div><div id="rwPause">Click to look around</div>
       <div id="rwTouch"><div id="rwStick"><i></i></div><button id="rwBtnE">E</button><button id="rwBtnJ">⤒</button><button id="rwBtnR">Run</button><div id="rwDrv"><button id="rwTG">Gas</button><button id="rwTB">Brake</button><button id="rwTH">Hand</button><button id="rwTV">View</button><button id="rwTT">Taxi</button></div></div>
       <div id="rwLoad"><div class="t">Stepping outside…</div><div class="bar"><i></i></div></div><div id="rwFade"></div></div>`;
     screen.insertBefore(rootEl, document.getElementById('menubar'));
@@ -43,7 +43,7 @@
     function fillVehicles(){
       const out = {}, px = P.x, pz = P.z, hexOf = i => VD.colorHex(i);
       for(const q of V.list){ const dx = q.x - px, dz = q.z - pz; if(dx * dx + dz * dz > cfg.npcRange ** 2) continue; const b = vehBufs[q.style] || (vehBufs[q.style] = new Float32Array(8 * 16)); let o = out[q.style]; if(!o) o = out[q.style] = { buf: b, n: 0 };
-        if(o.n * 8 + 8 > o.buf.length){ const nb = new Float32Array(o.buf.length * 2); nb.set(o.buf); o.buf = vehBufs[q.style] = nb; } const rgb = M.rgb(hexOf(q.col)), i = o.n++ * 8, f = o.buf; f[i] = q.x; f[i + 1] = q.y != null ? q.y : T.height(q.x, q.z) + (q.kind === 'plane' ? 0.05 : 0.1); f[i + 2] = q.z; f[i + 3] = q.yaw; f[i + 4] = q.pitch || 0; f[i + 5] = q.roll || 0; f[i + 6] = pack(rgb); f[i + 7] = pack(rgb.map(c => c * 0.5)); }
+        if(o.n * 8 + 8 > o.buf.length){ const nb = new Float32Array(o.buf.length * 2); nb.set(o.buf); o.buf = vehBufs[q.style] = nb; } const rgb = M.rgb(hexOf(q.col)), i = o.n++ * 8, f = o.buf; f[i] = q.x; f[i + 1] = q.y != null ? q.y : T.height(q.x, q.z) + (q.kind === 'plane' ? 0.05 : 0.1); f[i + 2] = q.z; f[i + 3] = q.yaw; f[i + 4] = q.pitch || 0; f[i + 5] = q.roll || 0; f[i + 6] = pack(rgb); f[i + 7] = pack(rgb.map(c => c * 0.5)) + (q.driven && dv && dv.q === q && !dv.car && dv.s.throttle > 0.03 ? 0.5 : 0); }   // +0.5 on the accent colour = "engine running": the actor shader spins the propeller blades
       return out;
     }
     /* ---------------- driving (drive.js): E on your own car or plane gets you in, E again gets you out ----------------
@@ -92,6 +92,34 @@
       if(dv.car ? Math.abs(s.u) > 3 : (!s.onGround || s.speed > 5)){ toast(dv.car ? 'Slow down to get out.' : s.onGround ? 'Stop the plane first (Space = brakes).' : 'You cannot get out while flying!'); return; }
       endDrive();
     }
+    /* UNSTUCK (key U / the Unstuck button): finds the nearest spot where you — or your car / plane — overlap nothing and puts you there, level and at a standstill (same heading).
+     * Searches rings out to 90 m; nothing free → a vehicle goes back to its parking spot, a walker to home / the town square. Works on foot, in a car and on the ground in a plane. */
+    let unstuckAt = 0;
+    function findFree(x, z, circles, yaw, yOff){
+      const sets = collSets(), dis = cells.disabled(), fx = Math.sin(yaw), fz = -Math.cos(yaw);
+      const ok = (px, pz) => { const y = T.height(px, pz) + yOff; for(const c of circles){ const cx = px + fx * c[0], cz = pz + fz * c[0], o = Phys.resolve(cx, cz, y, sets, dis, c[1]); if(Math.abs(o.x - cx) + Math.abs(o.z - cz) > 0.02) return false; } return true; };
+      if(ok(x, z)) return { x, z, moved: 0 };
+      for(let r = 2.5; r <= 90; r += 2.5){ const n = Math.max(12, Math.round(r * 1.6)); for(let i = 0; i < n; i++){ const a = i / n * TAU, px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r; if(ok(px, pz)) return { x: px, z: pz, moved: r }; } }
+      return null;
+    }
+    function unstuck(){
+      const now = performance.now(); if(!S.running || S.loading || S.phone || S.busy || now - unstuckAt < 1500) return; unstuckAt = now;
+      if(dv){
+        const d = dv, s = d.s, q = d.q; if(d.hold) return;
+        if(!d.car && !s.onGround){ toast('You cannot be stuck in the air — press H to send the plane home.'); return; }
+        const spot = findFree(s.x, s.z, s.circles, s.yaw, 0.4);
+        if(!spot){ endDrive('home', 'No clear space nearby — your ' + d.m.name + ' went back to its parking spot.'); return; }
+        s.x = spot.x; s.z = spot.z; s.y = T.height(s.x, s.z); s.vx = s.vz = s.vy = 0; s.hit = 0; s.crashed = null;
+        if(d.car){ s.u = s.v = s.r = 0; s.speed = 0; s.pitch = s.roll = 0; }
+        else { const b = Dr.basis(s.yaw, 0, 0); s.B.f = b.f; s.B.r = b.r; s.B.u = b.u; s.pitch = s.roll = 0; s.onGround = true; s.throttle = 0; d.thr = 0; s.stalled = false; s.speed = 0; }
+        q.x = s.x; q.z = s.z; q.yaw = s.yaw; q.y = s.y; d.cYaw = s.yaw; P.x = s.x; P.z = s.z;
+        toast(spot.moved ? 'Freed — moved ' + Math.round(spot.moved) + ' m to clear ground.' : 'Not stuck — levelled and stopped.'); return;
+      }
+      if(S.room || P.inside){ toast('Use the door (E) to get back outside.'); return; }
+      const spot = findFree(P.x, P.z, [[0, cfg.pr]], P.yaw, 0);
+      if(!spot){ const h = homePose() || plazaPose(); toast('No clear space nearby — taking you ' + (/^Home/.test(h.n || '') ? 'home.' : 'to the town square.')); teleport(h.x, h.z, h.yaw); return; }
+      P.x = spot.x; P.z = spot.z; P.vx = P.vz = P.vy = 0; P.y = P.cy = T.height(P.x, P.z); P.grounded = true; toast(spot.moved ? 'Freed — moved ' + Math.round(spot.moved) + ' m to clear ground.' : 'You are not stuck.');
+    }
     /* taxi: put the plane at the start of the runway (fades out while the ground streams in) */
     async function taxiToRunway(){
       const d = dv, s = d.s, R = T.rwy(); if(!R || d.hold) return; if(!s.onGround || s.speed > 4){ toast('Land and stop first.'); return; }
@@ -120,7 +148,7 @@
       const kPitch = key('ArrowDown', 'ArrowUp') ? (k.ArrowDown ? 1 : 0) - (k.ArrowUp ? 1 : 0) : 0, raw = kPitch || (tc && Math.abs(sy) > 0.05 ? sy : my), pT = clamp(d.inv ? -raw : raw, -1, 1);
       d.pitchIn = kPitch ? ramp(d.pitchIn, pT * 0.75, dt, 1.3, 5) : pT;        // keys give up to 75 % of the stick, slowly: a held key cannot zoom the plane into a stall
       d.rollIn = kRoll ? ramp(d.rollIn, kRoll, dt, 3, 6) : clamp(roll, -1, 1);
-      return { thr: d.thr, pitch: d.pitchIn, roll: d.rollIn, yaw: 0, brake: (!busy && (k.Space || tb.hand)) ? 1 : 0, assist: true };
+      return { thr: d.thr, pitch: d.pitchIn, roll: d.rollIn, yaw: 0, brake: (!busy && (k.Space || tb.hand)) ? 1 : 0, rev: (back && d.thr <= 0.02 && d.s.onGround) ? 1 : 0, assist: true };   // S / Brake held with the throttle at idle on the ground = reverse (the plane backs up slowly)
     }
     function driveCamera(dt){
       const d = dv, s = d.s, c = d.cam, car = d.car, sp = Math.abs(s.speed), m = d.m, len = car ? m.drive.len : m.fly.len;
@@ -139,15 +167,15 @@
     const kmh = v => Math.round(Math.abs(v) * 3.6);
     function driveHint(d){
       const s = d.s, tc = touch.on, now = performance.now() - d.t0;
-      if(d.car) return tc ? 'Stick steers · Gas / Brake · Exit' : 'W gas · S brake / reverse · A D steer · Space handbrake · V view · E get out · H back home';
-      if(s.onGround) return tc ? 'Thr ▲ to full, then pull the stick down at ' + kmh(s.P.vr) + ' km/h · Taxi = runway' : 'W throttle up · A D steer · pull back (↓) at ' + kmh(s.P.vr) + ' km/h · Space brakes · T runway · V view · E exit';
+      if(d.car) return tc ? 'Stick steers · Gas / Brake · Exit' : 'W gas · S brake / reverse · A D steer · Space handbrake · V view · E get out · H back home · U unstuck';
+      if(s.onGround) return tc ? 'Thr ▲ to full, then pull the stick down at ' + kmh(s.P.vr) + ' km/h · Brake at idle = reverse · Taxi = runway · Stuck? tap Unstuck' : 'W throttle up · hold S at idle to reverse · A D steer · pull back (↓) at ' + kmh(s.P.vr) + ' km/h · Space brakes · T runway · U unstuck · V view · E exit';
       return tc ? 'Stick: pitch + bank · Thr ▲▼ · land on the runway' : 'Mouse or ↑↓ pitch · A D bank · W S throttle · Space brakes · I invert · V view · H hangar';
     }
     function dash(t){
       if(t - dashAt < 100) return; dashAt = t; const d = dv, s = d.s; let h;
       if(d.car) h = '<div class="spd"><b>' + kmh(s.u) + '</b><small>km/h' + (s.u < -0.5 ? ' · R' : '') + '</small></div>';
       else { const warn = s.stallWarn ? '<div class="warn">STALL</div>' : (!s.onGround && s.alt < 70 && s.vy < -7 ? '<div class="warn">PULL UP</div>' : (s.onGround && s.speed > s.P.vr * 0.98 ? '<div class="ok">ROTATE</div>' : ''));
-        h = warn + '<div class="row"><span>SPEED<b>' + kmh(s.ias) + '</b></span><span>ALT<b>' + Math.round(s.alt) + '</b></span><span>V/S<b>' + (s.vy >= 0 ? '+' : '') + s.vy.toFixed(1) + '</b></span></div><div class="thr"><i style="width:' + Math.round(d.thr * 100) + '%"></i><em>THROTTLE ' + Math.round(d.thr * 100) + '%</em></div>'; }
+        h = warn + '<div class="row"><span>SPEED<b>' + kmh(s.ias) + '</b>' + (s.onGround && s.speed < -0.3 ? '<small>REVERSE</small>' : '') + '</span><span>ALT<b>' + Math.round(s.alt) + '</b></span><span>V/S<b>' + (s.vy >= 0 ? '+' : '') + s.vy.toFixed(1) + '</b></span></div><div class="thr"><i style="width:' + Math.round(d.thr * 100) + '%"></i><em>THROTTLE ' + Math.round(d.thr * 100) + '%</em></div>'; }
       h += '<div class="hint">' + esc(driveHint(d)) + '</div>'; if(h !== dashHtml){ dashHtml = h; $('#rwDash').innerHTML = h; }
     }
     function driveUpdate(dt, t, busy){
@@ -174,7 +202,7 @@
     /* ---------------- setup / teardown of the GPU side (created on first enter, freed on exit so a closed world costs nothing) ---------------- */
     function gpuUp(){
       if(gfx) return true; gfx = RW.GFX.create(cv, { aa: !perfLow() }); if(!gfx) return false; S.nh = nh(); S.nd = G.districtCount(S.nh); L.setup(S.nh); T.setup(L.radius()); scr = RW.Screens.manager(gfx); npcs = RW.NPC.create(G, L);
-      st = RW.Streamer.create(gfx, { nh: S.nh, radius: perfLow() ? cfg.perfRadius : cfg.radius, base: 'os/realworld/' }); gfx.onRestore = () => { st.free(); st = RW.Streamer.create(gfx, { nh: S.nh, radius: cfg.radius }); };
+      st = RW.Streamer.create(gfx, { nh: S.nh, radius: perfLow() ? cfg.perfRadius : cfg.radius, base: 'os/realworld/' }); initQuality(); gfx.onRestore = () => { st.free(); st = RW.Streamer.create(gfx, { nh: S.nh, radius: cfg.radius }); };
       net = RW.Net.create(K); cells = RW.Cells.create(gfx); if(RW.Assets && !RW.Assets.tried){ RW.Assets.tried = true; RW.Assets.load('assets/world/').catch(() => {}); } return true;
     }
     function gpuDown(){ if(!gfx) return; try{ if(net) net.stop(); if(st) st.free(); if(scr) scr.clear(); if(cells) cells.clear(); if(dyn.plots) gfx.free(dyn.plots); if(dyn.marks) gfx.free(dyn.marks); gfx.destroy(); }catch(e){} gfx = st = net = scr = npcs = cells = null; S.cell = null; S.room = null; S.busy = false; P.inside = false; closeDialog(true); dyn = { plots: null, marks: null, sig: '' }; const c2 = cv.cloneNode(false); cv.replaceWith(c2); }
@@ -388,7 +416,7 @@
     const uiOpen = () => S.phone || S.loading || !!S.dialog || !!document.querySelector('#windows .win:not(.hidden)');
     const locked = () => document.pointerLockElement === cv;
     const onKey = (e, d) => { if(!S.running || S.phone) return; const k = e.code; if(d && k === 'Escape' && S.dialog){ closeDialog(); return; } if(d && (k === 'KeyM') && !uiOpen()){ openMap(); e.preventDefault(); return; } if(d && k === 'KeyP' && !e.ctrlKey && !e.metaKey){ phone(true); e.preventDefault(); return; }
-      if(uiOpen()) return; if(dv && d && driveKey(k, e)) return; if(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyE', 'Enter'].includes(k)){ keys[k] = d; e.preventDefault(); if(d && (k === 'KeyE' || k === 'Enter')) interact(); } };
+      if(uiOpen()) return; if(d && k === 'KeyU' && !e.ctrlKey && !e.metaKey){ unstuck(); e.preventDefault(); return; } if(d && k === 'KeyG' && !e.ctrlKey && !e.metaKey && !e.repeat){ cycleQuality(); e.preventDefault(); return; } if(dv && d && driveKey(k, e)) return; if(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyE', 'Enter'].includes(k)){ keys[k] = d; e.preventDefault(); if(d && (k === 'KeyE' || k === 'Enter')) interact(); } };
     window.addEventListener('keydown', e => onKey(e, true)); window.addEventListener('keyup', e => { keys[e.code] = false; onKey(e, false); });
     window.addEventListener('blur', () => { for(const k in keys) keys[k] = false; });
     cv.addEventListener('click', () => { if(!S.running || uiOpen() || touch.on) return; try{ cv.requestPointerLock(); }catch(e){} });
@@ -411,6 +439,8 @@
     const tend = e => { for(const c of e.changedTouches){ if(touch.stick && c.identifier === touch.stick.id){ touch.stick = null; touch.mx = touch.mz = 0; stick.style.display = 'none'; knob.style.transform = ''; } if(touch.look && c.identifier === touch.look.id) touch.look = null; } };
     cv.addEventListener('touchend', tend); cv.addEventListener('touchcancel', tend);
     $('#rwBtnE').addEventListener('touchstart', e => { e.preventDefault(); interact(); }, { passive: false }); $('#rwBtnJ').addEventListener('touchstart', e => { e.preventDefault(); touch.jump = true; }, { passive: false }); $('#rwBtnR').addEventListener('touchstart', e => { e.preventDefault(); touch.run = !touch.run; $('#rwBtnR').classList.toggle('on', touch.run); }, { passive: false });
+    $('#rwGfx').onclick = () => { cycleQuality(); try{ cv.focus(); }catch(e){} };
+    $('#rwUnstuck').onclick = () => { unstuck(); try{ cv.focus(); }catch(e){} };
     $('#rwPhone').onclick = () => phone(true); $('#rwTravel').onclick = () => openMap();
     $('#rwHelp').onclick = () => $('#rwHelp').classList.remove('show');
     /* a conversation: the clerk's line + one button per service (each opens a WestOS app) + Goodbye. The mouse is released while it is open. */
@@ -456,19 +486,47 @@
     }
     let fiAt = 0; const findInteractionThrottled = t => { if(t - fiAt > 60){ fiAt = t; findInteraction(); } };
 
+    /* ---------------- graphics quality ----------------
+     * Tiers: 0 Low (original look, 1x pixels) · 1 Medium (1.5x pixels) · 2 High (filmic colour, glossy paint, haze glow, up to 2x pixels, longer prop range) · 3 Ultra (+ real sun shadows, more chunks).
+     * "Auto" (default) starts from what the GPU / device looks like and then moves itself up or down with the measured frame rate (see adapt()); the G key / Graphics button picks a tier by hand and is remembered. */
+    const QN = ['Low', 'Medium', 'High', 'Ultra'], QDPR = [1, 1.5, 2, 2], Q = { level: 1, ceil: 2, auto: true, t: 0, good: 0 };
+    const gpuName = () => { try{ const x = gfx.gl.getExtension('WEBGL_debug_renderer_info'); return x ? String(gfx.gl.getParameter(x.UNMASKED_RENDERER_WEBGL) || '') : ''; }catch(e){ return ''; } };
+    function autoStart(){
+      if(perfLow()) return { level: 0, ceil: 1 }; const r = gpuName();
+      if(/SwiftShader|llvmpipe|Software|Basic Render|Mesa Offscreen/i.test(r)) return { level: 0, ceil: 0 };
+      const strong = /RTX|GTX ?(9|1\d)|Radeon (RX|Pro|VII)|\bRX ?\d|Apple M\d|Apple GPU|Arc\b|Quadro|Titan|Adreno \(?(6[5-9]|7|8)|Mali-G(7[1-9]|[89])/i.test(r), cores = navigator.hardwareConcurrency || 4, mem = navigator.deviceMemory || 4;
+      return strong && cores >= 4 && mem >= 4 ? { level: 2, ceil: 3 } : { level: 1, ceil: 2 };
+    }
+    function setLevel(n, why){
+      n = Math.max(0, Math.min(3, n | 0)); Q.level = n; S.q = n; let eff = n;
+      try{ const got = gfx.setQuality(n >= 3 ? 2 : n >= 2 ? 1 : 0, { size: 2048 }); if(n >= 3 && got < 2){ eff = 2; Q.level = S.q = 2; Q.ceil = Math.min(Q.ceil, 2); } }catch(e){ if(K.diag) K.diag.error('realworld.quality', e); }
+      if(st) st.maxRadius = (perfLow() ? cfg.perfRadius : cfg.radius) + (eff >= 3 ? 2 : 0); if(st && st.radius > st.maxRadius) st.radius = st.maxRadius;
+      if(why) toast('Graphics: ' + QN[eff] + (Q.auto ? ' (auto)' : '') + (why === true ? '' : ' — ' + why)); return eff;
+    }
+    function initQuality(){ let p = null; try{ p = OS.prefs.get('rwQuality'); }catch(e){} const idx = ['low', 'medium', 'high', 'ultra'].indexOf(p);
+      if(idx >= 0){ Q.auto = false; setLevel(idx); } else { Q.auto = true; const a = autoStart(); Q.ceil = a.ceil; setLevel(a.level); } syncGfxBtn(); }
+    function syncGfxBtn(){ const b = $('#rwGfx'); if(b){ b.querySelector('span').textContent = Q.auto ? 'Auto' : QN[Q.level]; b.title = 'Graphics: ' + (Q.auto ? 'Auto (' + QN[Q.level] + ')' : QN[Q.level]) + ' — click to change (G)'; } }
+    function cycleQuality(){ const order = ['auto', 'low', 'medium', 'high', 'ultra'], cur = Q.auto ? 'auto' : ['low', 'medium', 'high', 'ultra'][Q.level], nx = order[(order.indexOf(cur) + 1) % order.length];
+      try{ OS.prefs.set('rwQuality', nx === 'auto' ? null : nx); }catch(e){}
+      if(nx === 'auto'){ Q.auto = true; const a = autoStart(); Q.ceil = a.ceil; Q.good = 0; Q.t = performance.now(); setLevel(a.level, true); } else { Q.auto = false; setLevel(['low', 'medium', 'high', 'ultra'].indexOf(nx), true); } S.scale = 1; syncGfxBtn(); }
     /* ---------------- render ---------------- */
+    const propRange = () => Q.level <= 0 ? [260, 380] : Q.level === 1 ? [430, 570] : Q.level === 2 ? [520, 700] : [620, 820];
     function render(dt, t){
-      const dpr = Math.min(window.devicePixelRatio || 1, perfLow() ? 1 : 1.5) * S.scale; gfx.resize(cv.clientWidth, cv.clientHeight, dpr);
+      const dpr = Math.min(window.devicePixelRatio || 1, QDPR[Q.level]) * S.scale; gfx.resize(cv.clientWidth, cv.clientHeight, dpr);
       if(!env || t - envAt > 250){ envAt = t; grade = K.skin && K.skin(); env = RW.Env.state(OS.now() + (RW.timeShift || 0), grade && grade.three); S.env = env; }
       st.update(S.room ? S.room.sx : P.x, S.room ? S.room.sz : P.z); st.upload(2); st.step(dt);
       if(t - sunTick > 2000){ sunTick = t; const n2 = nh(); if(n2 !== S.nh){ S.nh = n2; S.nd = G.districtCount(n2); L.setup(n2); T.setup(L.radius()); st.setNH(n2); } if(S.nh){ rebuildDyn(); rebuildVehicles(); } }
       if(t - botsAt > 90000){ botsAt = t; loadBots(); } stepNPCs(t, dt);
       const e = env, bob = Math.sin(P.bob * 2.2) * 0.03 * P.mv, cam = dv ? dv.cam : { pos: [P.x, P.cy + cfg.eye + bob, P.z], yaw: P.yaw, pitch: P.pitch, fov: cfg.fov * Math.PI / 180, near: 0.25, far: cfg.far };
       gfx.begin(cam, e, t / 1000);
+      ensureModels(); const [np, nc] = fillActors(), vb = VD ? fillVehicles() : null, drawActorsAll = () => { drawPeople(actorBuf, np); if(nc) drawCars(carBuf, nc); if(vb) for(const k in vb) gfx.actors(k, vb[k].buf, vb[k].n, 0.9); };
+      if(Q.level >= 3 && gfx.shadowOn && !S.room && !S.cell){                       // ULTRA: sun shadows — the same buffers drawn once from the sun into a depth map
+        const R = dv ? 110 : 80, f = gfx.V.f, fx = cam.pos[0] + f[0] * R * 0.45, fz = cam.pos[2] + f[2] * R * 0.45;
+        if(gfx.beginShadow([fx, T.height(fx, fz) + 1, fz], R)){ gfx.startWorld(); st.draw(P.x, P.z, cfg.far); if(dyn.plots) gfx.draw(dyn.plots, 1, 1); st.drawProps(...propRange()); drawActorsAll(); gfx.endShadow(); } }
       if(!S.room){ gfx.sky(e.cloud); gfx.startWorld(); S.drawn = st.draw(P.x, P.z, cfg.far); if(dyn.plots) gfx.draw(dyn.plots, 1, 1); if(dyn.marks) gfx.draw(dyn.marks, 1, 1);
-        S.props = st.drawProps(perfLow() ? 260 : 430, perfLow() ? 380 : 570); }                      // trees, lamps, benches: one instanced call per kind
+        S.props = st.drawProps(...propRange()); }                      // trees, lamps, benches: one instanced call per kind
       if(cells.cells.size){ gfx.env = RW.Env.INDOOR; gfx.startWorld(); cells.draw(); gfx.env = e; if(S.cell){ scr.tick(P.x, P.z, t); scr.draw(); } }   // insides: only loaded ones, indoor light
-      ensureModels(); const [np, nc] = fillActors(); drawPeople(actorBuf, np); if(nc) drawCars(carBuf, nc); if(VD){ const vb = fillVehicles(); for(const k in vb) gfx.actors(k, vb[k].buf, vb[k].n, 0.9); }
+      drawActorsAll();
       if(S.cell){ const ni = fillInside(); if(ni){ gfx.env = RW.Env.INDOOR; drawPeople(inBuf, ni); gfx.env = e; } }
       const fx = grade && grade.fx; if(fx && !P.inside && (fx.kind === 'snow' || fx.kind === 'embers')) gfx.particles(fx, cv.height * 0.9);
       labels(); minimap(t); compass(t); hud(t);
@@ -480,7 +538,12 @@
       if(S.loading){ const ok = ringReady() || t - S.t0 > 14000; $('#rwLoad i').style.width = Math.round(Math.min(1, (st.built || 0) / 12) * 100) + '%'; if(ok){ S.loading = false; $('#rwLoad').classList.add('gone'); $('#rwPause').classList.toggle('show', !touch.on); if(!helpShown){ helpShown = true; $('#rwHelp').classList.add('show'); setTimeout(() => $('#rwHelp').classList.remove('show'), 9000); } } }
     }
     /* dynamic resolution + view distance: hold ~50+ fps on weak GPUs without the player touching a setting */
-    function adapt(t){ if(S.loading || t - adaptT < 2500) return; if(S.fps < 40){ adaptT = t; if(S.scale > cfg.minScale + 0.01) S.scale = Math.max(cfg.minScale, S.scale - 0.1); else if(st.radius > 4) st.radius -= 1; } else if(S.fps > 57 && (S.scale < 1 || st.radius < (perfLow() ? cfg.perfRadius : cfg.radius))){ adaptT = t + 4000; if(S.scale < 1) S.scale = Math.min(1, S.scale + 0.05); else st.radius += 1; } }
+    function adapt(t){ if(S.loading) return;
+      if(Q.auto){                                                                       // AUTO tier: drop a tier when even the lowest resolution scale cannot hold ~40 fps; climb when it has run flat out for ~12 s
+        if(S.fps < 38 && S.scale <= cfg.minScale + 0.01 && Q.level > 0 && t - Q.t > 6000){ Q.t = t; Q.good = 0; Q.ceil = Q.level - 1; setLevel(Q.level - 1, 'auto-adjusted to keep it smooth'); S.scale = 1; syncGfxBtn(); }
+        else if(S.fps >= 58 && S.scale >= 1 && st.radius >= (st.maxRadius || cfg.radius)){ if(t - Q.t > 1000){ Q.good++; Q.t0 = Q.t0 || t; } if(Q.good >= 12 && Q.level < Q.ceil && t - Q.t > 15000){ Q.t = t; Q.good = 0; setLevel(Q.level + 1, 'auto-raised: your device can handle it'); syncGfxBtn(); } }
+        else if(S.fps < 50) Q.good = 0; }
+      if(t - adaptT < 2500) return; if(S.fps < 40){ adaptT = t; if(S.scale > cfg.minScale + 0.01) S.scale = Math.max(cfg.minScale, S.scale - 0.1); else if(st.radius > 4) st.radius -= 1; } else if(S.fps > 57 && (S.scale < 1 || st.radius < (st.maxRadius || (perfLow() ? cfg.perfRadius : cfg.radius)))){ adaptT = t + 4000; if(S.scale < 1) S.scale = Math.min(1, S.scale + 0.05); else st.radius += 1; } }
 
     /* ---------------- public ---------------- */
     function enter(){
@@ -501,6 +564,6 @@
     /* vehicles: public read-only view + the door to the driving controller (startDrive / endDrive) */
     const vehicles = { list: () => V.list.slice(), mine: () => V.list.filter(q => q.slot), canDrive: () => VH.canDrive(), enter: slot => { const q = V.list.find(x => x.slot === slot); return !!(q && VH.canDrive() && startDrive(q)); }, exit: () => { if(dv) endDrive(); return !dv; }, _drive: q => startDrive(q),   /* _drive = test hook (tests/e2e-drive.test.js drives the showcase plane, which nobody can afford with the $100k grant) */ driving: () => dv ? { kind: dv.kind, id: dv.m.id, slot: dv.q.slot, speed: dv.s.speed, x: dv.s.x, z: dv.s.z, yaw: dv.s.yaw, alt: dv.s.alt || 0, onGround: dv.kind === 'car' ? true : dv.s.onGround } : null,
       at: id => { const p = L.poi(id); return !!(S.running && p && Math.hypot(p.x - P.x, p.z - P.z) < 48); } };
-    return { enter, exit, phone, vehicles, active: () => S.running, inPhone: () => S.phone, teleport, travelTo, hold, openMap, state: () => ({ x: P.x, y: P.y, z: P.z, yaw: P.yaw, mode: S.mode, fps: S.fps, scale: S.scale, radius: st && st.radius, chunks: st && st.chunks.size, calls: gfx && gfx.calls, tris: gfx && Math.round(gfx.tris), built: st && st.built, bots: botList.length, others: net ? net.others.size : 0, loading: S.loading, drawn: S.drawn, props: S.props, inside: S.cell ? S.cell.name : null, cells: cells ? cells.cells.size : 0, nh: S.nh }), _P: P, _S: S, _dv: () => dv, _st: () => st, _cells: () => cells };
+    return { enter, exit, phone, vehicles, active: () => S.running, inPhone: () => S.phone, teleport, travelTo, hold, openMap, drive: slot => { const q = V.list.find(x => x.slot === slot); return q ? startDrive(q) : false; }, driveState: () => dv ? { kind: dv.kind, x: dv.s.x, z: dv.s.z, y: dv.s.y, speed: dv.s.speed, onGround: dv.s.onGround, crashed: dv.s.crashed, throttle: dv.s.throttle, yaw: dv.s.yaw } : null, driveSet: o => { if(dv) Object.assign(dv.s, o); }, unstuck, cycleQuality, quality: () => ({ level: Q.level, auto: Q.auto, shadows: !!(gfx && gfx.shadowOn), tier: QN[Q.level] }), state: () => ({ x: P.x, y: P.y, z: P.z, yaw: P.yaw, mode: S.mode, fps: S.fps, scale: S.scale, radius: st && st.radius, chunks: st && st.chunks.size, calls: gfx && gfx.calls, tris: gfx && Math.round(gfx.tris), built: st && st.built, bots: botList.length, others: net ? net.others.size : 0, loading: S.loading, drawn: S.drawn, props: S.props, inside: S.cell ? S.cell.name : null, cells: cells ? cells.cells.size : 0, nh: S.nh }), _P: P, _S: S, _dv: () => dv, _st: () => st, _cells: () => cells };
   };
 })(typeof self !== 'undefined' ? self : this);

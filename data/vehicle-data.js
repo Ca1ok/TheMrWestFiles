@@ -39,8 +39,8 @@
       fly: { cruise: 440 * KMH, vr: 40, stall: 34, climb: 8, ceiling: 8500, runway: 520, mass: 3800, span: 12.5, len: 10.5, hgt: 4.0 } },
     { id: 'falcon',  kind: 'plane', style: 'jet',   name: 'Falcon J1',  tag: 'Light jet',         price: 680000000,  seats: 8,  top: 780, range: 3800, ceiling: 12500, blurb: 'The classic private jet. Eight seats and a galley the size of a wardrobe.',
       fly: { cruise: 720 * KMH, vr: 62, stall: 52, climb: 14, ceiling: 12500, runway: 900, mass: 7600, span: 13.5, len: 15.5, hgt: 5.0 } },
-    { id: 'zenith',  kind: 'plane', style: 'jet',   name: 'Zenith X',   tag: 'Long-range jet',    price: 2400000000, seats: 12, top: 900, range: 9800, ceiling: 15500, blurb: 'Twelve seats, a bedroom aft and enough range to leave the country behind.',
-      fly: { cruise: 850 * KMH, vr: 70, stall: 58, climb: 18, ceiling: 15500, runway: 1300, mass: 21000, span: 13.5, len: 15.5, hgt: 5.0 } }
+    { id: 'zenith',  kind: 'plane', style: 'long',   name: 'Zenith X',   tag: 'Long-range jet',    price: 2400000000, seats: 12, top: 900, range: 9800, ceiling: 15500, blurb: 'Twelve seats, a bedroom aft and enough range to leave the country behind.',
+      fly: { cruise: 850 * KMH, vr: 70, stall: 58, climb: 18, ceiling: 15500, runway: 1300, mass: 21000, span: 17, len: 19, hgt: 4.4 } }
   ];
   const ALL = CARS.concat(PLANES), BY = {}; ALL.forEach(v => { v.driveable = true; BY[v.id] = v; });
   const SELL_BP = 7000, MAX_SLOTS = 12;

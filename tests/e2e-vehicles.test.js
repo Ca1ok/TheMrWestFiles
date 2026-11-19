@@ -72,6 +72,25 @@ const ev = (p, fn, arg) => p.evaluate(fn, arg);
       await pg.evaluate(p => OS.realworld.travelTo(p.x, p.z, p.yaw), pos); await pg.waitForTimeout(9000); await pg.screenshot({ path: '/tmp/rw-' + nm + '.png' });
       const st = await pg.evaluate(() => ({ s: OS.realworld.state(), v: OS.realworld.vehicles().list().length, at: OS.realworld.at('dealer') + '/' + OS.realworld.at('airport') })); log('  at', id, JSON.stringify({ chunks: st.s.chunks, calls: st.s.calls, vehicles: st.v, at: st.at }));
     }
+    for(let i = 0; i < 4; i++) await pg.evaluate(() => OS.realworld.cycleQuality());   // Auto → Low → Medium → High → Ultra: exercise the sun-shadow pass in the real renderer
+    await pg.waitForTimeout(2500);
+    const qa = await pg.evaluate(() => OS.realworld.quality()); log('  quality:', JSON.stringify(qa)); assert.ok(qa && qa.level === 3 && qa.shadows, 'Ultra tier is on and the shadow map was built');
+    const gl = await pg.evaluate(() => { const c = document.querySelector('#rwc'); return !!c; }); assert.ok(gl);
+    /* unstuck on foot: put the player inside the dealership wall-free spot, press the button, still alive and moved/not-stuck message */
+    const u0 = await pg.evaluate(() => OS.realworld.state()); await pg.evaluate(() => OS.realworld.unstuck()); await pg.waitForTimeout(600); const u1 = await pg.evaluate(() => OS.realworld.state()); assert.ok(isFinite(u1.x) && isFinite(u1.z), 'unstuck leaves a valid position'); log('  unstuck on foot ok', Math.round(Math.hypot(u1.x - u0.x, u1.z - u0.z)) + ' m');
+    await pg.evaluate(() => OS.realworld.cycleQuality()); await pg.waitForTimeout(1200);   // back to Auto (Low on this software renderer) so the flight checks run at a sane frame rate
+    /* a plane in the real world: reverse with S at idle, then get put into a building and press Unstuck */
+    await pg.evaluate(() => { const p = window.RWLayout.poi('airport'), f = p.front; OS.realworld.travelTo(p.x + f[0] * 40, p.z + f[1] * 40, Math.atan2(-f[0], f[1])); }); await pg.waitForTimeout(8000);
+    tree.world.garage.u1.v9 = { m: 'skylark', c: VD.price('skylark'), t: Date.now() - 1000, col: 1 }; await pg.evaluate(() => window.__fbChanged()); await pg.waitForFunction(() => OS.realworld.vehicles().list().some(q => q.slot === 'v9'), null, { timeout: 60000 }).catch(() => {});   // software GL is slow: wait until the plane is placed
+    const vl = await pg.evaluate(() => OS.realworld.vehicles().list().filter(q => q.slot === 'v9').length); assert.strictEqual(vl, 1, 'the owned Skylark stands at the airport');
+    const dr = await pg.evaluate(() => OS.realworld.drive('v9')); assert.ok(dr, 'startDrive on the Skylark'); await pg.waitForTimeout(500);
+    const r0 = await pg.evaluate(() => OS.realworld.driveState()); await pg.keyboard.down('KeyS'); await pg.waitForTimeout(5000); const r1 = await pg.evaluate(() => OS.realworld.driveState()); await pg.keyboard.up('KeyS');
+    assert.ok(r1.speed < -0.15 && r1.onGround, 'holding S at idle reverses the plane: ' + r1.speed.toFixed(2)); log('  plane reverse in the world: ' + r1.speed.toFixed(2) + ' m/s, moved ' + Math.round(Math.hypot(r1.x - r0.x, r1.z - r0.z)) + ' m');
+    const tm = await pg.evaluate(() => { const p = window.RWLayout.poi('airport'); OS.realworld.driveSet({ x: p.x, z: p.z, vx: 0, vz: 0 }); return { x: p.x, z: p.z }; }); await pg.waitForTimeout(400);
+    await pg.keyboard.press('KeyU'); await pg.waitForTimeout(800); const u2 = await pg.evaluate(() => OS.realworld.driveState());
+    assert.ok(u2 && !u2.crashed && u2.onGround && Math.abs(u2.speed) < 0.5, 'unstuck leaves the plane on the ground, stopped'); log('  unstuck in the terminal: moved ' + Math.round(Math.hypot(u2.x - tm.x, u2.z - tm.z)) + ' m to clear ground');
+    await pg.keyboard.press('KeyH'); await pg.waitForTimeout(500); assert.strictEqual(await pg.evaluate(() => OS.realworld.driveState()), null, 'H sends it home');
+    const q2 = await pg.evaluate(() => OS.realworld.quality()); log('  G cycles quality → ', JSON.stringify(q2)); assert.ok(q2.auto === false ? q2.level !== 3 : true);
     assert.ok(!failures.some(f => /PAGE ERROR/.test(f)), 'no page errors'); audit(); log('\nE2E VEHICLES OK');
   }catch(e){ console.error('E2E FAILED:', e.message); console.error(failures.slice(0, 10)); await browser.close(); srv.close(); process.exit(1); }
   await browser.close(); srv.close();

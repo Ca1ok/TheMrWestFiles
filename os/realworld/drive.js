@@ -11,7 +11,7 @@
  * PLANE (stepPlane): a point mass with a real orientation (rotation matrix, no gimbal lock), thrust, lift/drag from the wing (CL(α) with a stall), weight, air density falling with altitude, a
  *   ground mode (wheels: rolling friction, brakes, nose-wheel steering, rotation only with airspeed) and crash rules (hard landing, wing strike, hitting a building).
  *   The stick commands an ANGLE OF ATTACK (what a real pilot's elevator does): centred = trimmed, pulled = more lift until the wing stalls at low speed. Roll and the horizontal part of lift turn
- *   the plane; the nose weathervanes along the flight path; with `assist` (default) a released stick levels the wings.
+ *   the plane; the nose weathervanes along the flight path; with `assist` (default) a released stick levels the wings. On the ground `rev` backs the plane up (slow, throttle at idle).
  * Everything runs at a fixed 1/120 s step inside stepX (callers pass the frame time). */
 (function(root, factory){ if(typeof module === 'object' && module.exports) module.exports = factory(); else (root.RealWorld = root.RealWorld || {}).Drive = root.RWDrive = factory(); })(typeof self !== 'undefined' ? self : this, function(){
   const G = 9.81, RHO0 = 1.225, DT = 1 / 120, TAU = Math.PI * 2;
@@ -83,6 +83,7 @@
   }
 
   /* ---------------------------------------------------------------- PLANE ---------------------------------------------------------------- */
+  const REV_MAX = 3.6, REV_ACC = 1.9;                                                                  // taxi reverse: top speed (m/s) and acceleration (m/s²)
   const CLMAX = 1.6, AS = 0.28, CL0 = 0.18, CLA = (CLMAX - CL0) / AS, KIND = 0.045;             // stall angle of attack 0.28 rad (16°)
   function planeParams(model){
     const F = model.fly, vmax = model.top / 3.6, Vs = F.stall, m = F.mass, S = 2 * m * G / (RHO0 * Vs * Vs * CLMAX);
@@ -111,7 +112,7 @@
     return { kind: 'plane', model, F, P, B, x: pose.x, z: pose.z, y: pose.y == null ? 0 : pose.y, vx: 0, vy: 0, vz: 0, yaw: pose.yaw || 0, pitch: 0, roll: 0, throttle: 0, onGround: true, speed: 0, ias: 0, alt: 0, vs: 0, aoa: 0,
       stalled: false, stallWarn: 0, crashed: null, hit: 0, nx: 0, nz: 0, gdot: 0, gamma: 0, touch: 0, g: 1, circles: [[-F.len * 0.34, 1.1], [0, 1.3], [F.len * 0.34, 1.1]] };
   }
-  /* inp = { thr: 0..1 (throttle lever), pitch: −1..1 (+ nose up), roll: −1..1 (+ right wing down), yaw: −1..1 (+ right), brake: 0..1, assist: bool } */
+  /* inp = { thr: 0..1 (throttle lever), pitch: −1..1 (+ nose up), roll: −1..1 (+ right wing down), yaw: −1..1 (+ right), brake: 0..1, rev: 0..1 (reverse tug on the ground, throttle at idle), assist: bool } */
   function stepPlane(s, inp, frame, world){
     let left = Math.min(frame, 0.1); s.hit = 0;
     while(left > 1e-6 && !s.crashed){ const dt = Math.min(DT, left); left -= dt; planeTick(s, inp, dt, world); }
@@ -150,7 +151,7 @@
     if(contact){
       const E = euler(B), sp = vf, ang = Math.min(1, V / 8);
       // wheels: no sideways slip, nose-wheel steering, rolling friction and brakes
-      const brk = clamp(inp.brake || 0, 0, 1), roll = 0.03 * G + brk * 0.55 * G * (1 - clamp((lift) / (P.m * G), 0, 1)), sdir = sp >= 0 ? 1 : -1;
+      const brk = clamp(inp.brake || 0, 0, 1), roll = 0.03 * G + brk * 0.55 * G * (1 - clamp((lift) / (P.m * G), 0, 1)), sdir = sp >= 0 ? 1 : -1, rev = clamp(inp.rev || 0, 0, 1);
       const steer = clamp(inp.yaw || 0, -1, 1) + clamp(inp.roll || 0, -1, 1) * 0.8;
       let yawRate = clamp(steer, -1, 1) * (0.5 - 0.3 * sm(10, 45, Math.abs(sp))) * Math.min(1, Math.abs(sp) / 6) * sdir;
       let nx = E.yaw + yawRate * dt, th = E.pitch;
@@ -161,8 +162,16 @@
       // velocity follows the nose on the ground (wheels hold the line), thrust − rolling friction − brakes along it
       const fwd = [nb.f[0], 0, nb.f[2]], fl = Math.hypot(fwd[0], fwd[2]) || 1; fwd[0] /= fl; fwd[2] /= fl;
       const spH = s.vx * fwd[0] + s.vz * fwd[2];                  // speed along the (horizontal) heading, not along the tilted nose
-      let a = (thrust * Math.cos(th) - drag) / P.m - roll; let sp2 = Math.max(0, spH + a * dt); if(spH > 0 && sp2 < 0.05 && s.throttle < 0.02 && brk > 0) sp2 = 0;
-      if(spH <= 0.02 && thrust < P.m * 0.2) sp2 = Math.max(0, sp2 - 0.4 * dt);
+      // REVERSE: with the throttle at idle and the reverse control held, the plane backs up slowly (tug / reverse thrust) — up to REV_MAX m/s, steering swaps sides; brakes stop it. Going forward the same control works as reverse thrust (slows you down).
+      let sp2;
+      if(spH > 0.05 || (thrust > P.m * 0.05 && !rev) || (spH > -0.05 && thrust > P.m * 0.2)){
+        const sg = spH >= 0 ? 1 : -1; let a = (thrust * Math.cos(th) - drag * sg) / P.m - roll * sg; sp2 = spH + a * dt; if(spH >= 0) sp2 = Math.max(0, sp2);
+        if(rev && spH > 0) sp2 = Math.max(0, sp2 - rev * 2.2 * dt);                          // reverse thrust bites while still rolling forward
+        if(spH > 0 && sp2 < 0.05 && s.throttle < 0.02 && brk > 0) sp2 = 0;
+      } else {
+        const revA = rev * REV_ACC * clamp(1 - Math.max(0, -spH) / REV_MAX, 0, 1) * (s.throttle < 0.05 ? 1 : 0), fr = (0.03 * G + brk * 0.55 * G) * dt;
+        let v = spH - revA * dt; v = v < 0 ? Math.min(0, v + fr) : Math.max(0, v - fr); if(rev && v > 0 && spH <= 0.02) v = 0; sp2 = v;
+      }
       s.vx = fwd[0] * sp2; s.vz = fwd[2] * sp2; s.vy = 0;
       // lift-off: the wing holds the weight and the nose is up
       if(lift * Math.cos(th) > P.m * G * 1.01 && th > 0.02 && sp2 > 0.9 * P.vr * 0.8){ s.onGround = false; s.vy = Math.max(s.vy, 0.5); s.touch = 0; }
@@ -188,7 +197,7 @@
     s.alt = s.y - g0(s.x, s.z); const dd = collide(s, world, s.circles, s.y + 0.4);
     if(dd > 0){ const hv = Math.hypot(s.vx, s.vz), vn = s.vx * s.nx + s.vz * s.nz;
       if(vn < 0){ s.hit = Math.max(s.hit, -vn); if(-vn > 9 || (!s.onGround && hv > 14)){ s.crashed = 'You hit a building.'; return; } s.vx -= 1.2 * vn * s.nx; s.vz -= 1.2 * vn * s.nz; } }
-    s.ias = Math.hypot(s.vx, s.vy, s.vz); s.speed = s.onGround ? Math.max(0, s.vx * B.f[0] + s.vz * B.f[2]) : s.ias; s.vs = s.vy; s.aoa = alpha; s.g += (((lift * 1 + thrust * Math.sin(alpha)) / (P.m * G)) - s.g) * Math.min(1, dt * 6);
+    s.ias = Math.hypot(s.vx, s.vy, s.vz); s.speed = s.onGround ? s.vx * B.f[0] + s.vz * B.f[2] : s.ias; s.vs = s.vy; s.aoa = alpha; s.g += (((lift * 1 + thrust * Math.sin(alpha)) / (P.m * G)) - s.g) * Math.min(1, dt * 6);
   }
 
   return { car, stepCar, plane, stepPlane, planeParams, basis, euler, CL, AS, G, DT, clamp, wrapA };
