@@ -1,7 +1,7 @@
 /* KERNEL · bank — taxes and bills, seen from the browser.
  * The world server (GitHub Action, os/lib/eco-sim.js) issues the bills — property tax, wealth tax, fire repairs, hospital bills — and enforces them
  * (collects from your cash, then takes houses). They live in eco/bill/<uid>, so they can't be dodged by editing or deleting anything locally.
- * This module only presents them (K.ledger pays them automatically when you can afford it; the Bank app shows the rest). */
+ * This module only presents them (nothing is paid automatically: you press Pay in the Bank app; the server only collects overdue bills). */
 (window.__OSM = window.__OSM || []).push(function(K){
   const B = K.bank = {}, LG = () => K.ledger, DAY = 86400000;
   B.threshold = () => Math.round(LG().cfg.wealthFree / 100);

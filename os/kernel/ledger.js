@@ -8,7 +8,7 @@
  * the SAME atomic update, so money and the things it bought can never get out of step.
  *   earn()/spend()   buy/sell with the market pool; the treasury takes a universal tax (taxBp) on every such flow
  *   inbox            money sent by another player or a bot arrives in your inbox; this module claims it (one claim per update)
- *   bills            taxes and fines issued by the world server; paid automatically when you can afford them
+ *   bills            taxes and fines issued by the world server; paid MANUALLY (Bank app → Pay); the world server still collects overdue ones
  *   loans / houses   see the functions below — each is ONE atomic update that the rules check against the ledger
  * Guests (not signed in) get a local demo wallet that is never saved. */
 (window.__OSM = window.__OSM || []).push(function(K){
@@ -145,17 +145,12 @@
 
   /* ---------- bills (taxes, fines) ---------- */
   function listenBills(u){
-    const ref = C.db.ref('eco/bill/' + u), sync = s => { L.bills = s.val() || {}; K.emit('bank'); autoPay(); };
+    const ref = C.db.ref('eco/bill/' + u), sync = s => { L.bills = s.val() || {}; K.emit('bank'); };
     ref.on('value', sync, e => D.error('ledger.bills', e));
   }
   L.billList = () => Object.keys(L.bills).map(id => Object.assign({ id }, L.bills[id])).sort((a, b) => a.due - b.due);
   L.owed = () => L.billList().reduce((s, b) => s + b.a, 0) / 100;
   L.payBill = id => L.exec(async () => { const b = await fresh('eco/bill/' + uid() + '/' + id); if(!b) return { error: 'That bill is gone.' }; if(!move('gov', b.a)) return { error: 'You need $' + dollars(b.a).toFixed(2) + '.' }; L.acct.bp = id; logTx(-dollars(b.a), b.n || 'Bill'); changed(); return { paths: { ['eco/bill/' + uid() + '/' + id]: null }, result: { paid: dollars(b.a), label: b.n } }; });
-  let paying = false;
-  async function autoPay(){
-    if(paying || L.guest || K.sessionLost) return; paying = true;
-    try{ for(const b of L.billList()){ if(L.acct.b >= b.a){ const r = await L.payBill(b.id); if(r.ok) K.emit('notify', { app: 'Bank', title: (r.label || 'Bill') + ' paid', body: '$' + r.paid.toFixed(2) + ' went to the treasury.' }); else break; } } } finally { paying = false; }
-  }
 
   /* ---------- loans ---------- */
   function listenLoans(u){ C.db.ref('eco/loan/' + u).on('value', s => { L.loans = s.val() || {}; K.emit('bank'); }, e => D.error('ledger.loans', e)); }

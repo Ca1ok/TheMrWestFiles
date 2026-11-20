@@ -18,7 +18,7 @@ Kit.app({ title: 'Bank', build: (body) => {
       h('div', { class: 'split' }, h('span', null, 'Net worth', h('b', null, money(nw - debt, { dp: 0 }))), h('span', null, 'Items', h('b', null, money(br.inventory, { dp: 0 }))), h('span', null, '$WEST', h('b', null, money(br.stock, { dp: 0 }))), h('span', null, 'Property', h('b', null, money(br.property, { dp: 0 }))), debt > 0 ? h('span', null, 'Loans', h('b', null, '−' + money(debt, { dp: 0 }))) : '')));
     /* bills */
     const bills = B.bills(); box.append(h('h2', { class: 'sec' }, 'Bills & taxes'));
-    if(!bills.length) box.append(h('div', { class: 'card empty' }, 'Nothing due. Property tax, wealth tax, repairs and hospital bills arrive here and are paid automatically when you can afford them.'));
+    if(!bills.length) box.append(h('div', { class: 'card empty' }, 'Nothing due. Property tax, wealth tax, repairs and hospital bills arrive here and are never paid automatically — press Pay on each one before it is due.'));
     else { box.append(group(bills.map(b => row({ title: b.label + ' — ' + money(b.amt, { dp: 2 }), sub: (b.due > Date.now() ? 'due ' + new Date(b.due).toLocaleDateString() : 'OVERDUE — the city will collect it and may take property') , right: h('button', { class: 'btn small', onclick: async () => { const r = await B.pay(b.id); toast(r, 'Paid'); paint(); } }, 'Pay') })))); }
     /* loans */
     box.append(h('h2', { class: 'sec' }, 'Loans'));

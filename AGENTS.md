@@ -237,3 +237,6 @@ One file per theme in `os/themes/` — `WestThemes.register({ id, name, mode, va
 
 ## Kenney models (realworld)
 `assets/kenney/` = the CC0 library (credit: Kenney, kenney.nl — keep `assets/kenney/CREDITS.md` and the README credit). `assets/world/kenney/*.glb` and `assets/world/manifest.json` are **generated** by `python3 tools/bake-kenney.py`; change the tool (e.g. the `DOORS` table, scales, the model lists), never the outputs. Building models are used only when `RWModels` (models.js) is filled by the worker; otherwise the procedural buildings draw. After touching any of it run `node tests/realworld-kenney.test.js` plus the other realworld tests.
+
+## Bills are paid manually (durable)
+- The browser no longer auto-pays taxes/bills (`autoPay()` removed from `os/kernel/ledger.js`). The player presses **Pay** in the Bank app (`OS.bank.pay` / `payAll`). The world server (`eco-sim.js`) still collects overdue bills (after 3 days) and seizes property (after 7); that is unchanged. Nothing under `os/realworld/` was touched for this change.
