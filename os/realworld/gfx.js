@@ -52,9 +52,13 @@ void main(){ vN = aNrm; vC = aCol; vWP = aPos; gl_Position = uVP * vec4(aPos, 1.
 in vec3 vN; in vec4 vC; in vec3 vWP; uniform float uFade, uFadeDir; out vec4 oCol;
 float bayer(vec2 p){ ivec2 q = ivec2(mod(p, 4.0)); int i = q.x + q.y * 4; float m[16] = float[16](0.,8.,2.,10.,12.,4.,14.,6.,3.,11.,1.,9.,15.,7.,13.,5.); return (m[i] + 0.5) / 16.0; }
 void main(){ if(uSP > 0.5){ oCol = vec4(0.0); return; } if(uFade < 1.0){ float b = bayer(gl_FragCoord.xy); if(uFadeDir > 0.5 ? b >= uFade : b < uFade) discard; }
-  vec3 n = normalize(vN), base = lin(vC.rgb);
-  if(uQ > 0.5 && vC.a >= 0.9){ vec2 uv = abs(n.y) > 0.6 ? vWP.xz : vec2(vWP.x + vWP.z, vWP.y); base *= 0.93 + 0.14 * (vnoise(uv * 0.55) * 0.6 + vnoise(uv * 2.3) * 0.4); }   // large-scale tone variation: ground and walls stop looking flat
-  oCol = vec4(outc(shadeIt(base, n, vWP, vC.a < 0.9 ? 1.0 : 0.0)), 1.0); }`;
+  vec3 n = normalize(vN), base = lin(vC.rgb); float wat = step(0.989, vC.a) * (1.0 - step(0.998, vC.a));   // alpha 253 = sea
+  if(wat > 0.5){ float t = uTime; vec2 p = vWP.xz; n = normalize(vec3(0.05 * sin(p.x * 0.31 + t * 1.1) + 0.035 * sin(p.x * 0.9 - p.y * 0.4 + t * 1.7), 1.0, 0.05 * sin(p.y * 0.27 - t * 0.9) + 0.035 * sin(p.y * 0.8 + p.x * 0.5 + t * 1.4))); }
+  if(uQ > 0.5 && vC.a >= 0.9 && wat < 0.5){ vec2 uv = abs(n.y) > 0.6 ? vWP.xz : vec2(vWP.x + vWP.z, vWP.y); base *= 0.93 + 0.14 * (vnoise(uv * 0.55) * 0.6 + vnoise(uv * 2.3) * 0.4); }   // large-scale tone variation: ground and walls stop looking flat
+  vec3 col = shadeIt(base, n, vWP, vC.a < 0.9 ? 1.0 : 0.0);
+  if(wat > 0.5){ vec3 V = normalize(uCam - vWP); float fr = pow(1.0 - max(dot(n, V), 0.0), 4.0), fogK = exp(-pow(length(vWP - uCam) * uFogD, 2.0));
+    col += fogK * (uSunCol * pow(max(dot(reflect(-V, n), uSunDir), 0.0), 120.0) * 2.2 * (1.0 - uNight) + uSky * fr * 0.55); }   // sun glints + sky reflection on the sea
+  oCol = vec4(outc(col), 1.0); }`;
 
   /* instanced props (trees, lamps, benches): per-instance x y z yaw | scale tint(packed rgb) seed 0. Foliage (vertex alpha 250) takes the instance's colour and sways in the wind; the far edge dissolves by distance (no pop). */
   const PROP_VS = `#version 300 es

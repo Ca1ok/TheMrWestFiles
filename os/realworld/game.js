@@ -92,6 +92,9 @@
       if(dv.car ? Math.abs(s.u) > 3 : (!s.onGround || s.speed > 5)){ toast(dv.car ? 'Slow down to get out.' : s.onGround ? 'Stop the plane first (Space = brakes).' : 'You cannot get out while flying!'); return; }
       endDrive();
     }
+    /* THE OPEN SEA: one huge flat plane just under the sea level of the chunks (which only cover ~1.3 km around you), so water runs to the horizon instead of ending where chunks stop. */
+    let ocean = null;
+    function makeOcean(){ const mb = new M.MB(16 * 16 * 4 + 8), c = [16, 70, 126], n = 16, w = 1000, o = -n * w / 2; for(let a = 0; a < n; a++) for(let b = 0; b < n; b++){ const x0 = o + a * w, z0 = o + b * w, k = mb.n; mb.v(x0, -0.4, z0, 0, 1, 0, c, 253); mb.v(x0 + w, -0.4, z0, 0, 1, 0, c, 253); mb.v(x0 + w, -0.4, z0 + w, 0, 1, 0, c, 253); mb.v(x0, -0.4, z0 + w, 0, 1, 0, c, 253); mb.tri(k, k + 2, k + 1); mb.tri(k, k + 3, k + 2); } return gfx.upload(mb.finish()); }   // 16 × 16 tiles of 1 km: huge triangles lose depth precision
     /* UNSTUCK (key U / the Unstuck button): finds the nearest spot where you — or your car / plane — overlap nothing and puts you there, level and at a standstill (same heading).
      * Searches rings out to 90 m; nothing free → a vehicle goes back to its parking spot, a walker to home / the town square. Works on foot, in a car and on the ground in a plane. */
     let unstuckAt = 0;
@@ -182,9 +185,13 @@
       const d = dv, s = d.s, q = d.q, inp = readDrive(dt, busy);
       if(!d.hold){
         const sets = collSets(), dis = cells.disabled(), world = { ground: T.height, push: (x, z, y, r) => { const o = Phys.resolve(x, z, y, sets, dis, r); return { x: o.x, z: o.z }; } };
+        const sx0 = s.x, sz0 = s.z;
         if(d.car) Dr.stepCar(s, inp, dt, world); else Dr.stepPlane(s, inp, dt, world);
+        if(T.isWater(s.x, s.z)){                                                              // the sea: a car stops at the waterline; a plane that touches down on it ditches
+          if(d.car){ s.x = sx0; s.z = sz0; s.u *= -0.15; s.v = 0; s.r = 0; if(t - d.edgeAt > 3000){ d.edgeAt = t; toast('The sea — turn around.'); } }
+          else if(s.onGround && !s.crashed) s.crashed = 'You ditched in the sea.'; }
         if(s.hit > 4) d.shake = Math.max(d.shake, Math.min(1, s.hit / 14));
-        const lim = L.radius() + (d.car ? 800 : 1800), r = Math.hypot(s.x, s.z);          // the invisible edge of the world
+        const lim = d.car ? 9000 : 5200, r = Math.hypot(s.x, s.z);          // the invisible edge of the world (planes: well out to sea; cars are stopped by the shoreline instead)
         if(r > lim){ const nx = s.x / r, nz = s.z / r; s.x = nx * lim; s.z = nz * lim; if(d.car){ s.u *= 0.2; s.v *= 0.2; } else { const vo = s.vx * nx + s.vz * nz; if(vo > 0){ s.vx -= vo * nx; s.vz -= vo * nz; } }
           if(t - d.edgeAt > 4000){ d.edgeAt = t; toast('That is the edge of the map — turn around.'); } }
       }
@@ -205,7 +212,7 @@
       st = RW.Streamer.create(gfx, { nh: S.nh, radius: perfLow() ? cfg.perfRadius : cfg.radius, base: 'os/realworld/' }); initQuality(); gfx.onRestore = () => { st.free(); st = RW.Streamer.create(gfx, { nh: S.nh, radius: cfg.radius }); };
       net = RW.Net.create(K); cells = RW.Cells.create(gfx); if(RW.Assets && !RW.Assets.tried){ RW.Assets.tried = true; RW.Assets.load('assets/world/').catch(() => {}); } return true;
     }
-    function gpuDown(){ if(!gfx) return; try{ if(net) net.stop(); if(st) st.free(); if(scr) scr.clear(); if(cells) cells.clear(); if(dyn.plots) gfx.free(dyn.plots); if(dyn.marks) gfx.free(dyn.marks); gfx.destroy(); }catch(e){} gfx = st = net = scr = npcs = cells = null; S.cell = null; S.room = null; S.busy = false; P.inside = false; closeDialog(true); dyn = { plots: null, marks: null, sig: '' }; const c2 = cv.cloneNode(false); cv.replaceWith(c2); }
+    function gpuDown(){ if(!gfx) return; try{ if(net) net.stop(); if(st) st.free(); if(scr) scr.clear(); if(cells) cells.clear(); if(dyn.plots) gfx.free(dyn.plots); if(dyn.marks) gfx.free(dyn.marks); ocean = null; gfx.destroy(); }catch(e){} gfx = st = net = scr = npcs = cells = null; S.cell = null; S.room = null; S.busy = false; P.inside = false; closeDialog(true); dyn = { plots: null, marks: null, sig: '' }; const c2 = cv.cloneNode(false); cv.replaceWith(c2); }
 
     /* ---------------- spawn / travel ---------------- */
     const homePose = () => { const h = OS.homes.home && OS.homes.home(); if(!h || !h.g) return null; const p = RW.Nav.housePose(+String(h.id).slice(1)); return p ? Object.assign({ n: 'Home · ' + p.name }, p) : null; };
@@ -480,8 +487,9 @@
         const gx = (T.height(P.x + 1.2, P.z) - T.height(P.x - 1.2, P.z)) / 2.4, gz = (T.height(P.x, P.z + 1.2) - T.height(P.x, P.z - 1.2)) / 2.4, gl = Math.hypot(gx, gz), sp2 = Math.hypot(P.vx, P.vz);
         if(gl > 0.3 && sp2 > 0.1){ const up = (P.vx * gx + P.vz * gz) / (gl * sp2); if(up > 0){ const k = 1 - 0.55 * Math.min(1, (gl - 0.3) / 0.7) * up; P.vx *= k; P.vz *= k; if(gl > 1.2){ const cut = (P.vx * gx + P.vz * gz) / gl; P.vx -= gx / gl * cut; P.vz -= gz / gl * cut; } } } }
       const jump = (keys.Space || touch.jump) && !busy ? cfg.jump : 0; touch.jump = false;
+      const px0 = P.x, pz0 = P.z;
       Phys.step(P, dt, { sets: collSets(), disabled: cells.disabled(), ground: S.room ? (() => S.room.gy) : T.height, grav: cfg.grav, jump });
-      if(!S.room){ const d = Math.hypot(P.x, P.z), mx = L.radius() + 800; if(d > mx){ P.x *= mx / d; P.z *= mx / d; P.vx = P.vz = 0; } }
+      if(!S.room){ if(T.isWater(P.x, P.z)){ if(!T.isWater(px0, pz0)){ P.x = px0; P.z = pz0; } else { /* teleported / spawned into the sea: walk to the nearest shore */ for(let r = 6; r < 400; r += 6){ let hit = false; for(let a = 0; a < 24 && !hit; a++){ const x = P.x + Math.cos(a / 24 * TAU) * r, z = P.z + Math.sin(a / 24 * TAU) * r; if(!T.isWater(x, z)){ P.x = x; P.z = z; hit = true; } } if(hit) break; } } P.vx = P.vz = 0; } }
       if(S.room && !S.busy){ const r = S.room.door; if((P.x - r.x) * r.nx + (P.z - r.z) * r.nz > -1.5) exitRoom(); }
       const dy = P.y - P.cy; P.cy = Math.abs(dy) > 1.2 ? P.y : P.cy + dy * Math.min(1, dt * 16);   // stairs and kerbs glide instead of snapping
       const spd = Math.hypot(P.vx, P.vz); P.mv = clamp(spd / cfg.run, 0, 1.2); P.bob += dt * spd * 1.9; cellsUpdate(); findInteractionThrottled(t);
@@ -526,7 +534,7 @@
       if(Q.level >= 3 && gfx.shadowOn && !S.room && !S.cell){                       // ULTRA: sun shadows — the same buffers drawn once from the sun into a depth map
         const R = dv ? 110 : 80, f = gfx.V.f, fx = cam.pos[0] + f[0] * R * 0.45, fz = cam.pos[2] + f[2] * R * 0.45;
         if(gfx.beginShadow([fx, T.height(fx, fz) + 1, fz], R)){ gfx.startWorld(); st.draw(P.x, P.z, cfg.far); if(dyn.plots) gfx.draw(dyn.plots, 1, 1); st.drawProps(...propRange()); drawActorsAll(); gfx.endShadow(); } }
-      if(!S.room){ gfx.sky(e.cloud); gfx.startWorld(); S.drawn = st.draw(P.x, P.z, cfg.far); if(dyn.plots) gfx.draw(dyn.plots, 1, 1); if(dyn.marks) gfx.draw(dyn.marks, 1, 1);
+      if(!S.room){ gfx.sky(e.cloud); gfx.startWorld(); if(!ocean) ocean = makeOcean(); gfx.draw(ocean, 1, 1); S.drawn = st.draw(P.x, P.z, cfg.far); if(dyn.plots) gfx.draw(dyn.plots, 1, 1); if(dyn.marks) gfx.draw(dyn.marks, 1, 1);
         S.props = st.drawProps(...propRange()); }                      // trees, lamps, benches: one instanced call per kind
       if(cells.cells.size){ gfx.env = RW.Env.INDOOR; gfx.startWorld(); cells.draw(); gfx.env = e; if(S.cell){ scr.tick(P.x, P.z, t); scr.draw(); } }   // insides: only loaded ones, indoor light
       drawActorsAll();

@@ -6,7 +6,7 @@
  * ROLES: plaza (0,0) · landmarks in the 8 blocks around it · campuses · two plot zones (University Quarter west, Industrial Estate east) · a corridor of plain blocks joining them ·
  * houses: block after block in a growing spiral (8 houses per block, house i is ALWAYS in the same place, so the city only ever grows outward).
  * To change the look of the city: SU/SV/HW, the warp, POI_BLOCK, ZONE_BLOCKS. Everything else follows. */
-(function(root, factory){ if(typeof module === 'object' && module.exports) module.exports = factory(require('../lib/worldgen.js')); else root.RWLayout = factory(root.WorldGen); })(typeof self !== 'undefined' ? self : this, function(G){
+(function(root, factory){ if(typeof module === 'object' && module.exports) module.exports = factory(require('../lib/worldgen.js'), require('./terrain.js')); else root.RWLayout = factory(root.WorldGen, root.RWTerrain); })(typeof self !== 'undefined' ? self : this, function(G, T){
   const SU = 94, SV = 62, SIDE = 3, SET = 6, PER = 8, f01 = G.f01, TAU = Math.PI * 2, K1 = TAU / 410, K2 = TAU / 150, K3 = TAU / 370;
   const warp = (u, v) => [u + 11 * Math.sin(v * K1 + 1.3) + 3 * Math.sin((u * 0.7 + v) * K2 + 0.4), v + 11 * Math.sin(u * K3 + 2.1) + 3 * Math.sin((u - v * 0.6) * K2 + 4.1)];
   const lineU = k => (k - 0.5) * SU, lineV = k => (k - 0.5) * SV, isAve = k => (((k % 4) + 4) % 4) === 0, hwOf = k => isAve(k) ? 7 : 4;
@@ -24,12 +24,23 @@
   ['l', 'f'].forEach(k => ZONE_BLOCKS[k].forEach(([i, j], n) => STATIC.set(K(i, j), { role: 'zone', kind: k, n })));
   for(let i = -7; i <= 7; i++) if(!STATIC.has(K(i, 0))) STATIC.set(K(i, 0), { role: 'plain' });
   /* the spiral of residential blocks (independent of how many houses exist) */
-  const ORDER = []; { const c = []; for(let i = -40; i <= 40; i++) for(let j = -40; j <= 40; j++) if(!STATIC.has(K(i, j))) c.push([i, j, Math.hypot(i * SU, j * SV) + f01(i + 100, j + 100) * 40]); c.sort((a, b) => a[2] - b[2]); c.slice(0, 3200).forEach(q => ORDER.push([q[0], q[1]])); }
+  /* BUILDABLE LAND: the island decides where houses may stand. A block exists only where all of it is dry, above the beach, not on a mountain, gentle enough to build on, and clear of the airfield — so the city
+   * spreads along the coastal plain and the valleys and goes AROUND the hills and the sea instead of over them. */
+  const RW0 = T.RWY.x0, RW1 = T.RWY.x0 + T.RWY.len;
+  function buildable(i, j){
+    const u0 = lineU(i), u1 = lineU(i + 1), v0 = lineV(j), v1 = lineV(j + 1);
+    if(u1 > RW0 - 120 && u0 < RW1 + 160 && v1 > -190 && v0 < 190) return false;                                                       // the runway and its approach stay clear
+    let ok = true; for(const [a, b] of [[0.5, 0.5], [0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0], [0.5, 1], [0, 0.5], [1, 0.5]]){ const p = warp(u0 + (u1 - u0) * a, v0 + (v1 - v0) * b), h = T.land(p[0], p[1]); if(h < 3.2 || h > 75 || T.slope(p[0], p[1]) > 0.115){ ok = false; break; } }
+    return ok;
+  }
+  const ORDER = []; { const c = []; for(let i = -40; i <= 40; i++) for(let j = -40; j <= 40; j++) if(!STATIC.has(K(i, j)) && buildable(i, j)) c.push([i, j, Math.hypot(i * SU, j * SV) + f01(i + 100, j + 100) * 40]); c.sort((a, b) => a[2] - b[2]); c.slice(0, 3200).forEach(q => ORDER.push([q[0], q[1]])); }
   const ORDER_IDX = new Map(); ORDER.forEach((q, b) => ORDER_IDX.set(K(q[0], q[1]), b));
   let NB = 0, NH = 0, RADIUS = 0;
   function setup(nh){ nh = Math.max(1, nh | 0); if(nh === NH) return; NH = nh; NB = Math.min(ORDER.length, Math.ceil(nh / PER)); let r = 0; STATIC.forEach((v, k) => { const [i, j] = k.split(',').map(Number); r = Math.max(r, Math.hypot(i * SU, j * SV)); }); for(let b = 0; b < NB; b++) r = Math.max(r, Math.hypot(ORDER[b][0] * SU, ORDER[b][1] * SV)); RADIUS = r + 110; CACHE.clear(); }
   const roleOf = (i, j) => { const s = STATIC.get(K(i, j)); if(s) return s; const b = ORDER_IDX.get(K(i, j)); return b !== undefined && b < NB ? { role: 'res', b } : null; };
   const exists = (i, j) => !!roleOf(i, j);
+  /* 1 on a block that exists, fading to 0 over ~110 m away from the nearest one (tints the ground, keeps forest out of the city) */
+  function builtAt(x, z){ const i0 = Math.floor(x / SU + 0.5), j0 = Math.floor(z / SV + 0.5); let best = 1e9; for(let i = i0 - 1; i <= i0 + 1; i++) for(let j = j0 - 1; j <= j0 + 1; j++){ if(!exists(i, j)) continue; const dx = Math.max(Math.abs(x - i * SU) - SU / 2, 0), dz = Math.max(Math.abs(z - j * SV) - SV / 2, 0); best = Math.min(best, Math.hypot(dx, dz)); } return best >= 1e8 ? 0 : 1 - Math.max(0, Math.min(1, (best - 10) / 110)); }
   /* the part of a block that is not street or pavement: lot area */
   function inner(i, j){ return { uL: lineU(i) + hwOf(i) + SIDE, uR: lineU(i + 1) - hwOf(i + 1) - SIDE, vT: lineV(j) + hwOf(j) + SIDE, vB: lineV(j + 1) - hwOf(j + 1) - SIDE }; }
   /* a street point on the boundary of block (i, j) facing lattice direction (du, dv): { kind:'h'|'v', k, t } */
@@ -113,5 +124,5 @@
     let mid = opt.find(pathOk) || opt[0]; return head.concat(mid.slice(1)).concat(tail.slice(0)).filter((p, q, arr) => q === 0 || p[0] !== arr[q - 1][0] || p[1] !== arr[q - 1][1]);
   }
   const bounds = () => ({ x0: -RADIUS, x1: RADIUS, z0: -RADIUS, z1: RADIUS });
-  return { SU, SV, SIDE, SET, PER, warp, frame, dirOf, lineU, lineV, hwOf, isAve, setup, exists, roleOf, content, house, poi, plotLot, blocksNear, streetsNear, segExists, route, bounds, radius: () => RADIUS, POI_BLOCK, ZONE_BLOCKS, ZONE_NAME, inner, ORDER, VEH_SITES, bayPoint, kerbSpot };
+  return { builtAt, buildable, SU, SV, SIDE, SET, PER, warp, frame, dirOf, lineU, lineV, hwOf, isAve, setup, exists, roleOf, content, house, poi, plotLot, blocksNear, streetsNear, segExists, route, bounds, radius: () => RADIUS, POI_BLOCK, ZONE_BLOCKS, ZONE_NAME, inner, ORDER, VEH_SITES, bayPoint, kerbSpot };
 });

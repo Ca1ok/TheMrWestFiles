@@ -9,15 +9,18 @@
  * Colliders (stride 8): [type 0=box 1=circle, x, z, halfW|radius, halfD, cos, sin, top y]. Doors: { k:'house'|'poi', id, x, z, nx, nz, y }. */
 (function(root, factory){ if(typeof module === 'object' && module.exports) module.exports = factory(require('../lib/worldgen.js'), require('../lib/buildgen.js'), require('./terrain.js'), require('./mesh.js'), require('./layout.js')); else root.RWChunk = factory(root.WorldGen, root.BuildGen, root.RWTerrain, root.RWMesh, root.RWLayout); })(typeof self !== 'undefined' ? self : this, function(G, BG, T, M, L){
   const CH = 128, { MB, rgb, shade, mix, GLOW } = M, f01 = G.f01, h32 = G.h32, sm = T.sm;
+  const KIND = { tree: 0, lamp: 1, bench: 2, pine: 3, palm: 4, bush: 5, rock: 6, spire: 7, flowers: 8, hydrant: 9, bin: 10, mailbox: 11, sign: 12, busstop: 13, boat: 14 };   // = Props.KINDS order
   const RAISE = [0.07, 0.13, 0.32, 0.8, 0.9], SK = [2, 4, 7, 12, 14], RES = [32, 16, 8, 4, 4];   // LOD 4 = the MAP level: every road and building as a plain shape, flat colours, used only by the map view
   const C = { asphalt: [58, 60, 66], hwy: [70, 72, 78], kerb: [172, 170, 162], mark: [228, 222, 190], plaza: [186, 178, 164], park: [88, 158, 70], pad: [150, 148, 142], water: [76, 150, 190], bark: [96, 70, 48], lamp: [70, 74, 82], lampGlow: [255, 224, 160],
-    leaf: [[70, 130, 62], [88, 148, 66], [58, 112, 70], [104, 150, 58], [150, 130, 52]], grass: [98, 150, 76], dry: [136, 150, 84], urban: [152, 152, 148], forest: [58, 106, 54], alpine: [112, 140, 84], rock: [124, 119, 112], rock2: [92, 88, 87], scree: [150, 143, 132], snow: [206, 214, 226] };
+    leaf: [[70, 130, 62], [88, 148, 66], [58, 112, 70], [104, 150, 58], [150, 130, 52]], grass: [98, 150, 76], dry: [136, 150, 84], urban: [152, 152, 148], forest: [58, 106, 54], alpine: [112, 140, 84], rock: [124, 119, 112], rock2: [92, 88, 87], scree: [150, 143, 132], snow: [206, 214, 226], sand: [216, 199, 153], wet: [170, 156, 118], shallow: [86, 184, 190], deep: [16, 70, 126] };
   const SLOT = BG.SLOT;
 
   /* ---------------- ground ---------------- */
   /* h = ground height, ny = the surface normal's y (1 flat … 0 vertical): forests stop at the tree line (~60-105 m up) and on steep faces */
   function forestAmt(x, z, b, h, ny){ let f = sm(0.5, 0.7, T.vn(x / 70 + 40, z / 70 + 13)) * (1 - sm(0.04, 0.3, b)); if(h !== undefined) f *= (1 - sm(55, 105, h)) * sm(0.62, 0.82, ny === undefined ? 1 : ny); return f; }
-  function groundColor(x, z, b, h, ny){
+  function groundColor(x, z, b, h, ny, lr){
+    if(lr !== undefined && lr < 5 && T.onPier(x, z)) return shade([158, 120, 82], 0.9 + 0.12 * (Math.floor(z * 1.6) % 2));                                       // the pier's boards
+    if(lr !== undefined && lr < 0.12){ const dd = Math.max(0, -lr); return mix(C.shallow, C.deep, Math.min(1, Math.pow(sm(0, 34, dd), 0.8))); }        // the sea: colour by depth (the surface itself is the flat plane at sea level)
     const n1 = T.vn(x / 23 + 5, z / 23 + 1), n2 = T.vn(x / 5 + 2, z / 5 + 8); let c = mix(C.grass, C.dry, sm(0.5, 0.85, T.vn(x / 90, z / 90 + 3)));
     const fa = forestAmt(x, z, b, h, ny); if(fa > 0) c = mix(c, C.forest, fa * 0.8);
     const u = 1 - sm(110, 270, Math.hypot(x, z * 1.35)); if(u > 0.02) c = mix(c, C.urban, u * 0.55);
@@ -29,19 +32,20 @@
       if(rock > 0.01){ c = mix(c, mix(C.rock, C.rock2, sm(0.35, 0.8, rn)), Math.min(1, rock)); if(y > 0.75 && y < 0.93) c = mix(c, C.scree, 0.35 * rn); k = 0.86 + 0.2 * n1 + 0.1 * rn; }
       const line = 150 + 34 * (T.vn(x / 85 + 1, z / 85 + 14) - 0.5), snow = sm(line, line + 30, hn) * sm(0.5, 0.78, y); if(snow > 0.01){ c = mix(c, C.snow, snow); k = (0.86 + 0.14 * n1 + 0.04 * n2) * (0.93 + 0.1 * T.vn(x / 2.5 + 4, z / 7 + 1)); }   // wind-sculpted ripples
     }
+    if(lr !== undefined && lr < 5){ const sand = 1 - sm(1.4, 5, lr); c = mix(c, lr < 0.9 ? C.wet : C.sand, sand); k = lr < 0.9 ? 0.86 : 0.94 + 0.08 * n2; }   // beach: wet sand at the waterline, dry sand above
     return shade(c, k);
   }
   function terrain(mb, x0, z0, lod){
     const res = RES[lod], st = CH / res, rows = res + 1, H = new Float32Array(rows * rows), base = mb.n;
-    for(let j = 0; j < rows; j++) for(let i = 0; i < rows; i++) H[j * rows + i] = T.height(x0 + i * st, z0 + j * st);
+    const LR = new Float32Array(rows * rows); for(let j = 0; j < rows; j++) for(let i = 0; i < rows; i++){ const lv = T.land(x0 + i * st, z0 + j * st); LR[j * rows + i] = lv; H[j * rows + i] = Math.max(lv, T.SEA); }
     const hAt = (i, j) => (i >= 0 && j >= 0 && i < rows && j < rows) ? H[j * rows + i] : T.height(x0 + i * st, z0 + j * st);
     for(let j = 0; j < rows; j++) for(let i = 0; i < rows; i++){
       const x = x0 + i * st, z = z0 + j * st, nx = (hAt(i - 1, j) - hAt(i + 1, j)) / (2 * st), nz = (hAt(i, j - 1) - hAt(i, j + 1)) / (2 * st), l = Math.hypot(nx, 1, nz);
-      mb.v(x, H[j * rows + i], z, nx / l, 1 / l, nz / l, groundColor(x, z, T.built(x, z), H[j * rows + i], 1 / l));
+      const lr = LR[j * rows + i]; mb.v(x, H[j * rows + i], z, nx / l, 1 / l, nz / l, groundColor(x, z, L.builtAt(x, z), H[j * rows + i], 1 / l, lr), lr < 0.12 ? 253 : 255);   // alpha 253 = water: the shader ripples and glints it
     }
     for(let j = 0; j < res; j++) for(let i = 0; i < res; i++){ const a = base + j * rows + i, b = a + 1, c = a + rows, d = c + 1; mb.tri(a, c, b); mb.tri(b, c, d); }
     const sk = SK[lod];   // skirts hide the cracks between neighbouring levels of detail
-    for(let i = 0; i < res; i++){ const xa = x0 + i * st, xb = xa + st, ha = H[i], ca = groundColor(xa, z0, T.built(xa, z0), ha, 0.85), hb = H[i + 1], hc = H[res * rows + i], hd = H[res * rows + i + 1];
+    for(let i = 0; i < res; i++){ const xa = x0 + i * st, xb = xa + st, ha = H[i], ca = groundColor(xa, z0, L.builtAt(xa, z0), ha, 0.85, T.land(xa, z0)), hb = H[i + 1], hc = H[res * rows + i], hd = H[res * rows + i + 1];
       mb.quad([xa, ha, z0], [xb, hb, z0], [xb, hb - sk, z0], [xa, ha - sk, z0], [0, 0, -1], ca); mb.quad([xa, hc, z0 + CH], [xb, hd, z0 + CH], [xb, hd - sk, z0 + CH], [xa, hc - sk, z0 + CH], [0, 0, 1], ca);
       const za = z0 + i * st, zb = za + st, he = H[i * rows], hf = H[(i + 1) * rows], hg = H[i * rows + res], hh = H[(i + 1) * rows + res];
       mb.quad([x0, he, za], [x0, hf, zb], [x0, hf - sk, zb], [x0, he - sk, za], [-1, 0, 0], ca); mb.quad([x0 + CH, hg, za], [x0 + CH, hh, zb], [x0 + CH, hh - sk, zb], [x0 + CH, hg - sk, za], [1, 0, 0], ca); }
@@ -117,6 +121,8 @@
     return {
       tree(x, z, s, seed){ if(lod > 1) return; const y = T.height(x, z); s = s || 1; props.push(0, x, y, z, (seed | 0) * 2.399, s, ((Math.abs(seed | 0) * 7919) % 997) / 997, 0); cols.push(1, x, z, 0.4 * s, 0, 0, 0, y + 5); },
       lamp(x, z, yaw){ if(lod > 1) return; props.push(1, x, T.height(x, z), z, yaw || 0, 1, 0, 0); },
+      /* any of the island's new props: kind id (see Props.KINDS), size, seed → per-instance colour, optional collider radius and height */
+      put(kind, x, z, s, seed, yaw, cr, ch){ if(lod > 1) return; const y = T.height(x, z); props.push(kind, x, y, z, yaw || 0, s, seed, 0); if(cr && lod === 0) cols.push(1, x, z, cr * s, 0, 0, 0, y + (ch || 1) * s); },
       bench(x, z, yaw){ if(lod > 1) return; const y = T.height(x, z); props.push(2, x, y, z, yaw, 1, 0, 0); if(lod === 0) cols.push(0, x, z, 0.95, 0.32, Math.cos(yaw), Math.sin(yaw), y + 0.5); }
     };
   }
@@ -175,11 +181,37 @@
         if(lod <= 1) bakeShape(mb, BG.proto(f.kind, f.w, f.d, f.fl, f.v), f.x, f.z, f.ang, f.side, base, lod); else bakeBox(mb, f.x, f.z, f.w, f.d, f.ang, base, hgt, rgb(BG.WALL[G.h32(f.v, 9) % BG.WALL.length]), rgb(BG.GLASSW[G.h32(f.v, 10) % BG.GLASSW.length]), lod); });
       if(lod === 0) b.plots.forEach(p => { if(inC(p.x, p.z)){ const y = T.height(p.x, p.z); mb.boxR(p.x, p.z, p.w / 2 + 1.5, p.d / 2 + 1.5, p.ang, y - 0.3, y + 0.1, [176, 174, 168], [176, 174, 168]); } });
       b.trees.forEach(t => { if(t[4] >= nh) return; if(inC(t[0], t[1])) ex.tree(t[0], t[1], t[2], t[3]); });
-      b.lamps.forEach(l => { if(inC(l[0], l[1])) ex.lamp(l[0], l[1], l[2]); });
+      b.lamps.forEach(l => { if(!inC(l[0], l[1])) return; ex.lamp(l[0], l[1], l[2]);
+        if(lod > 0) return; const q = f01(Math.round(l[0] * 3.1), Math.round(l[1] * 3.1)), ox = Math.cos(l[2] || 0) * 1.1, oz = Math.sin(l[2] || 0) * 1.1;     // street furniture beside some lamps
+        if(q < 0.12) ex.put(KIND.hydrant, l[0] + ox, l[1] + oz, 1, 0, 0, 0.18, 0.7); else if(q < 0.22) ex.put(KIND.bin, l[0] - ox, l[1] - oz, 1, 0, (l[2] || 0) + 0.5, 0.3, 1); else if(q < 0.29) ex.put(KIND.mailbox, l[0] + ox, l[1] + oz, 1, 0, l[2] || 0, 0.2, 1.3); else if(q < 0.35) ex.put(KIND.sign, l[0] - ox, l[1] - oz, 1, 0, l[2] || 0, 0.1, 2.7); else if(q < 0.38) ex.put(KIND.busstop, l[0] + ox * 2.2, l[1] + oz * 2.2, 1, 0, (l[2] || 0) + 1.5708, 0, 0); });
       b.benches.forEach(q => { if(inC(q[0], q[1])) ex.bench(q[0], q[1], q[2]); });
     });
     // wild trees outside the built-up area (never inside the city: the plateau and its streets end well before)
-    if(lod <= 1) for(let i = 0; i < 8; i++) for(let j = 0; j < 8; j++){ const x = x0 + i * 16 + f01(cx * 8 + i, cz * 8 + j) * 14, z = z0 + j * 16 + f01(cz * 8 + j, cx * 8 + i + 99) * 14; const bl = T.built(x, z); if(bl > 0.12 || (T.rwy && (rw => rw && x > rw.x0 - 70 && x < rw.x1 + 70 && Math.abs(z - rw.z) < rw.hw + 45)(T.rwy()))) continue; const th = T.height(x, z), tn = 1 / Math.hypot(1, T.slope(x, z)), fa = forestAmt(x, z, bl, th, tn), r = f01(cx * 8 + i + 400, cz * 8 + j); if(tn > 0.72 && th < 108 && r < (0.06 + fa * 0.6) * (1 - sm(55, 108, th))) ex.tree(x, z, 0.8 + f01(i, j + cx) * 0.7, i * 8 + j); }
+    /* THE WILD: every 16 m a jittered sample decides what grows / lies there by altitude, slope and the coast —
+     *   beach: palms · lowland meadow: broadleaf woods, shrubs, flowers, the odd rock · foothills: conifer forest + boulders · bare mountain: rocks and crags · steep faces: rock · shallows: moored boats */
+    if(lod <= 1) for(let i = 0; i < 8; i++) for(let j = 0; j < 8; j++){
+      const x = x0 + i * 16 + f01(cx * 8 + i, cz * 8 + j) * 14, z = z0 + j * 16 + f01(cz * 8 + j, cx * 8 + i + 99) * 14, bl = L.builtAt(x, z); if(bl > 0.12 || (T.rwy && (rw => rw && x > rw.x0 - 70 && x < rw.x1 + 70 && Math.abs(z - rw.z) < rw.hw + 45)(T.rwy()))) continue;
+      const th = T.land(x, z), r = f01(cx * 8 + i + 400, cz * 8 + j), r2 = f01(cx * 8 + i + 900, cz * 8 + j + 7), sd = f01(i * 13 + cx, j * 7 + cz); if(th < 0.15){ if(th < -2.5 && th > -12 && r2 < 0.012 && lod === 0) ex.put(KIND.boat, x, z, 1, sd, f01(i, j) * 6.28, 0, 0); continue; }
+      const tn = 1 / Math.hypot(1, T.slope(x, z)), fa = forestAmt(x, z, bl, th, tn), yaw = f01(i + 7, j + cz) * 6.28;
+      if(th < 3.6){ if(r < 0.07) ex.put(KIND.palm, x, z, 0.8 + f01(i, j + cx) * 0.5, sd, yaw, 0.3, 7); else if(r2 < 0.02) ex.put(KIND.rock, x, z, 0.5 + f01(j, i) * 0.6, sd, yaw, 0.7, 1); continue; }
+      if(tn < 0.8 || th > 108){ if(r < (th > 108 ? 0.05 : 0.09)) ex.put(r2 < 0.28 && th > 70 ? KIND.spire : KIND.rock, x, z, (r2 < 0.28 && th > 70 ? 0.7 : 0.9) + f01(j, i + cz) * 1.4, sd, yaw, 0.75, 1.1); continue; }
+      const alt = sm(45, 95, th), want = (0.06 + fa * 0.6) * (1 - sm(55, 108, th));
+      if(r < want){ if(alt > 0.15 && f01(i * 3 + 5, j + cx) < alt + 0.25) ex.put(KIND.pine, x, z, 0.85 + f01(i, j + cx) * 0.7, sd, yaw, 0.32, 7); else ex.tree(x, z, 0.8 + f01(i, j + cx) * 0.7, i * 8 + j); }
+      else if(lod === 0){ if(r2 < 0.10 + 0.12 * fa) ex.put(KIND.bush, x, z, 0.7 + f01(j, i + 3) * 0.8, sd, yaw, 0.35, 1); else if(r2 < 0.16 + 0.12 * fa && th < 60) ex.put(KIND.flowers, x, z, 0.9 + f01(i + 2, j) * 0.5, sd, yaw, 0, 0); else if(r2 < 0.185 + 0.12 * fa && (tn < 0.93 || alt > 0.3)) ex.put(KIND.rock, x, z, 0.5 + f01(j + 1, i) * 0.9, sd, yaw, 0.7, 1); }
+    }
+    /* LANDMARKS: the pier's railings, the lighthouse, the radio mast and the foothill cabins are built into the chunk that holds their anchor point */
+    { const WOOD = '#6a4c32', P = T.pier();
+      if(lod <= 1 && inC(P.cx, (P.z0 + P.z1) / 2)){ const y = 0.9, xl = P.x0 + 0.25, xr = P.x1 - 0.25;
+        for(let zz = P.z0 + 2; zz <= P.z1; zz += 3){ mb.boxAA(xl - 0.07, y, zz - 0.07, xl + 0.07, y + 1.0, zz + 0.07, WOOD); mb.boxAA(xr - 0.07, y, zz - 0.07, xr + 0.07, y + 1.0, zz + 0.07, WOOD); }
+        mb.boxAA(xl - 0.05, y + 0.85, P.z0 + 2, xl + 0.05, y + 0.95, P.z1, '#7d5c3e'); mb.boxAA(xr - 0.05, y + 0.85, P.z0 + 2, xr + 0.05, y + 0.95, P.z1, '#7d5c3e'); mb.boxAA(xl - 0.05, y + 0.45, P.z0 + 2, xl + 0.05, y + 0.52, P.z1, '#7d5c3e'); mb.boxAA(xr - 0.05, y + 0.45, P.z0 + 2, xr + 0.05, y + 0.52, P.z1, '#7d5c3e');
+        mb.boxAA(xl - 0.05, y, P.z1 - 0.1, xr + 0.05, y + 0.95, P.z1 + 0.05, '#7d5c3e'); for(let zz = P.z0 + 10; zz < P.z1; zz += 18){ mb.cyl(xl, zz, y, y + 3.6, 0.06, 4, '#464a52'); mb.boxAA(xl - 0.3, y + 3.55, zz - 0.3, xl + 0.3, y + 3.8, zz + 0.3, '#ffe0a0', '#ffe0a0', GLOW); }
+        mb.boxAA(P.cx - 3.2, y, P.z1 - 0.4, P.cx + 3.2, y + 0.35, P.z1 + 0.5, '#5a3f28');     // end platform with the mooring bollards
+        ex.put(KIND.boat, P.cx - 9.5, P.z1 - 16, 1, 0.1, 0, 0, 0); ex.put(KIND.boat, P.cx + 9.5, P.z1 - 34, 1, 0.7, 0.05, 0, 0); ex.put(KIND.boat, P.cx - 9.5, P.z1 - 46, 1, 0.4, -0.04, 0, 0); }
+      T.landmarks().forEach(m => { if(!inC(m.x, m.z)) return; const x = m.x, z = m.z, y = m.y;
+        if(m.type === 'lighthouse' && lod <= 2){ mb.boxAA(x - 4.2, y - 1.2, z - 4.2, x + 4.2, y + 3.4, z + 4.2, '#d9d4c8', '#7a4a3a'); mb.cyl(x, z, y, y + 9, 2.7, 10, '#f4f4f4'); mb.cyl(x, z, y + 9, y + 13, 2.45, 10, '#c0392b'); mb.cyl(x, z, y + 13, y + 18, 2.2, 10, '#f4f4f4'); mb.cyl(x, z, y + 18, y + 21, 1.95, 10, '#c0392b'); mb.boxAA(x - 3.1, y + 21, z - 3.1, x + 3.1, y + 21.4, z + 3.1, '#33373d', '#4a4f57'); mb.cyl(x, z, y + 21.4, y + 24, 1.45, 8, '#ffe9a8', '#ffe9a8', GLOW); mb.cone(x, z, y + 24, y + 27.5, 1.95, 8, '#c0392b'); mb.boxAA(x - 0.6, y, z + 2.55, x + 0.6, y + 1.9, z + 2.8, '#3b2a20'); cols.push(1, x, z, 3.0, 0, 0, 0, y + 26); }
+        else if(m.type === 'mast' && lod <= 2){ mb.cyl(x, z, y - 1, y + 38, 0.4, 6, '#c9ccd2'); mb.boxAA(x - 2.4, y + 31, z - 0.1, x + 2.4, y + 31.35, z + 0.1, '#c9ccd2'); mb.boxAA(x - 0.1, y + 25, z - 2.0, x + 0.1, y + 25.3, z + 2.0, '#c9ccd2'); mb.boxAA(x - 0.45, y + 38, z - 0.45, x + 0.45, y + 39.2, z + 0.45, '#ff3030', '#ff3030', GLOW); mb.boxAA(x + 2, y - 1, z + 2, x + 5.4, y + 2.4, z + 5.4, '#6b6f78', '#80858f'); cols.push(1, x, z, 0.8, 0, 0, 0, y + 20); cols.push(0, x + 3.7, z + 3.7, 1.7, 1.7, 1, 0, y + 2.4); }
+        else if(m.type === 'cabin' && lod <= 1){ const w = 2.9, wc = '#8a5a36', rc = '#4f3322'; mb.boxR(x, z, w, w, m.yaw, y - 0.6, y + 2.7, wc, wc); mb.cone(x, z, y + 2.7, y + 4.9, 4.5, 4, rc); mb.boxR(x + Math.cos(m.yaw + 1.5708) * 0, z + 0, 0.5, 0.05, m.yaw, y, y + 2.0, '#2b1d14'); mb.boxAA(x + 1.0, y + 2.2, z - 1.4, x + 1.6, y + 5.2, z - 0.8, '#6a6f78'); mb.boxR(x + 1.6, z + 1.6, 0.9, 0.12, m.yaw, y + 0.9, y + 1.6, '#cfe3ef', '#cfe3ef'); cols.push(1, x, z, 3.5, 0, 0, 0, y + 4); }
+      }); }
     return { cx, cz, lod, mesh: mb.finish(), cols: new Float32Array(cols), doors, props: new Float32Array(props), stats };
   }
   return { CH, build, RES };

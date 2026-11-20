@@ -1,7 +1,7 @@
 /* the real world's pure parts: street layout (no clipping, trees off the roads), terrain, chunk geometry at every LOD, colliders, doors, interiors, NPC routes, day/night.  node tests/realworld.test.js */
 const assert = require('assert'); global.self = global;
 const G = require('../os/lib/worldgen.js'), BG = require('../os/lib/buildgen.js'), T = require('../os/realworld/terrain.js'), L = require('../os/realworld/layout.js'), C = require('../os/realworld/chunkgen.js'); global.RWMesh = require('../os/realworld/mesh.js'); global.RealWorld = {}; require('../os/realworld/interiors.js'); require('../os/realworld/env.js'); require('../os/realworld/npcs.js');
-const NH = 512; L.setup(NH); T.setup(L.radius());
+const NH = 512; L.setup(NH); T.setup();
 /* ---- layout: every house exists, in a stable place; nothing touches a street or another building; trees stay off the roads ---- */
 for(const nh of [NH, 3000]){
   L.setup(nh); const R = L.radius(), lines = [], segs = L.streetsNear(-R - 100, -R - 100, R + 100, R + 100);
@@ -16,15 +16,16 @@ for(const nh of [NH, 3000]){
   for(let a = 0; a < obbs.length; a++) for(let b = a + 1; b < obbs.length; b++){ const A = obbs[a], B = obbs[b]; if(Math.abs(A.x - B.x) > 60 || Math.abs(A.z - B.z) > 60) continue; let sep = false; for(const o of [A, B]){ for(const ax of [[o.c, o.s], [-o.s, o.c]]){ const p = proj(A.k, ax), q = proj(B.k, ax); if(p[1] < q[0] - 0.5 || q[1] < p[0] - 0.5){ sep = true; break; } } if(sep) break; } assert(sep, nh + ': buildings overlap ' + A.tag + ' ~ ' + B.tag); }
   trees.forEach(t => { for(const o of obbs){ if(Math.abs(o.x - t[0]) > 30 || Math.abs(o.z - t[1]) > 30) continue; const dx = t[0] - o.x, dz = t[1] - o.z, lx = dx * o.c + dz * o.s, lz = -dx * o.s + dz * o.c; if(nh <= 3000) assert(!(Math.abs(lx) < o.w / 2 + 0.8 && Math.abs(lz) < o.d / 2 + 0.8), nh + ': tree inside ' + o.tag); } });
 }
-L.setup(NH); const h5 = L.house(5), h5b = (L.setup(5000), L.house(5)); assert.deepStrictEqual([h5.g.x, h5.g.y], [h5b.g.x, h5b.g.y], 'a house never moves when the city grows'); L.setup(NH); T.setup(L.radius());
+L.setup(NH); const h5 = L.house(5), h5b = (L.setup(5000), L.house(5)); assert.deepStrictEqual([h5.g.x, h5.g.y], [h5b.g.x, h5b.g.y], 'a house never moves when the city grows'); L.setup(NH); T.setup();
 ['bank', 'exchange', 'shop', 'arcade', 'agency', 'hall', 'uni', 'lab', 'ind', 'plant', 'park', 'dealer', 'airport'].forEach(id => assert(L.poi(id), 'landmark ' + id));
 for(let i = 0; i < NH; i++) assert(L.house(i), 'house ' + i);
 // terrain: gentle and deterministic
-let maxSlope = 0, hMin = 1e9, hMax = -1e9, cityH = 0, cityS = 0; const CRr = L.radius();
-for(let x = -4000; x <= 4000; x += 13) for(let z = -4000; z <= 4000; z += 13){ const h = T.height(x, z); assert(isFinite(h) && h > -40 && h < 320, 'terrain height out of range ' + h); hMin = Math.min(hMin, h); hMax = Math.max(hMax, h); const s = T.slope(x, z); maxSlope = Math.max(maxSlope, s);
-  if(Math.hypot(x, z) < CRr + 60){ cityH = Math.max(cityH, Math.abs(h)); cityS = Math.max(cityS, s); } }
-assert(cityH < 1 && cityS < 0.05, 'the city plateau stays flat: |h| ' + cityH.toFixed(2) + ' slope ' + cityS.toFixed(3)); assert(hMax > 120 && hMin < -5, 'the country has real relief: ' + hMin.toFixed(0) + ' … ' + hMax.toFixed(0) + ' m');
-{ const R = T.rwy(); for(let x = R.x0 - 150; x < R.x1 + 250; x += 7) for(let z = -150; z <= 150; z += 7) assert(Math.abs(T.height(x, z)) < 5.2, 'open ground around the runway'); for(let x = R.x0; x <= R.x1; x += 5) for(let z = -R.hw; z <= R.hw; z += 5) assert(Math.abs(T.height(x, z)) < 1e-6, 'the runway is flat'); }
+let maxSlope = 0, hMin = 1e9, hMax = -1e9, dtH = 0, dtS = 0, sea = 0, tot = 0;
+for(let x = -4200; x <= 4200; x += 13) for(let z = -4200; z <= 4200; z += 13){ const h = T.height(x, z), lv = T.land(x, z); assert(isFinite(h) && h >= 0 && h < 420 && lv > -80, 'terrain height out of range ' + h + ' / ' + lv); hMin = Math.min(hMin, lv); hMax = Math.max(hMax, h); tot++; if(T.isWater(x, z)) sea++; const s = T.slope(x, z); maxSlope = Math.max(maxSlope, s);
+  if(x > -700 && x < 700 && z > -230 && z < 230){ dtH = Math.max(dtH, Math.abs(h - 12)); dtS = Math.max(dtS, s); } }
+assert(dtH < 1.2 && dtS < 0.06, 'the downtown plateau stays flat: |h-12| ' + dtH.toFixed(2) + ' slope ' + dtS.toFixed(3)); assert(hMax > 200 && hMin < -30, 'real relief: sea floor ' + hMin.toFixed(0) + ' … peaks ' + hMax.toFixed(0) + ' m'); assert(sea / tot > 0.5 && sea / tot < 0.85, 'a large island in the sea: ' + (sea / tot * 100).toFixed(0) + '% water');
+assert(!T.isWater(0, 0) && !T.isWater(1200, 0) && T.isWater(0, 4000) && T.isWater(-4000, -2000), 'downtown + runway are dry land, the far field is sea'); { let c = 0; for(let a = 0; a < 360; a += 2) for(let r = 0; r < 4200; r += 25){ const x = 100 + Math.cos(a * Math.PI / 180) * r, z = -650 + Math.sin(a * Math.PI / 180) * r; if(!T.isWater(x, z) && T.isWater(x + Math.cos(a * Math.PI / 180) * 25, z + Math.sin(a * Math.PI / 180) * 25)) c++; } assert(c > 90, 'a long, ragged shoreline'); }
+{ const R = T.rwy(); for(let x = R.x0 - 150; x < R.x1 + 250; x += 7) for(let z = -150; z <= 150; z += 7) assert(Math.abs(T.height(x, z) - 12) < 5.5, 'open level ground around the runway'); for(let x = R.x0; x <= R.x1; x += 5) for(let z = -R.hw; z <= R.hw; z += 5) assert(Math.abs(T.height(x, z) - 12) < 1e-6, 'the runway is flat'); }
 assert(T.height(1234.5, -987.6) === T.height(1234.5, -987.6), 'terrain is a pure function');
 // chunks: valid at all LODs, shrinking, with doors and colliders
 const keys = [[0, 0], [-1, 0], [1, 1], [0, 2], [-4, 0], [3, 2]]; let tris = [0, 0, 0, 0], doors = 0, houses = 0;
@@ -40,13 +41,24 @@ I.kinds().forEach(k => { const r = I.build(k, { w: 12, dp: 10, beds: 3, type: 'h
 const N = RealWorld.NPC.create(G, L), now = 1.7e12; let moving = 0; for(let n = 0; n < 30; n++) for(let k = 0; k < 60; k++){ const s = N.state({ n, job: 'baker', thrift: 0.5 }, G.house(n * 7), now + k * 2000, NH); assert(isFinite(s.x + s.z)); if(s.moving){ moving++; assert(Math.hypot(s.x, s.z) < L.radius() + 50); } } assert(moving > 50, 'NPCs move');
 assert.deepStrictEqual(N.state({ n: 3, job: 'baker', thrift: 0.5 }, G.house(9), now, NH), N.state({ n: 3, job: 'baker', thrift: 0.5 }, G.house(9), now, NH));
 const E = RealWorld.Env; assert(E.state(E.DAY * 0.05).night > 0.95 && E.state(E.DAY * 0.6).night < 0.05);
-console.log('realworld ok · terrain ' + hMin.toFixed(0) + ' … ' + hMax.toFixed(0) + ' m, steepest ' + maxSlope.toFixed(2) + ' · tris/LOD ' + tris.map(Math.round).join('/') + ' · radius ' + Math.round(L.radius()) + ' m');
+console.log('realworld ok · island: sea floor ' + hMin.toFixed(0) + ' … peaks ' + hMax.toFixed(0) + ' m, ' + (sea / tot * 100).toFixed(0) + '% sea, steepest ' + maxSlope.toFixed(2) + ' · tris/LOD ' + tris.map(Math.round).join('/') + ' · radius ' + Math.round(L.radius()) + ' m');
 /* ---- added with the open-world pass: the map level (LOD 4), instanced props, door data for in-place interiors ---- */
 { const a = C.build(0, 0, 0, 512), m = C.build(0, 0, 4, 512), f = C.build(-1, 0, 2, 512);
   assert(m.mesh.vb.byteLength + m.mesh.ib.byteLength < 40e3, 'a map-level chunk stays tiny: ' + (m.mesh.vb.byteLength + m.mesh.ib.byteLength));
   assert(m.props.length === 0 && f.props.length === 0, 'no props beyond LOD 1');
   assert(a.props.length > 0 && a.props.length % 8 === 0, 'LOD 0 emits instanced props (8 floats each)');
-  for(let i = 0; i < a.props.length; i += 8) assert(a.props[i] >= 0 && a.props[i] <= 2 && isFinite(a.props[i + 1]) && a.props[i + 5] > 0, 'prop row ' + i / 8);
+  for(let i = 0; i < a.props.length; i += 8) assert(a.props[i] >= 0 && a.props[i] <= 14 && isFinite(a.props[i + 1]) && a.props[i + 5] > 0, 'prop row ' + i / 8);
+/* ---- THE ISLAND: houses only on dry, gentle land; each kind of scenery turns up where it belongs; landmarks are built ---- */
+{ L.setup(20000); let n = 0; for(let i = -40; i <= 40; i++) for(let j = -40; j <= 40; j++){ const r = L.roleOf(i, j); if(!r || r.role !== 'res') continue; n++;
+    for(const [fa, fb] of [[0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0.5]]){ const p = L.warp(L.lineU(i) + (L.lineU(i + 1) - L.lineU(i)) * fa, L.lineV(j) + (L.lineV(j + 1) - L.lineV(j)) * fb); assert(T.land(p[0], p[1]) > 3 && T.slope(p[0], p[1]) < 0.13, 'block ' + i + ',' + j + ' stands on dry, gentle ground'); } }
+  assert(n > 400, 'the island offers plenty of building land: ' + n + ' blocks'); L.setup(NH); }
+{ const kindsIn = (x0, z0, x1, z1) => { const s = new Set(); for(let cx = Math.floor(x0 / 128); cx <= Math.floor(x1 / 128); cx++) for(let cz = Math.floor(z0 / 128); cz <= Math.floor(z1 / 128); cz++){ const c = C.build(cx, cz, 0, NH); for(let k = 0; k < c.props.length; k += 8) s.add(c.props[k]); } return s; };
+  const P = T.pier(); assert(kindsIn(P.cx - 20, P.z0, P.cx + 20, P.z1).has(14), 'moored boats at the pier');
+  assert(kindsIn(-900, 700, 1500, 1500).has(4), 'palms on the south beaches'); assert(kindsIn(-300, -1500, 1500, -700).has(3), 'conifers on the foothills');
+  const rocky = kindsIn(-1400, -1600, 600, -1000); assert(rocky.has(6) || rocky.has(7), 'rocks and crags in the mountains'); assert(kindsIn(-500, -700, 900, -300).has(8) || kindsIn(-500, -700, 900, -300).has(5), 'shrubs / flowers on the meadows');
+  const st = kindsIn(-300, -250, 300, 250); assert([9, 10, 11, 12, 13].filter(k => st.has(k)).length >= 3, 'street furniture downtown: ' + [...st].join(','));
+  const lh = T.landmarks().find(m => m.type === 'lighthouse'), lc = C.build(Math.floor(lh.x / 128), Math.floor(lh.z / 128), 0, NH); let found = false; for(let k = 0; k < lc.cols.length; k += 8) if(lc.cols[k] === 1 && Math.abs(lc.cols[k + 1] - lh.x) < 1 && Math.abs(lc.cols[k + 3] - 3) < 0.01) found = true; assert(found, 'the lighthouse is built (with a collider)');
+  assert(T.landmarks().filter(m => m.type === 'cabin').length >= 5 && T.landmarks().some(m => m.type === 'mast'), 'cabins and a radio mast'); }
   const withDoor = []; for(let cx = -3; cx <= 3; cx++) for(let cz = -3; cz <= 3; cz++) C.build(cx, cz, 0, 512).doors.forEach(d => withDoor.push(d));
   assert(withDoor.length > 20 && withDoor.every(d => isFinite(d.bx) && isFinite(d.bz) && d.rw > 3 && d.rd > 3 && d.bh > 3), 'every door carries its building footprint');
   console.log('realworld map-level + props ok · LOD4 chunk ' + ((m.mesh.vb.byteLength + m.mesh.ib.byteLength) / 1024).toFixed(1) + ' KB, ' + a.props.length / 8 + ' instanced props in the centre chunk'); }

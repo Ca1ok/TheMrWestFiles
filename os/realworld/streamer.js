@@ -63,7 +63,7 @@
       groups.forEach((g, id) => { if(!cnt.has(id)) g.n = 0; });
       cnt.forEach((n, id) => { let g = groups.get(id); if(!g){ g = { id, kind: id >> 3, v: (id >> 1) & 3, tl: id & 1, h: null, arr: new Float32Array(0), n: 0, dirty: true }; groups.set(id, g); } if(g.arr.length < n * 8) g.arr = new Float32Array(Math.max(n * 8, g.arr.length * 2)); g.n = 0; g.fill = 0; });
       S.chunks.forEach(c => { if(!c.cur || !c.props) return; const a = c.props; for(let i = 0; i < a.length; i += 8){ const kind = a[i], tl = Pr.lodFor(kind, c.lod); if(tl < 0) continue; const g = groups.get(((kind * 4 + vOf(Pr, kind, a[i + 6])) << 1) | tl), o = g.n * 8, seed = a[i + 6];
-        g.arr[o] = a[i + 1]; g.arr[o + 1] = a[i + 2]; g.arr[o + 2] = a[i + 3]; g.arr[o + 3] = a[i + 4]; g.arr[o + 4] = a[i + 5]; g.arr[o + 5] = kind === 0 ? PALETTE[Math.floor(seed * PALETTE.length) % PALETTE.length] : 0xffffff; g.arr[o + 6] = seed; g.arr[o + 7] = 0; g.n++; } });
+        g.arr[o] = a[i + 1]; g.arr[o + 1] = a[i + 2]; g.arr[o + 2] = a[i + 3]; g.arr[o + 3] = a[i + 4]; g.arr[o + 4] = a[i + 5]; g.arr[o + 5] = RW.Props.palette(kind, seed); g.arr[o + 6] = seed; g.arr[o + 7] = 0; g.n++; } });
       groups.forEach(g => { g.dirty = true; }); S.propsDirty = false;
     }
     /* draw every loaded chunk's props (call between startWorld()s with the outdoor lighting on). far0..far1 = the dissolve range in metres. */
