@@ -11,7 +11,7 @@
   const CH = 128, { MB, rgb, shade, mix, GLOW } = M, f01 = G.f01, h32 = G.h32, sm = T.sm;
   const KIND = { tree: 0, lamp: 1, bench: 2, pine: 3, palm: 4, bush: 5, rock: 6, spire: 7, flowers: 8, hydrant: 9, bin: 10, mailbox: 11, sign: 12, busstop: 13, boat: 14 };   // = Props.KINDS order
   const RAISE = [0.07, 0.13, 0.32, 0.8, 0.9], SK = [2, 4, 7, 12, 14], RES = [32, 16, 8, 4, 4];   // LOD 4 = the MAP level: every road and building as a plain shape, flat colours, used only by the map view
-  const C = { asphalt: [58, 60, 66], hwy: [70, 72, 78], kerb: [172, 170, 162], mark: [228, 222, 190], plaza: [186, 178, 164], park: [88, 158, 70], pad: [150, 148, 142], water: [76, 150, 190], bark: [96, 70, 48], lamp: [70, 74, 82], lampGlow: [255, 224, 160],
+  const C = { asphalt: [58, 60, 66], taxi: [78, 80, 86], hwy: [70, 72, 78], kerb: [172, 170, 162], mark: [228, 222, 190], plaza: [186, 178, 164], park: [88, 158, 70], pad: [150, 148, 142], water: [76, 150, 190], bark: [96, 70, 48], lamp: [70, 74, 82], lampGlow: [255, 224, 160],
     leaf: [[70, 130, 62], [88, 148, 66], [58, 112, 70], [104, 150, 58], [150, 130, 52]], grass: [98, 150, 76], dry: [136, 150, 84], urban: [152, 152, 148], forest: [58, 106, 54], alpine: [112, 140, 84], rock: [124, 119, 112], rock2: [92, 88, 87], scree: [150, 143, 132], snow: [206, 214, 226], sand: [216, 199, 153], wet: [170, 156, 118], shallow: [86, 184, 190], deep: [16, 70, 126] };
   const SLOT = BG.SLOT;
 
@@ -52,18 +52,40 @@
   }
 
   /* ---------------- roads ---------------- */
-  /* a street segment is a straight line of the lattice between two crossings, sampled every ≤8 m and bent by the warp; each piece belongs to the chunk holding its middle */
+  /* THE ROADS ARE 3-D AND LAID ON THE GROUND. Near the camera (LOD 0-1) a street is built from cross-sections every 4.5 m (8 m at LOD 1): EVERY vertex — asphalt, the raised kerb faces, the pavements, the
+   * painted lines — takes its height from the real terrain at its own (x, z) plus a fixed offset, so the road follows slopes across its width, nothing floats and nothing sinks:
+   *   asphalt  +4.5 cm  (laid slightly into the ground)    pavement  +16 cm (a 11.5 cm kerb face rises between them)    lines  +4.5 cm above the asphalt.
+   * The pavements and kerbs run only between the crossings (the cross street's own half-width is left clear), so junctions are plain asphalt with the corner pavements meeting square.
+   * Farther away (LOD 2-4) a single flat ribbon is enough. */
+  const RA = 0.045, RP = 0.16, RL = 0.09;
+  const down = (x, z, dy) => [x, T.height(x, z) + dy, z];
+  /* a draped strip between lateral offsets a and b (metres to the left of travel) along centre points P with unit normals N; ra / rb = the lift above the ground at each edge */
+  function strip(mb, P, N, a, b, ra, rb, col){ for(let q = 0; q < P.length - 1; q++){ const p = P[q], r = P[q + 1], n0 = N[q], n1 = N[q + 1];
+      mb.quad(down(p[0] + n0[0] * a, p[1] + n0[1] * a, ra), down(p[0] + n0[0] * b, p[1] + n0[1] * b, rb), down(r[0] + n1[0] * b, r[1] + n1[1] * b, rb), down(r[0] + n1[0] * a, r[1] + n1[1] * a, ra), [0, 1, 0], col); } }
+  /* the vertical face of a kerb at lateral offset a, rising from lift r0 to lift r1 (n = +1 / -1 = which way it faces) */
+  function wall(mb, P, N, a, r0, r1, side, col){ for(let q = 0; q < P.length - 1; q++){ const p = P[q], r = P[q + 1], n0 = N[q], n1 = N[q + 1], nn = [n0[0] * side, 0, n0[1] * side];
+      mb.quad(down(p[0] + n0[0] * a, p[1] + n0[1] * a, r0), down(r[0] + n1[0] * a, r[1] + n1[1] * a, r0), down(r[0] + n1[0] * a, r[1] + n1[1] * a, r1), down(p[0] + n0[0] * a, p[1] + n0[1] * a, r1), nn, col); } }
   function roads(mb, x0, z0, lod){
     const R = RAISE[lod], inC = (x, z) => x >= x0 && x < x0 + CH && z >= z0 && z < z0 + CH, segs = L.streetsNear(x0, z0, x0 + CH, z0 + CH);
     segs.forEach(sg => {
-      if(lod === 3 && !sg.ave) return; const len = Math.hypot(sg.b[0] - sg.a[0], sg.b[1] - sg.a[1]), n = Math.max(2, Math.ceil(len / 8)), d = [], W = [];
+      if(lod === 3 && !sg.ave) return; const len = Math.hypot(sg.b[0] - sg.a[0], sg.b[1] - sg.a[1]), step = lod === 0 ? 4.5 : 8, n = Math.max(2, Math.ceil(len / step)), d = [], W = [];
       for(let q = 0; q <= n; q++){ const u = sg.a[0] + (sg.b[0] - sg.a[0]) * q / n, v = sg.a[1] + (sg.b[1] - sg.a[1]) * q / n, p = L.warp(u, v); d.push([p[0], T.height(p[0], p[1]), p[1]]); }
       const col = sg.ave ? C.hwy : C.asphalt, w = sg.hw * 2 * (lod === 4 ? 1.5 : 1); let run = null;
-      const flush = () => { if(!run) return; const a = Math.max(0, run[0] - 1), b = Math.min(n, run[1] + 1), seg = d.slice(a, b + 1).map(p => [p[0], p[1] + R, p[2]]);
-        if(lod <= 1) mb.ribbon(d.slice(a, b + 1).map(p => [p[0], p[1] + R * 0.5, p[2]]), w + 2 * L.SIDE, C.kerb); mb.ribbon(seg, w, col);
-        if(lod === 0) for(let q = run[0]; q < run[1]; q++){ const s0 = q * len / n, xs = L.hwOf(sg.m + (s0 < len / 2 ? 0 : 1)) + 4.5; if(s0 < xs || s0 + len / n > len - xs) continue; const p = d[q], r = d[q + 1], P = t => [p[0] + (r[0] - p[0]) * t, p[1] + R + 0.03, p[2] + (r[2] - p[2]) * t];
-          if(sg.ave){ const dx = r[0] - p[0], dz = r[2] - p[2], l = Math.hypot(dx, dz) || 1, nx = -dz / l * 0.3, nz = dx / l * 0.3; [-1, 1].forEach(sd => mb.ribbon([P(0).map((c, ci) => ci === 0 ? c + nx * sd : ci === 2 ? c + nz * sd : c), P(1).map((c, ci) => ci === 0 ? c + nx * sd : ci === 2 ? c + nz * sd : c)], 0.14, [235, 190, 60])); }
-          else mb.ribbon([P(0.15), P(0.65)], 0.16, C.mark); }
+      const flush = () => { if(!run) return; const a = Math.max(0, run[0] - 1), b = Math.min(n, run[1] + 1);
+        if(lod >= 2){ if(lod <= 1) mb.ribbon(d.slice(a, b + 1).map(p => [p[0], p[1] + R * 0.5, p[2]]), w + 2 * L.SIDE, C.kerb); mb.ribbon(d.slice(a, b + 1).map(p => [p[0], p[1] + R, p[2]]), w, col); run = null; return; }
+        const P = [], N = [], S = []; for(let q = a; q <= b; q++){ P.push([d[q][0], d[q][2]]); S.push(q * len / n); }
+        for(let k = 0; k < P.length; k++){ const p0 = P[Math.max(0, k - 1)], p1 = P[Math.min(P.length - 1, k + 1)], dx = p1[0] - p0[0], dz = p1[1] - p0[1], l = Math.hypot(dx, dz) || 1; N.push([-dz / l, dx / l]); }   // left-hand normal
+        const hw = sg.hw, half = [-hw, 0, hw];
+        if(hw > 5) { strip(mb, P, N, -hw, 0, RA, RA, col); strip(mb, P, N, 0, hw, RA, RA, col); } else strip(mb, P, N, -hw, hw, RA, RA, col);                                                   // the asphalt (two lateral cells so it follows a cross-slope)
+        const sA = L.hwOf(sg.m), sB = len - L.hwOf(sg.m + 1), keep = []; for(let k = 0; k < P.length; k++) if(S[k] >= sA - 1e-6 && S[k] <= sB + 1e-6) keep.push(k);
+        if(keep.length > 1){ const Pk = keep.map(k => P[k]), Nk = keep.map(k => N[k]), SIDE = L.SIDE;                                          // kerbs + pavements between the crossings
+          strip(mb, Pk, Nk, hw, hw + SIDE, RP, RP, C.kerb); strip(mb, Pk, Nk, -hw - SIDE, -hw, RP, RP, C.kerb); wall(mb, Pk, Nk, hw, RA, RP, -1, [150, 148, 140]); wall(mb, Pk, Nk, -hw, RA, RP, 1, [150, 148, 140]);
+        }
+        if(lod === 0){ const xs = (s) => s; const sMin = Math.max(sA, L.hwOf(sg.m) + 4.5), sMax = Math.min(sB, len - L.hwOf(sg.m + 1) - 4.5), at = s => { const f = Math.max(0, Math.min(P.length - 1.0001, (s - S[0]) / (S[P.length - 1] - S[0]) * (P.length - 1))), k = Math.floor(f), t = f - k; return { p: [P[k][0] + (P[k + 1][0] - P[k][0]) * t, P[k][1] + (P[k + 1][1] - P[k][1]) * t], nn: [N[k][0] + (N[k + 1][0] - N[k][0]) * t, N[k][1] + (N[k + 1][1] - N[k][1]) * t] }; };
+          const line = (s0, s1, lat, wd, col2) => { const PP = [], NN = [], m = Math.max(1, Math.ceil((s1 - s0) / 1.4)); for(let q = 0; q <= m; q++){ const o = at(s0 + (s1 - s0) * q / m); PP.push(o.p); NN.push(o.nn); } strip(mb, PP, NN, lat - wd / 2, lat + wd / 2, RL, RL, col2); };
+          if(sMax > sMin){
+            if(sg.ave){ for(const sd of [-1, 1]) line(Math.max(S[0], sMin), Math.min(S[S.length - 1], sMax), sd * 0.3, 0.13, [235, 190, 60]); for(const sd of [-1, 1]) line(Math.max(S[0], sMin), Math.min(S[S.length - 1], sMax), sd * (hw - 0.55), 0.14, C.mark); }
+            else for(let s0 = Math.ceil(sMin / 8) * 8; s0 + 5.2 < sMax; s0 += 8){ if(s0 + 1.2 < S[0] || s0 + 5.2 > S[S.length - 1]) continue; line(s0 + 1.2, s0 + 5.2, 0, 0.16, C.mark); } } }
         run = null; };
       for(let q = 0; q < n; q++){ const mx = (d[q][0] + d[q + 1][0]) / 2, mz = (d[q][2] + d[q + 1][2]) / 2; if(inC(mx, mz)){ if(run) run[1] = q + 1; else run = [q, q + 1]; } else flush(); } flush();
     });
@@ -141,12 +163,23 @@
       const ax = e ? R.x1 - 150 : R.x0 + 150; bar(ax, R.z - 8, 10, 1.6); bar(ax, R.z + 8, 10, 1.6); }                 // aiming blocks
   }
 
+  /* the taxiway: asphalt, a yellow centre-line, and hold-short bars where each link meets the runway. Flat ground, so plain slabs like the runway. */
+  function taxiways(mb, x0, z0, lod){
+    const X = T.TAXI, R = T.rwy && T.rwy(); if(!X || !R || lod >= 3) return; const Y = [235, 190, 60], zl = R.z + R.hw + 3, zt = X.z - X.w / 2;
+    const pieces = [[X.x0, X.x1, X.z - X.w / 2, X.z + X.w / 2], [X.x0, X.x0 + X.w, X.z - X.w / 2, X.apronZ1]]; X.links.forEach(lx => pieces.push([lx - X.w / 2, lx + X.w / 2, R.z + R.hw, zt + 0.3]));
+    pieces.forEach(p => { const xa = Math.max(x0, p[0]), xb = Math.min(x0 + CH, p[1]), za = Math.max(z0, p[2]), zb = Math.min(z0 + CH, p[3]); if(xa >= xb || za >= zb) return; const y = T.height((xa + xb) / 2, (za + zb) / 2) + 0.058 * (lod + 1); mb.boxR((xa + xb) / 2, (za + zb) / 2, (xb - xa) / 2, (zb - za) / 2, 0, y, y + 0.045, C.taxi, C.taxi); });
+    if(lod > 1) return; const bar = (x, z, hl, hw, col) => { if(x < x0 || x >= x0 + CH || z < z0 || z >= z0 + CH) return; const y = T.height(x, z) + 0.058 * (lod + 1) + 0.045; mb.boxR(x, z, hl, hw, 0, y, y + 0.02, col, col); };
+    for(let x = X.x0 + 6; x < X.x1 - 6; x += 30) bar(x + 15, X.z, 15, 0.09, Y);
+    for(let z = X.z; z < X.apronZ1 - 4; z += 30){ const zc = Math.min(z + 15, (z + X.apronZ1) / 2), hl = Math.min(15, (X.apronZ1 - z) / 2), x = X.x0 + X.w / 2; if(x >= x0 && x < x0 + CH && zc >= z0 && zc < z0 + CH){ const y = T.height(x, zc) + 0.058 * (lod + 1) + 0.045; mb.boxR(x, zc, 0.09, hl, 0, y, y + 0.02, Y, Y); } }                    // the apron taxiway's centre-line                                                                // taxiway centre-line
+    X.links.forEach(lx => { for(let z = zl; z < zt + 2; z += 12) bar(lx, z + 6, 0.09, 6, Y); bar(lx, zl, X.w / 2, 0.15, Y); bar(lx, zl + 0.6, X.w / 2, 0.06, Y); bar(lx, zl + 1.3, X.w / 2, 0.06, Y); });   // link centre-lines + hold-short bars
+  }
+
   function build(cx, cz, lod, nh){
     L.setup(nh); T.setup(L.radius());
     const x0 = cx * CH, z0 = cz * CH, inC = (x, z) => x >= x0 && x < x0 + CH && z >= z0 && z < z0 + CH;
     const mb = new MB(lod === 0 ? 16384 : 4096), cols = [], doors = [], props = [], stats = { houses: 0, blds: 0 }, ex = makeExtra(lod, cols, props), fine = lod === 0 ? 8 : 16;
     terrain(mb, x0, z0, lod); roads(mb, x0, z0, lod);
-    runway(mb, x0, z0, lod);
+    runway(mb, x0, z0, lod); taxiways(mb, x0, z0, lod);
     const box = (X, Z, w, d, ang, top) => cols.push(0, X, Z, w / 2 + 0.3, d / 2 + 0.3, Math.cos(ang), Math.sin(ang), top);
     L.blocksNear(x0, z0, x0 + CH, z0 + CH).forEach(b => {
       // ground covers

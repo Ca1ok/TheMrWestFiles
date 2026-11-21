@@ -31,7 +31,7 @@ const ev = (p, fn, arg) => p.evaluate(fn, arg);
     await pg.waitForSelector('#onb .card', { timeout: 20000 }); log('✓ onboarding popup appears for a new player');
     await pg.fill('#onb-name', 'Tester'); await pg.click('#onb-next'); await pg.waitForSelector('#onb-claim', { timeout: 10000 });
     await pg.click('#onb-claim'); await pg.waitForSelector('[data-pick]', { timeout: 15000 });
-    await pg.screenshot({ path: '/tmp/onb2.png' }); assert.strictEqual(tree.eco.acct.u1.b, 10000000, 'grant of $100,000 arrives'); assert.strictEqual(tree.eco.acct.u1.ob, 1); audit(); log('✓ welcome grant: $100,000 from the pool, ledger intact');
+    await pg.screenshot({ path: '/tmp/onb2.png', timeout: 150000 }); assert.strictEqual(tree.eco.acct.u1.b, 10000000, 'grant of $100,000 arrives'); assert.strictEqual(tree.eco.acct.u1.ob, 1); audit(); log('✓ welcome grant: $100,000 from the pool, ledger intact');
     await pg.click('[data-pick]'); await pg.waitForSelector('#onb-done', { timeout: 15000 });
     const home = tree.world.home.u1; assert.ok(home && home.h, 'a home was set'); const hs = tree.world.own[home.h]; assert.strictEqual(hs.t, 'u1'); assert.ok(tree.eco.acct.u1.sys.city > 0, 'first day of rent paid to the city'); audit(); log('✓ rented', home.h, 'for', hs.rh * 24 / 100, '/day — rent went to the city');
     await pg.click('#onb-done'); await pg.waitForSelector('#onb', { state: 'detached' });
@@ -61,7 +61,7 @@ const ev = (p, fn, arg) => p.evaluate(fn, arg);
       const rr2 = await ev(pg, () => OS.homes.rentVehicle('wren')); assert.ok(rr2.ok, 'a fresh rental after the old one expired: ' + rr2.msg); audit(); log('✓ rental expiry: hidden, swept, money untouched, re-hire works'); }
     /* ---- the Assets app ---- */
     await pg.evaluate(() => OS.open('RealEstate')); await pg.waitForTimeout(2500); const fr = pg.frames().find(f => /RealEstate\.html/.test(f.url())); assert.ok(fr, 'app frame');
-    await pg.screenshot({ path: '/tmp/assets-overview.png' });
+    await pg.screenshot({ path: '/tmp/assets-overview.png', timeout: 150000 });
     for(const t of ['Houses', 'Cars', 'Planes']){ await fr.click('.seg button:has-text("' + t + '")'); await pg.waitForTimeout(600); await pg.screenshot({ path: '/tmp/assets-' + t + '.png' }); }
     const dis = await fr.$$eval('.cta[disabled]', e => e.length); assert.ok(dis >= 4, 'Buy is disabled away from the airport (' + dis + ')'); log('✓ Assets app renders all tabs; Buy is locked away from the showroom');
     /* ---- the 3D world: dealership and airport ---- */

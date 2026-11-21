@@ -17,6 +17,8 @@
   function setup(){}                                                                           // (kept for older callers — the island no longer depends on the city's size)
   const RWY = { gap: 70, len: 800, hw: 20, shoulder: 10, blend: 100, x0: 800 };
   const rwy = () => ({ x0: RWY.x0, x1: RWY.x0 + RWY.len, z: 0, hw: RWY.hw, len: RWY.len });
+  /* THE TAXIWAY: a 14 m taxiway parallel to the runway, 46 m south of its centre-line, running from the apron taxiway behind the airport terminal (the block east of the industrial estate) to the far end, with four links onto the runway. All on the flat plateau (12 m). */
+  const TAXI = { z: 46, w: 14, x0: 806, x1: 1710, links: [860, 1150, 1450, 1690], apronZ1: 100 };   // x0 = just behind the row of parked planes; the apron taxiway runs south from the main one along x0..x0+14
   const ridge = (x, z) => { let a = 0.5, f = 1, t = 0, nrm = 0; for(let k = 0; k < 4; k++){ const c = Math.cos(0.62 * k), sn = Math.sin(0.62 * k), u = (x * c - z * sn) * f / 820, v = (x * sn + z * c) * f / 820, n = vn(u + 13.7 * k + 2, v + 5.3 * k + 9), r = 1 - Math.abs(2 * n - 1); t += a * Math.pow(r, 2.2); nrm += a; a *= 0.42; f *= 2.05; } return t / nrm; };   // each octave is rotated so the grid never shows
   const SPINE = [[-2700, -1500], [-2000, -2150], [-900, -2550], [300, -2750], [1500, -2450], [2400, -1800], [2650, -900]];
   function spineDist(x, z){ let best = 1e9; for(let i = 0; i < SPINE.length - 1; i++){ const a = SPINE[i], b = SPINE[i + 1], dx = b[0] - a[0], dz = b[1] - a[1], t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz))); best = Math.min(best, Math.hypot(x - a[0] - dx * t, z - a[1] - dz * t)); } return best; }
@@ -64,5 +66,5 @@
     let n = 0; for(let k = 0; k < 4000 && n < 9; k++){ const x = -2000 + hh(k, 77) * 4000, z = -1900 + hh(k, 91) * 1900, h = landRaw(x, z); if(h < 26 || h > 80 || slope(x, z) > 0.07) continue; if(LM.some(m => m.type === 'cabin' && Math.hypot(m.x - x, m.z - z) < 90)) continue; LM.push({ type: 'cabin', x, z, y: h, yaw: Math.PI / 4 }); n++; }
     return LM;
   }
-  return { setup, height, land, isWater, depth, slope, nat, vn, hh, sm, rwy, RWY, SEA, field, spineDist, ridge, pier, onPier, landmarks };
+  return { setup, height, land, isWater, depth, slope, nat, vn, hh, sm, rwy, RWY, TAXI, SEA, field, spineDist, ridge, pier, onPier, landmarks };
 });

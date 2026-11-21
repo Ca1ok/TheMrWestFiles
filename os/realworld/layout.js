@@ -19,7 +19,7 @@
   function frame(u, v){ const p = warp(u, v), a = warp(u + 1.5, v), b = warp(u - 1.5, v), c = warp(u, v + 1.5), d = warp(u, v - 1.5), tu = Math.atan2(a[1] - b[1], a[0] - b[0]), tv = Math.atan2(c[1] - d[1], c[0] - d[0]) - Math.PI / 2, s = Math.sin(tu) + Math.sin(tv), co = Math.cos(tu) + Math.cos(tv); return { x: p[0], z: p[1], ang: Math.atan2(s, co), tu }; }
   /* lattice direction (du, dv) → world direction at a frame */
   const dirOf = (fr, du, dv) => { const c = Math.cos(fr.ang), s = Math.sin(fr.ang); return [c * du - s * dv, s * du + c * dv]; };
-  const POI_BLOCK = { agency: [-1, -1], hall: [0, -1], arcade: [1, -1], bank: [-1, 0], exchange: [1, 0], shop: [0, 1], park: [1, 1], uni: [-3, 0], lab: [-3, 1], ind: [3, 0], plant: [3, 1], dealer: [-2, 0], airport: [4, 0] };
+  const POI_BLOCK = { agency: [-1, -1], hall: [0, -1], arcade: [1, -1], bank: [-1, 0], exchange: [1, 0], shop: [0, 1], park: [1, 1], uni: [-3, 0], lab: [-3, 1], ind: [3, 0], plant: [3, 1], dealer: [-2, 0], airport: [8, 1] };    // the airport sits east of the Industrial Estate, right beside the runway (apron → taxiway → runway)
   const ZW = [[-7, -2], [-6, -2], [-5, -2], [-7, -1], [-6, -1], [-5, -1], [-7, 0], [-6, 0], [-5, 0], [-7, 1], [-6, 1], [-5, 1]];
   const ZONE_BLOCKS = { l: ZW, f: ZW.map(([i, j]) => [-i, j]) }, ZONE_NAME = { l: 'University Quarter', f: 'Industrial Estate' };
   const K = (i, j) => i + ',' + j;
