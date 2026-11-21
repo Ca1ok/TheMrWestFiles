@@ -87,6 +87,8 @@
     mb.boxR(X, Z, S.w / 2 + 0.25, S.d / 2 + 0.25, ang, base - 1.6, base + 0.04, shade(pal[0], 0.62), shade(pal[0], 0.62));
   }
   function bakeBox(mb, X, Z, w, d, ang, base, h, wall, roof, lod){ if(lod === 3 && h < 25) return; mb.boxR(X, Z, w / 2, d / 2, ang, base - 1.4, base + h, wall, roof); }
+  /* a stone plinth from the lowest corner of the footprint up to the floor, so houses on slopes (hill estates, the bay's edge) never float */
+  function plinth(mb, X, Z, w, d, ang, base){ if(!mb) return; const c = Math.cos(ang), s = Math.sin(ang); let lo = 1e9; for(const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1], [0, -1], [0, 1], [-1, 0], [1, 0]]) lo = Math.min(lo, T.height(X + c * w / 2 * a - s * d / 2 * b, Z + s * w / 2 * a + c * d / 2 * b)); if(lo < base - 1.3) mb.boxR(X, Z, w / 2 + 0.08, d / 2 + 0.08, ang, lo - 0.35, base - 1.2, '#8a8478', '#8a8478'); }
   function footBase(X, Z, ang, w, d){ const c = Math.cos(ang), s = Math.sin(ang); let m = T.height(X, Z); for(const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]){ const x = X + c * w / 2 * a - s * d / 2 * b, z = Z + s * w / 2 * a + c * d / 2 * b; m = Math.max(m, T.height(x, z)); } return m + 0.12; }
   /* the door of a shape: the lowest door-coloured face looking out of the front (local +y) */
   function doorOf(S, X, Z, ang, side, base){
@@ -153,7 +155,7 @@
       if(lod <= 1) b.ponds.forEach(p => { if(inC(p.x, p.z)){ const y = T.height(p.x, p.z); mb.cyl(p.x, p.z, y + 0.1, y + 0.16, p.r, 18, C.water); } });
       if(b.fountain && lod <= 1 && inC(b.fountain[0], b.fountain[1])){ const [fx, fz] = b.fountain, y = T.height(fx, fz); mb.cyl(fx, fz, y + 0.06, y + 1.0, 4.2, 18, [150, 146, 138], C.plaza); mb.cyl(fx, fz, y + 0.95, y + 1.02, 3.7, 18, C.water); mb.cyl(fx, fz, y + 0.95, y + 3.4, 0.35, 6, [190, 186, 176]); cols.push(1, fx, fz, 4.5, 0, 0, 0, y + 1); }
       // houses
-      b.houses.forEach(h => { if(h.idx >= nh) return; const g = h.g; if(!inC(g.x, g.y)) return; stats.houses++; const base = footBase(g.x, g.y, g.ang, g.w, g.dp), R = lod <= 3 ? MD() : null, sd = g.side > 0 ? 1 : -1;
+      b.houses.forEach(h => { if(h.idx >= nh) return; const g = h.g; if(!inC(g.x, g.y)) return; stats.houses++; const base = footBase(g.x, g.y, g.ang, g.w, g.dp), R = lod <= 3 ? MD() : null, sd = g.side > 0 ? 1 : -1; if(lod <= 2) plinth(mb, g.x, g.y, g.w, g.dp, g.ang, base);
         const pk = R && headroom(R.pick(R.ofKind(POOL[g.type] || 'house'), g.w, g.dp, g.ht * 1.35, G.h32(h.idx, 21), { maxK: 1, minK: 1 }), homeH(g));
         if(pk){ const pl = placeModel(pk, g.x, g.y, -sd * Math.sin(g.ang), sd * Math.cos(g.ang)); box(g.x, g.y, pk.w, pk.d, pl.ang, base + pk.h);
           if(lod <= 1){ stampModel(mb, pk, g.x, g.y, pl, base, lod); doors.push({ k: 'house', id: g.id, i: h.idx, x: pl.door.x, z: pl.door.z, nx: pl.nx, nz: pl.nz, y: base, addr: g.addr, type: g.type, beds: g.beds, w: g.w, dp: g.dp, bx: g.x, bz: g.y, rw: pk.w, rd: pk.d, fl: g.fl, bh: pk.h, model: pk.m.id }); }
@@ -173,7 +175,7 @@
       // painted markings on the dealership forecourt / airport apron (layout c.strips: flat boxes just above the paving)
       if(lod <= 1 && b.strips) b.strips.forEach(q => { if(!inC(q.x, q.z)) return; const y = T.height(q.x, q.z) + 0.07 * (lod + 1) + 0.03; mb.boxR(q.x, q.z, q.w / 2, q.l / 2, q.ang, y, y + 0.03, q.col, q.col); });
       // downtown infill towers
-      b.fillers.forEach((f, fi) => { if(!inC(f.x, f.z)) return; stats.blds++; const base = footBase(f.x, f.z, f.ang, f.w, f.d), hgt = f.fl * 3.1 + 2, R = lod <= 3 ? MD() : null, sd = f.side > 0 ? 1 : -1;
+      b.fillers.forEach((f, fi) => { if(!inC(f.x, f.z)) return; stats.blds++; const base = footBase(f.x, f.z, f.ang, f.w, f.d); if(lod <= 2) plinth(mb, f.x, f.z, f.w, f.d, f.ang, base); const hgt = f.fl * 3.1 + 2, R = lod <= 3 ? MD() : null, sd = f.side > 0 ? 1 : -1;
         const pk = R && R.pick(R.ofKind('tower').concat(R.ofKind('mid')), f.w, f.d, 0, G.h32(f.v, 31), { maxK: 1, minK: 1, minCover: 0.45 });
         if(pk){ pk.ky = Math.max(0.7 * pk.k, Math.min(1.7 * pk.k, hgt / pk.m.h)); pk.h = pk.m.h * pk.ky; const pl = placeModel(pk, f.x, f.z, -sd * Math.sin(f.ang), sd * Math.cos(f.ang)); box(f.x, f.z, pk.w, pk.d, pl.ang, base + pk.h);
           if(lod <= 1) stampModel(mb, pk, f.x, f.z, pl, base, lod); else bakeBox(mb, f.x, f.z, pk.w, pk.d, pl.ang, base, pk.h, rgb(BG.WALL[G.h32(f.v, 9) % BG.WALL.length]), rgb(BG.GLASSW[G.h32(f.v, 10) % BG.GLASSW.length]), lod); return; }

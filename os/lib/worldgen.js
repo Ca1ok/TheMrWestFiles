@@ -70,9 +70,9 @@
   function stations(k){ return [{ t: 'fire', ...pt(loc(k, -S, 11)), d: k }, { t: 'police', ...pt(loc(k, 0, -11)), d: k }, { t: 'ambulance', ...pt(loc(k, S, 11)), d: k }]; }
   const pt = p => ({ x: p[0], y: p[1] });
   const BH = { studio: 5, apartment: 13, townhouse: 8, house: 7, villa: 9, mansion: 12 }, BW = { studio: 10, apartment: 13, townhouse: 10, house: 11, villa: 13, mansion: 15 }, BD = { studio: 9, apartment: 11, townhouse: 9, house: 10, villa: 12, mansion: 15 };
-  function house(i){
+  function house(i, force){
     const k = Math.floor(i / PER), s = i % PER, d = district(k), c = s >> 4, j = s & 15, roll = h32(i, SEED) % TW;
-    let acc = 0, ty = TYPES[0]; for(const t of TYPES){ acc += t.w; if(roll < acc){ ty = t; break; } }
+    let acc = 0, ty = TYPES[0]; for(const t of TYPES){ acc += t.w; if(roll < acc){ ty = t; break; } } if(force){ const f = TYPES.find(t => t.k === force); if(f) ty = f; }       // force: the 3-D city picks the type from the block's density class
     const base = Math.round((ty.lo + (ty.hi - ty.lo) * f01(i, SEED + 1)) * d.prestige / 1000) * 1000;      // whole $10 steps (in cents)
     const q = j >> 1, side = (j & 1) ? 1 : -1, arm = (q >> 2) ? 1 : -1, idx = q & 3, v = arm * (ARM[idx] + (f01(i, 4) - 0.5) * 7), u = UC(c) + side * (SET + (f01(i, 3) - 0.5) * 3 + (BW[ty.k] > 13 ? 4 : 0));
     const p = loc(k, u, v), p2 = loc(k, u, v + 2), p0 = loc(k, u, v - 2);
