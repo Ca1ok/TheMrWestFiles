@@ -60,7 +60,7 @@ function diff(prefix, a, b, depth, out){
   if(DRY){ console.log('--dry: not writing'); return process.exit(0); }
   // did a player touch what we are about to change? (their accounts, houses, loans, bills) → skip this run rather than overwrite them
   const { d: live } = await load(); const touched = [];
-  ['eco/acct', 'world/own', 'eco/loan', 'eco/bill', 'world/build'].forEach(root => { const [a, b] = root.split('/'), L = live[a][b], B0 = before[a][b]; Object.keys(upd).filter(k => k.startsWith(root + '/')).forEach(k => { const rel = k.slice(root.length + 1).split('/'); const g = o => rel.reduce((x, y) => x && x[y], o); if(!eq(g(L), g(B0))) touched.push(k); }); });
+  ['eco/acct', 'world/own', 'world/home', 'eco/loan', 'eco/bill', 'world/build'].forEach(root => { const [a, b] = root.split('/'), L = live[a][b], B0 = before[a][b]; Object.keys(upd).filter(k => k.startsWith(root + '/')).forEach(k => { const rel = k.slice(root.length + 1).split('/'); const g = o => rel.reduce((x, y) => x && x[y], o); if(!eq(g(L), g(B0))) touched.push(k); }); });
   if(touched.length){ console.log('Players changed ' + touched.length + ' record(s) during the run (' + touched.slice(0, 5).join(', ') + ') — skipping this run, will retry next time.'); return process.exit(0); }
   if(n) await db.ref().update(upd); console.log('written.');
   process.exit(0);
