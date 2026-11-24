@@ -185,7 +185,7 @@ const RECIPES = [
    Everything that touches money is tuned from these numbers + ELEMENT_PRICES, so changing one
    value rebalances the whole game consistently (WestLab, Minigames, Synthesizer, Periodic Table). */
 const BUY_RATE = 1.0;                 // you buy elements from the Lab at 100% of list price
-const SELL_RATE = 0.70;               // the Lab buys back at 70% of base value (the spread is the money sink)
+const SELL_RATE = 0.78;               // the Lab buys back at 70% of base value (the spread is the money sink)
 const SELL_DEMAND_S = 250;            // $ of base value of ONE item the Lab absorbs before its price starts sagging
 const SELL_FLOOR = 0.35;              // price never sags below 35% of the 70% (so flooding one item is never worthwhile)
 const SELL_DEMAND_HALF_LIFE_H = 6;    // demand recovers: half of what you sold is forgotten every 6 hours

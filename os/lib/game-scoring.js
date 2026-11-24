@@ -1,15 +1,15 @@
 /* GameScoring — points → payout for the Games app. Pure (no DOM, no clock, no randomness): shared by the kernel, the Games app and the tests.
  *
  * Every scored minigame reports POINTS (higher is always better). The kernel turns points into a payout "base" with a near-exponential curve
- *      base(points) = A · e^(K · points / par)           (A = 0.5, K = 2.3)
- * so the old "top tier" (points = par) is still ≈ 5, twice the par points is ≈ 50, and a run in between pays proportionally between. The result is
+ *      base(points) = A · e^(K · points / par)           (A = 0.8, K = 2.3)
+ * so points = par pays ≈ 8 (was 5 before the 2026-11 rebalance), twice the par points is ≈ 50, and a run in between pays proportionally between. The result is
  * capped at `maxBase` per play (config game.maxBase), then goes through the same per-day diminishing returns / daily soft cap / collection bonus / economy index
  * as before (os/kernel/state.js K.award).
  *
  *   par = points at which the game pays what its old top tier paid · min = points needed to earn anything · max = hard ceiling on points
  * To tune a game edit its row; to retune the whole curve edit CURVE. `luck` games (no skill) have no points and no leaderboard. */
 (function(root){
-  const CURVE = { A: 0.5, K: 2.3 };
+  const CURVE = { A: 0.8, K: 2.3 };   // A raised 0.5 → 0.8 (+60%): a par run now pays ≈ 8 (see AGENTS.md §6e)
   const TABLE = {
     titration:      { par: 800,  min: 300, max: 1000,  unit: 'pts', how: 'Stop closer to the endpoint' },
     balance:        { par: 800,  min: 1,   max: 1000,  unit: 'pts', how: 'Balance it faster' },

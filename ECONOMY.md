@@ -39,6 +39,9 @@ WestFactory only opens if you own a plot in the Industrial Estate ($250,000, `pl
 ## Building licences
 Council licence ($50,000, 30 days) → order up to three houses (studio … villa) with a deposit → within ~10 minutes the world server builds the next plot of that type, charges its real value + 5% and refunds the rest. Building and immediately selling to the city can't profit (105% in, 90% out).
 
+## Auto-rent and payouts (2026-11)
+The world server now tops up 24 h of rent for players who are about to run out and can afford it (so being offline never evicts you). Activity payouts were raised (minigames +60%, daily soft cap 400, shop buy-back 78%, factory fee 3%, bigger lab discovery bonuses); everything still moves money from the pool and is bounded by the earning allowance. `node tests/money-flows.test.js` guards the ledger. Details: AGENTS.md §6e.
+
 ## Homeless
 If you skip choosing a home you are **homeless**: a tenth of the daily earning limit, no Arcade, no loans, until you rent or buy somewhere.
 

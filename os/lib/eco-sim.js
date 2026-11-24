@@ -175,7 +175,15 @@
   }
 
   /* ---------- evictions, events, building ---------- */
+  /* SERVER-SIDE AUTO-RENT (so an offline player is not evicted by a missed top-up, and two windows can't race): a real player whose prepaid rent has < 6 h left and who can
+   * afford a full day is charged 24 h through payRent() — the same ledger move the browser makes (city for bank houses, the landlord's inbox otherwise), so it conserves money. */
+  function autoRent(db, now, cfg, mails){
+    Object.keys(db.world.own).forEach(k => { const h = db.world.own[k]; if(!h.t || isBot(h.t) || !(h.rh > 0) || h.o === h.t) return;
+      const end = h.ts + h.th * HOUR; if(end - now > 6 * HOUR || h.th >= 720 * 3) return; const a = db.eco.acct[h.t]; if(!a || a.b < h.rh * 24) return;
+      if(payRent(db, h.t, k, 24, now)) mails.push({ uid: h.t, subj: 'Rent paid automatically', body: 'We topped up 24 hours of rent at ' + W.house(+k.slice(1)).addr + ' ($' + (h.rh * 24 / 100).toFixed(2) + ') so you are not evicted while away.' }); });
+  }
   function tenancies(db, now, last, cfg, mails){
+    autoRent(db, now, cfg, mails);
     Object.keys(db.world.own).forEach(k => { const h = db.world.own[k]; if(!h.t) return; const end = h.ts + h.th * HOUR;
       if(!isBot(h.t) && end - 6 * HOUR <= now && end - 6 * HOUR > last && now < end) mails.push({ uid: h.t, subj: 'Rent running out', body: 'Your rent at ' + W.house(+k.slice(1)).addr + ' covers less than six more hours. Top it up in WestMap or you will be evicted.' });
       if(now > end + cfg.graceHours * HOUR){ const t = h.t; tenantLeaves(db, h, k); if(!isBot(t)) mails.push({ uid: t, subj: 'Evicted', body: 'You ran out of rent at ' + W.house(+k.slice(1)).addr + ' and have been evicted. You are homeless until you rent or buy somewhere — open WestMap.' }); } });

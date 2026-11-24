@@ -152,7 +152,7 @@
     Object.keys(sim.back).forEach(k => { K.S.lab.tray[k] = (K.S.lab.tray[k] || 0) + sim.back[k]; });
     K.S.lab.runs++; let bonus = 0, firstGlobal = false; const newly = [];
     const iso = p => p.iso ? Object.assign({}, p, { key: p.iso.key }) : p, PR = card.Pr.map(iso), mainP = PR.find(p => made[p.key] && p.role === 'main') || PR.find(p => made[p.key]);
-    for(const p of PR){ if(!made[p.key] || K.S.lab.found.includes(p.key) || (Chem.speciesOf(p.key) || {}).kind !== 'compound' || /^(H2O|CO2|HCl|HBr|NaCl|KCl)$/.test(p.key)) continue; K.S.lab.found.push(p.key); newly.push(p.key); bonus += Math.max(5, K.round2(Chem.valueOf(p.key) * 0.5)); }
+    for(const p of PR){ if(!made[p.key] || K.S.lab.found.includes(p.key) || (Chem.speciesOf(p.key) || {}).kind !== 'compound' || /^(H2O|CO2|HCl|HBr|NaCl|KCl)$/.test(p.key)) continue; K.S.lab.found.push(p.key); newly.push(p.key); bonus += Math.max(8, K.round2(Chem.valueOf(p.key) * 0.75)); }
     if(newly.length && mainP){ const id = 's:' + Synth.fnv(mainP.key), rc = JSON.stringify([card.a.keys, card.a.solv, card.a.cat, card.a.T, card.a.P, card.a.atm, card.a.vessel, card.a.stir, card.a.time, card.a.dean, card.a.slow, card.a.workup]); const r = await K.cloud.discover(id, { eq: card.eq, n: mainP.key.slice(0, 240), rc: rc.length <= 300 ? rc : '' }); if(r.first){ firstGlobal = true; bonus += Math.min(100, 25 + 5 * Math.min(15, Object.keys(mainP.comp).filter(e => e !== 'H').reduce((t, e) => t + mainP.comp[e], 0) / 2)); } }
     if(bonus > 0) K.earn(bonus, 'Discovery bonus'); K.touch('lab'); K.emit('lab');
     return ok('Made ' + out.map(m => m.n + ' × ' + m.name).join(', '), { kind: 'S', made: out, fee, bonus, newly: newly.map(k => ({ key: k, name: nmOf(k) })), firstGlobal, equation: card.eq, y: card.eta, hazard: sim.hazard, src: pl.src, tLabel: sim.tLabel, notes: sim.notes, back: sim.back });
@@ -196,7 +196,7 @@
       Object.keys(used).forEach(k => { const fromTray = Math.min(used[k], K.S.lab.tray[k] || 0); if(fromTray){ K.S.lab.tray[k] -= fromTray; if(K.S.lab.tray[k] <= 0) delete K.S.lab.tray[k]; } if(used[k] - fromTray > 0) K.invTake(K.kindOf(k), k, used[k] - fromTray); });
       const out = []; Object.keys(made).forEach(k => { const t = K.kindOf(k); K.S.lab.tray[k] = (K.S.lab.tray[k] || 0) + made[k]; out.push({ key: k, n: made[k] / (Chem.speciesOf(k).apu || 1), name: t === 'element' ? Chem.elements[k].name : Chem.nameOf(k) }); });
       K.S.lab.runs++; let bonus = 0, firstGlobal = false; const newly = [];
-      for(const x of card.Pr){ if(x[4] !== 'compound' || !made[x[0]] || K.S.lab.found.includes(x[0])) continue; K.S.lab.found.push(x[0]); newly.push(x[0]); bonus += Math.max(5, K.round2(Chem.valueOf(x[0]) * 0.5)); }
+      for(const x of card.Pr){ if(x[4] !== 'compound' || !made[x[0]] || K.S.lab.found.includes(x[0])) continue; K.S.lab.found.push(x[0]); newly.push(x[0]); bonus += Math.max(8, K.round2(Chem.valueOf(x[0]) * 0.75)); }
       if(newly.length){ const id = card.R.map(x => x[3]).sort().join('+') + '>' + card.Pr.map(x => x[3]).sort().join('+'), r = await K.cloud.discover(id, { eq: card.eq, n: newly.join(',') }); if(r.first){ firstGlobal = true; bonus += 100; } }
       if(bonus > 0) K.earn(bonus, 'Discovery bonus'); K.touch('lab'); K.emit('lab');
       return ok('Made ' + (out.map(m => m.n + ' × ' + m.name).join(', ') || 'nothing'), { made: out, fee, bonus, newly: newly.map(k => ({ key: k, name: Chem.nameOf(k) })), firstGlobal, equation: card.eq, y: sim.y, hazard: sim.hazard, src, tLabel: sim.tLabel, heat: sim.heat });

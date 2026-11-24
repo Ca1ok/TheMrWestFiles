@@ -24,7 +24,7 @@ const FactorySim = (function(){
     shopSure: 0.85, shopMaxChance: 0.97, shopMinChance: 0.08,  // shopSure and shopMaxChance are no longer used: ≤ 1× est (normal) is always 100 %; falls linearly to shopMinChance (8 %) at shopHi (1.5×)
     shopBatch: 25,                                             // mol offered per attempt = 25 × tier
     failLockMs: 60000, okLockMs: 5000,                         // a refusal = wait one minute; after a sale a short breather
-    marketLo: 0.1, marketHi: 10, marketFee: 0.05, listCap: 2000, // market: price 0.1×…10× est, 5 % fee on sales, ≤2000 mol listed per line
+    marketLo: 0.1, marketHi: 10, marketFee: 0.03, listCap: 2000, // market: price 0.1×…10× est, 5 % fee on sales, ≤2000 mol listed per line
     salvage: 1.0,                                              // flowsheets: surplus by-products (vented water, H₂, Cl₂ …) are sold on automatically at their atom value, netted off the input cost
     readyMarkup: 1.10,                                         // flowsheets: a manufactured intermediate bought ready-made costs its atoms × 1.10 (wholesale premium); commodity compounds cost their atoms
     reserve: 50                                                // the factory never spends the last $50 of your bank unless you change it

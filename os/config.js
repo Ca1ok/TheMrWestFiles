@@ -23,7 +23,7 @@ const OS_CONFIG = {
   // ---- economy ----
   startCash: 0,                 // visitors (signed out) have NO wallet: in the closed ledger money only enters through the onboarding grant from the pool (cfg.startGrant)
   tax: { threshold: 100000, base: 0.01, growth: 0.35, maxRate: 0.50, dueHours: 48, remindHours: 12, seizeMultiple: 2, catchupDays: 7 },
-  game: { dailySoftcap: 250, dropChance: 0.18, maxBase: 120 },   // dailySoftcap: earnings (× economy index) after which wins pay a quarter · maxBase: ceiling on ONE play's payout base (see os/lib/game-scoring.js; was 75 before points scaling)
+  game: { dailySoftcap: 400, dropChance: 0.18, maxBase: 120 },   // dailySoftcap: earnings (× economy index) after which wins pay a quarter · maxBase: ceiling on ONE play's payout base (see os/lib/game-scoring.js; was 75 before points scaling)
   factory: {},   // WestFactory tunables (see os/lib/factory-sim.js DEFAULTS): e.g. { marketFee: 0.05, shopHi: 1.5, offlineMaxMin: 480 }
   // Arcade limits are NOT set here: the admin edits them live (Settings → Admin tools → Arcade) and they are stored in arcadeConfig, enforced by database.rules.json.
 

@@ -5,8 +5,8 @@ const ok = (c, m) => { if(!c){ fails++; console.error('FAIL', m); } };
 GS.list().forEach(id => { const t = GS.TABLE[id]; ok(t.par > 0 && t.min >= 0 && t.max >= t.par, id + ': par/min/max ordering'); ok(GS.baseFor(id, t.max) > 0, id + ': max score pays'); });
 // below the minimum pays nothing, unknown games pay nothing
 ok(GS.baseFor('whackAtom', 700) === 0, 'whack below min'); ok(GS.baseFor('nope', 500) === 0, 'unknown game');
-// par ≈ the old top tier (~5)
-GS.list().forEach(id => { const b = GS.baseFor(id, GS.TABLE[id].par); ok(b > 4.5 && b < 5.5, id + ' par base ' + b); });
+// par pays ≈ 8 since the 2026-11 rebalance (CURVE.A 0.5 → 0.8; was ~5)
+GS.list().forEach(id => { const b = GS.baseFor(id, GS.TABLE[id].par); ok(b > 7.5 && b < 8.5, id + ' par base ' + b); });
 // strictly increasing, and near-exponential: equal point steps multiply the payout by a constant factor (until the cap)
 const id = 'flappyElectron'; let prev = 0; for(let p = 250; p <= 6000; p += 250){ const b = GS.baseFor(id, p); ok(b >= prev, 'monotonic at ' + p); prev = b; }
 const r1 = GS.baseFor(id, 1500) / GS.baseFor(id, 1000), r2 = GS.baseFor(id, 2000) / GS.baseFor(id, 1500); ok(Math.abs(r1 - r2) < 0.05 * r1, 'constant growth ratio ' + r1 + ' vs ' + r2);
