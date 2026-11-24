@@ -71,13 +71,21 @@
   L.resync = async function(){
     if(L.guest || !C.db || !C.user) return 'guest';
     let srv; try{ srv = (await C.db.ref('eco/acct/' + C.user.uid).once('value')).val(); }catch(e){ return 'offline'; }
-    if(!srv){ if(L.base){ K.emit('notify', { app: 'Settings', title: 'The economy was reset', body: 'Reloading…' }); setTimeout(() => location.reload(), 1500); } return 'gone'; }
+    if(!srv){ if(L.base) L.wasReset(); return 'gone'; }
     if(L.base && srv.rev === L.base.rev) return 'same';
     const base = L.base || E.newAcct(), cur = L.acct, m = clone(srv); m.sys = Object.assign({ pool: 0, arcade: 0, bank: 0, gov: 0, city: 0 }, m.sys);
     m.b += cur.b - base.b; E.SYS.forEach(k => { m.sys[k] += (cur.sys[k] - base.sys[k]); }); m.s += cur.s - base.s; m.r += cur.r - base.r; ['cl', 'si', 'bp', 'lop', 'hop'].forEach(k => { m[k] = cur[k] || m[k] || ''; });
     L.base = clone(srv);
     if(m.b < 0){ L.acct = clone(srv); K.emit('notify', { app: 'Settings', title: 'Your account changed', body: 'A charge was collected while you were playing, so your latest actions were reverted. Reloading to stay in sync…' }); setTimeout(() => location.reload(), 2500); return 'reverted'; }
     L.acct = m; K.emit('cash'); return 'merged';
+  };
+
+  /* the admin reset the economy while this window was open: everything in memory (account, home, onboarding state) is stale. Freeze this window FIRST — no saves
+   * (they could resurrect old progress), no 'homeless' dialog built from the old account — then reload so the player gets the full onboarding from step 1. */
+  L.wasReset = function(){
+    if(L.resetting) return; L.resetting = true; K.sessionLost = true; try{ K.emit('session', 'reset'); }catch(e){}
+    K.emit('notify', { app: 'Settings', title: 'New economy', body: 'The WestEconomy was reset — reloading…' });
+    setTimeout(() => location.reload(), 800); setTimeout(() => location.reload(), 5000);
   };
 
   /* ---------- start / stop (called by cloud.js) ---------- */
@@ -92,7 +100,7 @@
     srv.sys = Object.assign({ pool: 0, arcade: 0, bank: 0, gov: 0, city: 0 }, srv.sys); ['cl', 'si', 'bp', 'lop', 'hop'].forEach(k => { if(typeof srv[k] !== 'string') srv[k] = ''; });
     L.base = clone(srv); L.acct = clone(srv);
     db.ref('eco/cfg').on('value', s => { L.cfg = E.cfgOf({ eco: { cfg: s.val() || {} } }); K.emit('eco'); });
-    db.ref('eco/epoch').on('value', s => { const v = s.val(); if(L.epoch && v && v.n !== L.epoch.n){ K.emit('notify', { app: 'Settings', title: 'New economy', body: 'The WestEconomy was reset — reloading…' }); setTimeout(() => location.reload(), 1500); } });
+    db.ref('eco/epoch').on('value', s => { const v = s.val(); if(L.epoch && v && v.n !== L.epoch.n) L.wasReset(); });
     db.ref('eco/stats').on('value', s => { L.stats = s.val(); K.emit('eco'); });
     listenBills(uid); listenLoans(uid); listenInbox(uid); listenHome(uid); listenBuild(uid); listenPlot(uid); listenGarage(uid);
     L.started = true; setTimeout(() => { try{ pushLoc(true); }catch(e){} }, 3000); return { offline: false, fresh: !sa.exists() };
@@ -190,7 +198,7 @@
   });
 
   /* ---------- the welcome grant ---------- */
-  L.needsOnboarding = () => !L.guest && !L.offline && (!L.acct.ob || !L.home);
+  L.needsOnboarding = () => !L.guest && !L.offline && !L.resetting && (!L.acct.ob || !L.home);
   L.grantAmount = () => dollars(L.cfg.startGrant + (L.og ? L.cfg.ogExtra : 0));
   L.claimGrant = () => L.exec(async () => {
     if(L.acct.ob) return { error: 'Already claimed.' }; const g = L.cfg.startGrant + (L.og ? L.cfg.ogExtra : 0);

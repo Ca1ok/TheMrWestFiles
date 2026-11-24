@@ -15,6 +15,7 @@
 #onb .tabs{display:flex;gap:6px;margin:12px 0} #onb .tabs button{flex:1;background:var(--card,#1d1711);color:inherit;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:9px;font:700 14px var(--font,system-ui);cursor:pointer} #onb .tabs button.on{background:var(--tint-dim,rgba(232,146,79,.2));border-color:var(--tint,#e8924f);color:var(--tint2,#f2b27a)}
 #onb .opt{display:flex;gap:12px;align-items:center;background:var(--card,#1d1711);border-radius:14px;padding:11px 13px;margin:8px 0} #onb .opt .sw{width:40px;height:40px;border-radius:11px;flex:none} #onb .opt .t{flex:1;min-width:0} #onb .opt b{display:block} #onb .opt small{color:var(--label2,#c9bda8);font-size:12.5px} #onb .opt .pr{text-align:right;font-weight:800;white-space:nowrap}`;
   function build(){ if(!document.getElementById('onb-css')){ const s = document.createElement('style'); s.id = 'onb-css'; s.textContent = css; document.head.appendChild(s); } el = document.createElement('div'); el.id = 'onb'; document.body.appendChild(el); }
+  K.on('session', w => { if(w === 'reset') close(); });
   function close(){ if(el){ el.remove(); el = null; } }
   const dots = n => '<div class="dots">' + [1, 2, 3, 4].map(i => '<i class="' + (i <= n ? 'on' : '') + '"></i>').join('') + '</div>';
   function homeList(){
@@ -69,7 +70,7 @@
   }
   function open(m){ if(el) return; mode = m || 'new'; build(); step = mode === 'homeless' ? 2 : (K.S.meta.name ? (K.ledger.acct.ob ? 2 : 1) : 0); if(mode === 'homeless') OS.homes.watch(); render(); if(step === 2) OS.homes.watch(); }
   function check(){
-    if(el || !OS.auth.signedIn() || !K.loaded || !OS.homes.ready() || K.sessionLost || Date.now() < snoozed) return;
+    if(el || !OS.auth.signedIn() || !K.loaded || !OS.homes.ready() || K.sessionLost || K.ledger.resetting || Date.now() < snoozed) return;
     if(OS.homes.needsOnboarding()) open(K.ledger.acct.ob ? 'homeless' : 'new');
   }
   K.on('ready', () => setTimeout(check, 800)); K.on('home', () => { if(el && step === 2 && OS.homes.home()){ step = 3; render(); } else setTimeout(check, 300); });
