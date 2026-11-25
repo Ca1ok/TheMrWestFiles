@@ -124,7 +124,7 @@
   /* ======================= RUNTIME ======================= */
   function create(ctx){
     const { OS, P, T, L, G, VD, VH, Dr, V, el, toast } = ctx, $ = s => el.querySelector(s), esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-    const W = newWanted(), A = { t: 0 }; let rec = newRec(), ver = 0, cops = [], npcCars = [], stolen = [], gone = new Map(), mg = null, hw = null, panel = false, bustedUntil = 0, report_ = null, npcAt = 0, copAt = 0, hudAt = 0, saveT = 0, evadeNote = 0, caught = false, lastBust = 0;
+    const W = newWanted(), A = { t: 0 }; let rec = newRec(), ver = 0, cops = [], npcCars = [], stolen = [], gone = new Map(), mg = null, hw = null, panel = false, bustedUntil = 0, report_ = null, npcAt = 0, copAt = 0, hudAt = 0, saveT = 0, evadeNote = 0, caught = false, lastBust = 0, dispT = null, dispatched = false;
     const GONE_MS = 10 * 60000, econ = () => { try{ return clamp(OS.econ() || 1, 1, 4); }catch(e){ return 1; } }, now = () => Date.now();
     try{ const r = OS.prefs.get('rwCrime'); if(r && Array.isArray(r.o) && r.n) rec = { o: r.o.slice(0, MAX_REC), n: Object.assign(newRec().n, r.n) }; }catch(e){}
     const save = () => { clearTimeout(saveT); saveT = setTimeout(() => { try{ OS.prefs.set('rwCrime', rec); }catch(e){} }, 1500); };
@@ -261,17 +261,36 @@
     function impound(q){ const i = stolen.indexOf(q); if(i >= 0) stolen.splice(i, 1); bump(); }
 
     /* ---------- cops ---------- */
+    /* Police response: nothing happens for 10-20 s after you become wanted (dispatch delay). Then cruisers roll out of the police station if you are within STATION_R of it,
+       otherwise they start well out of sight (never a clear line to you, never closer than ~190 m). Returns true when a cop was placed. */
+    const STATION_R = 520;
     function spawnCop(){
-      const stars = W.stars, m = VD.get(copModel(stars)); if(!m) return; const side = ctx.drivingState(); const tx = P.x, tz = P.z;
-      const sets = ctx.sets().filter(x => x.a !== copColsArr), dis = ctx.disabled(), y0 = T.height(tx, tz);
-      // cops have no pathfinding: only start where the straight line to you is open (no building in between)
+      const stars = W.stars, m = VD.get(copModel(stars)); if(!m) return false; const tx = P.x, tz = P.z;
+      const sets = ctx.sets().filter(x => x.a !== copColsArr), dis = ctx.disabled();
       const clear = (x, z) => { const n = Math.ceil(Math.hypot(tx - x, tz - z) / 6); for(let k = 1; k < n; k++){ const px = x + (tx - x) * k / n, pz = z + (tz - z) * k / n, o = ctx.resolve(px, pz, T.height(px, pz), sets, dis, 2.2); if(Math.abs(o.x - px) + Math.abs(o.z - pz) > 0.01) return false; } return true; };
-      for(let tries = 0; tries < 30; tries++){
-        const a = Math.random() * Math.PI * 2, r = (tries < 12 ? 80 : 140) + Math.random() * 70, x = tx + Math.cos(a) * r, z = tz + Math.sin(a) * r; if(T.isWater(x, z)) continue; const yaw = Math.atan2(tx - x, -(tz - z));
-        const s0 = Dr.car(m, { x, z, yaw }), spot = ctx.findFree(x, z, s0.circles, yaw, 0.1); if(!spot || spot.moved > 25 || T.isWater(spot.x, spot.z)) continue; if(tries < 29 && !clear(spot.x, spot.z)) continue;
-        const s = Dr.car(m, { x: spot.x, z: spot.z, yaw }); s.y = T.height(spot.x, spot.z); const d = m.drive;
+      const place = (x, z) => {
+        const yaw = Math.atan2(tx - x, -(tz - z)), s0 = Dr.car(m, { x, z, yaw }), spot = ctx.findFree(x, z, s0.circles, yaw, 0.1); if(!spot || spot.moved > 25 || T.isWater(spot.x, spot.z)) return null;
+        return { spot, yaw };
+      };
+      const add = (spot, yaw) => { const s = Dr.car(m, { x: spot.x, z: spot.z, yaw }); s.y = T.height(spot.x, spot.z); const d = m.drive;
         const q = { id: m.id, style: m.style, kind: 'car', speed: 0, col: 0, rgb: [30, 40, 78], acc: 0, x: s.x, z: s.z, yaw, hl: d.len / 2, hw: d.wid / 2, cop: true };
-        cops.push({ s, q, born: performance.now() }); bump(); return; }
+        cops.push({ s, q, born: performance.now() }); bump(); return true; };
+      // 1) station nearby: roll out of the police station
+      let st = null; try{ if(L.poi('police')) st = root.RealWorld.Nav.poiPose('police'); }catch(e){}
+      if(st && Math.hypot(st.x - tx, st.z - tz) < STATION_R){
+        for(let tries = 0; tries < 12; tries++){
+          const j = tries === 0 ? 0 : 4 + tries * 1.5, a = Math.random() * Math.PI * 2, r = place(st.x + Math.cos(a) * j, st.z + Math.sin(a) * j);
+          if(r) return add(r.spot, r.yaw);
+        }
+      }
+      // 2) far from the station: appear out of sight (behind buildings, or simply far away)
+      for(let tries = 0; tries < 40; tries++){
+        const a = Math.random() * Math.PI * 2, r = 190 + Math.random() * 120, x = tx + Math.cos(a) * r, z = tz + Math.sin(a) * r; if(T.isWater(x, z)) continue;
+        const p = place(x, z); if(!p) continue;
+        if(tries < 30 && clear(p.spot.x, p.spot.z) && r < 250) continue;   // visible and close: try again
+        return add(p.spot, p.yaw);
+      }
+      return false;
     }
     const SIREN = [[255, 40, 40], [40, 90, 255]];
     function copWorld(sets){ const dis = ctx.disabled(); return { ground: T.height, lift: ctx.lift, push: (x, z, y, r) => { const o = ctx.resolve(x, z, y, sets, dis, r); return { x: o.x, z: o.z }; } }; }
@@ -283,7 +302,11 @@
     }
     function updateCops(dt, t){
       const stars = W.stars, want = copCount(stars), px = P.x, pz = P.z, ds = ctx.drivingState(), spd = ctx.speed(), sets = cops.length ? ctx.sets().filter(x => x.a !== copColsArr) : null, world = sets ? copWorld(sets) : null, pCol = ds ? [ds.s] : null;
-      if(stars > 0 && cops.length < want && t - copAt > 900){ copAt = t; spawnCop(); }
+      if(stars <= 0){ dispT = null; dispatched = false; }
+      else if(cops.length < want){
+        if(!dispatched && dispT === null){ dispT = t + 10000 + Math.random() * 10000; toast('Police dispatched — they are on their way.'); }   // first response: 10-20 s
+        if(dispT !== null && t >= dispT && t - copAt > (cops.length ? 3500 : 0)){ copAt = t; if(spawnCop()){ dispatched = true; } }
+      }
       const flash = Math.floor(t / 220) % 2; let nearest = 1e9, seen = false, dis = null;
       const blocked = (x, z) => { const o = ctx.resolve(x, z, T.height(x, z), sets, dis, 2.0); return Math.abs(o.x - x) + Math.abs(o.z - z) > 0.01; };
       const lineClear = (x0, z0, x1, z1) => { const n = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 6); for(let k = 1; k < n; k++) if(blocked(x0 + (x1 - x0) * k / n, z0 + (z1 - z0) * k / n)) return false; return true; };
@@ -307,7 +330,7 @@
         if(s.hit > 6) c.q.dent = 1; c.q.x = s.x; c.q.z = s.z; c.q.yaw = s.yaw; c.q.y = s.y + 0.1; c.q.pitch = s.pitch; c.q.roll = s.roll;
         const q = c.q, col = SIREN[(flash + i) % 2]; q.acc = col[0] * 65536 + col[1] * 256 + col[2]; q.rgb = [30, 40, 78];
         const d = Math.hypot(s.x - px, s.z - pz), eff = c.los && Math.abs(s.u) < 5 ? d - 12 : d; if(eff < nearest) nearest = eff; if(d < 85) seen = true;   // a cop that is boxed in but can see you gets out and runs the last 12 m
-        if(stars > 0 && (d > 420 || (c.unstuck || 0) > 6)){ cops.splice(i, 1); bump(); continue; }
+        if(stars > 0 && (d > 700 || (c.unstuck || 0) > 6)){ cops.splice(i, 1); bump(); continue; }
         if(stars <= 0 && (c.leave > 9 || d > 300)){ cops.splice(i, 1); bump(); } }
       copColsArr = cops.length ? Float32Array.from(root.RWVehicles.colliders(cops.map(c => c.q), T.height)) : null;
       return { nearest, seen };
@@ -320,7 +343,7 @@
       if(paid >= due - 0.005) settle(rec, paid); else { rec.o.forEach(o => { if(o.st === 'open') o.st = 'unpaid'; }); rec.n.paid += paid; }
       rec.n.arrests++; save();
       for(let k = stolen.length - 1; k >= 0; k--) if(stolen[k].hot) stolen.splice(k, 1); lastBust = now();   // the police recover every hot car
-      W.heat = 0; W.stars = 0; W.coolT = 0; A.t = 0; cops.length = 0; lastSeen.t = 0; bump();
+      W.heat = 0; W.stars = 0; W.coolT = 0; A.t = 0; cops.length = 0; lastSeen.t = 0; dispT = null; dispatched = false; bump();
       bus.innerHTML = '<div class="b"><h2>BUSTED</h2><p>' + esc(speedNote) + '</p><p>' + (due > 0 ? (paid >= due - 0.005 ? 'You paid <b>' + money(paid) + '</b> in fines.' : 'You could only pay <b>' + money(paid) + '</b> of <b>' + money(due) + '</b>. The rest is written off as time served.') : 'No fines this time.') + '</p><p class="s">Released outside the police station.</p></div>'; bus.classList.add('show'); bustedUntil = performance.now() + 4200;
       let pose = null; try{ pose = root.RealWorld.Nav.poiPose('police'); }catch(e){} if(pose) await ctx.teleport(pose.x, pose.z, pose.yaw);
       ctx.rebuild(); setTimeout(() => { bus.classList.remove('show'); caught = false; }, 3600);
@@ -337,7 +360,7 @@
       if(!cops.length && W.stars <= 0 && !ctx.driving() && stolen.length === 0){ hud.classList.remove('on'); return; }
       const r = updateCops(Math.min(dt, 0.05), t), inside = ctx.inside();
       if(W.stars > 0){
-        const spd = ctx.speed(), seen = r.seen && !inside; if(cool(W, dt, seen)){ toast('You lost them. Wanted level cleared.'); rec.n.evaded++; save(); }
+        const spd = ctx.speed(), seen = r.seen && !inside; if(cool(W, dt, seen || !dispatched)){ toast('You lost them. Wanted level cleared.'); rec.n.evaded++; save(); }
         if(seen && spd > 22 && t - evadeNote > 25000 && W.stars >= 2){ evadeNote = t; crime('evading', false); }
         if(!caught && !inside && arrestStep(A, r.nearest, spd, dt)){ if(spd > 8) {} bust(); }
         else if(inside) A.t = Math.max(0, A.t - dt);
@@ -347,7 +370,7 @@
     function hudDraw(){
       const on = W.stars > 0 || (ctx.driving() && ctx.drivingState().q.stolen); hud.classList.toggle('on', on);
       if(!on) return; hud.querySelector('.st').innerHTML = [1, 2, 3, 4, 5].map(i => '<b class="' + (i <= W.stars ? 'a' : '') + '">★</b>').join('');
-      const seenNow = cops.some(c => Math.hypot(c.s.x - P.x, c.s.z - P.z) < 85), lb = hud.querySelector('.lb'); lb.textContent = W.stars ? (seenNow ? 'WANTED — POLICE IN PURSUIT' : 'SEARCHING… keep hidden') : 'STOLEN VEHICLE'; hud.classList.toggle('hot', W.stars > 0 && seenNow); hud.classList.toggle('srch', W.stars > 0 && !seenNow);
+      const seenNow = cops.some(c => Math.hypot(c.s.x - P.x, c.s.z - P.z) < 85), lb = hud.querySelector('.lb'); lb.textContent = W.stars ? (seenNow ? 'WANTED — POLICE IN PURSUIT' : !dispatched ? 'POLICE DISPATCHED — get away!' : 'SEARCHING… keep hidden') : 'STOLEN VEHICLE'; hud.classList.toggle('hot', W.stars > 0 && seenNow); hud.classList.toggle('srch', W.stars > 0 && !seenNow);
       const need = 12 + 4 * W.stars, f = W.stars && !seenNow ? clamp(W.coolT / need, 0, 1) : 0; hud.querySelector('.bar i').style.width = (f * 100) + '%'; hud.classList.toggle('ar', A.t > 0.05); hud.querySelector('.ar i').style.width = clamp(A.t / 1.6, 0, 1) * 100 + '%';
     }
 
@@ -367,8 +390,8 @@
     function act(a){
       if(a === 'report'){ showReport(); return; }
       if(a === 'pay'){ pay(); if(panel) showReport(); return; }
-      if(a === 'surrender'){ if(!W.stars){ toast('You are not wanted.'); return; } if(owed(rec) > 0 && !pay()) return; W.heat = 0; W.stars = 0; W.coolT = 0; A.t = 0; cops.length = 0; bump(); toast('You handed yourself in. The warrant is cleared.'); if(panel) showReport(); return; }
-      if(a === 'help'){ panel = true; pan.innerHTML = '<div class="box"><div class="hd"><h2>HOW WANTED LEVELS WORK</h2><button class="x">✕</button></div><ul class="how"><li><b>Break in</b> to a parked car or a showroom car with <kbd>F</kbd> — time the needle in the green.</li><li>Only <b>parked locals’ cars</b>, <b>dealership cars</b> and the <b>airport’s showroom planes</b> can be stolen. Your own cars, planes and rentals are off limits.</li><li>A stolen vehicle starts <b>dead</b>: <b>hotwire</b> it by connecting the live wire to the matching terminal (press its number or tap it). Three wrong terminals set off the alarm.</li><li>Witnesses and the dealership cameras add <b>stars</b>. An alarm always does.</li><li>Cops chase in cars: stay <b>moving</b>. If one is within 9 m and you have stopped, you are <b>busted</b>.</li><li>Break line of sight (or go indoors) and the stars fade. Hand yourself in here to clear it.</li><li>Fines go to the city treasury. <kbd>J</kbd> opens your crime report anywhere.</li></ul></div>'; pan.classList.add('show'); pan.querySelector('.x').onclick = hideReport; }
+      if(a === 'surrender'){ if(!W.stars){ toast('You are not wanted.'); return; } if(owed(rec) > 0 && !pay()) return; W.heat = 0; W.stars = 0; W.coolT = 0; A.t = 0; cops.length = 0; dispT = null; dispatched = false; bump(); toast('You handed yourself in. The warrant is cleared.'); if(panel) showReport(); return; }
+      if(a === 'help'){ panel = true; pan.innerHTML = '<div class="box"><div class="hd"><h2>HOW WANTED LEVELS WORK</h2><button class="x">✕</button></div><ul class="how"><li><b>Break in</b> to a parked car or a showroom car with <kbd>F</kbd> — time the needle in the green.</li><li>Only <b>parked locals’ cars</b>, <b>dealership cars</b> and the <b>airport’s showroom planes</b> can be stolen. Your own cars, planes and rentals are off limits.</li><li>A stolen vehicle starts <b>dead</b>: <b>hotwire</b> it by connecting the live wire to the matching terminal (press its number or tap it). Three wrong terminals set off the alarm.</li><li>Witnesses and the dealership cameras add <b>stars</b>. An alarm always does.</li><li>Police arrive <b>10-20 s</b> after the alarm: from the <b>station</b> if you are near it, otherwise from out of sight. Use the head start to get away. Once they are on you, stay <b>moving</b>. If one is within 9 m and you have stopped, you are <b>busted</b>.</li><li>Break line of sight (or go indoors) and the stars fade. Hand yourself in here to clear it.</li><li>Fines go to the city treasury. <kbd>J</kbd> opens your crime report anywhere.</li></ul></div>'; pan.classList.add('show'); pan.querySelector('.x').onclick = hideReport; }
     }
     const toggleReport = () => { if(mg) return; if(panel) hideReport(); else showReport(); };
     // keys while a panel / minigame is open (captured so the game does not also jump or open dialogs)
@@ -378,7 +401,7 @@
     hot.addEventListener('pointerdown', e => { if(!hw) return; const t = e.target.closest('[data-slot]'); if(t){ hotPressSlot(+t.dataset.slot); e.preventDefault(); } else if(e.target.closest('.out')){ hotCancel(); e.preventDefault(); } });
     lock.addEventListener('pointerdown', e => { if(mg && e.target.closest('.box')){ press(); e.preventDefault(); } });
     const view = () => ({ stars: W.stars, owed: owed(rec), arrests: rec.n.arrests, recent: rec.o.slice(0, 5) });
-    function resetSession(){ lastSeen.t = 0; cops.length = 0; W.heat = 0; W.stars = 0; W.coolT = 0; A.t = 0; mg = null; lock.classList.remove('show'); hotClose(); hideReport(); bump(); }
+    function resetSession(){ lastSeen.t = 0; dispT = null; dispatched = false; cops.length = 0; W.heat = 0; W.stars = 0; W.coolT = 0; A.t = 0; mg = null; lock.classList.remove('show'); hotClose(); hideReport(); bump(); }
     root.RealWorld = root.RealWorld || {}; root.RealWorld.crimeView = view; root.RealWorld.crimeState = () => ({ lock: mg ? mg.s : null, hot: hw ? hw.s : null, wanted: W, cops: cops.length, copPos: cops.map(c => [Math.round(c.s.x), Math.round(c.s.z)]), copInfo: cops.map(c => [Math.round(c.s.u), c.los ? 1 : 0, Math.round(Math.hypot(c.s.x - P.x, c.s.z - P.z)), c.unstuck || 0, c.avT > 0 ? 1 : 0, c.goal ? Math.round(Math.hypot(c.s.x - c.goal.x, c.s.z - c.goal.z)) : -1]), stolen: stolen.length, npcCars: npcCars.length, rec, caught });   // read-only snapshot for tests / debugging
     return { update, keep, extra, prompt, kindOf, breakIn, hotwire, toggleReport, act, busy, ver: () => ver, cols: () => copColsArr, park, impound, reset: resetSession, view, wanted: wantedNow, record: () => rec };
   }
