@@ -30,8 +30,8 @@ if(Dr && Dr.car){
   const stuck = { s: Dr.car(VD.get('alder'), { x: 0, z: 0, yaw: 0 }) }; stuck.s.u = 0; let rev = false; for(let i = 0; i < 300; i++){ const inp = C.copInputs(stuck, 0, -100, 0.6, 1 / 60); if(inp.thr < 0) rev = true; /* never moves: simulates a wall */ } assert.ok(rev, 'a stuck cop reverses out');
 } else console.log('(drive.js not loadable in node — steering simulation skipped)');
 // 5 ── arrest timer
-const a = { t: 0 }; let busted = false; for(let i = 0; i < 200 && !busted; i++) busted = C.arrestStep(a, 4, 2, 1 / 60); assert.ok(busted && i_ok(a), 'a cop next to a stopped player busts in ~1.6 s'); function i_ok(x){ return x.t >= 1.6; }
-const b = { t: 1 }; C.arrestStep(b, 4, 25, 0.5); assert.ok(b.t < 1, 'driving off drains the bar'); const c = { t: 0 }; for(let i = 0; i < 600; i++) assert.ok(!C.arrestStep(c, 30, 0, 1 / 60), 'a far cop never busts you');
+const a = { t: 0 }; let busted = false, tt = 0; for(let i = 0; i < 600 && !busted; i++){ busted = C.arrestStep(a, 4, 2, 1 / 60); tt = i / 60; } assert.ok(busted && tt > 3.3 && tt < 4, 'a visible cop next to a stopped player busts in ~3.6 s (' + tt.toFixed(2) + ')');
+const b = { t: 2 }; C.arrestStep(b, 4, 25, 0.5); assert.ok(b.t < 2, 'driving off drains the bar'); const c = { t: 0 }; for(let i = 0; i < 600; i++) assert.ok(!C.arrestStep(c, 30, 0, 1 / 60), 'a far cop never busts you'); const d = { t: 0 }; for(let i = 0; i < 600; i++) assert.ok(!C.arrestStep(d, 1e9, 0, 1 / 60), 'no eligible cop (behind a wall / out of view) never busts you'); const e = { t: 0 }; for(let i = 0; i < 600; i++) assert.ok(!C.arrestStep(e, 3, 12, 1 / 60), 'a moving player is not arrested');
 assert.strictEqual(C.STEAL_PLANES, true, 'aircraft can be stolen and flown (after a hotwire)');
 // 5 ── the hotwire minigame: connect the live wire to the same-coloured terminal, terminals re-shuffle after every hit, 3 wrong = short circuit, time runs out
 {
