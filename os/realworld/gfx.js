@@ -63,10 +63,11 @@ void main(){ if(uSP > 0.5){ oCol = vec4(0.0); return; } if(uFade < 1.0){ float b
   /* instanced props (trees, lamps, benches): per-instance x y z yaw | scale tint(packed rgb) seed 0. Foliage (vertex alpha 250) takes the instance's colour and sways in the wind; the far edge dissolves by distance (no pop). */
   const PROP_VS = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec4 aCol; layout(location=3) in vec4 iPos; layout(location=4) in vec4 iEx;
-uniform mat4 uVP; uniform float uTime; out vec3 vN; out vec4 vC; out vec3 vWP; out vec3 vT;
+uniform mat4 uVP; uniform float uTime, uTilt; out vec3 vN; out vec4 vC; out vec3 vWP; out vec3 vT;
 vec3 unpackC(float p){ return vec3(floor(p / 65536.0), floor(mod(p, 65536.0) / 256.0), mod(p, 256.0)) / 255.0; }
 void main(){ vec3 p = aPos * iEx.x, n = aNrm; float fol = (aCol.a > 0.95 && aCol.a < 0.995) ? 1.0 : 0.0;
   p.x += fol * sin(uTime * 1.3 + iPos.x * 0.37 + iPos.z * 0.21) * 0.028 * p.y; p.z += fol * cos(uTime * 1.1 + iPos.z * 0.33) * 0.02 * p.y;
+  if(uTilt > 0.5){ float cp = cos(iEx.z), sp = sin(iEx.z), cr = cos(iEx.w), sr = sin(iEx.w); p.y -= 0.4; p = vec3(p.x * cr + p.y * sr, -p.x * sr + p.y * cr, p.z); n = vec3(n.x * cr + n.y * sr, -n.x * sr + n.y * cr, n.z); p = vec3(p.x, p.y * cp - p.z * sp, p.y * sp + p.z * cp); n = vec3(n.x, n.y * cp - n.z * sp, n.y * sp + n.z * cp); p.y += 0.4; }   // tilted props (NPC cars): iEx.z / iEx.w = pitch / roll, same signs as the vehicle actors
   float th = -iPos.w, ct = cos(th), st = sin(th); p = vec3(p.x * ct + p.z * st, p.y, -p.x * st + p.z * ct); n = vec3(n.x * ct + n.z * st, n.y, -n.x * st + n.z * ct);
   vN = n; vC = aCol; vT = unpackC(iEx.y); vWP = p + iPos.xyz; gl_Position = uVP * vec4(vWP, 1.0); }`;
   const PROP_FS = COMMON + `
@@ -223,7 +224,7 @@ precision mediump float; in vec2 vUV; uniform sampler2D uTex; out vec4 oCol; voi
     const prog = (vs, fs, names) => { const p = gl.createProgram(); gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if(!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(p)); const u = {}; names.split(' ').forEach(n => { u[n] = gl.getUniformLocation(p, n); }); p.u = u; return p; };
     const ENV = 'uCam uSunDir uSunCol uSky uGround uFogCol uFogD uNight uTime uQ uShK uSP uSMVP uSMs uSM';
     let pW, pA, pS, pP, pT, pI, pF;
-    function compile(){ pW = prog(WORLD_VS, WORLD_FS, 'uVP uFade uFadeDir ' + ENV); pA = prog(ACT_VS, ACT_FS, 'uVP uPiv uVeh ' + ENV); pS = prog(SKY_VS, SKY_FS, 'uF uR uU uCam uSunDir uZen uHor uSunCol uTan uAsp uNight uTime uCloud uQ'); pP = prog(PT_VS, PT_FS, 'uVP uCam uTime uFall uSize uScale uSpread uCol'); pT = prog(SCR_VS, SCR_FS, 'uVP uTex'); pI = prog(PROP_VS, PROP_FS, 'uVP uFar ' + ENV); pF = prog(FX_VS, FX_FS, 'uVP uScale uMax uLit uAdd'); }
+    function compile(){ pW = prog(WORLD_VS, WORLD_FS, 'uVP uFade uFadeDir ' + ENV); pA = prog(ACT_VS, ACT_FS, 'uVP uPiv uVeh ' + ENV); pS = prog(SKY_VS, SKY_FS, 'uF uR uU uCam uSunDir uZen uHor uSunCol uTan uAsp uNight uTime uCloud uQ'); pP = prog(PT_VS, PT_FS, 'uVP uCam uTime uFall uSize uScale uSpread uCol'); pT = prog(SCR_VS, SCR_FS, 'uVP uTex'); pI = prog(PROP_VS, PROP_FS, 'uVP uFar uTilt ' + ENV); pF = prog(FX_VS, FX_FS, 'uVP uScale uMax uLit uAdd'); }
     compile();
     const emptyVAO = gl.createVertexArray();
     /* ---- quality tiers + sun shadow map ----
@@ -306,7 +307,7 @@ precision mediump float; in vec2 vUV; uniform sampler2D uTex; out vec4 oCol; voi
     };
     G.propFree = function(h){ if(!h) return; gl.deleteVertexArray(h.vao); gl.deleteBuffer(h.vb); gl.deleteBuffer(h.ib); gl.deleteBuffer(h.inst); };
     /* floats: 8 per instance (x y z yaw | scale tint seed 0); `dirty` = the instance data changed since the last upload; far0..far1 = the metres over which the props dissolve */
-    G.props = function(h, floats, count, dirty, far0, far1){ if(!count) return; gl.useProgram(pI); const u = pI.u; gl.uniformMatrix4fv(u.uVP, false, G.vp); setEnv(pI); gl.uniform1f(u.uTime, G.time); gl.uniform2f(u.uFar, far0, far1); gl.bindVertexArray(h.vao); gl.bindBuffer(gl.ARRAY_BUFFER, h.inst);
+    G.props = function(h, floats, count, dirty, far0, far1, tilt){ if(!count) return; gl.useProgram(pI); const u = pI.u; gl.uniform1f(u.uTilt, tilt ? 1 : 0); gl.uniformMatrix4fv(u.uVP, false, G.vp); setEnv(pI); gl.uniform1f(u.uTime, G.time); gl.uniform2f(u.uFar, far0, far1); gl.bindVertexArray(h.vao); gl.bindBuffer(gl.ARRAY_BUFFER, h.inst);
       if(dirty || h.version < 0){ if(count * 8 > h.cap){ h.cap = Math.max(count * 8, h.cap * 2, 1024); gl.bufferData(gl.ARRAY_BUFFER, h.cap * 4, gl.DYNAMIC_DRAW); } gl.bufferSubData(gl.ARRAY_BUFFER, 0, floats, 0, count * 8); h.version = 0; }
       gl.drawElementsInstanced(gl.TRIANGLES, h.ni, h.type, 0, count); G.tris += h.ni / 3 * count; G.calls++; curW = false; };
     /* ---- particles (snow / embers): a fixed cloud of seeds wrapped around the camera, animated entirely in the vertex shader ---- */

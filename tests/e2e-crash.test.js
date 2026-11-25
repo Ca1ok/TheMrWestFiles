@@ -38,6 +38,9 @@ const ev = (p, fn, arg) => p.evaluate(fn, arg);
     await pg.click('#onb-done'); await pg.waitForSelector('#onb', { state: 'detached' });
     const kb = pg.keyboard, drv = () => pg.evaluate(() => OS.realworld.vehicles().driving()), fxs = () => pg.evaluate(() => { const f = OS.realworld.api()._fx(); return f ? { n: f.count(), em: f.emitterCount(), flash: f.flash } : null; });
     assert.ok(await ev(pg, () => OS.realworld.enter()), 'enter world'); await pg.waitForTimeout(3000);
+    /* ---- NPC drivers: any moving car near you is a physical drive.js car (informational: depends on the clock / roster) ---- */
+    { let seen = 0, phys = 0, tilt = 0; for(let i = 0; i < 24; i++){ const r = await pg.evaluate(() => { const b = OS.realworld.api()._bots(); const cars = b.filter(q => q.isCar); return { bots: b.length, cars: cars.length, phys: cars.filter(q => q.cs).length, tilt: cars.filter(q => q.cs && (Math.abs(q.cs.pitch) > 1e-4 || Math.abs(q.cs.roll) > 1e-4)).length }; }); seen = Math.max(seen, r.cars); phys = Math.max(phys, r.phys); tilt = Math.max(tilt, r.tilt); if(phys && tilt) break; await pg.waitForTimeout(1000); }
+      log('  NPC cars seen:', seen, '· with physics:', phys, '· suspension moving:', tilt); if(seen) assert.ok(phys > 0, 'NPC cars near the player use drive.js physics'); }
     /* ---- plane: dive into the ground ---- */
     const ap = await pg.evaluate(() => { const p = window.RWLayout.poi('airport'), f = p.front; return { x: p.x + f[0] * 34, z: p.z + f[1] * 34, yaw: Math.atan2(-f[0], f[1]) }; }); await pg.evaluate(p => OS.realworld.travelTo(p.x, p.z, p.yaw), ap); await pg.waitForTimeout(9000);
     assert.ok(await pg.evaluate(() => { const V = OS.realworld.vehicles(), q = V.list().find(x => x.id === 'skylark'); return !!(q && V._drive(q)); }), 'get into the Skylark'); let d = await drv(); assert.strictEqual(d.kind, 'plane');

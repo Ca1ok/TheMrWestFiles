@@ -239,5 +239,15 @@
     s.ias = Math.hypot(s.vx, s.vy, s.vz); s.speed = s.onGround ? s.vx * B.f[0] + s.vz * B.f[2] : s.ias; s.vs = s.vy; s.aoa = alpha; s.g += (((lift * 1 + thrust * Math.sin(alpha)) / (P.m * G)) - s.g) * Math.min(1, dt * 6);
   }
 
-  return { car, stepCar, plane, stepPlane, planeParams, basis, euler, CL, AS, G, DT, clamp, wrapA };
+  /* NPC driver: the controls that make car `s` chase a moving schedule point t = { x, z, vx, vz, sp } (position, velocity, speed): pure pursuit on a look-ahead point + a speed loop that
+   * also closes the along-track gap, slower in corners. Used by game.js for every NPC car near the player (so they drive with the same tyre / suspension model as the player and cops). */
+  function followInputs(s, t){
+    const vl = Math.max(t.sp, 0.1), lead = clamp(3.5 + Math.abs(s.u) * 0.7, 4.5, 16), tx = t.x + t.vx / vl * lead, tz = t.z + t.vz / vl * lead, dx = tx - s.x, dz = tz - s.z;
+    const fwd = dx * Math.sin(s.yaw) - dz * Math.cos(s.yaw), lat = dx * Math.cos(s.yaw) + dz * Math.sin(s.yaw), err = Math.atan2(lat, fwd), steer = clamp(err * 1.7, -1, 1);
+    const lon = ((t.x - s.x) * t.vx + (t.z - s.z) * t.vz) / vl;                          // > 0: the car is behind its schedule point
+    const want = clamp(t.sp + lon * 0.9, 0, s.D.top * 0.8) * (1 - Math.min(0.5, Math.abs(err) * 0.5)), de = want - s.u;
+    return de < -0.8 ? { thr: 0, steer, brake: clamp(-de * 0.3, 0, 1), hand: 0 } : { thr: clamp(de * 0.5, 0, 1), steer, brake: 0, hand: 0 };
+  }
+
+  return { car, stepCar, followInputs, plane, stepPlane, planeParams, basis, euler, CL, AS, G, DT, clamp, wrapA };
 });
