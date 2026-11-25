@@ -7,7 +7,7 @@
   const cfg = RW.config = Object.assign({ radius: 10, perfRadius: 5, fov: 72, walk: 4.4, run: 8.4, jump: 5.6, grav: 17, eye: 1.55, pr: 0.36, sens: 0.0022, far: 1700, npcRange: 230, carRange: 480, minScale: 0.55 }, RW.config || {});
   /* landmark id (WorldGen.POIS) → the interior to build when you walk in. Add a line + RealWorld.Interiors.register('<kind>', …) for a new public building. */
   const BUILDINGS = RW.buildings = { bank: { kind: 'bank', name: 'Bank' }, exchange: { kind: 'exchange', name: 'Stock Exchange' }, shop: { kind: 'shop', name: 'WestShop' }, arcade: { kind: 'arcade', name: 'Arcade' }, agency: { kind: 'agency', name: 'Estate Agency' }, hall: { kind: 'hall', name: 'Council Hall' },
-    dealer: { kind: 'dealer', name: 'Car Dealership' }, airport: { kind: 'airport', name: 'Private Airport' }, uni: { kind: 'uni', name: 'University Library' }, lab: { kind: 'lab', name: 'Research Institute' }, ind: { kind: 'ind', name: 'Freight Depot' }, plant: { kind: 'plant', name: 'Power Plant' } };
+    dealer: { kind: 'dealer', name: 'Car Dealership' }, airport: { kind: 'airport', name: 'Private Airport' }, uni: { kind: 'uni', name: 'University Library' }, lab: { kind: 'lab', name: 'Research Institute' }, ind: { kind: 'ind', name: 'Freight Depot' }, plant: { kind: 'plant', name: 'Power Plant' }, police: { kind: 'police', name: 'Police Station' } };
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), TAU = Math.PI * 2, wrapA = a => Math.atan2(Math.sin(a), Math.cos(a)), sleep = ms => new Promise(r => setTimeout(r, ms));
   const hsl = (h, s, l) => { s /= 100; l /= 100; const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l), f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))); return [f(0) * 255, f(8) * 255, f(4) * 255]; };
   const pack = c => (Math.round(c[0]) * 65536 + Math.round(c[1]) * 256 + Math.round(c[2]));
@@ -36,25 +36,30 @@
     const V = { list: [], sig: '', cols: null, look: null }, VD = root.VehicleData, VH = root.RWVehicles;
     function rebuildVehicles(){
       if(!VH || !VD || dv) return; let garage = []; try{ garage = OS.homes.garage ? OS.homes.garage() : []; }catch(e){}
-      const h = OS.homes.home && OS.homes.home(), hg = h && h.id ? (L.house(+String(h.id).slice(1)) || {}).g : null, sig = garage.map(g => g.slot + g.m + g.col).join() + '|' + (hg ? h.id : '') + '|' + S.nh; if(sig === V.sig) return; V.sig = sig;
-      V.list = VH.showcase('dealer').concat(VH.showcase('airport'), VH.owned(garage, hg || null)); applyParking(garage); V.cols = V.list.length ? Float32Array.from(VH.colliders(V.list, T.height)) : null; V.bufs = null;
+      const h = OS.homes.home && OS.homes.home(), hg = h && h.id ? (L.house(+String(h.id).slice(1)) || {}).g : null, sig = garage.map(g => g.slot + g.m + g.col).join() + '|' + (hg ? h.id : '') + '|' + S.nh + '|' + crime.ver(); if(sig === V.sig) return; V.sig = sig;
+      V.list = VH.showcase('dealer').concat(VH.showcase('airport'), VH.owned(garage, hg || null)); applyParking(garage); V.list = V.list.filter(crime.keep).concat(crime.extra()); V.cols = V.list.length ? Float32Array.from(VH.colliders(V.list, T.height)) : null; V.bufs = null;
     }
     const vehBufs = {};
     function fillVehicles(){
       const out = {}, px = P.x, pz = P.z, hexOf = i => VD.colorHex(i);
       for(const q of V.list){ const dx = q.x - px, dz = q.z - pz; if(dx * dx + dz * dz > cfg.npcRange ** 2) continue; const b = vehBufs[q.style] || (vehBufs[q.style] = new Float32Array(8 * 16)); let o = out[q.style]; if(!o) o = out[q.style] = { buf: b, n: 0 };
-        if(o.n * 8 + 8 > o.buf.length){ const nb = new Float32Array(o.buf.length * 2); nb.set(o.buf); o.buf = vehBufs[q.style] = nb; } const rgb = M.rgb(hexOf(q.col)), i = o.n++ * 8, f = o.buf; f[i] = q.x; f[i + 1] = q.y != null ? q.y : T.height(q.x, q.z) + (q.kind === 'plane' ? 0.05 : 0.1); f[i + 2] = q.z; f[i + 3] = q.yaw; f[i + 4] = q.pitch || 0; f[i + 5] = q.roll || 0; f[i + 6] = pack(rgb); f[i + 7] = pack(rgb.map(c => c * 0.5)) + (q.driven && dv && dv.q === q && !dv.car && dv.s.throttle > 0.03 ? 0.5 : 0); }   // +0.5 on the accent colour = "engine running": the actor shader spins the propeller blades
+        if(o.n * 8 + 8 > o.buf.length){ const nb = new Float32Array(o.buf.length * 2); nb.set(o.buf); o.buf = vehBufs[q.style] = nb; } const rgb = q.rgb || M.rgb(hexOf(q.col)), i = o.n++ * 8, f = o.buf; f[i] = q.x; f[i + 1] = q.y != null ? q.y : T.height(q.x, q.z) + (q.kind === 'plane' ? 0.05 : 0.1); f[i + 2] = q.z; f[i + 3] = q.yaw; f[i + 4] = q.pitch || 0; f[i + 5] = q.roll || 0; f[i + 6] = pack(rgb); f[i + 7] = (q.acc != null ? q.acc : pack(rgb.map(c => c * 0.5))) + (q.driven && dv && dv.q === q && !dv.car && dv.s.throttle > 0.03 ? 0.5 : 0); }   // +0.5 on the accent colour = "engine running": the actor shader spins the propeller blades
       return out;
     }
     /* ---------------- driving (drive.js): E on your own car or plane gets you in, E again gets you out ----------------
      * One control scheme for every device: KEYBOARD (WASD / arrows), MOUSE (cursor offset from the screen centre = steering wheel / stick; with the pointer captured, movement works like a stick that
      * springs back; left / right button = gas / brake or throttle up / down; wheel = throttle) and TOUCH (the left stick + big on-screen buttons). The physics is os/realworld/drive.js (pure, tested). */
     const Dr = RW.Drive, mouse = { px: 0, py: 0, sx: 0, sy: 0, l: false, rb: false, at: 0, in: false }, tb = {};
+    /* the crime layer (crime.js): lock-picking, wanted level, cops, crime report. If the module failed to load the world still works (no-op stub). */
+    const NOCRIME = { update(){}, keep: () => true, extra: () => [], prompt: () => null, breakIn(){}, toggleReport(){}, act(){}, busy: () => false, ver: () => 0, cols: () => null, park(){}, impound(){}, reset(){} };
+    const crime = RW.Crime ? RW.Crime.create({ OS, P, T, L, G, VD, VH, Dr, V, el: rootEl, toast, bots: () => botList, driving: () => !!dv, drivingState: () => dv, uiBusy: () => uiOpen(), locked: () => locked(),
+      rebuild: () => { V.sig = ''; rebuildVehicles(); }, startDrive: q => startDrive(q), findFree: (x, z, c, y, o) => findFree(x, z, c, y, o), disabled: () => cells.disabled(), resolve: (x, z, y, sets, dis, r) => Phys.resolve(x, z, y, sets, dis, r), sets: () => collSets(),
+      inside: () => !!(S.room || S.cell), speed: () => dv ? Math.hypot(dv.s.u || 0, dv.s.v || 0) : Math.hypot(P.vx, P.vz), teleport: (x, z, y) => teleport(x, z, y), atStation: () => !!(S.room && S.room.door && S.room.door.id === 'police'), place: () => '' }) : NOCRIME;
     let dv = null, dashAt = 0, dashHtml = '';
     const parkKey = q => q.slot + ':' + (q.t || 0);
     const parkedAll = () => { try{ return OS.prefs.get('rwVeh') || {}; }catch(e){ return {}; } };
     /* where you left a vehicle is remembered per garage record (slot + purchase time) in your own prefs — nothing goes to the shared database */
-    function setParked(q, on){ try{ const pk = Object.assign({}, parkedAll()), k = parkKey(q); if(on) pk[k] = [Math.round(q.x * 10) / 10, Math.round(q.z * 10) / 10, Math.round(q.yaw * 100) / 100]; else delete pk[k]; const ks = Object.keys(pk); if(ks.length > 40) delete pk[ks[0]]; OS.prefs.set('rwVeh', pk); }catch(e){} }
+    function setParked(q, on){ if(!q.slot) return; try{ const pk = Object.assign({}, parkedAll()), k = parkKey(q); if(on) pk[k] = [Math.round(q.x * 10) / 10, Math.round(q.z * 10) / 10, Math.round(q.yaw * 100) / 100]; else delete pk[k]; const ks = Object.keys(pk); if(ks.length > 40) delete pk[ks[0]]; OS.prefs.set('rwVeh', pk); }catch(e){} }
     function applyParking(garage){
       const pk = parkedAll(), live = {}; let stale = false;
       V.list.forEach(q => { if(!q.slot) return; const g = garage.find(x => x.slot === q.slot); q.t = g ? g.t : 0; q.rentEnd = g && g.expires ? g.expires : 0; live[parkKey(q)] = 1; const r = pk[parkKey(q)];
@@ -78,6 +83,7 @@
     function endDrive(mode, msg){
       if(!dv) return; const d = dv, q = d.q, s = d.s; dv = null; S.drive = null; rootEl.classList.remove('driving', 'drv-car', 'drv-plane'); $('#rwBtnE').textContent = 'E'; tb.gas = tb.brake = tb.hand = false; mouse.l = mouse.rb = false;
       q.driven = false; q.pitch = q.roll = 0; q.y = null;
+      if(q.stolen){ if(mode === 'crash') crime.impound(q); else { q.x = s.x; q.z = s.z; q.yaw = s.yaw; crime.park(q); if(mode === 'home') mode = undefined; } }   // a stolen car stays where you leave it (session only), never goes to your garage
       if(mode === 'home' || mode === 'crash'){
         setParked(q, false); V.sig = ''; rebuildVehicles(); const nq = V.list.find(x => x.slot === q.slot && x.t === q.t) || q, rx = Math.cos(nq.yaw), rz = Math.sin(nq.yaw), off = (nq.hw || 1) + 1.6;
         teleport(nq.x + rx * off, nq.z + rz * off, nq.yaw); if(msg) toast(msg); return;
@@ -278,7 +284,7 @@
     }
 
     /* ---------------- collisions: see phys.js (boxes with a height, stairs, floors, ceilings) ---------------- */
-    const collSets = () => { const sets = []; if(!S.room){ st.nearCols(P.x, P.z, c => sets.push({ a: c, st: 8 })); if(dynColsA) sets.push({ a: dynColsA, st: 8 }); if(V.cols) sets.push({ a: V.cols, st: 8 }); } if(S.room){ const cs = cells.sets(); for(let i = 0; i < cs.length; i++) sets.push(cs[i]); } return sets; };
+    const collSets = () => { const sets = []; if(!S.room){ st.nearCols(P.x, P.z, c => sets.push({ a: c, st: 8 })); if(dynColsA) sets.push({ a: dynColsA, st: 8 }); if(V.cols) sets.push({ a: V.cols, st: 8 }); const cc = crime.cols(); if(cc) sets.push({ a: cc, st: 8 }); } if(S.room){ const cs = cells.sets(); for(let i = 0; i < cs.length; i++) sets.push(cs[i]); } return sets; };
 
     /* ---------------- people & cars ---------------- */
     async function loadBots(){ try{ const m = await (RW.botSource ? RW.botSource() : OS.homes.bots()); botList = Object.keys(m || {}).map(id => { const r = m[id], n = +id.slice(1); return { id, n, b: { n, job: r.j || 'baker', thrift: typeof r.th === 'number' ? r.th : 0.5 }, home: r.h ? G.house(+String(r.h).slice(1)) : null, shirt: pack(hsl(G.h32(n, 19) % 360, 55, 52)), pants: pack(hsl(G.h32(n, 21) % 360, 30, 24)), init: 0, x: 0, z: 0, tx: 0, tz: 0, vx: 0, vz: 0, yaw: 0, ph: 0, mv: 0, vis: false, t: 0 }; }); }catch(e){} }
@@ -329,7 +335,7 @@
     let compassYaw = 1e9, compassIn = null, cPx = 1e9, cPz = 1e9, cItemsAt = -1e9, cRev = 0, cSeen = -1, cSig = '', cItems = [], cLblTxt = '';
     const DIRS = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SW', 270: 'W', 315: 'NW' };
     const CSPAN = 150, CPAL = { poi: '#ffd24a', house: '#5bd68a', flask: '#4fd6c8', factory: '#ff9a4a', car: '#7ec8ff', plane: '#b9a4ff' };
-    const LM = { bank: 'bank', exchange: 'chart', shop: 'bag', arcade: 'pad', agency: 'key', hall: 'hall', uni: 'cap', lab: 'flask', ind: 'factory', plant: 'bolt', park: 'tree', dealer: 'car', airport: 'plane' };
+    const LM = { bank: 'bank', exchange: 'chart', shop: 'bag', arcade: 'pad', agency: 'key', hall: 'hall', uni: 'cap', lab: 'flask', ind: 'factory', plant: 'bolt', park: 'tree', dealer: 'car', airport: 'plane', police: 'shield' };
     const poly = (c, a) => { c.beginPath(); c.moveTo(a[0], a[1]); for(let i = 2; i < a.length; i += 2) c.lineTo(a[i], a[i + 1]); c.closePath(); c.fill(); };
     const line = (c, w, a) => { c.lineWidth = w; c.beginPath(); c.moveTo(a[0], a[1]); for(let i = 2; i < a.length; i += 2) c.lineTo(a[i], a[i + 1]); c.stroke(); };
     const GL = {
@@ -337,7 +343,7 @@
       bank: c => { poly(c, [-6.5, -2, 0, -6.5, 6.5, -2]); c.fillRect(-5, -1, 2, 6); c.fillRect(-1, -1, 2, 6); c.fillRect(3, -1, 2, 6); c.fillRect(-6.5, 5, 13, 1.6); },
       chart: c => { line(c, 2.2, [-6, 5, -2, 0, 1, 3, 6, -5]); }, bag: c => { poly(c, [-5, -2, 5, -2, 6, 6, -6, 6]); c.lineWidth = 1.7; c.beginPath(); c.arc(0, -2, 3, Math.PI, 0); c.stroke(); },
       pad: c => { c.fillRect(-6, 2, 12, 3.6); line(c, 2, [0, 2, 0, -3.5]); c.beginPath(); c.arc(0, -5, 2.4, 0, TAU); c.fill(); },
-      hall: c => { c.beginPath(); c.arc(0, 1, 5.6, Math.PI, 0); c.fill(); c.fillRect(-6.5, 1.6, 13, 1.8); c.fillRect(-5.2, 3.8, 10.4, 2.2); }, cap: c => { poly(c, [0, -5.5, 7, -1.5, 0, 2.5, -7, -1.5]); c.fillRect(-3.6, 1.6, 7.2, 3.8); },
+      shield: c => { c.beginPath(); c.moveTo(-5, -5); c.lineTo(5, -5); c.lineTo(5, 1); c.quadraticCurveTo(5, 5, 0, 7); c.quadraticCurveTo(-5, 5, -5, 1); c.closePath(); c.fill(); }, hall: c => { c.beginPath(); c.arc(0, 1, 5.6, Math.PI, 0); c.fill(); c.fillRect(-6.5, 1.6, 13, 1.8); c.fillRect(-5.2, 3.8, 10.4, 2.2); }, cap: c => { poly(c, [0, -5.5, 7, -1.5, 0, 2.5, -7, -1.5]); c.fillRect(-3.6, 1.6, 7.2, 3.8); },
       flask: c => { poly(c, [-1.9, -6.5, 1.9, -6.5, 1.9, -1.5, 6.2, 5.8, -6.2, 5.8, -1.9, -1.5]); }, factory: c => { poly(c, [-6.5, 1, -6.5, -3, -2.2, 1, -2.2, -3, 2.2, 1, 2.2, -3, 6.5, 1]); c.fillRect(-6.5, 1, 13, 5); c.fillRect(3.6, -6.5, 2.3, 5); },
       bolt: c => { poly(c, [1.6, -7, -4.6, 1, -0.6, 1, -1.6, 7, 4.6, -1.6, 0.6, -1.6]); }, tree: c => { c.beginPath(); c.arc(0, -2, 4.8, 0, TAU); c.fill(); c.fillRect(-0.9, 1, 1.8, 5.6); },
       key: c => { c.beginPath(); c.arc(-2.6, -2.6, 3.2, 0, TAU); c.lineWidth = 2; c.stroke(); line(c, 2, [-0.2, -0.2, 6, 6]); line(c, 1.8, [3.6, 3.6, 5.4, 1.9]); },
@@ -420,9 +426,9 @@
     }
 
     /* ---------------- input ---------------- */
-    const uiOpen = () => S.phone || S.loading || !!S.dialog || !!document.querySelector('#windows .win:not(.hidden)');
+    const uiOpen = () => S.phone || S.loading || !!S.dialog || crime.busy() || !!document.querySelector('#windows .win:not(.hidden)');
     const locked = () => document.pointerLockElement === cv;
-    const onKey = (e, d) => { if(!S.running || S.phone) return; const k = e.code; if(d && k === 'Escape' && S.dialog){ closeDialog(); return; } if(d && (k === 'KeyM') && !uiOpen()){ openMap(); e.preventDefault(); return; } if(d && k === 'KeyP' && !e.ctrlKey && !e.metaKey){ phone(true); e.preventDefault(); return; }
+    const onKey = (e, d) => { if(!S.running || S.phone) return; const k = e.code; if(d && k === 'Escape' && S.dialog){ closeDialog(); return; } if(d && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && !S.dialog && (k === 'KeyJ' || k === 'KeyF') && !uiOpen()){ if(k === 'KeyJ'){ crime.toggleReport(); e.preventDefault(); return; } if(!dv && !S.room){ crime.breakIn(); e.preventDefault(); return; } } if(d && (k === 'KeyM') && !uiOpen()){ openMap(); e.preventDefault(); return; } if(d && k === 'KeyP' && !e.ctrlKey && !e.metaKey){ phone(true); e.preventDefault(); return; }
       if(uiOpen()) return; if(d && k === 'KeyU' && !e.ctrlKey && !e.metaKey){ unstuck(); e.preventDefault(); return; } if(d && k === 'KeyG' && !e.ctrlKey && !e.metaKey && !e.repeat){ cycleQuality(); e.preventDefault(); return; } if(dv && d && driveKey(k, e)) return; if(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyE', 'Enter'].includes(k)){ keys[k] = d; e.preventDefault(); if(d && (k === 'KeyE' || k === 'Enter')) interact(); } };
     window.addEventListener('keydown', e => onKey(e, true)); window.addEventListener('keyup', e => { keys[e.code] = false; onKey(e, false); });
     window.addEventListener('blur', () => { for(const k in keys) keys[k] = false; });
@@ -454,7 +460,7 @@
     function openDialog(n){
       S.dialog = n; if(locked()) document.exitPointerLock(); setPrompt(null); const d = $('#rwDlg');
       d.innerHTML = '<div class="n">' + esc(n.name) + '</div><div class="l">' + esc(n.line) + '</div>' + (n.opts || []).map((o, i) => '<button data-i="' + i + '">' + esc(o.label) + '</button>').join('') + '<button class="bye">' + ((n.opts || []).length ? 'Goodbye' : 'Wave goodbye') + '</button>'; d.classList.add('show');
-      d.querySelectorAll('button[data-i]').forEach(b => { b.onclick = () => { const o = n.opts[+b.dataset.i]; closeDialog(); try{ if(o.tab) sessionStorage.setItem('assets_tab', o.tab); OS.open(o.app); }catch(e){} }; });
+      d.querySelectorAll('button[data-i]').forEach(b => { b.onclick = () => { const o = n.opts[+b.dataset.i]; closeDialog(); if(o.act){ try{ crime.act(o.act); }catch(e){ toast('Not available right now.'); } return; } try{ if(o.tab) sessionStorage.setItem('assets_tab', o.tab); OS.open(o.app); }catch(e){} }; });
       d.querySelector('.bye').onclick = () => { closeDialog(); if(!touch.on){ try{ cv.requestPointerLock(); }catch(e){} } };
     }
     function closeDialog(){ S.dialog = null; const d = rootEl && rootEl.querySelector('#rwDlg'); if(d) d.classList.remove('show'); }
@@ -463,20 +469,21 @@
 
     /* ---------------- interaction ---------------- */
     function interact(){ if(!S.running || S.loading || S.dialog) return; if(dv){ exitDrive(); return; } if(uiOpen()) return; if(curNpc){ openDialog(curNpc); return; } if(curDoor && curDoor.exit){ exitRoom(); return; }
-      if(!curDoor && V.look){ const q = V.look; if(q.slot){ if(!startDrive(q)) toast('You cannot get in right now.'); } else { try{ sessionStorage.setItem('assets_tab', q.kind === 'plane' ? 'planes' : 'cars'); OS.open('RealEstate'); }catch(e){} } return; }
+      if(!curDoor && V.look){ const q = V.look; if(q.slot || q.stolen){ if(!startDrive(q)) toast('You cannot get in right now.'); } else if(q.npc != null){ toast('Locked. Press F to break in — it is a crime.'); } else if(q.cop){ /* nothing to see */ } else { try{ sessionStorage.setItem('assets_tab', q.kind === 'plane' ? 'planes' : 'cars'); OS.open('RealEstate'); }catch(e){} } return; }
       if(curDoor && curDoor.info){ if(curDoor.info.enter) enterRoom(curDoor.d, curDoor.info.spec); else if(curDoor.info.go) curDoor.info.go(); } }
     function findInteraction(){
       curNpc = null; curDoor = null; const fx = Math.sin(P.yaw), fz = -Math.cos(P.yaw);
       if(S.cell){ let bd = 3.4; S.cell.npcs.forEach(n => { if(Math.abs(n.y - P.y) > 2.4) return; const dx = n.x - P.x, dz = n.z - P.z, d = Math.hypot(dx, dz); if(d < bd && (dx * fx + dz * fz) / (d || 1) > 0.25){ bd = d; curNpc = n; } }); if(curNpc) setPrompt('Talk to ' + curNpc.name, curNpc.opts.length ? curNpc.opts.map(o => o.label.split(' · ')[0]).join(' · ') : ''); else if(S.room && Math.hypot(P.x - S.room.door.x, P.z - S.room.door.z) < 4){ curDoor = { exit: true }; setPrompt('Leave'); } else setPrompt(null); return; }
       if(lookNpc && Math.hypot(lookNpc.x - P.x, lookNpc.z - P.z) < 5){ curNpc = { name: G.bot(lookNpc.n).name, line: outLine(lookNpc), opts: [], bot: lookNpc }; }
       let bd = 3.2; allDoorsNear(P.x, P.z, 3.4).forEach(d => { const dist = Math.hypot(d.x - P.x, d.z - P.z); if(dist < bd){ const i = doorInfo(d); if(i){ bd = dist; curDoor = { d, info: i, dist }; } } });
-      V.look = null; if(!curDoor && !curNpc && !S.cell){ let vd = 4.2; for(const q of V.list){ const d = Math.hypot(q.x - P.x, q.z - P.z); if(d < vd){ vd = d; V.look = q; } } }
-      if(V.look && !curDoor && !curNpc){ const m = VD.get(V.look.id); setPrompt(V.look.slot ? 'Your ' + m.name : m.name + ' · ' + (m.price / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }), V.look.slot ? (m.kind === 'plane' ? 'Get in and fly' : 'Get in and drive') : 'E: see it in Assets'); return; }
+      V.look = null; if(!curDoor && !curNpc && !S.cell){ let vd = 4.2; for(const q of V.list){ if(q.cop) continue; const d = Math.hypot(q.x - P.x, q.z - P.z); if(d < vd){ vd = d; V.look = q; } } }
+      if(V.look && !curDoor && !curNpc){ const m = VD.get(V.look.id), cp = crime.prompt(V.look); if(cp){ setPrompt(cp[0], cp[1]); return; } if(V.look.stolen){ setPrompt('Stolen ' + m.name, 'E: get in and drive'); return; } setPrompt(V.look.slot ? 'Your ' + m.name : m.name + ' · ' + (m.price / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }), V.look.slot ? (m.kind === 'plane' ? 'Get in and fly' : 'Get in and drive') : 'E: see it in Assets'); return; }
       if(curDoor){ curNpc = null; setPrompt(curDoor.info.label); } else if(curNpc) setPrompt('Talk to ' + curNpc.name); else setPrompt(null);
     }
 
     /* ---------------- per-frame update ---------------- */
     function update(dt, t){
+      crime.update(dt, t);
       cooldown = Math.max(0, cooldown - dt); if(locked() && uiOpen()) document.exitPointerLock(); const busy = uiOpen() || S.loading; let ix = 0, iz = 0, run = false;
       if(dv){ driveUpdate(dt, t, busy); return; }
       if(!busy){ ix = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0); iz = (keys.KeyS || keys.ArrowDown ? 1 : 0) - (keys.KeyW || keys.ArrowUp ? 1 : 0); run = !!(keys.ShiftLeft || keys.ShiftRight) || touch.run; if(touch.on){ ix += touch.mx; iz += touch.mz; } const l = Math.hypot(ix, iz); if(l > 1){ ix /= l; iz /= l; } if(keys.ArrowLeft && keys.ShiftLeft){ } }
@@ -564,7 +571,7 @@
       if(net) net.start(P.x, P.z); last = performance.now(); fpsT = last; raf = requestAnimationFrame(loop); setTimeout(() => { if(net && !net.on && S.running) net.start(P.x, P.z); }, 4000); return true;
     }
     function exit(){
-      if(!S.running) return; if(dv) endDrive(); S.running = false; cancelAnimationFrame(raf); document.exitPointerLock && document.exitPointerLock(); try{ OS.prefs.set('rwPos', { x: Math.round(S.room ? S.room.ret.x : P.x), z: Math.round(S.room ? S.room.ret.z : P.z), yaw: Math.round(P.yaw * 100) / 100 }); }catch(e){}
+      if(!S.running) return; if(dv) endDrive(); crime.reset(); S.running = false; cancelAnimationFrame(raf); document.exitPointerLock && document.exitPointerLock(); try{ OS.prefs.set('rwPos', { x: Math.round(S.room ? S.room.ret.x : P.x), z: Math.round(S.room ? S.room.ret.z : P.z), yaw: Math.round(P.yaw * 100) / 100 }); }catch(e){}
       screen.classList.remove('rw-on', 'rw-phone'); S.phone = false; try{ OS.homes.watchMap(false); }catch(e){} gpuDown();
     }
     function phone(on){ if(!S.running) return; S.phone = on; screen.classList.toggle('rw-phone', on); if(on){ document.exitPointerLock && document.exitPointerLock(); $('#rwPause').classList.remove('show'); } else { last = performance.now(); $('#rwPause').classList.toggle('show', !touch.on); } }

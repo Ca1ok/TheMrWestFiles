@@ -34,6 +34,8 @@ const apply = r => r.tree;
   ok(run(t, 'u2', a => { mv(a, 'pool', -15000000); a.ob = 1; }), 'OG players get +$50k'); no(run(t, 'u1', a => { mv(a, 'pool', -15000000); a.ob = 1; }), 'the OG bonus for a non-OG player');
   no(run(t, 'u1', a => { mv(a, 'pool', -10000000); a.ob = 1; a.b += 100; a.sys.gov -= 100; }), 'grant plus raiding the treasury'); }
 
+// ---- police fines (realworld crime layer): a plain payment into the treasury is legal, taking from it is not ----
+{ const t = apply(run(world(), 'u1', a => { mv(a, 'pool', -10000000); a.ob = 1; })); ok(run(t, 'u1', a => mv(a, 'gov', 70000)), 'a $700 police fine paid to the treasury'); no(run(t, 'u1', a => mv(a, 'gov', -70000)), 'a negative fine = taking from the treasury'); }
 // ---- the law itself ----
 { const t = apply(run(world(), 'u1', a => { mv(a, 'pool', -10000000); a.ob = 1; }));
   no(run(t, 'u1', a => { a.b += 100000; }), 'cash appearing from nowhere (invariant)');

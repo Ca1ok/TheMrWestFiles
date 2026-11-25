@@ -119,7 +119,7 @@
     const lx = best ? best.x : 0, ly = best ? best.y : S.d / 2, ly2 = ly + 1.7, nx = -sd * s0 * 1, nz = sd * c0;   // outward = local +y turned
     return { x: X + lx * c0 - ly2 * sd * s0, z: Z + lx * s0 + ly2 * sd * c0, nx, nz, y: base, lx, ly };
   }
-  const LMF = { bank: 1, exchange: 1, shop: 1, arcade: 1, agency: 1, hall: 1, uni: 1, lab: 1, ind: 1, plant: 1, dealer: 1, airport: 1 };
+  const LMF = { bank: 1, exchange: 1, shop: 1, arcade: 1, agency: 1, hall: 1, uni: 1, lab: 1, ind: 1, plant: 1, dealer: 1, airport: 1, police: 1 };
 
 
   /* ---------------- baked models (Kenney city kits via models.js) ---------------- */

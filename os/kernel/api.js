@@ -226,6 +226,7 @@
     pay: (to, d) => R(LG.send(to, d, 'pay', '')),
     licence: () => ({ active: LG.licActive(), leftMs: LG.licLeftMs(), fee: LG.cfg.licFee / 100, days: LG.cfg.licDays, markup: LG.cfg.buildMarkupBp / 10000 }), buyLicence: () => R(LG.buyLicence()), build: t => R(LG.build(t)), buildTypes: () => LG.buildTypes(),
     orders: () => Object.keys(LG.orders || {}).sort().map(slot => Object.assign({ slot }, LG.orders[slot])),
+    payFine: (d, why) => { d = Math.floor((+d || 0) * 100) / 100; if(!(d > 0)) return { ok: false }; return { ok: !!K.spendTo('gov', d, String(why || 'Fine').slice(0, 40)) }; },   // police fines: an ordinary ledger payment to the treasury (crime.js)
     plot: kind => LG.hasPlot(kind), plotFee: kind => LG.plotFee(kind) / 100, buyPlot: kind => R(LG.buyPlot(kind)), gate: id => (C.isAdmin() && K.prefs.adminBypass === true) ? null : LG.gate(id),   // admin-only 'open without buying' switch (Settings → Administrator)
     watchMap: on => LG.watchMap(!!on), plots: () => LG.plots || {}, locs: () => LG.locs || {}, allHomes: () => LG.homes || {},
     /* cars and planes (data/vehicle-data.js): the garage, and the dealership / airport purchases (the app only offers Buy while you stand there in the real world) */

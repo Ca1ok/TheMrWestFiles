@@ -76,3 +76,28 @@ html.perf-low #rwCompass{backdrop-filter:none;-webkit-backdrop-filter:none;backg
 #rwDash .row span small{font-size:9px;letter-spacing:.12em;color:#ffb36b;margin-top:-2px}
 #rwUnstuck{padding:0 11px}
 @media (max-width:520px){#rwUnstuck span{display:none}}
+
+/* ---- crime layer (crime.js): wanted stars, lock-pick dial, crime report, busted banner ---- */
+#rwWanted{position:absolute;right:16px;top:calc(150px + env(safe-area-inset-top,0px));display:none;flex-direction:column;align-items:flex-end;gap:5px;pointer-events:none;color:#fff;font-weight:800;text-shadow:0 1px 3px #000;z-index:6}
+#rwWanted.on{display:flex}
+#rwWanted .st{font-size:26px;letter-spacing:3px;color:rgba(255,255,255,.25)}#rwWanted .st b.a{color:#ffd24a;text-shadow:0 0 8px rgba(255,200,40,.7)}
+#rwWanted.hot .st b.a{animation:rwSiren .5s steps(2) infinite}#rwWanted.srch .st b.a{animation:rwBlink 1s steps(2) infinite}
+@keyframes rwSiren{0%{color:#ff4a4a}100%{color:#4a7bff}}
+#rwWanted .lb{font:800 11px system-ui,sans-serif;letter-spacing:.14em;padding:3px 10px;border-radius:8px;background:rgba(20,16,12,.6)}
+#rwWanted.hot .lb{background:#c8322a}#rwWanted .bar{width:150px;height:6px;border-radius:3px;background:rgba(20,16,12,.55);overflow:hidden}#rwWanted .bar i{display:block;height:100%;width:0;background:#4aa3ff}
+#rwWanted .ar{display:none;width:170px;flex-direction:column;gap:3px;font:800 11px system-ui,sans-serif;letter-spacing:.12em;color:#ff7b6e}#rwWanted.ar .ar{display:flex}#rwWanted .ar i{display:block;height:8px;border-radius:4px;background:#ff4a4a;width:0}
+#rwLock,#rwCrime,#rwBusted{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,10,16,.62);z-index:30;color:#fff;font-family:system-ui,sans-serif}
+#rwLock.show,#rwCrime.show,#rwBusted.show{display:flex}
+#rwLock .box{display:flex;flex-direction:column;align-items:center;gap:10px;padding:18px 22px;border-radius:20px;background:rgba(18,22,32,.94);border:1px solid rgba(255,255,255,.14);max-width:min(420px,94vw);cursor:pointer;user-select:none}
+#rwLock .t{font:800 15px system-ui;text-align:center}#rwLock canvas{width:min(300px,80vw);height:auto}
+#rwLock .pp{display:flex;gap:8px;align-items:center}#rwLock .pp i{width:26px;height:10px;border-radius:5px;background:rgba(255,255,255,.18)}#rwLock .pp i.on{background:#3ddc84}#rwLock .pp .f{margin-left:12px;color:#ff5a4d;font-weight:800}#rwLock .pp .f em{font-style:normal;opacity:.25}
+#rwLock .h{font-size:12px;opacity:.85;text-align:center}#rwLock kbd,#rwCrime kbd{font:800 11px ui-monospace,monospace;background:#fff;color:#111;border-radius:5px;padding:1px 6px}
+#rwCrime .box{width:min(640px,94vw);max-height:86vh;overflow:auto;padding:18px 22px;border-radius:20px;background:rgba(18,22,32,.96);border:1px solid rgba(255,255,255,.14)}
+#rwCrime .hd{display:flex;justify-content:space-between;align-items:center}#rwCrime h2{margin:0;font:800 16px system-ui;letter-spacing:.1em;color:#7ea4ff}#rwCrime .x{background:none;border:0;color:#fff;font-size:20px;cursor:pointer}
+#rwCrime .sum{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}#rwCrime .sum div{flex:1;min-width:84px;padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.07)}#rwCrime .sum small{display:block;font-size:10px;letter-spacing:.1em;opacity:.7;text-transform:uppercase}#rwCrime .sum b{font-size:18px}#rwCrime .red{color:#ff6b5e}#rwCrime .ok{color:#3ddc84}
+#rwCrime table{width:100%;border-collapse:collapse;font-size:13px}#rwCrime th{text-align:left;font-size:10px;letter-spacing:.1em;opacity:.6;padding:4px 6px}#rwCrime td{padding:6px;border-top:1px solid rgba(255,255,255,.08)}#rwCrime td.m{text-align:right;font-variant-numeric:tabular-nums}
+#rwCrime td.s{font-weight:800;font-size:11px}#rwCrime td.s.open{color:#ffb347}#rwCrime td.s.paid{color:#3ddc84}#rwCrime td.s.unpaid{color:#9fb0c8}
+#rwCrime .act{display:flex;gap:10px;margin-top:14px;align-items:center}#rwCrime .act button{padding:9px 14px;border-radius:12px;border:0;background:#2f6bff;color:#fff;font-weight:800;cursor:pointer}#rwCrime .act button:disabled{opacity:.35;cursor:default}#rwCrime .hint,#rwCrime .clean{opacity:.7;font-size:13px}
+#rwCrime .how{line-height:1.7;font-size:14px;padding-left:20px}
+#rwBusted .b{text-align:center;padding:26px 34px;border-radius:22px;background:rgba(14,18,40,.96);border:2px solid #4a7bff;max-width:min(460px,92vw)}#rwBusted h2{margin:0 0 8px;font:900 46px system-ui;letter-spacing:.14em;color:#ff5a4d}#rwBusted p{margin:6px 0;font-size:15px}#rwBusted .s{opacity:.7;font-size:13px}
+@media (max-width:700px){#rwWanted{top:calc(236px + env(safe-area-inset-top,0px));right:10px}}

@@ -101,6 +101,13 @@
     r.npc(13, 2.9, Math.PI, 'Mayor Ada', 'Taxes keep the city running. Bills can be paid at the bank.', '#7c8696', null, [{ label: 'Taxes & bills', app: 'Bank' }]);
     r.npc(7, 8, Math.PI / 2, 'Clerk Odo', 'The leaderboard is public record.', '#5d6b8a', null, [{ label: 'Leaderboard', app: 'Leaderboard' }, { label: 'Town news', app: 'News' }]);
     r.screen('board', 0.04, 1.6, 12, 4.6, 2.6, 'e'); r.screen('news', 25.96, 1.6, 12, 4.6, 2.6, 'w'); r.plant(1.2, 18.6); r.plant(24.8, 18.6); return r; });
+  /* Police station: the front desk (crime report, pay fines, hand yourself in), the wanted board, the cells. Clerk options with `act` call RealWorld.Crime (crime.js), not an app. */
+  register('police', c => { const r = new Room(24, 18, 4.2, { name: 'Police Station', floor: '#c5c9d2', floor2: '#aeb3bf', wall: '#dfe4ee', base: '#1f3a6b' });
+    r.box(7, 5, 10, 1.4, 1.05, '#27406f', '#3a5a96'); r.box(3, 14.2, 4, 0.6, 1.0, '#6b4b32', '#8a6a48'); r.box(17, 14.2, 4, 0.6, 1.0, '#6b4b32', '#8a6a48');
+    r.npc(12, 3.6, Math.PI, 'Sgt. Okafor', 'Station desk. Report a crime, settle what you owe, or hand yourself in.', '#1f3a6b', '#1b2538', [{ label: 'Crime report (my record)', act: 'report' }, { label: 'Pay outstanding fines', act: 'pay' }, { label: 'Hand myself in (clear wanted level)', act: 'surrender' }]);
+    r.npc(20.5, 9, -Math.PI / 2, 'Officer Lind', 'Steal a car and we will find you. Lose us and the stars fade. Stay clean.', '#274a8a', '#1b2538', [{ label: 'How wanted levels work', act: 'help' }]);
+    r.screen('crime', 0.04, 1.4, 9, 4.6, 2.8, 'e'); r.screen('crime', 23.96, 1.4, 9, 4.6, 2.8, 'w');
+    r.box(1.5, 1.2, 5, 0.3, 2.4, '#5b6578', '#5b6578'); r.box(1.5, 3.2, 5, 0.3, 2.4, '#5b6578', '#5b6578'); r.box(1.2, 1.2, 0.3, 2.3, 2.4, '#5b6578', '#5b6578'); r.plant(1.2, 16.6); r.plant(22.8, 16.6); return r; });
   register('uni', c => { const r = new Room(22, 16, 7.4, { name: 'University Library', floor: '#8a6a4a', wall: '#d8bda2', base: '#5d4a42', levels: 2, lh: 3.6 });
     for(let i = 0; i < 5; i++) r.shelf(2 + i * 4, 1.2, 3, 0.8, 3.0, 's'); for(let i = 0; i < 2; i++) for(let j = 0; j < 3; j++) r.box(4 + j * 6, 7 + i * 3.4, 3, 1.1, 0.8, '#6b4b32', '#8a6a48');
     r.screen('news', 0.04, 1.6, 8, 3.4, 1.9, 'e'); r.npc(11, 12.5, Math.PI, 'Librarian', 'Shhh. Notes, files, or the news archive? The reading gallery is upstairs.', '#5d4a42', null, [{ label: 'My files', app: 'Files' }, { label: 'My notes', app: 'Notes' }, { label: 'News archive', app: 'News' }]);

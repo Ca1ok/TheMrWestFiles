@@ -70,3 +70,6 @@ Trees, street lamps and benches are **instanced**: the chunk worker only emits 3
 
 ## Money units (do not get this wrong)
 `OS.cash()` is in **dollars**; catalogue prices (`VehicleData`, house values) and everything stored in the ledger are in **cents**. Show the balance exactly as `OS.cash()` formatted with 2 decimals (HUD `#rwCash` in `game.js`, bank wall screen in `screens.js`) — never `/ 100` it — and show a catalogue price as `price / 100`. Full rules: AGENTS.md §6d "Units".
+
+## Crime layer (crime.js)
+GTA-style: break into parked NPC / dealer cars (F, lock-pick minigame), wanted stars, chasing cops (drive.js cars), arrest + fine paid to the treasury, crime report at the police station. See AGENTS.md §18.

@@ -247,3 +247,13 @@ One file per theme in `os/themes/` — `WestThemes.register({ id, name, mode, va
 
 ## Kenney models (realworld)
 `assets/kenney/` = the CC0 library (credit: Kenney, kenney.nl — keep `assets/kenney/CREDITS.md` and the README credit). `assets/world/kenney/*.glb` and `assets/world/manifest.json` are **generated** by `python3 tools/bake-kenney.py`; change the tool (e.g. the `DOORS` table, scales, the model lists), never the outputs. Building models are used only when `RWModels` (models.js) is filled by the worker; otherwise the procedural buildings draw. After touching any of it run `node tests/realworld-kenney.test.js` plus the other realworld tests.
+
+## 18. Crime, cops and the police station (os/realworld/crime.js)
+Single module (`RealWorld.Crime`, pure logic in `RealWorld.CrimeLogic`, unit-tested in `tests/crime.test.js`, e2e in `tests/e2e-crime.test.js`). Rules for other AIs:
+- **What can be stolen:** only NPC parked cars and dealership showroom cars (`F` to break in). Never player-owned cars. Planes: you can break in (always witnessed, camera) but `STEAL_PLANES=false` – not flyable.
+- **Minigame:** lock-pick (`lockCreate/lockStep/lockPress`, key `J`/Space). Difficulty scales with price (`difficultyOf`, prices are CENTS). 3 misses/timeout = alarm = heat.
+- **Heat → stars** (`STAR_AT`, max 5). Witnessed crimes add heat; unwitnessed NPC theft gets an owner report after ~70–110 s. Cooling needs ≥85 m out of cop sight.
+- **Cops** are real `drive.js` cars (max 6; alder/vesper/apex by stars), exist only while wanted. They have NO pathfinding: spawn only with a clear straight line (`clear()` in `spawnCop`), stuck cops (`unstuck>2`) are recycled. A cop's own collider is excluded from its world (`copColsArr` filter) – do not remove that or cops freeze.
+- **Arrest:** a cop within 14 m while you are at speed ≤ 8 for 1.6 s. Fines are a ledger payment to `gov` (`OS.homes.payFine` → `K.spendTo('gov')`); unpaid remainder is written off. All hot stolen cars are impounded. Money is never created or destroyed.
+- **Crime record:** ≤30 entries in prefs `rwCrime` (free-tier friendly, no server writes). Police station is POI `police` at block `[2,0]` with a crime-report screen (`Screens` kind `crime`).
+- Never bump `?v=` strings; run `node tools/stamp-version.js`.
