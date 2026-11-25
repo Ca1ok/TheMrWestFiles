@@ -10,8 +10,11 @@ for(const c of VD.CARS){
   assert(s.u > c.drive.top * 0.96 && s.u <= c.drive.top * 1.06, c.id + ' reaches its top speed: ' + (s.u * 3.6).toFixed(0) + ' km/h');
   assert(Math.abs(s.x) < 0.5 && Math.abs(s.v) < 0.1, c.id + ' drives straight with no steering');
   let tb = 0; while(s.u > 0.05 && tb < 30){ D.stepCar(s, { thr: 0, brake: 1 }, F, flat); tb += F; } assert(tb < 9 && s.u >= 0, c.id + ' stops from top speed in ' + tb.toFixed(1) + ' s');
-  const turn = D.car(c, { x: 0, z: 0, yaw: 0 }); turn.u = 100 / 3.6; for(let i = 0; i < 180; i++) D.stepCar(turn, { thr: 0.3, steer: 1 }, F, flat);
+  const turn = D.car(c, { x: 0, z: 0, yaw: 0 }); turn.u = 60 / 3.6; for(let i = 0; i < 180; i++) D.stepCar(turn, { thr: 0.3, steer: 1 }, F, flat);
   const lat = Math.abs(turn.u * turn.r) / 9.81; assert(lat > 0.5 && lat < 1.9, c.id + ' corners at ' + lat.toFixed(2) + ' g (tyres saturate, no teleporting round corners)'); assert(turn.r > 0, 'positive steer turns right (yaw grows)');
+  { const fast = D.car(c, { x: 0, z: 0, yaw: 0 }), bd = D.car(c, { x: 0, z: 0, yaw: 0 }); fast.u = 110 / 3.6; let fl = false, lean = 0; for(let i = 0; i < 300; i++){ D.stepCar(fast, { thr: 0.3, steer: 1 }, F, flat); if(fast.flip) fl = true; }
+    assert(fl, c.id + ' rolls over when thrown into a corner at 110 km/h on full lock'); for(let i = 0; i < 400; i++) D.stepCar(fast, { thr: 0, steer: 0 }, F, flat); assert(!fast.flip && Math.abs(fast.roll) < 0.01, c.id + ' is righted again after the tumble');
+    bd.u = 55 / 3.6; for(let i = 0; i < 240; i++){ D.stepCar(bd, { thr: 0, steer: 1 }, F, flat); lean = Math.max(lean, Math.abs(bd.roll)); } assert(!bd.flip && lean > 0.03 && lean < 0.5, c.id + ' leans (' + lean.toFixed(2) + ' rad) but stays up in a hard 55 km/h turn'); }
   const rev = D.car(c, { x: 0, z: 0, yaw: 0 }); for(let i = 0; i < 360; i++) D.stepCar(rev, { thr: -1 }, F, flat); assert(rev.u < -4 && rev.u > -12, c.id + ' reverses (slowly): ' + rev.u.toFixed(1));
 }
 ok('all 6 cars: 0-100, top speed, straight line, braking, cornering grip, reverse');
@@ -57,4 +60,9 @@ for(const id of ['skylark', 'kestrel', 'falcon', 'zenith']){ const s = rw(id), x
   const y0 = s.yaw; for(let i = 0; i < 60 * 2; i++) D.stepPlane(s, { thr: 0, rev: 1, yaw: 1 }, F, flat); assert(Math.abs(D.wrapA(s.yaw - y0)) > 0.02, id + ' steers while reversing');
   const t = rw(id); let off = false; for(let i = 0; i < 60 * 120 && !off; i++){ D.stepPlane(t, { thr: 1, pitch: t.speed > t.P.vr ? 0.5 : 0, assist: true }, F, flat); off = !t.onGround; } assert(off, id + ' still takes off'); }
 { const s = rw('skylark'); s.vx = 0; s.vz = -12; for(let i = 0; i < 60 * 3; i++) D.stepPlane(s, { thr: 0, rev: 1 }, F, flat); assert(s.speed < 12 - 4, 'reverse thrust slows a rolling plane'); ok('reverse: all four planes back up, steer, stop and still fly'); }
+// ── kerbs: driving over a 11.5 cm kerb at speed bounces and rocks the body; a heavier car is softer; sliding sideways into a kerb can trip and roll it
+{ const kerbW = { ground: () => 0, lift: (x, z) => (z < -40 && z > -45 ? 0.115 : 0), push: (x, z) => ({ x, z }) };
+  for(const id of ['wren', 'ridge']){ const s = D.car(VD.get(id), { x: 0, z: 0, yaw: 0 }); s.u = 15; let hy = 0, pi = 0; for(let i = 0; i < 360; i++){ D.stepCar(s, { thr: 0.2, steer: 0 }, 1 / 60, kerbW); hy = Math.max(hy, s.hy); pi = Math.max(pi, Math.abs(s.pitch)); }
+    assert(hy > 0.02 && pi > 0.01, id + ' is kicked by a kerb (hop ' + hy.toFixed(3) + ' m, pitch ' + pi.toFixed(3) + ')'); assert(Math.abs(s.hy) < 0.02 && !s.flip, id + ' settles after the kerb'); }
+  const sl = D.car(VD.get('wren'), { x: -1.2, z: 0, yaw: 0 }); sl.u = 16; sl.v = 8; let rolled = false; const sideK = { ground: () => 0, lift: (x, z) => (x > -0.1 ? 0.115 : 0), push: (x, z) => ({ x, z }) }; for(let i = 0; i < 240; i++){ D.stepCar(sl, { thr: 0, steer: 0, hand: 1 }, 1 / 60, sideK); if(sl.flip) rolled = true; } assert(rolled, 'a car sliding sideways at 40 km/h into a kerb trips and rolls'); }
 console.log('\nDRIVE OK');

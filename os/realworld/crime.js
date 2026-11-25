@@ -52,11 +52,11 @@
   const owed = rec => rec.o.reduce((a, o) => a + (o.st === 'open' ? o.fine : 0), 0);
   function settle(rec, paid){ rec.o.forEach(o => { if(o.st === 'open') o.st = 'paid'; }); rec.n.paid += paid || 0; }
 
-  /* ---- the break-in minigame: a needle sweeps a dial; press when it is inside the green arc, N times in a row (a fresh arc each pin, a little faster each time). 3 misses = alarm. ---- */
+  /* ---- the break-in minigame: a needle sweeps a dial; press when it is inside the green arc, N times in a row (a fresh arc each pin, a little faster each time). 4 misses = alarm. ---- */
   const rng = seed => { let s = (seed >>> 0) || 1; return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296; };
   const difficultyOf = priceCents => clamp(Math.log10(Math.max(1, priceCents / 100) / 10000) / 2, 0.05, 1);      // $14.5k hatch ≈ 0.08 · $32k sedan ≈ 0.25 · $185k GT ≈ 0.63 · $890k+ = 1 (aircraft are forced to ≥ 0.85 by the runtime)
   function lockCreate(diff, seed){
-    const R = rng(seed || 7), pins = 3 + (diff > 0.55 ? 1 : 0) + (diff > 0.9 ? 1 : 0), s = { diff, pins, i: 0, pos: R(), dir: 1, speed: 0.75 + 0.9 * diff, width: 0.2 - 0.11 * diff, fails: 0, maxFails: 3, time: 16 - 3 * diff, state: 'run', R, zone: 0, last: '' };
+    const R = rng(seed || 7), pins = 2 + (diff > 0.5 ? 1 : 0) + (diff > 0.9 ? 1 : 0), s = { diff, pins, i: 0, pos: R(), dir: 1, speed: 0.5 + 0.55 * diff, width: 0.36 - 0.16 * diff, fails: 0, maxFails: 4, time: 24 - 4 * diff, state: 'run', R, zone: 0, last: '' };
     s.zone = 0.2 + R() * 0.6; return s;
   }
   function lockStep(s, dt){
@@ -65,25 +65,33 @@
   }
   function lockPress(s){
     if(s.state !== 'run') return s.state; const hit = Math.abs(s.pos - s.zone) <= s.width / 2;
-    if(hit){ s.i++; s.last = 'hit'; if(s.i >= s.pins){ s.state = 'ok'; return 'ok'; } s.speed *= 1.1; s.zone = 0.15 + s.R() * 0.7; s.time += 1.2; return 'hit'; }
+    if(hit){ s.i++; s.last = 'hit'; if(s.i >= s.pins){ s.state = 'ok'; return 'ok'; } s.speed *= 1.05; s.zone = 0.15 + s.R() * 0.7; s.time += 2.5; return 'hit'; }
     s.fails++; s.last = 'miss'; if(s.fails >= s.maxFails){ s.state = 'fail'; return 'fail'; } return 'miss';
   }
 
   /* ---- cop steering: aim at (tx,tz) with the same controls a player has (thr, steer + = right). c.s is a drive.js car state; c keeps its own stuck/reverse timers. ---- */
-  function copInputs(c, tx, tz, topFrac, dt, tv){
+  function copInputs(c, tx, tz, topFrac, dt, tv, probe){
     const s = c.s, dx = tx - s.x, dz = tz - s.z, dist = Math.hypot(dx, dz), f0 = Math.sin(s.yaw), f1 = -Math.cos(s.yaw), r0 = Math.cos(s.yaw), r1 = Math.sin(s.yaw), fwd = dx * f0 + dz * f1, lat = dx * r0 + dz * r1;
     if(c.rev > 0){ c.rev -= dt; return { thr: -1, steer: c.revSteer, brake: 0, hand: 0 }; }
     c.stuckT = (Math.abs(s.u) < 1.3 && dist > 9) ? (c.stuckT || 0) + dt : 0;
     if(c.stuckT > 1.4){ c.stuckT = 0; c.rev = 1.2; c.revSteer = lat >= 0 ? -1 : 1; c.unstuck = (c.unstuck || 0) + 1; return { thr: -1, steer: c.revSteer, brake: 0, hand: 0 }; }
-    const err = Math.atan2(lat, fwd), steer = clamp(err * 1.7, -1, 1), top = s.D.top * topFrac, tvv = tv || 0;
+    let err = Math.atan2(lat, fwd), avoid = 0;
+    if(probe){   // whiskers: look ahead along the heading and ±32°; steer round whatever is blocked (the same solids a player's car hits)
+      const Ld = clamp(Math.abs(s.u) * 1.5 + 10, 14, 50), at = a => probe(s.x + Math.sin(s.yaw + a) * Ld, s.z - Math.cos(s.yaw + a) * Ld), b0 = at(0), bR = at(0.56), bL = at(-0.56);
+      const blk = b0 || (bR && bL);      // committed turn: once it picks a side it holds it (≥0.8 s) so it does not chatter left/right in front of the wall
+      if(blk && !(c.avT > 0)){ c.avDir = !bR && bL ? 1 : bR && !bL ? -1 : (c.avDir || (err >= 0 ? 1 : -1)); c.avT = 1.3; } else if(blk) c.avT = Math.max(c.avT, 0.8);
+      if(c.avT > 0){ c.avT -= dt; avoid = 1; err = c.avDir * 0.9; }
+      else if(bR){ avoid = 0.5; err = Math.min(err, -0.35); } else if(bL){ avoid = 0.5; err = Math.max(err, 0.35); }
+    }
+    const steer = clamp(err * 1.7, -1, 1), top = s.D.top * topFrac, tvv = tv || 0;
     // never arrive faster than we can stop: v² = 2·a·(distance − 6 m), plus the target's own speed (so a fleeing car is still chased flat out)
-    const vStop = Math.sqrt(2 * s.D.brake * 0.7 * Math.max(0, dist - 6)) + tvv * 1.08 + 2.5, want = Math.min(top, vStop) * (1 - Math.min(0.62, Math.abs(err) * 0.55));
+    let vStop = Math.sqrt(2 * s.D.brake * 0.7 * Math.max(0, dist - 6)) + tvv * 1.08 + 2.5, want = Math.min(top, vStop) * (1 - Math.min(0.62, Math.abs(err) * 0.55)); if(avoid) want = Math.min(want, avoid > 0.9 ? 12 : 18);
     if(s.u > want + 1.5) return { thr: 0, steer, brake: 1, hand: 0 };
     return { thr: s.u < want ? 1 : 0, steer, brake: 0, hand: 0 };
   }
   /* arrest: a cop within 14 m while you are (nearly) stopped fills the bar in ~1.6 s; moving away drains it. Returns true when busted. */
   function arrestStep(a, nearest, speed, dt){
-    if(nearest <= 9 && speed <= 8) a.t += dt; else a.t = Math.max(0, a.t - dt * 1.5);
+    if(nearest <= 14 && speed <= 8) a.t += dt; else a.t = Math.max(0, a.t - dt * 1.5);
     return a.t >= 1.6;
   }
   const Logic = { STAR_AT, HEAT_MAX, STEAL_PLANES, CRIMES, starsOf, newWanted, addHeat, cool, copCount, copTop, copModel, newRec, report, owed, settle, MAX_REC, rng, difficultyOf, lockCreate, lockStep, lockPress, copInputs, arrestStep };
@@ -117,13 +125,26 @@
     /* ---------- NPC parked cars: a car at the kerb outside each home whose owner is indoors (pure function of the bot list, rebuilt ~1/s near the player) ---------- */
     const WEIGHTS = [5, 5, 3, 2, 1, 0.3];
     function modelFor(n){ const tot = WEIGHTS.reduce((a, b) => a + b, 0); let r = (G.h32(n, 77) % 1000) / 1000 * tot; for(let i = 0; i < VD.CARS.length; i++){ r -= WEIGHTS[i] || 0.2; if(r <= 0) return VD.CARS[i]; } return VD.CARS[0]; }
+    /* a driver who finishes a trip PARKS where they stopped (3 m to the right of their line, i.e. at the kerb) for as long as they stay put; the car is then there to be stolen.
+       Idle bots with no trip on record (first load) have their car at their own home's kerb. */
+    const parked = new Map();
+    function trackBots(){
+      const t = now();
+      for(const b of ctx.bots()){ if(!b.init && b.init !== undefined) continue;
+        if(b.vis && b.sp > 8){ b.lastCar = { x: b.x, z: b.z, yaw: b.yaw }; parked.delete(b.n); }
+        else if(!b.vis && b.lastCar){ const c = b.lastCar; b.lastCar = null; parked.set(b.n, { x: c.x + Math.cos(c.yaw) * 3.2, z: c.z + Math.sin(c.yaw) * 3.2, yaw: c.yaw, t }); }
+      }
+      if(parked.size > 400) for(const [n, v] of parked) if(t - v.t > 20 * 60000) parked.delete(n);
+    }
     function refreshNpcCars(){
       const bots = ctx.bots(), out = [], R2 = 170 * 170;
-      for(const b of bots){ if(out.length >= 24) break; if(Math.hypot(b.vx || 0, b.vz || 0) > 1 || !b.home || G.h32(b.n, 76) % 3 === 0) continue; if(gone.get('n' + b.n) > now()) continue;
-        let h; try{ h = L.house(b.home.i != null ? b.home.i : +String(b.home.id).slice(1)); }catch(e){ h = null; } if(!h || !h.g) continue; let k; try{ k = L.kerbSpot(h.g, 0); }catch(e){ continue; } if(!k) continue;
-        const dx = k.x - P.x, dz = k.z - P.z; if(dx * dx + dz * dz > R2) continue; const m = modelFor(b.n), d = m.drive;
-        out.push({ id: m.id, style: m.style, kind: 'car', speed: 0, col: G.h32(b.n, 78) % VD.COLORS.length, x: k.x, z: k.z, yaw: k.yaw, hl: d.len / 2, hw: d.wid / 2, npc: b.n, ownerName: (G.bot(b.n) || {}).name || 'a local' }); }
-      const sig = out.map(q => q.npc).join(); if(sig !== npcCars._sig){ npcCars = out; npcCars._sig = sig; bump(); }
+      for(const b of bots){ if(out.length >= 24) break; if(Math.hypot(b.vx || 0, b.vz || 0) > 1 || b.vis || G.h32(b.n, 76) % 3 === 0) continue; if(gone.get('n' + b.n) > now()) continue;
+        let x, z, yaw; const pk = parked.get(b.n);
+        if(pk && now() - pk.t < 20 * 60000){ x = pk.x; z = pk.z; yaw = pk.yaw; }
+        else { if(!b.home) continue; let h; try{ h = L.house(b.home.i != null ? b.home.i : +String(b.home.id).slice(1)); }catch(e){ h = null; } if(!h || !h.g) continue; let k; try{ k = L.kerbSpot(h.g, 0); }catch(e){ continue; } if(!k) continue; x = k.x; z = k.z; yaw = k.yaw; }
+        const dx = x - P.x, dz = z - P.z; if(dx * dx + dz * dz > R2) continue; const m = modelFor(b.n), d = m.drive;
+        out.push({ id: m.id, style: m.style, kind: 'car', speed: 0, col: G.h32(b.n, 78) % VD.COLORS.length, x, z, yaw, hl: d.len / 2, hw: d.wid / 2, npc: b.n, ownerName: (G.bot(b.n) || {}).name || 'a local' }); }
+      const sig = out.map(q => q.npc + '@' + Math.round(q.x)).join(); if(sig !== npcCars._sig){ npcCars = out; npcCars._sig = sig; bump(); }
     }
 
     /* ---------- hooks for game.js ---------- */
@@ -192,21 +213,40 @@
         cops.push({ s, q, born: performance.now() }); bump(); return; }
     }
     const SIREN = [[255, 40, 40], [40, 90, 255]];
-    function copWorld(sets){ const dis = ctx.disabled(); return { ground: T.height, push: (x, z, y, r) => { const o = ctx.resolve(x, z, y, sets, dis, r); return { x: o.x, z: o.z }; } }; }
-    let copColsArr = null;
+    function copWorld(sets){ const dis = ctx.disabled(); return { ground: T.height, lift: ctx.lift, push: (x, z, y, r) => { const o = ctx.resolve(x, z, y, sets, dis, r); return { x: o.x, z: o.z }; } }; }
+    let copColsArr = null; const lastSeen = { x: 0, z: 0, t: 0 };
+    /* a spot 40-120 m from where you were last seen, on open ground — cops fan out and sweep the neighbourhood instead of freezing */
+    function searchPoint(c){
+      for(let k = 0; k < 8; k++){ const a = Math.random() * Math.PI * 2, r = 40 + Math.random() * 80, x = lastSeen.x + Math.cos(a) * r, z = lastSeen.z + Math.sin(a) * r; if(T.isWater(x, z)) continue; const sp = ctx.findFree(x, z, c.s.circles, c.s.yaw, 0.1); if(sp && sp.moved < 12) return { x: sp.x, z: sp.z }; }
+      return { x: lastSeen.x, z: lastSeen.z };
+    }
     function updateCops(dt, t){
       const stars = W.stars, want = copCount(stars), px = P.x, pz = P.z, ds = ctx.drivingState(), spd = ctx.speed(), sets = cops.length ? ctx.sets().filter(x => x.a !== copColsArr) : null, world = sets ? copWorld(sets) : null, pCol = ds ? [ds.s] : null;
       if(stars > 0 && cops.length < want && t - copAt > 900){ copAt = t; spawnCop(); }
-      const flash = Math.floor(t / 220) % 2; let nearest = 1e9, seen = false;
+      const flash = Math.floor(t / 220) % 2; let nearest = 1e9, seen = false, dis = null;
+      const blocked = (x, z) => { const o = ctx.resolve(x, z, T.height(x, z), sets, dis, 2.0); return Math.abs(o.x - x) + Math.abs(o.z - z) > 0.01; };
+      const lineClear = (x0, z0, x1, z1) => { const n = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 6); for(let k = 1; k < n; k++) if(blocked(x0 + (x1 - x0) * k / n, z0 + (z1 - z0) * k / n)) return false; return true; };
+      if(sets) dis = ctx.disabled();
       for(let i = cops.length - 1; i >= 0; i--){ const c = cops[i], s = c.s;
         if(stars <= 0){ c.leave = (c.leave || 0) + dt; }
-        const inp = stars > 0 ? copInputs(c, px, pz, copTop(stars), dt, spd) : { thr: 0.5, steer: Math.sin(t / 900 + i), brake: 0, hand: 0 };
+        // ---- what the cop knows: a cop that can see you (line of sight, rechecked ~2.5×/s) radios your position; the others go to the last place you were seen and then SEARCH the area ----
+        const dd = Math.hypot(s.x - px, s.z - pz); let tx = px, tz = pz;
+        if(stars > 0 && sets){
+          if(t - (c.losAt || 0) > 400){ c.losAt = t; c.los = dd < 36 || (dd < 170 && lineClear(s.x, s.z, px, pz)); if(c.los){ lastSeen.x = px; lastSeen.z = pz; lastSeen.t = t; } }
+          if(!c.los){
+            if(lastSeen.t === 0){ lastSeen.x = px; lastSeen.z = pz; lastSeen.t = t; }
+            const gd = c.goal ? Math.hypot(s.x - c.goal.x, s.z - c.goal.z) : 1e9;
+            if(!c.goal || gd < 16 || t - c.goalT > 15000){ c.goalT = t; c.goal = lastSeen.t === t || t - lastSeen.t < 9000 && !c.goalSeen ? { x: lastSeen.x, z: lastSeen.z } : searchPoint(c); c.goalSeen = 1; }
+            tx = c.goal.x; tz = c.goal.z;
+          } else { c.goal = null; c.goalSeen = 0; }
+        }
+        const inp = stars > 0 ? copInputs(c, tx, tz, copTop(stars) * (c.los ? 1 : 0.62), dt, c.los ? spd : 0, sets ? blocked : null) : { thr: 0.5, steer: Math.sin(t / 900 + i), brake: 0, hand: 0 };
         // the player's own car is solid for cops (a moving circle set); on foot you are simply a target
         c.inp = inp; Dr.stepCar(s, inp, dt, world);
         if(s.hit > 6) c.q.dent = 1; c.q.x = s.x; c.q.z = s.z; c.q.yaw = s.yaw; c.q.y = s.y + 0.1; c.q.pitch = s.pitch; c.q.roll = s.roll;
         const q = c.q, col = SIREN[(flash + i) % 2]; q.acc = col[0] * 65536 + col[1] * 256 + col[2]; q.rgb = [30, 40, 78];
-        const d = Math.hypot(s.x - px, s.z - pz); if(d < nearest) nearest = d; if(d < 85) seen = true;
-        if(stars > 0 && (d > 420 || (c.unstuck || 0) > 2)){ cops.splice(i, 1); bump(); continue; }
+        const d = Math.hypot(s.x - px, s.z - pz), eff = c.los && Math.abs(s.u) < 5 ? d - 12 : d; if(eff < nearest) nearest = eff; if(d < 85) seen = true;   // a cop that is boxed in but can see you gets out and runs the last 12 m
+        if(stars > 0 && (d > 420 || (c.unstuck || 0) > 6)){ cops.splice(i, 1); bump(); continue; }
         if(stars <= 0 && (c.leave > 9 || d > 300)){ cops.splice(i, 1); bump(); } }
       copColsArr = cops.length ? Float32Array.from(root.RWVehicles.colliders(cops.map(c => c.q), T.height)) : null;
       return { nearest, seen };
@@ -219,7 +259,7 @@
       if(paid >= due - 0.005) settle(rec, paid); else { rec.o.forEach(o => { if(o.st === 'open') o.st = 'unpaid'; }); rec.n.paid += paid; }
       rec.n.arrests++; save();
       for(let k = stolen.length - 1; k >= 0; k--) if(stolen[k].hot) stolen.splice(k, 1); lastBust = now();   // the police recover every hot car
-      W.heat = 0; W.stars = 0; W.coolT = 0; A.t = 0; cops.length = 0; bump();
+      W.heat = 0; W.stars = 0; W.coolT = 0; A.t = 0; cops.length = 0; lastSeen.t = 0; bump();
       bus.innerHTML = '<div class="b"><h2>BUSTED</h2><p>' + esc(speedNote) + '</p><p>' + (due > 0 ? (paid >= due - 0.005 ? 'You paid <b>' + money(paid) + '</b> in fines.' : 'You could only pay <b>' + money(paid) + '</b> of <b>' + money(due) + '</b>. The rest is written off as time served.') : 'No fines this time.') + '</p><p class="s">Released outside the police station.</p></div>'; bus.classList.add('show'); bustedUntil = performance.now() + 4200;
       let pose = null; try{ pose = root.RealWorld.Nav.poiPose('police'); }catch(e){} if(pose) await ctx.teleport(pose.x, pose.z, pose.yaw);
       ctx.rebuild(); setTimeout(() => { bus.classList.remove('show'); caught = false; }, 3600);
@@ -228,6 +268,7 @@
     /* ---------- the per-frame hook ---------- */
     function update(dt, t){
       if(mg){ lockStep(mg.s, dt); if(mg.flash > 0) mg.flash -= dt; if(mg.s.state === 'fail' && mg.s.last === 'timeout'){ finish(false); } else drawLock(); }
+      try{ trackBots(); }catch(e){}
       if(t - npcAt > 1100 && !ctx.inside()){ npcAt = t; try{ refreshNpcCars(); }catch(e){} }
       // restock showroom cars / forget old stolen-car heat
       if(gone.size){ const n = now(); let ch = false; gone.forEach((v, k) => { if(v <= n){ gone.delete(k); ch = true; } }); if(ch) bump(); }
@@ -272,8 +313,8 @@
     window.addEventListener('keydown', e => { if(!mg && !panel) return; if(mg && (e.code === 'Space' || e.code === 'KeyE' || e.code === 'Enter')){ if(!e.repeat) press(); e.preventDefault(); e.stopImmediatePropagation(); } else if(e.code === 'Escape' || (panel && (e.code === 'KeyJ'))){ if(mg) cancelLock(); else hideReport(); e.preventDefault(); e.stopImmediatePropagation(); } }, true);
     lock.addEventListener('pointerdown', e => { if(mg && e.target.closest('.box')){ press(); e.preventDefault(); } });
     const view = () => ({ stars: W.stars, owed: owed(rec), arrests: rec.n.arrests, recent: rec.o.slice(0, 5) });
-    function resetSession(){ cops.length = 0; W.heat = 0; W.stars = 0; W.coolT = 0; A.t = 0; mg = null; lock.classList.remove('show'); hideReport(); bump(); }
-    root.RealWorld = root.RealWorld || {}; root.RealWorld.crimeView = view; root.RealWorld.crimeState = () => ({ lock: mg ? mg.s : null, wanted: W, cops: cops.length, copPos: cops.map(c => [Math.round(c.s.x), Math.round(c.s.z)]), stolen: stolen.length, npcCars: npcCars.length, rec, caught });   // read-only snapshot for tests / debugging
+    function resetSession(){ lastSeen.t = 0; cops.length = 0; W.heat = 0; W.stars = 0; W.coolT = 0; A.t = 0; mg = null; lock.classList.remove('show'); hideReport(); bump(); }
+    root.RealWorld = root.RealWorld || {}; root.RealWorld.crimeView = view; root.RealWorld.crimeState = () => ({ lock: mg ? mg.s : null, wanted: W, cops: cops.length, copPos: cops.map(c => [Math.round(c.s.x), Math.round(c.s.z)]), copInfo: cops.map(c => [Math.round(c.s.u), c.los ? 1 : 0, Math.round(Math.hypot(c.s.x - P.x, c.s.z - P.z)), c.unstuck || 0, c.avT > 0 ? 1 : 0, c.goal ? Math.round(Math.hypot(c.s.x - c.goal.x, c.s.z - c.goal.z)) : -1]), stolen: stolen.length, npcCars: npcCars.length, rec, caught });   // read-only snapshot for tests / debugging
     return { update, keep, extra, prompt, kindOf, breakIn, toggleReport, act, busy, ver: () => ver, cols: () => copColsArr, park, impound, reset: resetSession, view, wanted: wantedNow, record: () => rec };
   }
   return { Logic, create };

@@ -53,7 +53,7 @@
     /* the crime layer (crime.js): lock-picking, wanted level, cops, crime report. If the module failed to load the world still works (no-op stub). */
     const NOCRIME = { update(){}, keep: () => true, extra: () => [], prompt: () => null, breakIn(){}, toggleReport(){}, act(){}, busy: () => false, ver: () => 0, cols: () => null, park(){}, impound(){}, reset(){} };
     const crime = RW.Crime ? RW.Crime.create({ OS, P, T, L, G, VD, VH, Dr, V, el: rootEl, toast, bots: () => botList, driving: () => !!dv, drivingState: () => dv, uiBusy: () => uiOpen(), locked: () => locked(),
-      rebuild: () => { V.sig = ''; rebuildVehicles(); }, startDrive: q => startDrive(q), findFree: (x, z, c, y, o) => findFree(x, z, c, y, o), disabled: () => cells.disabled(), resolve: (x, z, y, sets, dis, r) => Phys.resolve(x, z, y, sets, dis, r), sets: () => collSets(),
+      rebuild: () => { V.sig = ''; rebuildVehicles(); }, startDrive: q => startDrive(q), findFree: (x, z, c, y, o) => findFree(x, z, c, y, o), disabled: () => cells.disabled(), resolve: (x, z, y, sets, dis, r) => Phys.resolve(x, z, y, sets, dis, r), sets: () => collSets(), lift: (x, z) => kerbLift(x, z),
       inside: () => !!(S.room || S.cell), speed: () => dv ? Math.hypot(dv.s.u || 0, dv.s.v || 0) : Math.hypot(P.vx, P.vz), teleport: (x, z, y) => teleport(x, z, y), atStation: () => !!(S.room && S.room.door && S.room.door.id === 'police'), place: () => '' }) : NOCRIME;
     let dv = null, dashAt = 0, dashHtml = '';
     const parkKey = q => q.slot + ':' + (q.t || 0);
@@ -163,7 +163,7 @@
       const d = dv, s = d.s, c = d.cam, car = d.car, sp = Math.abs(s.speed), m = d.m, len = car ? m.drive.len : m.fly.len;
       c.fov = (cfg.fov + clamp(sp / (car ? 60 : 110), 0, 1) * (car ? 12 : 8)) * Math.PI / 180; d.shake = Math.max(0, d.shake - dt * 2.5); const sh = d.shake * 0.15;
       if(d.view === 'cockpit'){
-        let ex, ey, ez; if(car){ const cy = Math.cos(s.yaw), sy = Math.sin(s.yaw); ex = s.x + sy * 0.25 + cy * -0.32; ez = s.z - cy * 0.25 + sy * -0.32; ey = s.y + 1.22; c.yaw = s.yaw; c.pitch = s.pitch * 0.6; c.roll = s.roll * 0.4; }
+        let ex, ey, ez; if(car){ const cy = Math.cos(s.yaw), sy = Math.sin(s.yaw); ex = s.x + sy * 0.25 + cy * -0.32; ez = s.z - cy * 0.25 + sy * -0.32; ey = s.y + 1.22; c.yaw = s.yaw; c.pitch = s.pitch * 0.6; c.roll = clamp(s.roll, -0.8, 0.8) * 0.4; }
         else { const B = s.B, up = 0.55 + m.fly.hgt * 0.62 + 0.55, fw = len * 0.14; ex = s.x + B.f[0] * fw + B.u[0] * up; ey = s.y + B.f[1] * fw + B.u[1] * up; ez = s.z + B.f[2] * fw + B.u[2] * up; c.yaw = s.yaw; c.pitch = s.pitch; c.roll = s.roll; }
         c.pos = [ex + (Math.random() - 0.5) * sh, ey + (Math.random() - 0.5) * sh, ez]; return;
       }
@@ -190,7 +190,7 @@
     function driveUpdate(dt, t, busy){
       const d = dv, s = d.s, q = d.q, inp = readDrive(dt, busy);
       if(!d.hold){
-        const sets = collSets(), dis = cells.disabled(), world = { ground: T.height, push: (x, z, y, r) => { const o = Phys.resolve(x, z, y, sets, dis, r); return { x: o.x, z: o.z }; } };
+        const sets = collSets(), dis = cells.disabled(), world = { ground: T.height, lift: kerbLift, push: (x, z, y, r) => { const o = Phys.resolve(x, z, y, sets, dis, r); return { x: o.x, z: o.z }; } };
         const sx0 = s.x, sz0 = s.z;
         if(d.car) Dr.stepCar(s, inp, dt, world); else Dr.stepPlane(s, inp, dt, world);
         if(T.isWater(s.x, s.z)){                                                              // the sea: a car stops at the waterline; a plane that touches down on it ditches
@@ -284,6 +284,21 @@
     }
 
     /* ---------------- collisions: see phys.js (boxes with a height, stairs, floors, ceilings) ---------------- */
+    /* KERBS for the car physics: pavement sits 11.5 cm above the asphalt (see chunkgen). A spatial hash of the streets near the player (rebuilt when they move 150 m) answers "how high is the kerb at (x, z)" — 0 on the road and at junctions, 0.115 on the pavement strip beside it. */
+    const KB = { cx: 1e9, cz: 1e9, g: new Map() }, KC = 24;
+    function kerbBuild(cx, cz){
+      KB.cx = cx; KB.cz = cz; KB.g.clear(); let segs = []; try{ segs = L.streetsNear(cx - 300, cz - 300, cx + 300, cz + 300); }catch(e){}
+      for(const sg of segs){ const len = Math.hypot(sg.b[0] - sg.a[0], sg.b[1] - sg.a[1]), n = Math.max(2, Math.ceil(len / 10)); let pp = null;
+        for(let q = 0; q <= n; q++){ const u = sg.a[0] + (sg.b[0] - sg.a[0]) * q / n, v = sg.a[1] + (sg.b[1] - sg.a[1]) * q / n, w = L.warp(u, v), p = [w[0], w[1], q * len / n];
+          if(pp){ const pc = { x0: pp[0], z0: pp[1], x1: p[0], z1: p[1], hw: sg.hw, edge: pp[2] < 9 || p[2] > len - 9, pad: sg.hw + L.SIDE }, mnx = Math.min(pc.x0, pc.x1) - pc.pad, mxx = Math.max(pc.x0, pc.x1) + pc.pad, mnz = Math.min(pc.z0, pc.z1) - pc.pad, mxz = Math.max(pc.z0, pc.z1) + pc.pad;
+            for(let gx = Math.floor(mnx / KC); gx <= Math.floor(mxx / KC); gx++) for(let gz = Math.floor(mnz / KC); gz <= Math.floor(mxz / KC); gz++){ const key = gx + ',' + gz; let a = KB.g.get(key); if(!a) KB.g.set(key, a = []); a.push(pc); } }
+          pp = p; } }
+    }
+    function kerbLift(x, z){
+      if(S.room || Math.abs(x - KB.cx) > 150 || Math.abs(z - KB.cz) > 150) kerbBuild(x, z); const a = KB.g.get(Math.floor(x / KC) + ',' + Math.floor(z / KC)); if(!a) return 0; let kerb = 0;
+      for(const c of a){ const dx = c.x1 - c.x0, dz = c.z1 - c.z0, l2 = dx * dx + dz * dz || 1, t = Math.max(0, Math.min(1, ((x - c.x0) * dx + (z - c.z0) * dz) / l2)), d = Math.hypot(x - (c.x0 + dx * t), z - (c.z0 + dz * t)); if(d < c.hw) return 0; if(d < c.pad && !c.edge) kerb = 0.115; }
+      return kerb;
+    }
     const collSets = () => { const sets = []; if(!S.room){ st.nearCols(P.x, P.z, c => sets.push({ a: c, st: 8 })); if(dynColsA) sets.push({ a: dynColsA, st: 8 }); if(V.cols) sets.push({ a: V.cols, st: 8 }); const cc = crime.cols(); if(cc) sets.push({ a: cc, st: 8 }); } if(S.room){ const cs = cells.sets(); for(let i = 0; i < cs.length; i++) sets.push(cs[i]); } return sets; };
 
     /* ---------------- people & cars ---------------- */

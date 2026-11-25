@@ -35,20 +35,28 @@
   function car(model, pose){
     const D = model.drive, L = D.len, W = L * 0.62;
     return { kind: 'car', model, D, W, a: W * 0.5, b: W * 0.5, I: D.mass * (L * L + D.wid * D.wid) / 12 * 1.15, x: pose.x, z: pose.z, yaw: pose.yaw || 0, y: 0, pitch: 0, roll: 0,
-      u: 0, v: 0, r: 0, steer: 0, speed: 0, ax: 0, ay: 0, hit: 0, nx: 0, nz: 0, slide: 0, rpm: 0, circles: [[-L * 0.32, D.wid * 0.5], [0, D.wid * 0.5], [L * 0.32, D.wid * 0.5]] };
+      u: 0, v: 0, r: 0, steer: 0, speed: 0, ax: 0, ay: 0, pv: 0, rv: 0, hy: 0, hv: 0, gk: 1, flip: 0, fd: 1, fl: 0, ft: 0, kp: null, hit: 0, nx: 0, nz: 0, slide: 0, rpm: 0, circles: [[-L * 0.32, D.wid * 0.5], [0, D.wid * 0.5], [L * 0.32, D.wid * 0.5]] };
   }
   /* inp = { thr: −1..1 (+ gas, − brake then reverse), steer: −1..1 (+ right), brake: 0..1, hand: 0|1 } */
+  /* the 4 wheel contact points (FR, FL, RR, RL) and the kerb height there (world.lift(x, z) → extra height of pavement over asphalt; optional) */
+  const ZERO4 = [0, 0, 0, 0];
+  function wheelLifts(s, world){
+    if(!world || !world.lift) return ZERO4; const f0 = Math.sin(s.yaw), f1 = -Math.cos(s.yaw), d0 = Math.cos(s.yaw), d1 = Math.sin(s.yaw), L2 = s.D.len * 0.38, W2 = s.D.wid * 0.42, o = [];
+    for(const [fa, ra] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) o.push(world.lift(s.x + f0 * L2 * fa + d0 * W2 * ra, s.z + f1 * L2 * fa + d1 * W2 * ra));
+    return o;
+  }
   function stepCar(s, inp, frame, world){
-    let left = Math.min(frame, 0.1); s.hit = 0;
-    while(left > 1e-6){ const dt = Math.min(DT, left); left -= dt; carTick(s, inp, dt, world); }
+    let left = Math.min(frame, 0.1); s.hit = 0; const total = left, k1 = wheelLifts(s, world); if(!s.kp) s.kp = k1.slice(); const k0 = s.kp.slice();
+    while(left > 1e-6){ const dt = Math.min(DT, left); left -= dt; const f = 1 - left / total; carTick(s, inp, dt, world, [k0[0] + (k1[0] - k0[0]) * f, k0[1] + (k1[1] - k0[1]) * f, k0[2] + (k1[2] - k0[2]) * f, k0[3] + (k1[3] - k0[3]) * f]); }
     return s;
   }
-  function carTick(s, inp, dt, world){
-    const D = s.D, m = D.mass, mu = D.grip * 0.95 * G, thr = clamp(inp.thr || 0, -1, 1), brk = clamp(inp.brake || 0, 0, 1), hand = inp.hand ? 1 : 0;
+  function carTick(s, inp, dt, world, kk){
+    const D = s.D, m = D.mass, flipped = s.flip > 0; if(flipped) inp = { thr: 0, steer: 0, brake: 0, hand: 0 };
+    const mu = D.grip * 0.95 * G * (s.gk || 1) * (flipped ? 0.15 : 1), thr = clamp(inp.thr || 0, -1, 1), brk = clamp(inp.brake || 0, 0, 1), hand = inp.hand ? 1 : 0;
     const f0 = Math.sin(s.yaw), f1 = -Math.cos(s.yaw), r0 = Math.cos(s.yaw), r1 = Math.sin(s.yaw);
     // steering lock: never more than the tyres can hold at this speed, and a lazy wheel at speed
     const au = Math.abs(s.u), dMax = Math.min(0.62 * D.turn ** 0.5, 1.25 * mu * s.W / Math.max(au * au, 4));
-    s.steer += (clamp(inp.steer || 0, -1, 1) - s.steer) * Math.min(1, dt * 9); const del = s.steer * dMax, cd = Math.cos(del), sd = Math.sin(del);
+    s.steer += (clamp(inp.steer || 0, -1, 1) - s.steer) * Math.min(1, dt * clamp(12.5 - m / 330, 5.5, 10)); const del = s.steer * dMax, cd = Math.cos(del), sd = Math.sin(del);
     // longitudinal: engine (power falls off towards top speed), brake, handbrake, rolling resistance
     let ax = 0, braking = 0;
     if(thr > 0.01){ if(s.u < -0.6) braking = Math.max(braking, thr); else ax += D.accel * 1.06 * thr * (1 - Math.min(1, (s.u / (D.top * 1.03)) ** 2)); }
@@ -57,10 +65,10 @@
     let decel = 0; if(braking > 0 || hand){ decel = Math.min(D.brake * braking + (hand ? 0.22 * D.brake : 0), mu * 1.05); }
     decel += 0.2 + 0.0009 * s.u * s.u * 0.1;                       // engine braking + rolling + a little air drag
     // lateral: front and rear axle forces (bicycle model)
-    const vf = s.v + s.a * s.r, vr = s.v - s.b * s.r, N = m * G * 0.5;
+    const vf = s.v + s.a * s.r, vr = s.v - s.b * s.r, shF = clamp(0.5 - 0.5 * s.ax / (G * s.W) * 1.0, 0.3, 0.7), NF = m * G * shF, NR = m * G * (1 - shF);   // braking loads the front axle, accelerating the rear
     const vlongF = s.u * cd + vf * sd, vlatF = -s.u * sd + vf * cd, den = f => Math.max(Math.abs(f), 2.2);
     const driveFrac = clamp(Math.abs(ax) / (D.accel + 1e-6), 0, 1), gripF = Math.sqrt(1 - 0.35 * driveFrac * driveFrac) * (1 - 0.25 * braking), gripR = (hand ? 0.3 : 1) * Math.sqrt(1 - 0.35 * driveFrac * driveFrac) * (1 - 0.12 * braking);
-    const FyF = -mu * N * gripF * Math.tanh(3.2 * vlatF / den(vlongF)), FyR = -mu * N * gripR * Math.tanh(3.2 * vr / den(s.u));
+    const FyF = -mu * NF * gripF * Math.tanh(3.2 * vlatF / den(vlongF)), FyR = -mu * NR * gripR * Math.tanh(3.2 * vr / den(s.u));
     // body-frame forces: engine acts along the body, tyre side forces along each wheel's own lateral axis (front one is turned by `del`)
     const Fx = m * ax - FyF * sd, Fyb = FyF * cd + FyR;
     let du = Fx / m + s.v * s.r, dv = Fyb / m - s.u * s.r; const dr = (s.a * FyF * cd - s.b * FyR) / s.I;
@@ -77,9 +85,37 @@
     if(dd > 0){ let wx = s.u * c0 + s.v * d0, wz = s.u * c1 + s.v * d1; const vn = wx * s.nx + wz * s.nz;
       if(vn < 0){ wx -= 1.15 * vn * s.nx; wz -= 1.15 * vn * s.nz; s.hit = Math.max(s.hit, -vn); s.u = wx * c0 + wz * c1; s.v = wx * d0 + wz * d1; s.r *= 0.7; } }
     s.speed = s.u; s.slide = Math.min(1, Math.abs(s.v) / 6);
-    // ride attitude: follow the ground under the wheels + lean into corners and dive under braking
-    if(g0){ const L2 = s.D.len * 0.45, W2 = s.D.wid * 0.45, hF = g0(s.x + c0 * L2, s.z + c1 * L2), hB = g0(s.x - c0 * L2, s.z - c1 * L2), hR = g0(s.x + d0 * W2, s.z + d1 * W2), hL = g0(s.x - d0 * W2, s.z - d1 * W2);
-      const tp = Math.atan2(hF - hB, 2 * L2) - clamp(s.ax / G, -1, 1) * 0.035, tr = Math.atan2(hR - hL, 2 * W2) + clamp(s.ay / G, -1.2, 1.2) * 0.05; s.pitch += (tp - s.pitch) * Math.min(1, dt * 8); s.roll += (tr - s.roll) * Math.min(1, dt * 8); }
+    // ---- body: a sprung mass on the wheels. Terrain slope, kerbs and load transfer drive heave / pitch / roll springs (heavier = softer & slower), kerbs kick the body, a tripped or over-driven car rolls ----
+    if(g0){
+      const L2 = s.D.len * 0.45, W2 = s.D.wid * 0.45, k = kk || ZERO4, kp = s.kp || k, F_ = (k[0] + k[1]) / 2, B_ = (k[2] + k[3]) / 2, R_ = (k[0] + k[2]) / 2, L_ = (k[1] + k[3]) / 2;
+      const hF = g0(s.x + c0 * L2, s.z + c1 * L2) + F_, hB = g0(s.x - c0 * L2, s.z - c1 * L2) + B_, hR = g0(s.x + d0 * W2, s.z + d1 * W2) + R_, hL = g0(s.x - d0 * W2, s.z - d1 * W2) + L_, gc = s.y;
+      const wn = clamp(9.2 - m / 520, 4.6, 8.4), zt = 0.3, au2 = Math.abs(s.u), soft = 0.8 + m / 4000;
+      // kerb kick: a wheel that climbs a kerb jolts the body up and rocks it (more at speed); a car sliding sideways into a kerb trips
+      const rise = i => Math.max(0, k[i] - kp[i]), rF = (rise(0) + rise(1)) / 2, rB = (rise(2) + rise(3)) / 2, rRt = (rise(0) + rise(2)) / 2, rLt = (rise(1) + rise(3)) / 2;
+      if(rF + rB + rRt + rLt > 0){ s.hv += (rF + rB) * au2 * 0.9; s.pv += (rF - rB) * au2 * 0.6 / L2; s.rv -= (rRt - rLt) * au2 * 0.6 / W2; if(au2 > 3){ s.u *= 1 - (rF + rB) * 0.35; }
+        if(Math.abs(s.v) > 3.5 && (s.v > 0 ? rRt : rLt) > 0) s.rv += sgn(s.v) * (Math.abs(s.v) - 1.5) * (s.v > 0 ? rRt : rLt) * 24; }
+      for(let i = 0; i < 4; i++) s.kp[i] = k[i];
+      // over-driven: lateral load vs what the track and centre of gravity can resist (SSF) — only matters fast and when the tyres are really working
+      const ssf = D.grip * (0.88 + 0.12 * (D.wid / D.hgt - 1)), ti = Math.abs(s.ay) / (G * ssf), gate = sm(17, 30, au2) * sm(0.6, 0.9, Math.abs(s.steer));
+      let trT = Math.atan2(hR - hL, 2 * W2) - clamp(s.ay / G, -1.4, 1.4) * 0.13 * (0.8 + D.hgt * 0.25) * soft - sgn(s.ay) * 0.9 * sm(0.86, 1.08, ti) * gate;
+      let tpT = Math.atan2(hF - hB, 2 * L2) + clamp(s.ax / G, -1.2, 1.2) * 0.06 * soft;
+      const hT = ((hF + hB) / 2 + (hR + hL) / 2) / 2 - gc;
+      if(!s.flip){
+        s.pv += (wn * wn * (tpT - s.pitch) - 2 * zt * wn * s.pv) * dt; s.pitch += s.pv * dt; s.rv += (wn * wn * (trT - s.roll) - 2 * zt * wn * s.rv) * dt; s.roll += s.rv * dt;
+        s.hv += (wn * wn * 1.4 * (hT - s.hy) - 2 * 0.28 * wn * 1.2 * s.hv) * dt; s.hy = clamp(s.hy + s.hv * dt, -0.08, 0.7);
+        const wall = s.hit > 7 && Math.abs(s.v) > 4 ? 1 : 0; if(wall) s.rv += sgn(s.v) * (s.hit - 6) * 0.22;
+        if(Math.abs(s.roll) > 0.62 && au2 > 4.5){ s.flip = 1; s.fd = s.roll < 0 ? -1 : 1; s.fl = Math.PI * (0.5 + Math.floor(Math.min(au2, 30) / 11) * 0.5); s.ft = 3.2 + au2 * 0.09; s.hv += 1.6; s.hit = Math.max(s.hit, 8); }
+      } else if(s.flip === 1){     // tumbling: the body rotates about its long axis, scrubbing speed, until it settles on its side / roof
+        s.roll += s.fd * s.ft * dt; s.u *= Math.exp(-0.9 * dt); s.v *= Math.exp(-1.3 * dt); s.r *= Math.exp(-1.5 * dt); s.hy = 0.15 + Math.abs(Math.sin(s.roll)) * 0.55 + Math.max(0, Math.sin(s.roll * 2)) * 0.15 * Math.min(1, au2 / 8);
+        if(Math.abs(s.roll) >= s.fl && au2 < 3.5 || Math.abs(s.roll) >= s.fl + 1.6){ s.roll = s.fd * s.fl; s.flip = 2; s.ft = 0; s.u *= 0.2; s.v *= 0.2; }
+      } else if(s.flip === 2){     // at rest on its side / roof for a moment
+        s.u *= Math.exp(-4 * dt); s.v *= Math.exp(-4 * dt); s.r *= Math.exp(-4 * dt); s.ft += dt; s.hy = 0.15 + Math.abs(Math.sin(s.roll)) * 0.55; if(s.ft > 2.4){ s.flip = 3; s.ft = 0; s.roll = wrapA(s.roll); s.fr0 = s.roll; }
+      } else {                     // the car is righted (as if a passer-by pushed it over): ease the roll back to level
+        s.ft += dt; const e = clamp(s.ft / 1.1, 0, 1), sm_ = e * e * (3 - 2 * e); s.roll = s.fr0 * (1 - sm_); s.hy = 0.15 * (1 - sm_) + 0.1 * Math.sin(Math.PI * e); if(e >= 1){ s.flip = 0; s.roll = 0; s.rv = 0; s.pv = 0; s.hv = 0; s.hy = 0; }
+      }
+      s.gk = 1 - clamp(Math.max(0, s.hy - 0.03) * 5, 0, 0.55);
+      s.y = gc + s.hy;
+    }
   }
 
   /* ---------------------------------------------------------------- PLANE ---------------------------------------------------------------- */
@@ -147,6 +183,8 @@
     if(Math.abs(rollIn) < 0.04 && inp.assist !== false) pr += -clamp(s.roll, -1.3, 1.3) * 0.9 * auth;                 // wings-level assist
     yr = -beta * 2.2 * auth - clamp(inp.yaw || 0, -1, 1) * 0.45 * auth;
     if(s.stalled) pr += Math.sin(s.t0 = (s.t0 || 0) + dt * 5) * 0.5;
+    // air is never perfectly smooth: slow gusts rock the wings and nose, more near the ground and at speed (light aircraft feel them most)
+    { const tt = s.t1 = (s.t1 || 0) + dt, gl = 1 + clamp(1 - (s.y - gnd) / 250, 0, 1) * 0.8, gs = (6000 / (P.m + 3000)) * gl * auth * (contact ? 0 : 1); pr += (Math.sin(tt * 0.7) * 0.5 + Math.sin(tt * 1.9 + 1) * 0.3) * 0.07 * gs; qr += Math.sin(tt * 1.3 + 2) * 0.025 * gs; }
     // ---- ground mode ----
     if(contact){
       const E = euler(B), sp = vf, ang = Math.min(1, V / 8);
@@ -189,7 +227,8 @@
       if(clear <= 0.0 && s.vy <= 0.2){
         const sink = -s.vy, hv = Math.hypot(s.vx, s.vz);
         if(sink > 8 + 0 || (Math.abs(s.roll) > 0.45 && hv > 12) || (s.pitch < -0.25 && hv > 12) || (hv > 18 && s.pitch > 0.45)){ s.crashed = sink > 8 ? 'You hit the ground too hard.' : 'You came in at a bad angle.'; s.y = gh; return; }
-        s.onGround = true; s.touch = sink; s.y = gh; s.vy = 0; s.roll = 0; const hs = Math.hypot(s.vx, s.vz), nb = basis(s.yaw, clamp(s.pitch, 0, 0.3), 0); B.f = nb.f; B.r = nb.r; B.u = nb.u;
+        if(sink > 1.8 && hv > 24 && (s.bounces || 0) < 2){ s.bounces = (s.bounces || 0) + 1; s.y = gh + 0.03; s.vy = sink * 0.3; s.touch = sink; s.hy = 0; return; }   // a heavy touchdown skips back into the air
+        s.onGround = true; s.bounces = 0; s.touch = sink; s.y = gh; s.vy = 0; s.roll = 0; const hs = Math.hypot(s.vx, s.vz), nb = basis(s.yaw, clamp(s.pitch, 0, 0.3), 0); B.f = nb.f; B.r = nb.r; B.u = nb.u;
         const fw = Math.hypot(nb.f[0], nb.f[2]) || 1; s.vx = nb.f[0] / fw * hs; s.vz = nb.f[2] / fw * hs;
       }
     }
