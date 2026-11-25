@@ -51,9 +51,9 @@
      * springs back; left / right button = gas / brake or throttle up / down; wheel = throttle) and TOUCH (the left stick + big on-screen buttons). The physics is os/realworld/drive.js (pure, tested). */
     const Dr = RW.Drive, mouse = { px: 0, py: 0, sx: 0, sy: 0, l: false, rb: false, at: 0, in: false }, tb = {};
     /* the crime layer (crime.js): lock-picking, wanted level, cops, crime report. If the module failed to load the world still works (no-op stub). */
-    const NOCRIME = { update(){}, keep: () => true, extra: () => [], prompt: () => null, breakIn(){}, toggleReport(){}, act(){}, busy: () => false, ver: () => 0, cols: () => null, park(){}, impound(){}, reset(){} };
+    const NOCRIME = { update(){}, keep: () => true, extra: () => [], prompt: () => null, breakIn(){}, toggleReport(){}, act(){}, busy: () => false, ver: () => 0, cols: () => null, park(){}, impound(){}, reset(){}, hotwire: () => false };
     const crime = RW.Crime ? RW.Crime.create({ OS, P, T, L, G, VD, VH, Dr, V, el: rootEl, toast, bots: () => botList, driving: () => !!dv, drivingState: () => dv, uiBusy: () => uiOpen(), locked: () => locked(),
-      rebuild: () => { V.sig = ''; rebuildVehicles(); }, startDrive: q => startDrive(q), findFree: (x, z, c, y, o) => findFree(x, z, c, y, o), disabled: () => cells.disabled(), resolve: (x, z, y, sets, dis, r) => Phys.resolve(x, z, y, sets, dis, r), sets: () => collSets(), lift: (x, z) => kerbLift(x, z),
+      rebuild: () => { V.sig = ''; rebuildVehicles(); }, startDrive: q => startDrive(q), leaveCar: () => { if(dv) endDrive(); }, findFree: (x, z, c, y, o) => findFree(x, z, c, y, o), disabled: () => cells.disabled(), resolve: (x, z, y, sets, dis, r) => Phys.resolve(x, z, y, sets, dis, r), sets: () => collSets(), lift: (x, z) => kerbLift(x, z),
       inside: () => !!(S.room || S.cell), speed: () => dv ? Math.hypot(dv.s.u || 0, dv.s.v || 0) : Math.hypot(P.vx, P.vz), teleport: (x, z, y) => teleport(x, z, y), atStation: () => !!(S.room && S.room.door && S.room.door.id === 'police'), place: () => '' }) : NOCRIME;
     let dv = null, dashAt = 0, dashHtml = '';
     const parkKey = q => q.slot + ':' + (q.t || 0);
@@ -72,23 +72,24 @@
       if(dv || !S.running || S.phone || S.cell || S.room || S.busy || S.loading || !Dr) return false; const m = VD.get(q.id); if(!m || !m.driveable) return false;
       const car = m.kind === 'car', s = car ? Dr.car(m, { x: q.x, z: q.z, yaw: q.yaw }) : Dr.plane(m, { x: q.x, z: q.z, yaw: q.yaw }); s.y = T.height(q.x, q.z);
       let view = 'chase', inv = false; try{ view = OS.prefs.get('rwView') === 'cockpit' ? 'cockpit' : 'chase'; inv = OS.prefs.get('rwInv') === true; }catch(e){}
-      dv = { q, m, s, kind: m.kind, car, view, inv, cYaw: q.yaw, cPitch: 0, thr: 0, pitchIn: 0, rollIn: 0, t0: performance.now(), shake: 0, edgeAt: 0, hold: false, cam: { pos: [q.x, s.y + 3, q.z], yaw: q.yaw, pitch: -0.1, roll: 0, fov: cfg.fov * Math.PI / 180, near: 0.25, far: cfg.far } };
+      dv = { q, m, s, kind: m.kind, car, view, inv, cYaw: q.yaw, cPitch: 0, thr: 0, pitchIn: 0, rollIn: 0, t0: performance.now(), shake: 0, edgeAt: 0, hold: false, engine: !(q.stolen && !q.wired), cam: { pos: [q.x, s.y + 3, q.z], yaw: q.yaw, pitch: -0.1, roll: 0, fov: cfg.fov * Math.PI / 180, near: 0.25, far: cfg.far } };
       q.driven = true; const rest = V.list.filter(x => x !== q); V.cols = rest.length ? Float32Array.from(VH.colliders(rest, T.height)) : null;
       S.drive = dv.kind; P.vx = P.vz = P.vy = 0; mouse.in = false; mouse.sx = mouse.sy = 0; mouse.l = mouse.rb = false; closeDialog(true); setPrompt(null); curNpc = curDoor = null; V.look = null;
       rootEl.classList.add('driving', 'drv-' + dv.kind); $('#rwBtnE').textContent = 'Exit';
       $('#rwTG').textContent = car ? 'Gas' : 'Thr ▲'; $('#rwTB').textContent = car ? 'Brake' : 'Thr ▼'; $('#rwTH').textContent = car ? 'Hand' : 'Brake';
+      if(!dv.engine){ if(crime.hotwire(dv)) return true; dv.engine = true; }      // a stolen vehicle starts DEAD: the hotwire minigame (crime.js) runs first; no crime layer = just drive
       toast(car ? 'Driving the ' + m.name + '.' : 'Flying the ' + m.name + '. Full throttle, then pull back at ' + Math.round(s.P.vr * 3.6) + ' km/h.'); return true;
     }
     /* mode: undefined = get out and park where you stand · 'home' = send it back to its parking spot · 'crash' = it was wrecked, towed back */
     function endDrive(mode, msg){
       if(!dv) return; const d = dv, q = d.q, s = d.s; dv = null; S.drive = null; rootEl.classList.remove('driving', 'drv-car', 'drv-plane'); $('#rwBtnE').textContent = 'E'; tb.gas = tb.brake = tb.hand = false; mouse.l = mouse.rb = false;
       q.driven = false; q.pitch = q.roll = 0; q.y = null;
-      if(q.stolen){ if(mode === 'crash') crime.impound(q); else { q.x = s.x; q.z = s.z; q.yaw = s.yaw; crime.park(q); if(mode === 'home') mode = undefined; } }   // a stolen car stays where you leave it (session only), never goes to your garage
+      if(q.stolen){ if(mode === 'crash'){ crime.impound(q); mode = 'wreck'; } else { q.x = s.x; q.z = s.z; q.yaw = s.yaw; crime.park(q); if(mode === 'home') mode = undefined; } }   // a stolen car stays where you leave it (session only), never goes to your garage
       if(mode === 'home' || mode === 'crash'){
         setParked(q, false); V.sig = ''; rebuildVehicles(); const nq = V.list.find(x => x.slot === q.slot && x.t === q.t) || q, rx = Math.cos(nq.yaw), rz = Math.sin(nq.yaw), off = (nq.hw || 1) + 1.6;
         teleport(nq.x + rx * off, nq.z + rz * off, nq.yaw); if(msg) toast(msg); return;
       }
-      q.x = s.x; q.z = s.z; q.yaw = s.yaw; setParked(q, true); V.sig = ''; rebuildVehicles();
+      q.x = s.x; q.z = s.z; q.yaw = s.yaw; if(mode !== 'wreck') setParked(q, true); V.sig = ''; rebuildVehicles();
       const rx = Math.cos(s.yaw), rz = Math.sin(s.yaw), off = -((d.car ? d.m.drive.wid / 2 : 2.2) + 1.1);       // step out on the left
       let px = s.x + rx * off, pz = s.z + rz * off, h = T.height(px, pz); try{ const o = Phys.resolve(px, pz, h, collSets(), cells.disabled(), cfg.pr); px = o.x; pz = o.z; h = T.height(px, pz); }catch(e){}
       P.x = px; P.z = pz; P.yaw = s.yaw; P.pitch = 0; P.vx = P.vz = P.vy = 0; P.y = P.cy = h; P.grounded = true; if(msg) toast(msg);
@@ -176,6 +177,7 @@
     const kmh = v => Math.round(Math.abs(v) * 3.6);
     function driveHint(d){
       const s = d.s, tc = touch.on, now = performance.now() - d.t0;
+      if(d.engine === false) return 'Engine dead — hotwire it · Esc to climb out';
       if(d.car) return tc ? 'Stick steers · Gas / Brake · Exit' : 'W gas · S brake / reverse · A D steer · Space handbrake · V view · E get out · H back home · U unstuck';
       if(s.onGround) return tc ? 'Thr ▲ to full, then pull the stick down at ' + kmh(s.P.vr) + ' km/h · Brake at idle = reverse · Taxi = runway · Stuck? tap Unstuck' : 'W throttle up · hold S at idle to reverse · A D steer · pull back (↓) at ' + kmh(s.P.vr) + ' km/h · Space brakes · T runway · U unstuck · V view · E exit';
       return tc ? 'Stick: pitch + bank · Thr ▲▼ · land on the runway' : 'Mouse or ↑↓ pitch · A D bank · W S throttle · Space brakes · I invert · V view · H hangar';
@@ -189,7 +191,7 @@
     }
     function driveUpdate(dt, t, busy){
       const d = dv, s = d.s, q = d.q, inp = readDrive(dt, busy);
-      if(!d.hold){
+      if(!d.hold && d.engine !== false){
         const sets = collSets(), dis = cells.disabled(), world = { ground: T.height, lift: kerbLift, push: (x, z, y, r) => { const o = Phys.resolve(x, z, y, sets, dis, r); return { x: o.x, z: o.z }; } };
         const sx0 = s.x, sz0 = s.z;
         if(d.car) Dr.stepCar(s, inp, dt, world); else Dr.stepPlane(s, inp, dt, world);
@@ -204,7 +206,7 @@
       q.x = s.x; q.z = s.z; q.yaw = s.yaw; q.y = s.y + (d.car ? 0.1 : 0.05); q.pitch = s.pitch; q.roll = s.roll;
       P.x = s.x; P.z = s.z; P.y = P.cy = s.y; P.vx = P.vz = P.vy = 0; P.inside = false; P.mv = 0; curNpc = curDoor = null; V.look = null;
       if(q.rentEnd && OS.now() >= q.rentEnd){ endDrive('home', 'Your rental ' + d.m.name + ' has been returned to the dealer — the day is up.'); return; }       // a 24 h rental ends even while you are at the wheel
-      if(s.crashed){ const why = s.crashed; endDrive('crash', why + ' Your ' + d.m.name + ' was towed back to its parking spot.'); return; }
+      if(s.crashed){ const why = s.crashed; endDrive('crash', why + (q.stolen ? ' The police impounded the wreck.' : ' Your ' + d.m.name + ' was towed back to its parking spot.')); return; }
       driveCamera(dt); P.yaw = d.cam.yaw; P.pitch = 0;
       if(net) net.tick({ x: P.x, z: P.z, yaw: s.yaw, mv: clamp(Math.abs(s.speed) / cfg.run, 0, 1.2), inside: false }, dt);
       dash(t);
@@ -492,7 +494,7 @@
       if(lookNpc && Math.hypot(lookNpc.x - P.x, lookNpc.z - P.z) < 5){ curNpc = { name: G.bot(lookNpc.n).name, line: outLine(lookNpc), opts: [], bot: lookNpc }; }
       let bd = 3.2; allDoorsNear(P.x, P.z, 3.4).forEach(d => { const dist = Math.hypot(d.x - P.x, d.z - P.z); if(dist < bd){ const i = doorInfo(d); if(i){ bd = dist; curDoor = { d, info: i, dist }; } } });
       V.look = null; if(!curDoor && !curNpc && !S.cell){ let vd = 4.2; for(const q of V.list){ if(q.cop) continue; const d = Math.hypot(q.x - P.x, q.z - P.z); if(d < vd){ vd = d; V.look = q; } } }
-      if(V.look && !curDoor && !curNpc){ const m = VD.get(V.look.id), cp = crime.prompt(V.look); if(cp){ setPrompt(cp[0], cp[1]); return; } if(V.look.stolen){ setPrompt('Stolen ' + m.name, 'E: get in and drive'); return; } setPrompt(V.look.slot ? 'Your ' + m.name : m.name + ' · ' + (m.price / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }), V.look.slot ? (m.kind === 'plane' ? 'Get in and fly' : 'Get in and drive') : 'E: see it in Assets'); return; }
+      if(V.look && !curDoor && !curNpc){ const m = VD.get(V.look.id), cp = crime.prompt(V.look); if(cp){ setPrompt(cp[0], cp[1]); return; } if(V.look.stolen){ setPrompt('Stolen ' + m.name, V.look.wired ? 'E: get in and ' + (m.kind === 'plane' ? 'fly' : 'drive') : 'E: get in · hotwire it'); return; } setPrompt(V.look.slot ? 'Your ' + m.name : m.name + ' · ' + (m.price / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }), V.look.slot ? (m.kind === 'plane' ? 'Get in and fly' : 'Get in and drive') : 'E: see it in Assets'); return; }
       if(curDoor){ curNpc = null; setPrompt(curDoor.info.label); } else if(curNpc) setPrompt('Talk to ' + curNpc.name); else setPrompt(null);
     }
 
@@ -595,8 +597,8 @@
     /* WestMap calls this about once a second while it is open: the world stops drawing under it (no second 3-D scene burning the GPU) */
     const hold = on => { S.holdUntil = on === false ? 0 : performance.now() + 2500; };
     /* vehicles: public read-only view + the door to the driving controller (startDrive / endDrive) */
-    const vehicles = { list: () => V.list.slice(), mine: () => V.list.filter(q => q.slot), canDrive: () => VH.canDrive(), enter: slot => { const q = V.list.find(x => x.slot === slot); return !!(q && VH.canDrive() && startDrive(q)); }, exit: () => { if(dv) endDrive(); return !dv; }, _drive: q => startDrive(q),   /* _drive = test hook (tests/e2e-drive.test.js drives the showcase plane, which nobody can afford with the $100k grant) */ driving: () => dv ? { kind: dv.kind, id: dv.m.id, slot: dv.q.slot, speed: dv.s.speed, x: dv.s.x, z: dv.s.z, yaw: dv.s.yaw, alt: dv.s.alt || 0, onGround: dv.kind === 'car' ? true : dv.s.onGround } : null,
+    const vehicles = { list: () => V.list.slice(), mine: () => V.list.filter(q => q.slot), canDrive: () => VH.canDrive(), enter: slot => { const q = V.list.find(x => x.slot === slot); return !!(q && VH.canDrive() && startDrive(q)); }, exit: () => { if(dv) endDrive(); return !dv; }, _drive: q => startDrive(q),   /* _drive = test hook (tests/e2e-drive.test.js drives the showcase plane, which nobody can afford with the $100k grant) */ driving: () => dv ? { kind: dv.kind, id: dv.m.id, slot: dv.q.slot, engine: dv.engine !== false, speed: dv.s.speed, x: dv.s.x, z: dv.s.z, yaw: dv.s.yaw, alt: dv.s.alt || 0, onGround: dv.kind === 'car' ? true : dv.s.onGround } : null,
       at: id => { const p = L.poi(id); return !!(S.running && p && Math.hypot(p.x - P.x, p.z - P.z) < 48); } };
-    return { enter, exit, phone, vehicles, active: () => S.running, inPhone: () => S.phone, teleport, travelTo, hold, openMap, drive: slot => { const q = V.list.find(x => x.slot === slot); return q ? startDrive(q) : false; }, driveState: () => dv ? { kind: dv.kind, x: dv.s.x, z: dv.s.z, y: dv.s.y, speed: dv.s.speed, onGround: dv.s.onGround, crashed: dv.s.crashed, throttle: dv.s.throttle, yaw: dv.s.yaw } : null, driveSet: o => { if(dv) Object.assign(dv.s, o); }, unstuck, cycleQuality, quality: () => ({ level: Q.level, auto: Q.auto, shadows: !!(gfx && gfx.shadowOn), tier: QN[Q.level] }), state: () => ({ x: P.x, y: P.y, z: P.z, yaw: P.yaw, mode: S.mode, fps: S.fps, scale: S.scale, radius: st && st.radius, chunks: st && st.chunks.size, calls: gfx && gfx.calls, tris: gfx && Math.round(gfx.tris), built: st && st.built, bots: botList.length, others: net ? net.others.size : 0, loading: S.loading, drawn: S.drawn, props: S.props, inside: S.cell ? S.cell.name : null, cells: cells ? cells.cells.size : 0, nh: S.nh }), _P: P, _S: S, _dv: () => dv, _st: () => st, _cells: () => cells };
+    return { enter, exit, phone, vehicles, active: () => S.running, inPhone: () => S.phone, teleport, travelTo, hold, openMap, drive: slot => { const q = V.list.find(x => x.slot === slot); return q ? startDrive(q) : false; }, driveState: () => dv ? { kind: dv.kind, id: dv.m.id, engine: dv.engine !== false, stolen: !!dv.q.stolen, x: dv.s.x, z: dv.s.z, y: dv.s.y, speed: dv.s.speed, onGround: dv.s.onGround, crashed: dv.s.crashed, throttle: dv.s.throttle, yaw: dv.s.yaw } : null, driveSet: o => { if(dv) Object.assign(dv.s, o); }, unstuck, cycleQuality, quality: () => ({ level: Q.level, auto: Q.auto, shadows: !!(gfx && gfx.shadowOn), tier: QN[Q.level] }), state: () => ({ x: P.x, y: P.y, z: P.z, yaw: P.yaw, mode: S.mode, fps: S.fps, scale: S.scale, radius: st && st.radius, chunks: st && st.chunks.size, calls: gfx && gfx.calls, tris: gfx && Math.round(gfx.tris), built: st && st.built, bots: botList.length, others: net ? net.others.size : 0, loading: S.loading, drawn: S.drawn, props: S.props, inside: S.cell ? S.cell.name : null, cells: cells ? cells.cells.size : 0, nh: S.nh }), _P: P, _S: S, _dv: () => dv, _st: () => st, _cells: () => cells };
   };
 })(typeof self !== 'undefined' ? self : this);

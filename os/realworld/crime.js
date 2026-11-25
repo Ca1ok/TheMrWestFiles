@@ -3,8 +3,9 @@
  *   RealWorld.CrimeLogic  PURE rules (no DOM, no engine) — heat → stars, offences + fines, the lock-pick state machine, cop steering, arrest timer. Tested by tests/crime.test.js.
  *   RealWorld.Crime.create(ctx)  the runtime glue (cops as real drive.js cars, NPC parked cars, HUD, panels). game.js builds it once per start() and calls a handful of hooks.
  * RULES OF THE GAME (keep them if you extend it):
- *   · ONLY parked NPC cars and the dealership's showroom cars can be stolen. Your own cars, rentals and other players' cars cannot. Aircraft can be broken into (crime!) but never flown away
- *     (CrimeLogic.STEAL_PLANES = false — flip it to allow it).
+ *   · ONLY parked NPC cars, the dealership's showroom cars and the airport's showroom planes can be stolen. Your own cars/planes, rentals and other players' vehicles cannot.
+ *     (CrimeLogic.STEAL_PLANES = false would turn aircraft theft back off: you could still break in, but not fly away.)
+ *   · Getting in is only half of it: a stolen vehicle starts DEAD. A second minigame (hotwire: connect the live wire to its matching terminal) must be won before the engine runs.
  *   · Money stays closed: a fine is a normal ledger payment to the treasury (OS.homes.payFine → K.spendTo('gov')). Nothing is ever created by crime — a stolen car is a joyride, it is never sold.
  *   · Everything is local and cheap: the record is ≤30 short entries in the player's own prefs (one small write per change, no new listeners). Wanted level / cops live in memory only.
  *   · Cops are drive.js cars (same physics, same colliders) so chases look and feel like driving; they only exist while stars > 0 and never more than 6. */
@@ -16,7 +17,7 @@
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), wrapA = a => Math.atan2(Math.sin(a), Math.cos(a));
 
   /* ======================= PURE LOGIC ======================= */
-  const STAR_AT = [0, 20, 45, 70, 90, 110], HEAT_MAX = 130, STEAL_PLANES = false;
+  const STAR_AT = [0, 20, 45, 70, 90, 110], HEAT_MAX = 130, STEAL_PLANES = true;
   /* base fines are in dollars at econ ×1; the runtime multiplies by the economy index (clamped 1..4) like every other price. heat = what a WITNESSED crime adds. */
   const CRIMES = {
     attempt:     { label: 'Attempted break-in (alarm)',    heat: 25, fine: 150 },
@@ -25,6 +26,7 @@
     theftDealer: { label: 'Grand theft auto (dealership)', heat: 55, fine: 1800 },
     aircraft:    { label: 'Breaking into an aircraft',     heat: 50, fine: 1500 },
     reported:    { label: 'Stolen vehicle reported',       heat: 25, fine: 0 },
+    alarm:       { label: 'Alarm set off (failed hotwire)', heat: 20, fine: 150 },
     evading:     { label: 'Evading police',                heat: 0,  fine: 350 },
     resisting:   { label: 'Fleeing arrest',                heat: 0,  fine: 500 }
   };
@@ -69,6 +71,29 @@
     s.fails++; s.last = 'miss'; if(s.fails >= s.maxFails){ s.state = 'fail'; return 'fail'; } return 'miss';
   }
 
+  /* ---- the hotwire minigame (runs INSIDE the stolen vehicle, after the lock is picked): the dash is torn open and a bundle of coloured wires hangs out. One wire at a time is
+   *      "live"; connect it to the terminal of the SAME colour. The terminals are re-shuffled after every correct connection (so you cannot memorise positions). Every wire right = the
+   *      engine catches. 3 wrong terminals = short circuit (the alarm goes off, runtime then deals a fresh bundle). Colours also carry a shape so it never relies on colour alone.
+   *      Easy cars use 3 wires, pricey ones 4-5; aircraft are forced to difficulty ≥ 0.85 like their locks. ---- */
+  const HOT_WIRES = [{ n: 'red', c: '#ff5a4d', g: '●' }, { n: 'yellow', c: '#ffd23f', g: '■' }, { n: 'green', c: '#3ddc84', g: '▲' }, { n: 'blue', c: '#4da3ff', g: '◆' }, { n: 'violet', c: '#c77dff', g: '★' }];
+  function hotShuffle(s){                       // a new terminal layout: terms[slot] = wire index; never identical to the previous one
+    const prev = s.terms ? s.terms.join() : '';
+    for(let tries = 0; tries < 8; tries++){ const a = Array.from({ length: s.wires }, (_, k) => k); for(let k = a.length - 1; k > 0; k--){ const j = (s.R() * (k + 1)) | 0, t = a[k]; a[k] = a[j]; a[j] = t; } s.terms = a; if(a.join() !== prev) break; }
+  }
+  function hotCreate(diff, seed){
+    diff = clamp(diff == null ? 0.3 : diff, 0, 1); const R = rng(seed || 11), wires = clamp(3 + (diff > 0.5 ? 1 : 0) + (diff > 0.9 ? 1 : 0), 3, HOT_WIRES.length);
+    const order = Array.from({ length: wires }, (_, k) => k); for(let k = order.length - 1; k > 0; k--){ const j = (R() * (k + 1)) | 0, t = order[k]; order[k] = order[j]; order[j] = t; }
+    const s = { diff, wires, order, i: 0, terms: null, strikes: 0, maxStrikes: 3, time: 14 + 3 * wires - 4 * diff, state: 'run', last: '', R };
+    hotShuffle(s); return s;
+  }
+  function hotStep(s, dt){ if(s.state !== 'run') return s.state; s.time -= dt; if(s.time <= 0){ s.state = 'fail'; s.last = 'timeout'; } return s.state; }
+  /* slot = which terminal the player picked (0-based, left → right). Returns 'hit' | 'miss' | 'ok' | 'fail' | 'none' (not running / not a terminal). */
+  function hotPress(s, slot){
+    if(s.state !== 'run' || !(slot >= 0 && slot < s.wires) || slot !== (slot | 0)) return 'none';
+    if(s.terms[slot] === s.order[s.i]){ s.i++; s.last = 'hit'; if(s.i >= s.wires){ s.state = 'ok'; return 'ok'; } s.time += 2; hotShuffle(s); return 'hit'; }
+    s.strikes++; s.last = 'miss'; if(s.strikes >= s.maxStrikes){ s.state = 'fail'; s.last = 'short'; return 'fail'; } return 'miss';
+  }
+
   /* ---- cop steering: aim at (tx,tz) with the same controls a player has (thr, steer + = right). c.s is a drive.js car state; c keeps its own stuck/reverse timers. ---- */
   function copInputs(c, tx, tz, topFrac, dt, tv, probe){
     const s = c.s, dx = tx - s.x, dz = tz - s.z, dist = Math.hypot(dx, dz), f0 = Math.sin(s.yaw), f1 = -Math.cos(s.yaw), r0 = Math.cos(s.yaw), r1 = Math.sin(s.yaw), fwd = dx * f0 + dz * f1, lat = dx * r0 + dz * r1;
@@ -94,12 +119,12 @@
     if(nearest <= 14 && speed <= 8) a.t += dt; else a.t = Math.max(0, a.t - dt * 1.5);
     return a.t >= 1.6;
   }
-  const Logic = { STAR_AT, HEAT_MAX, STEAL_PLANES, CRIMES, starsOf, newWanted, addHeat, cool, copCount, copTop, copModel, newRec, report, owed, settle, MAX_REC, rng, difficultyOf, lockCreate, lockStep, lockPress, copInputs, arrestStep };
+  const Logic = { STAR_AT, HEAT_MAX, STEAL_PLANES, CRIMES, starsOf, newWanted, addHeat, cool, copCount, copTop, copModel, newRec, report, owed, settle, MAX_REC, rng, difficultyOf, lockCreate, lockStep, lockPress, HOT_WIRES, hotCreate, hotStep, hotPress, copInputs, arrestStep };
 
   /* ======================= RUNTIME ======================= */
   function create(ctx){
     const { OS, P, T, L, G, VD, VH, Dr, V, el, toast } = ctx, $ = s => el.querySelector(s), esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-    const W = newWanted(), A = { t: 0 }; let rec = newRec(), ver = 0, cops = [], npcCars = [], stolen = [], gone = new Map(), mg = null, panel = false, bustedUntil = 0, report_ = null, npcAt = 0, copAt = 0, hudAt = 0, saveT = 0, evadeNote = 0, caught = false, lastBust = 0;
+    const W = newWanted(), A = { t: 0 }; let rec = newRec(), ver = 0, cops = [], npcCars = [], stolen = [], gone = new Map(), mg = null, hw = null, panel = false, bustedUntil = 0, report_ = null, npcAt = 0, copAt = 0, hudAt = 0, saveT = 0, evadeNote = 0, caught = false, lastBust = 0;
     const GONE_MS = 10 * 60000, econ = () => { try{ return clamp(OS.econ() || 1, 1, 4); }catch(e){ return 1; } }, now = () => Date.now();
     try{ const r = OS.prefs.get('rwCrime'); if(r && Array.isArray(r.o) && r.n) rec = { o: r.o.slice(0, MAX_REC), n: Object.assign(newRec().n, r.n) }; }catch(e){}
     const save = () => { clearTimeout(saveT); saveT = setTimeout(() => { try{ OS.prefs.set('rwCrime', rec); }catch(e){} }, 1500); };
@@ -110,6 +135,7 @@
     /* ---------- DOM: HUD stars, lock-pick overlay, report panel, busted banner ---------- */
     const hud = document.createElement('div'); hud.id = 'rwWanted'; hud.innerHTML = '<div class="st"></div><div class="lb"></div><div class="bar"><i></i></div><div class="ar"><i></i><span>BUSTING YOU…</span></div>'; el.appendChild(hud);
     const lock = document.createElement('div'); lock.id = 'rwLock'; lock.innerHTML = '<div class="box"><div class="t"></div><canvas width="340" height="340"></canvas><div class="pp"></div><div class="h">Press <kbd>Space</kbd> or click when the needle is in the <b>green</b> · <kbd>Esc</kbd> to walk away</div></div>'; el.appendChild(lock);
+    const hot = document.createElement('div'); hot.id = 'rwHot'; hot.innerHTML = '<div class="box"><div class="t"></div><div class="live"><span>LIVE WIRE</span><b class="lw"></b></div><div class="terms"></div><div class="pp"></div><div class="tm"></div><div class="h">Connect the live wire to the terminal of the <b>same colour</b> — press its <kbd>number</kbd> or tap it</div><button class="out" type="button">Climb out · Esc</button></div>'; el.appendChild(hot);
     const pan = document.createElement('div'); pan.id = 'rwCrime'; el.appendChild(pan);
     const bus = document.createElement('div'); bus.id = 'rwBusted'; el.appendChild(bus);
     const cv = lock.querySelector('canvas'), cx = cv.getContext('2d');
@@ -148,7 +174,7 @@
     }
 
     /* ---------- hooks for game.js ---------- */
-    const keep = q => !(q.kind === 'car' && !q.slot && !q.npc && gone.get(vkey(q)) > now());       // hides a showroom car while it is "stolen"
+    const keep = q => !((q.kind === 'car' || q.kind === 'plane') && !q.slot && !q.npc && gone.get(vkey(q)) > now());       // hides a showroom car / plane while it is "stolen"
     const extra = () => npcCars.concat(stolen, cops.map(c => c.q));
     function kindOf(q){ if(!q || q.slot || q.cop || q.stolen || q.driven) return null; if(q.kind === 'plane') return 'plane'; if(q.npc != null) return 'npc'; return 'dealer'; }
     function prompt(q){
@@ -157,7 +183,7 @@
       if(k === 'npc') return [nm + ' · ' + q.ownerName + '’s car', 'Locked — F: break in (crime!)'];
       return [nm + ' · ' + money(m.price / 100), 'E: see it in Assets · F: steal it (crime!)'];
     }
-    const busy = () => !!(mg || panel || bustedUntil > performance.now());
+    const busy = () => !!(mg || hw || panel || bustedUntil > performance.now());
 
     function witnessed(){ for(const b of ctx.bots()){ if(!b.vis) continue; if(Math.hypot(b.x - P.x, b.z - P.z) < 38) return true; } return false; }
 
@@ -185,16 +211,51 @@
     function finish(ok){
       const g = mg; mg = null; lock.classList.remove('show'); if(!g) return; const { q, k, m, seen } = g;
       if(!ok){ toast('ALARM! The lock jammed and the alarm is blaring.'); crime('attempt', true, ''); return; }
-      if(k === 'plane'){ crime('aircraft', true); toast(STEAL_PLANES ? 'You are in.' : 'You pop the cockpit open — but its ignition is keyed to the owner. This aircraft cannot be flown away. Get out of here!'); if(!STEAL_PLANES) return; }
-      crime('breakin', seen); const dealer = k === 'dealer';
-      if(seen){ crime(dealer ? 'theftDealer' : 'theft', true); }
+      const plane = k === 'plane', showroom = k === 'dealer' || plane;       // showroom = the dealership's cars and the airport's planes (restocked after GONE_MS)
+      if(plane && !STEAL_PLANES){ crime('aircraft', true); toast('You pop the cockpit open — but you cannot get it started. Get out of here!'); return; }
+      crime(plane ? 'aircraft' : 'breakin', seen);
+      if(seen){ crime(showroom ? 'theftDealer' : 'theft', true); }
       else { setTimeout(() => ownerReport(q), 70000 + Math.random() * 40000); toast('Clean. Nobody saw you — but keep moving.'); crime0Theft(); }
-      const car = Object.assign({}, q, { stolen: true, driven: false, from: dealer ? 'dealer' : 'npc', taken: now() }); delete car.npc; car.hot = true; car.owner = q.ownerName || ''; car.rgb = null;
-      if(dealer) gone.set(vkey(q), now() + GONE_MS); else gone.set('n' + q.npc, now() + GONE_MS); stolen.push(car); bump(); ctx.rebuild(); const real = V.list.find(x => x === car) || car;
-      if(!ctx.startDrive(real)) toast('You cannot get in right now.');
+      const car = Object.assign({}, q, { stolen: true, wired: false, driven: false, from: showroom ? 'dealer' : 'npc', taken: now() }); delete car.npc; car.hot = true; car.owner = q.ownerName || ''; car.rgb = null;
+      if(showroom) gone.set(vkey(q), now() + GONE_MS); else gone.set('n' + q.npc, now() + GONE_MS); stolen.push(car); bump(); ctx.rebuild(); const real = V.list.find(x => x === car) || car;
+      if(!ctx.startDrive(real)) toast('You cannot get in right now.');     // startDrive opens the hotwire minigame (crime.hotwire) because the stolen vehicle is not wired yet
     }
     function crime0Theft(){ rec.n.thefts++; save(); }   // an unwitnessed theft is still on your private tally, not on the report
     function ownerReport(q){ const hasIt = stolen.some(c => c.hot && c.id === q.id && now() - c.taken < 4 * 60000); if(!hasIt || caught) return; toast('The owner has reported the car stolen!'); crime('reported', true); }
+
+    /* ---------- the hotwire minigame (game.js startDrive calls crime.hotwire(dv) when you get into a stolen vehicle that is not wired yet) ---------- */
+    const hotBox = hot.querySelector('.box'), hotDiff = m => { const d = difficultyOf(m.price); return m.kind === 'plane' ? Math.max(0.85, d) : d; };
+    const wireTag = i => { const w = HOT_WIRES[i]; return '<i class="w" style="--c:' + w.c + '" title="' + w.n + '">' + w.g + '</i>'; };
+    function hotwire(d){
+      if(hw || !d || !d.q || !d.q.stolen || d.q.wired || caught) return false; const plane = d.m.kind === 'plane', diff = hotDiff(d.m);
+      hw = { d, plane, diff, s: hotCreate(diff, (Math.random() * 1e9) | 0), flash: 0, dirty: true }; if(ctx.locked()) document.exitPointerLock();
+      hot.querySelector('.t').textContent = (plane ? 'Cockpit ignition · ' : 'Ignition · ') + d.m.name + ' — hotwire it';
+      hot.classList.add('show'); toast(plane ? 'You are in. The master switch is dead — hotwire the ignition.' : 'You are in. The engine is dead — hotwire it.'); hotDraw(); return true;
+    }
+    function hotDraw(){
+      if(!hw) return; const s = hw.s;
+      if(hw.dirty){ hw.dirty = false;
+        hot.querySelector('.lw').innerHTML = s.i < s.wires ? wireTag(s.order[s.i]) : '';
+        hot.querySelector('.terms').innerHTML = s.terms.map((wi, k) => '<button type="button" class="tile" data-slot="' + k + '" style="--c:' + HOT_WIRES[wi].c + '" aria-label="terminal ' + (k + 1) + '"><kbd>' + (k + 1) + '</kbd>' + wireTag(wi) + '</button>').join('');
+        hot.querySelector('.pp').innerHTML = s.order.map((wi, j) => '<i class="' + (j < s.i ? 'on' : j === s.i ? 'cur' : '') + '" style="--c:' + HOT_WIRES[wi].c + '"></i>').join('') + '<span class="f">' + '✖'.repeat(s.strikes) + '<em>' + '✖'.repeat(s.maxStrikes - s.strikes) + '</em></span>'; }
+      hot.querySelector('.tm').textContent = Math.max(0, s.time).toFixed(1) + ' s';
+      hotBox.classList.toggle('miss', hw.flash > 0 && s.last === 'miss'); hotBox.classList.toggle('hit', hw.flash > 0 && s.last === 'hit');
+    }
+    function hotPressSlot(slot){
+      if(!hw) return; const r = hotPress(hw.s, slot); if(r === 'none') return; hw.flash = 0.22; hw.dirty = true;
+      if(r === 'ok') return hotDone(); if(r === 'fail') return hotFail(); hotDraw();
+    }
+    function hotDone(){
+      const w = hw; hotClose(); if(!w || ctx.drivingState() !== w.d) return; const d = w.d; d.q.wired = true; d.engine = true; d.t0 = performance.now();
+      toast(w.plane ? 'Engine running. Throttle up (W), then pull back at ' + Math.round((d.s.P && d.s.P.vr || 30) * 3.6) + ' km/h.' : 'The engine catches — go!');
+    }
+    function hotFail(){
+      const w = hw; if(!w) return; const slow = w.s.last === 'timeout';
+      toast(slow ? 'Too slow — the ignition locks up and the alarm goes off!' : 'Short circuit! Sparks fly and the alarm goes off.'); crime('alarm', true, '');
+      w.s = hotCreate(w.diff, (Math.random() * 1e9) | 0); w.flash = 0; w.dirty = true; hotDraw();
+    }
+    function hotClose(){ hw = null; hot.classList.remove('show'); }
+    function hotCancel(){ if(!hw) return; hotClose(); toast('You climb out.'); ctx.leaveCar(); }
 
     function park(q){ if(q.from && (q.taken || 0) <= lastBust) return; if(!stolen.includes(q)) stolen.push(q); bump(); }
     function impound(q){ const i = stolen.indexOf(q); if(i >= 0) stolen.splice(i, 1); bump(); }
@@ -267,6 +328,7 @@
 
     /* ---------- the per-frame hook ---------- */
     function update(dt, t){
+      if(hw){ if(ctx.drivingState() !== hw.d) hotClose(); else { hotStep(hw.s, dt); if(hw.flash > 0) hw.flash -= dt; if(hw.s.state === 'fail') hotFail(); else hotDraw(); } }
       if(mg){ lockStep(mg.s, dt); if(mg.flash > 0) mg.flash -= dt; if(mg.s.state === 'fail' && mg.s.last === 'timeout'){ finish(false); } else drawLock(); }
       try{ trackBots(); }catch(e){}
       if(t - npcAt > 1100 && !ctx.inside()){ npcAt = t; try{ refreshNpcCars(); }catch(e){} }
@@ -306,16 +368,19 @@
       if(a === 'report'){ showReport(); return; }
       if(a === 'pay'){ pay(); if(panel) showReport(); return; }
       if(a === 'surrender'){ if(!W.stars){ toast('You are not wanted.'); return; } if(owed(rec) > 0 && !pay()) return; W.heat = 0; W.stars = 0; W.coolT = 0; A.t = 0; cops.length = 0; bump(); toast('You handed yourself in. The warrant is cleared.'); if(panel) showReport(); return; }
-      if(a === 'help'){ panel = true; pan.innerHTML = '<div class="box"><div class="hd"><h2>HOW WANTED LEVELS WORK</h2><button class="x">✕</button></div><ul class="how"><li><b>Break in</b> to a parked car or a showroom car with <kbd>F</kbd> — time the needle in the green.</li><li>Only <b>parked locals’ cars</b> and <b>dealership cars</b> can be stolen. Your own cars, rentals and aircraft are off limits.</li><li>Witnesses and the dealership cameras add <b>stars</b>. An alarm always does.</li><li>Cops chase in cars: stay <b>moving</b>. If one is within 9 m and you have stopped, you are <b>busted</b>.</li><li>Break line of sight (or go indoors) and the stars fade. Hand yourself in here to clear it.</li><li>Fines go to the city treasury. <kbd>J</kbd> opens your crime report anywhere.</li></ul></div>'; pan.classList.add('show'); pan.querySelector('.x').onclick = hideReport; }
+      if(a === 'help'){ panel = true; pan.innerHTML = '<div class="box"><div class="hd"><h2>HOW WANTED LEVELS WORK</h2><button class="x">✕</button></div><ul class="how"><li><b>Break in</b> to a parked car or a showroom car with <kbd>F</kbd> — time the needle in the green.</li><li>Only <b>parked locals’ cars</b>, <b>dealership cars</b> and the <b>airport’s showroom planes</b> can be stolen. Your own cars, planes and rentals are off limits.</li><li>A stolen vehicle starts <b>dead</b>: <b>hotwire</b> it by connecting the live wire to the matching terminal (press its number or tap it). Three wrong terminals set off the alarm.</li><li>Witnesses and the dealership cameras add <b>stars</b>. An alarm always does.</li><li>Cops chase in cars: stay <b>moving</b>. If one is within 9 m and you have stopped, you are <b>busted</b>.</li><li>Break line of sight (or go indoors) and the stars fade. Hand yourself in here to clear it.</li><li>Fines go to the city treasury. <kbd>J</kbd> opens your crime report anywhere.</li></ul></div>'; pan.classList.add('show'); pan.querySelector('.x').onclick = hideReport; }
     }
     const toggleReport = () => { if(mg) return; if(panel) hideReport(); else showReport(); };
     // keys while a panel / minigame is open (captured so the game does not also jump or open dialogs)
-    window.addEventListener('keydown', e => { if(!mg && !panel) return; if(mg && (e.code === 'Space' || e.code === 'KeyE' || e.code === 'Enter')){ if(!e.repeat) press(); e.preventDefault(); e.stopImmediatePropagation(); } else if(e.code === 'Escape' || (panel && (e.code === 'KeyJ'))){ if(mg) cancelLock(); else hideReport(); e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+    window.addEventListener('keydown', e => { if(!mg && !panel && !hw) return;
+      if(hw){ if(e.ctrlKey || e.metaKey || e.altKey || /^F\d+$/.test(e.code) || e.code === 'Tab') return; const c = e.code, dg = /^(Digit|Numpad)([1-9])$/.exec(c); if(dg){ if(!e.repeat) hotPressSlot(+dg[2] - 1); } else if(c === 'Escape') hotCancel(); e.preventDefault(); e.stopImmediatePropagation(); return; }   // while the dash is open every key belongs to the minigame (E / V / H must not leak into the car)
+      if(mg && (e.code === 'Space' || e.code === 'KeyE' || e.code === 'Enter')){ if(!e.repeat) press(); e.preventDefault(); e.stopImmediatePropagation(); } else if(e.code === 'Escape' || (panel && (e.code === 'KeyJ'))){ if(mg) cancelLock(); else hideReport(); e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+    hot.addEventListener('pointerdown', e => { if(!hw) return; const t = e.target.closest('[data-slot]'); if(t){ hotPressSlot(+t.dataset.slot); e.preventDefault(); } else if(e.target.closest('.out')){ hotCancel(); e.preventDefault(); } });
     lock.addEventListener('pointerdown', e => { if(mg && e.target.closest('.box')){ press(); e.preventDefault(); } });
     const view = () => ({ stars: W.stars, owed: owed(rec), arrests: rec.n.arrests, recent: rec.o.slice(0, 5) });
-    function resetSession(){ lastSeen.t = 0; cops.length = 0; W.heat = 0; W.stars = 0; W.coolT = 0; A.t = 0; mg = null; lock.classList.remove('show'); hideReport(); bump(); }
-    root.RealWorld = root.RealWorld || {}; root.RealWorld.crimeView = view; root.RealWorld.crimeState = () => ({ lock: mg ? mg.s : null, wanted: W, cops: cops.length, copPos: cops.map(c => [Math.round(c.s.x), Math.round(c.s.z)]), copInfo: cops.map(c => [Math.round(c.s.u), c.los ? 1 : 0, Math.round(Math.hypot(c.s.x - P.x, c.s.z - P.z)), c.unstuck || 0, c.avT > 0 ? 1 : 0, c.goal ? Math.round(Math.hypot(c.s.x - c.goal.x, c.s.z - c.goal.z)) : -1]), stolen: stolen.length, npcCars: npcCars.length, rec, caught });   // read-only snapshot for tests / debugging
-    return { update, keep, extra, prompt, kindOf, breakIn, toggleReport, act, busy, ver: () => ver, cols: () => copColsArr, park, impound, reset: resetSession, view, wanted: wantedNow, record: () => rec };
+    function resetSession(){ lastSeen.t = 0; cops.length = 0; W.heat = 0; W.stars = 0; W.coolT = 0; A.t = 0; mg = null; lock.classList.remove('show'); hotClose(); hideReport(); bump(); }
+    root.RealWorld = root.RealWorld || {}; root.RealWorld.crimeView = view; root.RealWorld.crimeState = () => ({ lock: mg ? mg.s : null, hot: hw ? hw.s : null, wanted: W, cops: cops.length, copPos: cops.map(c => [Math.round(c.s.x), Math.round(c.s.z)]), copInfo: cops.map(c => [Math.round(c.s.u), c.los ? 1 : 0, Math.round(Math.hypot(c.s.x - P.x, c.s.z - P.z)), c.unstuck || 0, c.avT > 0 ? 1 : 0, c.goal ? Math.round(Math.hypot(c.s.x - c.goal.x, c.s.z - c.goal.z)) : -1]), stolen: stolen.length, npcCars: npcCars.length, rec, caught });   // read-only snapshot for tests / debugging
+    return { update, keep, extra, prompt, kindOf, breakIn, hotwire, toggleReport, act, busy, ver: () => ver, cols: () => copColsArr, park, impound, reset: resetSession, view, wanted: wantedNow, record: () => rec };
   }
   return { Logic, create };
 });

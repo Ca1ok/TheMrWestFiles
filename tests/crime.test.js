@@ -32,5 +32,30 @@ if(Dr && Dr.car){
 // 5 ── arrest timer
 const a = { t: 0 }; let busted = false; for(let i = 0; i < 200 && !busted; i++) busted = C.arrestStep(a, 4, 2, 1 / 60); assert.ok(busted && i_ok(a), 'a cop next to a stopped player busts in ~1.6 s'); function i_ok(x){ return x.t >= 1.6; }
 const b = { t: 1 }; C.arrestStep(b, 4, 25, 0.5); assert.ok(b.t < 1, 'driving off drains the bar'); const c = { t: 0 }; for(let i = 0; i < 600; i++) assert.ok(!C.arrestStep(c, 30, 0, 1 / 60), 'a far cop never busts you');
-assert.strictEqual(C.STEAL_PLANES, false, 'aircraft are never stolen');
+assert.strictEqual(C.STEAL_PLANES, true, 'aircraft can be stolen and flown (after a hotwire)');
+// 5 ── the hotwire minigame: connect the live wire to the same-coloured terminal, terminals re-shuffle after every hit, 3 wrong = short circuit, time runs out
+{
+  const solve = (s, wrongFirst) => { let guard = 0, r = 'run'; while(s.state === 'run' && guard++ < 50){ let slot = s.terms.indexOf(s.order[s.i]); if(wrongFirst && guard === 1) slot = (slot + 1) % s.wires; r = C.hotPress(s, slot); } return r; };
+  assert.strictEqual(C.HOT_WIRES.length, 5, 'five wire colours, each with its own shape');
+  assert.strictEqual(new Set(C.HOT_WIRES.map(w => w.g)).size, 5, 'colour is never the only cue: every wire has a different shape');
+  const easy = C.hotCreate(C.difficultyOf(VD.CARS[0].price), 1), hard = C.hotCreate(C.difficultyOf(VD.CARS[5].price), 1), air = C.hotCreate(1, 1), sky = C.hotCreate(Math.max(0.85, C.difficultyOf(VD.PLANES[0].price)), 1);
+  assert.strictEqual(easy.wires, 3, 'an easy car has 3 wires'); assert.strictEqual(hard.wires, 5, 'a $890k hypercar has 5'); assert.strictEqual(air.wires, 5); assert.strictEqual(sky.wires, 4, 'the cheapest plane is forced to ≥ 0.85 → 4 wires');
+  for(const s of [easy, hard]){ assert.deepStrictEqual([...s.order].sort(), s.order.map((_, k) => k), 'order is a permutation'); assert.deepStrictEqual([...s.terms].sort(), s.terms.map((_, k) => k), 'terminals are a permutation'); }
+  // the right terminal every time always wins, and finishing flips the state to ok (the engine starts)
+  for(let seed = 1; seed <= 60; seed++){ const s = C.hotCreate((seed % 10) / 9, seed); assert.strictEqual(solve(s), 'ok'); assert.strictEqual(s.state, 'ok'); assert.strictEqual(s.i, s.wires); assert.strictEqual(C.hotPress(s, 0), 'none', 'nothing happens once it is over'); }
+  // terminals are reshuffled after every correct connection (never the same layout twice in a row)
+  { const s = C.hotCreate(0.9, 4); for(let k = 0; k < s.wires - 1; k++){ const before = s.terms.join(); assert.strictEqual(C.hotPress(s, s.terms.indexOf(s.order[s.i])), 'hit'); assert.notStrictEqual(s.terms.join(), before, 'terminals move after a hit'); } }
+  // a wrong terminal is a strike, not progress; a hit afterwards still works
+  { const s = C.hotCreate(0.3, 8), wrong = s.terms.findIndex(wi => wi !== s.order[0]); assert.strictEqual(C.hotPress(s, wrong), 'miss'); assert.strictEqual(s.strikes, 1); assert.strictEqual(s.i, 0, 'a miss does not advance'); assert.strictEqual(solve(s), 'ok', 'one slip is forgiven'); }
+  // three wrong terminals = short circuit
+  { const s = C.hotCreate(0.3, 9), wrong = () => s.terms.findIndex(wi => wi !== s.order[s.i]); assert.strictEqual(C.hotPress(s, wrong()), 'miss'); assert.strictEqual(C.hotPress(s, wrong()), 'miss'); assert.strictEqual(C.hotPress(s, wrong()), 'fail'); assert.strictEqual(s.state, 'fail'); assert.strictEqual(s.last, 'short'); assert.strictEqual(C.hotPress(s, 0), 'none'); }
+  // bad input never throws or counts: out-of-range, fractional, NaN, undefined
+  { const s = C.hotCreate(0.3, 2); [-1, s.wires, 99, 1.5, NaN, undefined, null, '1'].forEach(v => assert.strictEqual(C.hotPress(s, v), 'none', 'not a terminal: ' + String(v))); assert.strictEqual(s.strikes, 0, 'garbage input costs nothing'); assert.strictEqual(s.i, 0); }
+  // the clock: a hit buys 2 s, running out fails with 'timeout'
+  { const s = C.hotCreate(0.3, 3), t0 = s.time; C.hotPress(s, s.terms.indexOf(s.order[0])); assert.ok(Math.abs(s.time - (t0 + 2)) < 1e-9, 'a hit adds 2 s'); for(let i = 0; i < 2000; i++) C.hotStep(s, 0.05); assert.strictEqual(s.state, 'fail'); assert.strictEqual(s.last, 'timeout'); }
+  // forgiving: a player who needs ~1.5 s per wire finishes every vehicle in the catalogue with time to spare
+  for(const v of VD.CARS.concat(VD.PLANES)){ const d = C.difficultyOf(v.price), s = C.hotCreate(v.kind === 'plane' ? Math.max(0.85, d) : d, 5); let t = 0; while(s.state === 'run'){ C.hotStep(s, 1.5); t += 1.5; if(s.state === 'run') C.hotPress(s, s.terms.indexOf(s.order[s.i])); } assert.strictEqual(s.state, 'ok', v.id + ' can be hotwired at 1.5 s per wire (' + t + ' s)'); }
+  // the new offence exists and is cheap enough to retry
+  assert.ok(C.CRIMES.alarm && C.CRIMES.alarm.heat > 0 && C.CRIMES.alarm.fine > 0 && C.CRIMES.alarm.heat < C.CRIMES.theft.heat, 'a failed hotwire is an alarm offence, lighter than the theft');
+}
 console.log('crime ok');
