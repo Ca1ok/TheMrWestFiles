@@ -17,11 +17,44 @@
 .ac-row{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:12px 16px; } .ac-dot{ width:34px; height:34px; border-radius:50%; box-shadow:inset 0 0 0 2px rgba(255,255,255,.25),0 0 0 1px var(--sep); transition:transform .2s var(--spring); } .ac-dot:active{ transform:scale(.9); } .ac-dot.on{ box-shadow:inset 0 0 0 2px #fff,0 0 0 3px var(--tint); }
 .ac-pick{ width:34px; height:34px; padding:0; border:0; border-radius:50%; background:none; cursor:pointer; overflow:hidden; } .ac-pick::-webkit-color-swatch-wrapper{ padding:0; } .ac-pick::-webkit-color-swatch{ border:0; border-radius:50%; }
 </style></head><body><div id="app"></div>
-<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script>
+<script src="../os/icons.js"></script><script src="../os/app/kit.js"></script><script src="../os/realworld/gfxprefs.js"></script>
 <script>
 const { h, row, group, money, esc, toggle, seg } = Kit, P_ = OS.prefs;
 const A = Kit.app({ title: 'Settings', build: (body) => {
   const acct = h('div'), rest = h('div'); body.append(acct, rest);
+
+  /* ---------- Real World graphics (every setting + presets; the game applies them live — see os/realworld/gfxprefs.js) ---------- */
+  const GFX = () => window.RealWorld && window.RealWorld.GfxPrefs;
+  function gfxSummary(){ const G = GFX(); if(!G) return ''; const s = G.read(P_.get('rwGfx'), P_.get('rwQuality')); return G.LABEL[s.p] + (s.p === 'custom' ? (G.matches(s.o) ? ' (' + G.LABEL[G.matches(s.o)] + ')' : '') : '') + ' · presets and every individual setting'; }
+  let gfxPage = null;
+  function openGfx(){
+    const G = GFX(); if(!G) return; if(gfxPage && gfxPage.el.isConnected && A.current === gfxPage) return;
+    gfxPage = A.push({ title: 'Real World graphics', backLabel: 'Settings', build: (b) => {
+      let sel = G.read(P_.get('rwGfx'), P_.get('rwQuality')); const wrap = h('div'); b.append(wrap);
+      const save = () => P_.set('rwGfx', { p: sel.p, o: sel.o });
+      const shown = () => sel.p === 'custom' ? sel.o : sel.p === 'auto' ? G.PRESETS.medium : G.PRESETS[sel.p];
+      const set = (k, v) => { sel.o = G.clean(Object.assign({}, shown(), { [k]: v })); sel.p = 'custom'; save(); paint(); };
+      const NOTE = { auto: 'Auto picks a preset for your device and adjusts it while you play. Change any value below to switch to Custom (starting from Medium).', custom: 'Your own settings. Pick a preset above any time; your custom values are kept for later.', _: 'Change any value below to turn this preset into your own Custom settings.' };
+      function ctl(f, v){
+        if(f.type === 'bool') return toggle(!!v, x => set(f.k, x ? 1 : 0));
+        if(f.type === 'select'){ const s = h('select', { class: 'field', style: { width: '150px' }, onchange: () => set(f.k, +s.value) }, ...f.opts.map(o => h('option', { value: o[0], selected: o[0] === v }, o[1]))); return s; }
+        const out = h('span', { class: 'num', style: { minWidth: '58px', textAlign: 'right' } }, f.fmt(v));
+        const inp = h('input', { type: 'range', min: f.min, max: f.max, step: f.step, value: v, style: { width: '150px', accentColor: 'var(--tint, #4a6fa8)' }, oninput: () => { out.textContent = f.fmt(+inp.value); }, onchange: () => set(f.k, +inp.value) });
+        return h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } }, inp, out);
+      }
+      function paint(){
+        wrap.innerHTML = ''; const o = shown();
+        wrap.append(h('div', { class: 'cap' }, 'Preset'), group(h('div', { class: 'row' }, seg(G.ORDER.map(id => ({ id, label: G.LABEL[id] })), sel.p, v => { sel.p = v; save(); paint(); }))), h('div', { class: 'cap', style: { textTransform: 'none', letterSpacing: 0 } }, NOTE[sel.p] || NOTE._));
+        let last = null, rows = [];
+        const flush = () => { if(rows.length) wrap.append(h('div', { class: 'cap' }, last), group(rows)); rows = []; };
+        G.FIELDS.forEach(f => { if(f.group !== last){ flush(); last = f.group; }
+          const dim = f.k === 'shadowSize' && !o.shadows, row_ = h('div', { class: 'row', style: dim ? { opacity: 0.5 } : {} }, h('div', { class: 'tx' }, h('b', null, f.label), h('small', { class: 'wrap' }, f.sub)), ctl(f, o[f.k])); rows.push(row_); });
+        flush();
+      }
+      paint();
+    } });
+  }
+  function takeDeepLink(){ let k = null; try{ k = sessionStorage.getItem('westos.settingsPage'); if(k) sessionStorage.removeItem('westos.settingsPage'); }catch(e){} if(k === 'graphics') openGfx(); }
 
   /* ---------- account ---------- */
   function paintAcct(){
@@ -81,6 +114,7 @@ const A = Kit.app({ title: 'Settings', build: (body) => {
     rest.appendChild(group(h('div', { class: 'row' }, h('div', { class: 'tx' }, h('b', null, 'Live update speed'), h('small', { class: 'wrap' }, 'How often prices and widgets refresh. Saver is lighter on batteries and older computers.')), h('div', { style: { width: '230px' } }, seg([{ id: 'saver', label: 'Saver' }, { id: 'balanced', label: 'Balanced' }, { id: 'smooth', label: 'Smooth' }], P_.get('updateSpeed') || 'balanced', v => P_.set('updateSpeed', v))))));
     rest.appendChild(group(h('div', { class: 'row' }, h('div', { class: 'tx' }, h('b', null, 'Graphics'), h('small', { class: 'wrap' }, 'Auto switches to Performance by itself if windows lag when you drag them. Performance turns off blur and heavy shadows.' + (P_.get('perfAuto') && (P_.get('perfMode') || 'auto') === 'auto' ? ' Currently using Performance.' : ''))), h('div', { style: { width: '250px' } }, seg([{ id: 'auto', label: 'Auto' }, { id: 'quality', label: 'Quality' }, { id: 'performance', label: 'Performance' }], P_.get('perfMode') || 'auto', v => { P_.set('perfMode', v); if(v === 'auto') P_.set('perfAuto', false); paintRest(); })))));
     rest.appendChild(h('div', { class: 'cap' }, 'News'));
+    rest.appendChild(group(row({ glyph: 'map', color: '#4fb88a', title: 'Real World graphics', sub: gfxSummary(), wrap: true, chev: true, onClick: openGfx })));
     rest.appendChild(group(row({ glyph: 'news', color: '#a2321f', title: 'Open the Wanted poster', sub: 'Shows it in the Preview app', chev: true, onClick: () => OS.preview({ kind: 'poster' }) })));
     rest.appendChild(h('div', { class: 'foot' }, 'Tip: click “Edit desktop” (top left) to add widgets, resize them and drag them around. Drag a window by its title bar; the green button maximizes.'));
     // Data
@@ -223,6 +257,6 @@ const A = Kit.app({ title: 'Settings', build: (body) => {
       b.append(h('div', { class: 'cap' }, 'More'), group(row({ glyph: 'files', color: '#2d6bb8', title: 'Players & server data', sub: 'Open the Files app', chev: true, onClick: () => OS.open('Files') }), row({ glyph: 'photos', color: '#c23b6b', title: 'Photo archive', sub: 'Upload and manage in Photos', chev: true, onClick: () => OS.open('Photos') })));
     } });
   }
-  paintAcct(); paintRest(); Kit.live('auth', () => { paintAcct(); paintRest(); }); Kit.live('prefs', Kit.debounce(() => {}, 100));
+  paintAcct(); paintRest(); setTimeout(takeDeepLink, 60); Kit.live('focus', takeDeepLink); Kit.live('auth', () => { paintAcct(); paintRest(); }); Kit.live('prefs', Kit.debounce(() => {}, 100));
 } });
 </script></body></html>

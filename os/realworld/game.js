@@ -17,9 +17,9 @@
     const OS = root.OS, $ = s => rootEl.querySelector(s), screen = document.getElementById('screen');
     const rootEl = document.createElement('div'); rootEl.id = 'rw';
     rootEl.innerHTML = `<canvas id="rwc" tabindex="0"></canvas><div id="rwHud">
-      <div class="rw-top"><button class="rw-btn" id="rwPhone" title="Open WestOS (P)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><span>Phone</span></button><button class="rw-btn" id="rwTravel" title="Travel (M)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></svg><span>Travel</span></button><button class="rw-btn" id="rwUnstuck" title="Stuck? Move to the nearest clear ground (U)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v5M12 16v5M3 12h5M16 12h5"/><circle cx="12" cy="12" r="2"/></svg><span>Unstuck</span></button><button class="rw-btn" id="rwGfx" title="Graphics (G)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/></svg><span>Auto</span></button><span class="rw-chip" id="rwClock"></span><span class="rw-chip" id="rwCash"></span></div>
+      <div class="rw-top"><button class="rw-btn" id="rwPhone" title="Open WestOS (P)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><span>Phone</span></button><button class="rw-btn" id="rwTravel" title="Travel (M)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></svg><span>Travel</span></button><button class="rw-btn" id="rwUnstuck" title="Stuck? Move to the nearest clear ground (U)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v5M12 16v5M3 12h5M16 12h5"/><circle cx="12" cy="12" r="2"/></svg><span>Unstuck</span></button><button class="rw-btn" id="rwGfx" title="Graphics settings (G: next preset)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/></svg><span>Auto</span></button><span class="rw-chip" id="rwClock"></span><span class="rw-chip" id="rwCash"></span></div>
       <div id="rwCompass"><canvas id="rwCompassC" width="560" height="46"></canvas><i></i><div id="rwCompassLbl"></div></div><div id="rwLoc"></div><div id="rwCross"></div><div id="rwTip"></div><div id="rwPrompt"></div><div id="rwDash"></div><canvas id="rwMap" width="168" height="168"></canvas><div id="rwLabels"></div>
-      <div id="rwDlg"></div><div id="rwHelp"><div><b>W A S D</b> walk</div><div><b>Shift</b> run &nbsp; <b>Space</b> jump</div><div><b>Mouse</b> look (click to capture)</div><div><b>E</b> open a door / talk to someone</div><div><b>U</b> stuck? move to clear ground</div><div><b>G</b> graphics: Auto / Low / Medium / High / Ultra</div><div><b>M</b> map &nbsp; <b>P</b> phone (WestOS)</div><div><b>Esc</b> release the mouse</div></div><div id="rwPause">Click to look around</div>
+      <div id="rwDlg"></div><div id="rwHelp"><div><b>W A S D</b> walk</div><div><b>Shift</b> run &nbsp; <b>Space</b> jump</div><div><b>Mouse</b> look (click to capture)</div><div><b>E</b> open a door / talk to someone</div><div><b>U</b> stuck? move to clear ground</div><div><b>G</b> graphics preset &nbsp; (top bar: all graphics settings)</div><div><b>M</b> map &nbsp; <b>P</b> phone (WestOS)</div><div><b>Esc</b> release the mouse</div></div><div id="rwPause">Click to look around</div>
       <div id="rwTouch"><div id="rwStick"><i></i></div><button id="rwBtnE">E</button><button id="rwBtnJ">⤒</button><button id="rwBtnR">Run</button><div id="rwDrv"><button id="rwTG">Gas</button><button id="rwTB">Brake</button><button id="rwTH">Hand</button><button id="rwTV">View</button><button id="rwTT">Taxi</button></div></div>
       <div id="rwLoad"><div class="t">Stepping outside…</div><div class="bar"><i></i></div></div><div id="rwFade"></div></div>`;
     screen.insertBefore(rootEl, document.getElementById('menubar'));
@@ -218,7 +218,7 @@
 
     /* ---------------- setup / teardown of the GPU side (created on first enter, freed on exit so a closed world costs nothing) ---------------- */
     function gpuUp(){
-      if(gfx) return true; gfx = RW.GFX.create(cv, { aa: !perfLow() }); if(!gfx) return false; S.nh = nh(); S.nd = G.districtCount(S.nh); L.setup(S.nh); T.setup(L.radius()); scr = RW.Screens.manager(gfx); npcs = RW.NPC.create(G, L);
+      if(gfx) return true; gfx = RW.GFX.create(cv, { aa: (() => { let s = null; try{ s = GP.read(OS.prefs.get('rwGfx'), OS.prefs.get('rwQuality')); }catch(e){} return !perfLow() && (!s || s.p !== 'custom' || !!s.o.aa); })() }); if(!gfx) return false; S.nh = nh(); S.nd = G.districtCount(S.nh); L.setup(S.nh); T.setup(L.radius()); scr = RW.Screens.manager(gfx); npcs = RW.NPC.create(G, L);
       st = RW.Streamer.create(gfx, { nh: S.nh, radius: perfLow() ? cfg.perfStart : cfg.startRadius, base: 'os/realworld/', skip: farSea }); initQuality(); gfx.onRestore = () => { st.free(); st = RW.Streamer.create(gfx, { nh: S.nh, radius: perfLow() ? cfg.perfStart : cfg.startRadius, skip: farSea }); initQuality(); };
       net = RW.Net.create(K); cells = RW.Cells.create(gfx); if(RW.Assets && !RW.Assets.tried){ RW.Assets.tried = true; RW.Assets.load('assets/world/').catch(() => {}); } return true;
     }
@@ -471,7 +471,7 @@
     const tend = e => { for(const c of e.changedTouches){ if(touch.stick && c.identifier === touch.stick.id){ touch.stick = null; touch.mx = touch.mz = 0; stick.style.display = 'none'; knob.style.transform = ''; } if(touch.look && c.identifier === touch.look.id) touch.look = null; } };
     cv.addEventListener('touchend', tend); cv.addEventListener('touchcancel', tend);
     $('#rwBtnE').addEventListener('touchstart', e => { e.preventDefault(); interact(); }, { passive: false }); $('#rwBtnJ').addEventListener('touchstart', e => { e.preventDefault(); touch.jump = true; }, { passive: false }); $('#rwBtnR').addEventListener('touchstart', e => { e.preventDefault(); touch.run = !touch.run; $('#rwBtnR').classList.toggle('on', touch.run); }, { passive: false });
-    $('#rwGfx').onclick = () => { cycleQuality(); try{ cv.focus(); }catch(e){} };
+    $('#rwGfx').onclick = () => openGfx();
     $('#rwUnstuck').onclick = () => { unstuck(); try{ cv.focus(); }catch(e){} };
     $('#rwPhone').onclick = () => phone(true); $('#rwTravel').onclick = () => openMap();
     $('#rwHelp').onclick = () => $('#rwHelp').classList.remove('show');
@@ -526,7 +526,7 @@
     /* ---------------- graphics quality ----------------
      * Tiers: 0 Low (original look, 1x pixels) · 1 Medium (1.5x pixels) · 2 High (filmic colour, glossy paint, haze glow, up to 2x pixels, longer prop range) · 3 Ultra (+ real sun shadows, more chunks).
      * "Auto" (default) starts from what the GPU / device looks like and then moves itself up or down with the measured frame rate (see adapt()); the G key / Graphics button picks a tier by hand and is remembered. */
-    const QN = ['Low', 'Medium', 'High', 'Ultra'], QDPR = [1, 1.5, 2, 2], Q = { level: 1, ceil: 2, auto: true, t: 0, good: 0 };
+    const GP = RW.GfxPrefs, QN = ['Low', 'Medium', 'High', 'Ultra'], Q = { level: 1, ceil: 2, auto: true, t: 0, good: 0, p: 'auto', custom: GP.clean(null, GP.PRESETS.high), o: GP.PRESETS.medium, shadowFail: false };
     const gpuName = () => { try{ const x = gfx.gl.getExtension('WEBGL_debug_renderer_info'); return x ? String(gfx.gl.getParameter(x.UNMASKED_RENDERER_WEBGL) || '') : ''; }catch(e){ return ''; } };
     function autoStart(){
       if(perfLow()) return { level: 0, ceil: 1 }; const r = gpuName();
@@ -534,22 +534,38 @@
       const strong = /RTX|GTX ?(9|1\d)|Radeon (RX|Pro|VII)|\bRX ?\d|Apple M\d|Apple GPU|Arc\b|Quadro|Titan|Adreno \(?(6[5-9]|7|8)|Mali-G(7[1-9]|[89])/i.test(r), cores = navigator.hardwareConcurrency || 4, mem = navigator.deviceMemory || 4;
       return strong && cores >= 4 && mem >= 4 ? { level: 2, ceil: 3 } : { level: 1, ceil: 2 };
     }
-    function setLevel(n, why){
-      n = Math.max(0, Math.min(3, n | 0)); Q.level = n; S.q = n; let eff = n;
-      try{ const got = gfx.setQuality(n >= 3 ? 2 : n >= 2 ? 1 : 0, { size: 2048 }); if(n >= 3 && got < 2){ eff = 2; Q.level = S.q = 2; Q.ceil = Math.min(Q.ceil, 2); } }catch(e){ if(K.diag) K.diag.error('realworld.quality', e); }
-      if(st) st.maxRadius = Math.round(perfLow() ? cfg.perfRadius : cfg.radius * [0.5, 0.75, 1, 1.15][eff]); if(st && st.radius > st.maxRadius) st.radius = st.maxRadius;
-      if(why) toast('Graphics: ' + QN[eff] + (Q.auto ? ' (auto)' : '') + (why === true ? '' : ' — ' + why)); return eff;
+    /* The numbers in force live in Q.o (see gfxprefs.js). Presets/Auto fill it from a table; "custom" from the player's own values. applyGfx() pushes them into the engine. */
+    const gfxLabel = () => Q.p === 'auto' ? 'Auto' : Q.p === 'custom' ? 'Custom' : QN[GP.TIERS.indexOf(Q.p)];
+    function applyGfx(why){
+      const o = Q.o; let want = o.shadows ? 2 : o.refl ? 1 : 0, got = want;
+      try{ got = gfx.setQuality(want, { size: o.shadowSize }); }catch(e){ if(K.diag) K.diag.error('realworld.quality', e); }
+      Q.shadowFail = want >= 2 && got < 2; if(Q.shadowFail){ Q.o = o = Object.assign({}, o, { shadows: 0 }); if(Q.p === 'auto') Q.ceil = Math.min(Q.ceil, 2); }
+      cfg.fov = o.fov; cfg.npcRange = o.npc; cfg.carRange = o.car;
+      if(st){ st.maxRadius = Q.p === 'auto' && perfLow() ? Math.min(o.view, cfg.perfRadius) : o.view; if(st.radius > st.maxRadius || !o.adaptive) st.radius = st.maxRadius; }
+      if(!o.adaptive) S.scale = 1;
+      if(why) toast('Graphics: ' + gfxLabel() + (Q.p === 'auto' ? ' (' + QN[Q.level] + ')' : '') + (why === true ? '' : ' — ' + why)); return got;
     }
-    function initQuality(){ let p = null; try{ p = OS.prefs.get('rwQuality'); }catch(e){} const idx = ['low', 'medium', 'high', 'ultra'].indexOf(p);
-      if(idx >= 0){ Q.auto = false; setLevel(idx); } else { Q.auto = true; const a = autoStart(); Q.ceil = a.ceil; setLevel(a.level); } syncGfxBtn(); }
-    function syncGfxBtn(){ const b = $('#rwGfx'); if(b){ b.querySelector('span').textContent = Q.auto ? 'Auto' : QN[Q.level]; b.title = 'Graphics: ' + (Q.auto ? 'Auto (' + QN[Q.level] + ')' : QN[Q.level]) + ' — click to change (G)'; } }
-    function cycleQuality(){ const order = ['auto', 'low', 'medium', 'high', 'ultra'], cur = Q.auto ? 'auto' : ['low', 'medium', 'high', 'ultra'][Q.level], nx = order[(order.indexOf(cur) + 1) % order.length];
-      try{ OS.prefs.set('rwQuality', nx === 'auto' ? null : nx); }catch(e){}
-      if(nx === 'auto'){ Q.auto = true; const a = autoStart(); Q.ceil = a.ceil; Q.good = 0; Q.t = performance.now(); setLevel(a.level, true); } else { Q.auto = false; setLevel(['low', 'medium', 'high', 'ultra'].indexOf(nx), true); } S.scale = 1; syncGfxBtn(); }
+    function setLevel(n, why){ Q.level = Math.max(0, Math.min(3, n | 0)); S.q = Q.level; Q.o = GP.resolve({ p: 'auto' }, Q.level); return applyGfx(why); }
+    /* read the saved choice (pref rwGfx, or the old rwQuality) and put it in force */
+    function loadGfx(why){
+      let p = null, old = null; try{ p = OS.prefs.get('rwGfx'); old = OS.prefs.get('rwQuality'); }catch(e){}
+      const sel = GP.read(p, old); Q.p = sel.p; Q.custom = sel.o; Q.auto = sel.p === 'auto';
+      if(Q.auto){ const a = autoStart(); Q.ceil = a.ceil; Q.good = 0; Q.t = performance.now(); setLevel(a.level, why); }
+      else { Q.level = Q.p === 'custom' ? 2 : GP.TIERS.indexOf(Q.p); S.q = Q.level; Q.o = GP.resolve(sel); applyGfx(why); }
+      S.scale = 1; syncGfxBtn();
+    }
+    const initQuality = () => loadGfx(false);
+    function syncGfxBtn(){ const b = $('#rwGfx'); if(b){ b.querySelector('span').textContent = gfxLabel(); b.title = 'Graphics: ' + gfxLabel() + ' — click for all graphics settings, G to switch preset'; } }
+    /* G: next preset (Auto → Low → Medium → High → Ultra → Custom) */
+    function cycleQuality(){ const cur = GP.ORDER.indexOf(Q.p), nx = GP.ORDER[(cur + 1) % GP.ORDER.length];
+      try{ OS.prefs.set('rwGfx', { p: nx, o: Q.custom }); }catch(e){} loadGfx(true); }
+    /* the top-bar Graphics button: the full settings, in a WestOS window (Settings → Real World graphics) */
+    function openGfx(){ if(!S.running || S.loading) return; if(locked()) document.exitPointerLock(); closeDialog(true); try{ sessionStorage.setItem('westos.settingsPage', 'graphics'); }catch(e){} try{ OS.open('Settings'); }catch(e){} }
+    if(OS.on) OS.on('prefs', k => { if((k !== 'rwGfx' && k !== '*') || !gfx || !st) return; const p = OS.prefs.get('rwGfx'); if(JSON.stringify(p) === JSON.stringify({ p: Q.p, o: Q.custom })) return; loadGfx(false); });
     /* ---------------- render ---------------- */
-    const propRange = () => Q.level <= 0 ? [260, 380] : Q.level === 1 ? [430, 570] : Q.level === 2 ? [520, 700] : [620, 820];
+    const propRange = () => [Math.round(Q.o.props * 0.72), Q.o.props];
     function render(dt, t){
-      const dpr = Math.min(window.devicePixelRatio || 1, QDPR[Q.level]) * S.scale; gfx.resize(cv.clientWidth, cv.clientHeight, dpr);
+      const dpr = Math.min(window.devicePixelRatio || 1, Q.o.dpr) * S.scale; gfx.resize(cv.clientWidth, cv.clientHeight, dpr);
       if(!env || t - envAt > 250){ envAt = t; grade = K.skin && K.skin(); env = RW.Env.state(OS.now() + (RW.timeShift || 0), grade && grade.three); S.env = env; }
       st.update(S.room ? S.room.sx : P.x, S.room ? S.room.sz : P.z); st.upload(2); st.step(dt);
       if(t - sunTick > 2000){ sunTick = t; const n2 = nh(); if(n2 !== S.nh){ S.nh = n2; S.nd = G.districtCount(n2); L.setup(n2); T.setup(L.radius()); st.setNH(n2); } if(S.nh){ rebuildDyn(); rebuildVehicles(); } }
@@ -557,7 +573,7 @@
       const e = env, bob = Math.sin(P.bob * 2.2) * 0.03 * P.mv, cam = dv ? dv.cam : { pos: [P.x, P.cy + cfg.eye + bob, P.z], yaw: P.yaw, pitch: P.pitch, fov: cfg.fov * Math.PI / 180, near: 0.25, far: cfg.far };
       gfx.begin(cam, e, t / 1000);
       ensureModels(); const [np, nc] = fillActors(), vb = VD ? fillVehicles() : null, drawActorsAll = () => { drawPeople(actorBuf, np); if(nc) drawCars(carBuf, nc); if(vb) for(const k in vb) gfx.actors(k, vb[k].buf, vb[k].n, 0.9); };
-      if(Q.level >= 3 && gfx.shadowOn && !S.room && !S.cell){                       // ULTRA: sun shadows — the same buffers drawn once from the sun into a depth map
+      if(gfx.shadowOn && !S.room && !S.cell){                       // ULTRA: sun shadows — the same buffers drawn once from the sun into a depth map
         const R = dv ? 110 : 80, f = gfx.V.f, fx = cam.pos[0] + f[0] * R * 0.45, fz = cam.pos[2] + f[2] * R * 0.45;
         if(gfx.beginShadow([fx, T.height(fx, fz) + 1, fz], R)){ gfx.startWorld(); st.draw(P.x, P.z, cfg.far); if(dyn.plots) gfx.draw(dyn.plots, 1, 1); st.drawProps(...propRange()); drawActorsAll(); gfx.endShadow(); } }
       if(!S.room){ gfx.sky(e.cloud); gfx.startWorld(); if(!ocean) ocean = makeOcean(); gfx.draw(ocean, 1, 1); S.drawn = st.draw(P.x, P.z, cfg.far); if(dyn.plots) gfx.draw(dyn.plots, 1, 1); if(dyn.marks) gfx.draw(dyn.marks, 1, 1);
@@ -580,6 +596,7 @@
         if(S.fps < 38 && S.scale <= cfg.minScale + 0.01 && Q.level > 0 && t - Q.t > 6000){ Q.t = t; Q.good = 0; Q.ceil = Q.level - 1; setLevel(Q.level - 1, 'auto-adjusted to keep it smooth'); S.scale = 1; syncGfxBtn(); }
         else if(S.fps >= 58 && S.scale >= 1 && st.radius >= (st.maxRadius || cfg.radius)){ if(t - Q.t > 1000){ Q.good++; Q.t0 = Q.t0 || t; } if(Q.good >= 12 && Q.level < Q.ceil && t - Q.t > 15000){ Q.t = t; Q.good = 0; setLevel(Q.level + 1, 'auto-raised: your device can handle it'); syncGfxBtn(); } }
         else if(S.fps < 50) Q.good = 0; }
+      if(!Q.o.adaptive){ if(S.scale !== 1) S.scale = 1; return; }
       if(t - adaptT < 2500) return; if(S.fps < 40){ adaptT = t; if(S.scale > cfg.minScale + 0.01) S.scale = Math.max(cfg.minScale, S.scale - 0.1); else if(st.radius > 4) st.radius -= 1; } else if(S.fps > 57 && (S.scale < 1 || st.radius < (st.maxRadius || (perfLow() ? cfg.perfRadius : cfg.radius)))){ adaptT = t + 4000; if(S.scale < 1) S.scale = Math.min(1, S.scale + 0.05); else st.radius += 1; } }
 
     /* ---------------- public ---------------- */
