@@ -120,3 +120,4 @@ html.perf-low #rwCompass{backdrop-filter:none;-webkit-backdrop-filter:none;backg
 #rwCrime .how{line-height:1.7;font-size:14px;padding-left:20px}
 #rwBusted .b{text-align:center;padding:26px 34px;border-radius:22px;background:rgba(14,18,40,.96);border:2px solid #4a7bff;max-width:min(460px,92vw)}#rwBusted h2{margin:0 0 8px;font:900 46px system-ui;letter-spacing:.14em;color:#ff5a4d}#rwBusted p{margin:6px 0;font-size:15px}#rwBusted .s{opacity:.7;font-size:13px}
 @media (max-width:700px){#rwWanted{top:calc(236px + env(safe-area-inset-top,0px));right:10px}}
+#rwFlash{position:absolute;inset:0;background:#fff3dd;opacity:0;pointer-events:none}

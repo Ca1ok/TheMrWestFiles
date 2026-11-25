@@ -42,7 +42,7 @@
     const vehBufs = {};
     function fillVehicles(){
       const out = {}, px = P.x, pz = P.z, hexOf = i => VD.colorHex(i);
-      for(const q of V.list){ const dx = q.x - px, dz = q.z - pz; if(dx * dx + dz * dz > cfg.npcRange ** 2) continue; const b = vehBufs[q.style] || (vehBufs[q.style] = new Float32Array(8 * 16)); let o = out[q.style]; if(!o) o = out[q.style] = { buf: b, n: 0 };
+      for(const q of V.list){ if(dv && dv.wreck && dv.q === q) continue; const dx = q.x - px, dz = q.z - pz; if(dx * dx + dz * dz > cfg.npcRange ** 2) continue; const b = vehBufs[q.style] || (vehBufs[q.style] = new Float32Array(8 * 16)); let o = out[q.style]; if(!o) o = out[q.style] = { buf: b, n: 0 };
         if(o.n * 8 + 8 > o.buf.length){ const nb = new Float32Array(o.buf.length * 2); nb.set(o.buf); o.buf = vehBufs[q.style] = nb; } const rgb = q.rgb || M.rgb(hexOf(q.col)), i = o.n++ * 8, f = o.buf; f[i] = q.x; f[i + 1] = q.y != null ? q.y : T.height(q.x, q.z) + (q.kind === 'plane' ? 0.05 : 0.1); f[i + 2] = q.z; f[i + 3] = q.yaw; f[i + 4] = q.pitch || 0; f[i + 5] = q.roll || 0; f[i + 6] = pack(rgb); f[i + 7] = (q.acc != null ? q.acc : pack(rgb.map(c => c * 0.5))) + (q.driven && dv && dv.q === q && !dv.car && dv.s.throttle > 0.03 ? 0.5 : 0); }   // +0.5 on the accent colour = "engine running": the actor shader spins the propeller blades
       return out;
     }
@@ -56,6 +56,31 @@
       rebuild: () => { V.sig = ''; rebuildVehicles(); }, startDrive: q => startDrive(q), leaveCar: () => { if(dv) endDrive(); }, findFree: (x, z, c, y, o) => findFree(x, z, c, y, o), disabled: () => cells.disabled(), resolve: (x, z, y, sets, dis, r) => Phys.resolve(x, z, y, sets, dis, r), sets: () => collSets(), lift: (x, z) => kerbLift(x, z),
       inside: () => !!(S.room || S.cell), speed: () => dv ? Math.hypot(dv.s.u || 0, dv.s.v || 0) : Math.hypot(P.vx, P.vz), teleport: (x, z, y) => teleport(x, z, y), atStation: () => !!(S.room && S.room.door && S.room.door.id === 'police'), place: () => '' }) : NOCRIME;
     let dv = null, dashAt = 0, dashHtml = '';
+    /* ---- crash effects (fx.js): plane = explosion + burning wreck; car = damage → smoke (white wisps → black smoke → flames), weaker engine, a pull to one side, sparks on impact ---- */
+    let fx = null, fxA = null, fxD = null, flashEl = null, flashO = 0, wreckN = 0; const dmgMap = new Map();
+    const WRECK_S = 4;                                                                       // seconds the camera watches the fireball before the plane is towed back
+    const dmgKey = q => q.slot ? parkKey(q) : null, dmgOf = q => { const k = dmgKey(q); return k ? (dmgMap.get(k) || 0) : (q.dmg || 0); };
+    function dmgSet(q, v){ const k = dmgKey(q); if(k){ if(v > 0) dmgMap.set(k, v); else dmgMap.delete(k); } q.dmg = v; }
+    const bonnet = (s, len) => ({ x: s.x + Math.sin(s.yaw) * len * 0.3, y: s.y + 0.95, z: s.z - Math.cos(s.yaw) * len * 0.3 });
+    const emId = q => 'veh:' + (dmgKey(q) || (q._fxid = q._fxid || ('n' + (++wreckN))));
+    function carHit(d, hit){
+      const s = d.s, before = d.dmg, sev = clamp((hit - 2.5) / 16, 0, 0.6); if(!d.pull) d.pull = Math.random() < 0.5 ? -1 : 1;
+      fx.impact(s.x - s.nx * d.m.drive.wid * 0.5, s.y + 0.6, s.z - s.nz * d.m.drive.wid * 0.5, s.nx, s.nz, clamp(hit / 14, 0.2, 1.6));
+      d.dmg = Math.min(1, before + sev); dmgSet(d.q, d.dmg);
+      if(before < 0.5 && d.dmg >= 0.5) toast('Smoke is pouring from the engine.'); else if(before < 1 && d.dmg >= 1) toast('The engine is dead. E to get out, H to send it home.');
+    }
+    function carSmoke(d){                                                                       // follows the bonnet while you drive; the plume is sized by the damage
+      if(!fx || d.dmg < 0.2) return; const q = d.q, len = d.m.drive.len;
+      fx.setEmitter(emId(q), { kind: 'smoke', k: d.dmg, ttl: Infinity, get: () => (dv && dv.q === q) ? bonnet(dv.s, len) : null, x: d.s.x, y: d.s.y + 1, z: d.s.z });
+    }
+    function startWreck(d){
+      const s = d.s, m = d.m, water = T.isWater(s.x, s.z), ias = Math.hypot(s.vx, s.vy, s.vz), size = clamp(m.fly.len / 9, 0.8, 1.6), p = clamp((0.6 + ias / 60) * size, 0.5, 2.2), gy = T.height(s.x, s.z);
+      d.wreck = { t: 0, why: s.crashed || 'You crashed.' }; d.shake = 1;
+      fx.explode(s.x, water ? 0 : Math.max(s.y, gy) + 0.3, s.z, { power: p, vx: s.vx, vy: s.vy, vz: s.vz, water });
+      if(!water) fx.setEmitter('wreck:' + (wreckN++), { kind: 'wreck', x: s.x, y: gy, z: s.z, ttl: 50 });
+      if(!flashEl){ flashEl = document.createElement('div'); flashEl.id = 'rwFlash'; rootEl.appendChild(flashEl); }
+    }
+    const crashMsg = (d, why) => why + (d.q.stolen ? ' The police impounded the wreck.' : ' Your ' + d.m.name + ' was towed back to its parking spot.');
     const parkKey = q => q.slot + ':' + (q.t || 0);
     const parkedAll = () => { try{ return OS.prefs.get('rwVeh') || {}; }catch(e){ return {}; } };
     /* where you left a vehicle is remembered per garage record (slot + purchase time) in your own prefs — nothing goes to the shared database */
@@ -72,8 +97,8 @@
       if(dv || !S.running || S.phone || S.cell || S.room || S.busy || S.loading || !Dr) return false; const m = VD.get(q.id); if(!m || !m.driveable) return false;
       const car = m.kind === 'car', s = car ? Dr.car(m, { x: q.x, z: q.z, yaw: q.yaw }) : Dr.plane(m, { x: q.x, z: q.z, yaw: q.yaw }); s.y = T.height(q.x, q.z);
       let view = 'chase', inv = false; try{ view = OS.prefs.get('rwView') === 'cockpit' ? 'cockpit' : 'chase'; inv = OS.prefs.get('rwInv') === true; }catch(e){}
-      dv = { q, m, s, kind: m.kind, car, view, inv, cYaw: q.yaw, cPitch: 0, thr: 0, pitchIn: 0, rollIn: 0, t0: performance.now(), shake: 0, edgeAt: 0, hold: false, engine: !(q.stolen && !q.wired), cam: { pos: [q.x, s.y + 3, q.z], yaw: q.yaw, pitch: -0.1, roll: 0, fov: cfg.fov * Math.PI / 180, near: 0.25, far: cfg.far } };
-      q.driven = true; const rest = V.list.filter(x => x !== q); V.cols = rest.length ? Float32Array.from(VH.colliders(rest, T.height)) : null;
+      dv = { q, m, s, kind: m.kind, car, view, inv, cYaw: q.yaw, cPitch: 0, thr: 0, pitchIn: 0, rollIn: 0, t0: performance.now(), shake: 0, edgeAt: 0, hold: false, wreck: null, dmg: dmgOf(q), pull: 0, hitAt: 0, engine: !(q.stolen && !q.wired), cam: { pos: [q.x, s.y + 3, q.z], yaw: q.yaw, pitch: -0.1, roll: 0, fov: cfg.fov * Math.PI / 180, near: 0.25, far: cfg.far } };
+      q.driven = true; if(fx && car){ fx.removeEmitter(emId(q)); carSmoke(dv); } const rest = V.list.filter(x => x !== q); V.cols = rest.length ? Float32Array.from(VH.colliders(rest, T.height)) : null;
       S.drive = dv.kind; P.vx = P.vz = P.vy = 0; mouse.in = false; mouse.sx = mouse.sy = 0; mouse.l = mouse.rb = false; closeDialog(true); setPrompt(null); curNpc = curDoor = null; V.look = null;
       rootEl.classList.add('driving', 'drv-' + dv.kind); $('#rwBtnE').textContent = 'Exit';
       $('#rwTG').textContent = car ? 'Gas' : 'Thr ▲'; $('#rwTB').textContent = car ? 'Brake' : 'Thr ▼'; $('#rwTH').textContent = car ? 'Hand' : 'Brake';
@@ -82,7 +107,9 @@
     }
     /* mode: undefined = get out and park where you stand · 'home' = send it back to its parking spot · 'crash' = it was wrecked, towed back */
     function endDrive(mode, msg){
-      if(!dv) return; const d = dv, q = d.q, s = d.s; dv = null; S.drive = null; rootEl.classList.remove('driving', 'drv-car', 'drv-plane'); $('#rwBtnE').textContent = 'E'; tb.gas = tb.brake = tb.hand = false; mouse.l = mouse.rb = false;
+      if(!dv) return; const d = dv, q = d.q, s = d.s;
+      if(fx && d.car){ fx.removeEmitter(emId(q)); if(mode === 'home'){ dmgSet(q, 0); } else if(d.dmg >= 0.2 && mode !== 'crash'){ const b = bonnet(s, d.m.drive.len); fx.setEmitter(emId(q), { kind: 'smoke', k: d.dmg, ttl: 25 + 70 * d.dmg, x: b.x, y: T.height(b.x, b.z) + 0.95, z: b.z, get: null }); } }   // a wrecked car you leave keeps smoking where it stands
+      dv = null; S.drive = null; rootEl.classList.remove('driving', 'drv-car', 'drv-plane'); $('#rwBtnE').textContent = 'E'; tb.gas = tb.brake = tb.hand = false; mouse.l = mouse.rb = false;
       q.driven = false; q.pitch = q.roll = 0; q.y = null;
       if(q.stolen){ if(mode === 'crash'){ crime.impound(q); mode = 'wreck'; } else { q.x = s.x; q.z = s.z; q.yaw = s.yaw; crime.park(q); if(mode === 'home') mode = undefined; } }   // a stolen car stays where you leave it (session only), never goes to your garage
       if(mode === 'home' || mode === 'crash'){
@@ -96,6 +123,7 @@
     }
     function exitDrive(){
       if(!dv) return; const s = dv.s;
+      if(dv.wreck){ endDrive('crash', crashMsg(dv, dv.wreck.why)); return; }
       if(dv.car ? Math.abs(s.u) > 3 : (!s.onGround || s.speed > 5)){ toast(dv.car ? 'Slow down to get out.' : s.onGround ? 'Stop the plane first (Space = brakes).' : 'You cannot get out while flying!'); return; }
       endDrive();
     }
@@ -117,7 +145,7 @@
     function unstuck(){
       const now = performance.now(); if(!S.running || S.loading || S.phone || S.busy || now - unstuckAt < 1500) return; unstuckAt = now;
       if(dv){
-        const d = dv, s = d.s, q = d.q; if(d.hold) return;
+        const d = dv, s = d.s, q = d.q; if(d.hold || d.wreck) return;
         if(!d.car && !s.onGround){ toast('You cannot be stuck in the air — press H to send the plane home.'); return; }
         const spot = findFree(s.x, s.z, s.circles, s.yaw, 0.4);
         if(!spot){ endDrive('home', 'No clear space nearby — your ' + d.m.name + ' went back to its parking spot.'); return; }
@@ -165,6 +193,11 @@
     function driveCamera(dt){
       const d = dv, s = d.s, c = d.cam, car = d.car, sp = Math.abs(s.speed), m = d.m, len = car ? m.drive.len : m.fly.len;
       c.fov = (cfg.fov + clamp(sp / (car ? 60 : 110), 0, 1) * (car ? 12 : 8)) * Math.PI / 180; d.shake = Math.max(0, d.shake - dt * 2.5); const sh = d.shake * 0.15;
+      if(d.wreck){                                                                                 // the plane is gone: a slow orbit round the fireball, shaking with the blast
+        const w = d.wreck, ang = s.yaw + Math.PI * 0.8 + w.t * 0.2, r = 26 + w.t * 3.5, gx = s.x + Math.sin(ang) * r, gz = s.z - Math.cos(ang) * r, js = (fx ? fx.shake : 0) * 0.5, gy = T.height(gx, gz);
+        const px = gx + (Math.random() - 0.5) * js, py = Math.max(gy + 2.2, s.y + 7 - w.t) + (Math.random() - 0.5) * js, pz = gz, tx = s.x, ty = s.y + 3.5 + w.t * 1.2, tz = s.z, dx = tx - px, dy = ty - py, dzz = tz - pz;
+        c.pos = [px, py, pz]; c.yaw = Math.atan2(dx, -dzz); c.pitch = Math.atan2(dy, Math.hypot(dx, dzz)); c.roll += (0 - c.roll) * (1 - Math.exp(-dt * 4)); c.fov = cfg.fov * Math.PI / 180; return;
+      }
       if(d.view === 'cockpit'){
         let ex, ey, ez; if(car){ const cy = Math.cos(s.yaw), sy = Math.sin(s.yaw); ex = s.x + sy * 0.25 + cy * -0.32; ez = s.z - cy * 0.25 + sy * -0.32; ey = s.y + 1.22; c.yaw = s.yaw; c.pitch = s.pitch * 0.6; c.roll = clamp(s.roll, -0.8, 0.8) * 0.4; }
         else { const B = s.B, up = 0.55 + m.fly.hgt * 0.62 + 0.55, fw = len * 0.14; ex = s.x + B.f[0] * fw + B.u[0] * up; ey = s.y + B.f[1] * fw + B.u[1] * up; ez = s.z + B.f[2] * fw + B.u[2] * up; c.yaw = s.yaw; c.pitch = s.pitch; c.roll = s.roll; }
@@ -179,6 +212,7 @@
     const kmh = v => Math.round(Math.abs(v) * 3.6);
     function driveHint(d){
       const s = d.s, tc = touch.on, now = performance.now() - d.t0;
+      if(d.wreck) return 'E or Esc — skip';
       if(d.engine === false) return 'Engine dead — hotwire it · Esc to climb out';
       if(d.car) return tc ? 'Stick steers · Gas / Brake · Exit' : 'W gas · S brake / reverse · A D steer · Space handbrake · V view · E get out · H back home · U unstuck';
       if(s.onGround) return tc ? 'Thr ▲ to full, then pull the stick down at ' + kmh(s.P.vr) + ' km/h · Brake at idle = reverse · Taxi = runway · Stuck? tap Unstuck' : 'W throttle up · hold S at idle to reverse · A D steer · pull back (↓) at ' + kmh(s.P.vr) + ' km/h · Space brakes · T runway · U unstuck · V view · E exit';
@@ -186,14 +220,16 @@
     }
     function dash(t){
       if(t - dashAt < 100) return; dashAt = t; const d = dv, s = d.s; let h;
-      if(d.car) h = '<div class="spd"><b>' + kmh(s.u) + '</b><small>km/h' + (s.u < -0.5 ? ' · R' : '') + '</small></div>';
+      if(d.wreck) h = '<div class="warn">CRASHED</div>';
+      else if(d.car) h = (d.dmg >= 0.2 ? '<div class="warn">ENGINE ' + Math.round((1 - d.dmg) * 100) + '%</div>' : '') + '<div class="spd"><b>' + kmh(s.u) + '</b><small>km/h' + (s.u < -0.5 ? ' · R' : '') + '</small></div>';
       else { const warn = s.stallWarn ? '<div class="warn">STALL</div>' : (!s.onGround && s.alt < 70 && s.vy < -7 ? '<div class="warn">PULL UP</div>' : (s.onGround && s.speed > s.P.vr * 0.98 ? '<div class="ok">ROTATE</div>' : ''));
         h = warn + '<div class="row"><span>SPEED<b>' + kmh(s.ias) + '</b>' + (s.onGround && s.speed < -0.3 ? '<small>REVERSE</small>' : '') + '</span><span>ALT<b>' + Math.round(s.alt) + '</b></span><span>V/S<b>' + (s.vy >= 0 ? '+' : '') + s.vy.toFixed(1) + '</b></span></div><div class="thr"><i style="width:' + Math.round(d.thr * 100) + '%"></i><em>THROTTLE ' + Math.round(d.thr * 100) + '%</em></div>'; }
       h += '<div class="hint">' + esc(driveHint(d)) + '</div>'; if(h !== dashHtml){ dashHtml = h; $('#rwDash').innerHTML = h; }
     }
     function driveUpdate(dt, t, busy){
       const d = dv, s = d.s, q = d.q, inp = readDrive(dt, busy);
-      if(!d.hold && d.engine !== false){
+      if(d.car && d.dmg > 0.35){ if(inp.thr > 0 && d.dmg > 0.5) inp.thr *= Math.max(0, 1 - (d.dmg - 0.5) * 2); inp.steer = (inp.steer || 0) + d.pull * (d.dmg - 0.35) * 0.35; }   // a damaged car loses power and pulls to one side
+      if(!d.hold && !d.wreck && d.engine !== false){
         const sets = collSets(), dis = cells.disabled(), world = { ground: T.height, lift: kerbLift, push: (x, z, y, r) => { const o = Phys.resolve(x, z, y, sets, dis, r); return { x: o.x, z: o.z }; } };
         const sx0 = s.x, sz0 = s.z;
         if(d.car) Dr.stepCar(s, inp, dt, world); else Dr.stepPlane(s, inp, dt, world);
@@ -205,10 +241,13 @@
         if(r > lim){ const nx = s.x / r, nz = s.z / r; s.x = nx * lim; s.z = nz * lim; if(d.car){ s.u *= 0.2; s.v *= 0.2; } else { const vo = s.vx * nx + s.vz * nz; if(vo > 0){ s.vx -= vo * nx; s.vz -= vo * nz; } }
           if(t - d.edgeAt > 4000){ d.edgeAt = t; toast('That is the edge of the map — turn around.'); } }
       }
+      if(fx && d.car && !d.wreck){ if(s.hit > 2.5 && t - d.hitAt > 120){ d.hitAt = t; carHit(d, s.hit); carSmoke(d); } }
       q.x = s.x; q.z = s.z; q.yaw = s.yaw; q.y = s.y + (d.car ? 0.1 : 0.05); q.pitch = s.pitch; q.roll = s.roll;
       P.x = s.x; P.z = s.z; P.y = P.cy = s.y; P.vx = P.vz = P.vy = 0; P.inside = false; P.mv = 0; curNpc = curDoor = null; V.look = null;
       if(q.rentEnd && OS.now() >= q.rentEnd){ endDrive('home', 'Your rental ' + d.m.name + ' has been returned to the dealer — the day is up.'); return; }       // a 24 h rental ends even while you are at the wheel
-      if(s.crashed){ const why = s.crashed; endDrive('crash', why + (q.stolen ? ' The police impounded the wreck.' : ' Your ' + d.m.name + ' was towed back to its parking spot.')); return; }
+      if(s.crashed && !d.car && fx && !d.wreck) startWreck(d);
+      if(d.wreck){ d.wreck.t += dt; if(d.wreck.t > WRECK_S){ endDrive('crash', crashMsg(d, d.wreck.why)); return; } }
+      else if(s.crashed){ endDrive('crash', crashMsg(d, s.crashed)); return; }
       driveCamera(dt); P.yaw = d.cam.yaw; P.pitch = 0;
       if(net) net.tick({ x: P.x, z: P.z, yaw: s.yaw, mv: clamp(Math.abs(s.speed) / cfg.run, 0, 1.2), inside: false }, dt);
       dash(t);
@@ -220,9 +259,9 @@
     function gpuUp(){
       if(gfx) return true; gfx = RW.GFX.create(cv, { aa: (() => { let s = null; try{ s = GP.read(OS.prefs.get('rwGfx'), OS.prefs.get('rwQuality')); }catch(e){} return !perfLow() && (!s || s.p !== 'custom' || !!s.o.aa); })() }); if(!gfx) return false; S.nh = nh(); S.nd = G.districtCount(S.nh); L.setup(S.nh); T.setup(L.radius()); scr = RW.Screens.manager(gfx); npcs = RW.NPC.create(G, L);
       st = RW.Streamer.create(gfx, { nh: S.nh, radius: perfLow() ? cfg.perfStart : cfg.startRadius, base: 'os/realworld/', skip: farSea }); initQuality(); gfx.onRestore = () => { st.free(); st = RW.Streamer.create(gfx, { nh: S.nh, radius: perfLow() ? cfg.perfStart : cfg.startRadius, skip: farSea }); initQuality(); };
-      net = RW.Net.create(K); cells = RW.Cells.create(gfx); if(RW.Assets && !RW.Assets.tried){ RW.Assets.tried = true; RW.Assets.load('assets/world/').catch(() => {}); } return true;
+      net = RW.Net.create(K); cells = RW.Cells.create(gfx); if(RW.FX){ fx = RW.FX.create(); fxA = new Float32Array(RW.FX.MAX * 8); fxD = new Float32Array(RW.FX.MAX * 8); } if(RW.Assets && !RW.Assets.tried){ RW.Assets.tried = true; RW.Assets.load('assets/world/').catch(() => {}); } return true;
     }
-    function gpuDown(){ if(!gfx) return; try{ if(net) net.stop(); if(st) st.free(); if(scr) scr.clear(); if(cells) cells.clear(); if(dyn.plots) gfx.free(dyn.plots); if(dyn.marks) gfx.free(dyn.marks); ocean = null; gfx.destroy(); }catch(e){} gfx = st = net = scr = npcs = cells = null; S.cell = null; S.room = null; S.busy = false; P.inside = false; closeDialog(true); dyn = { plots: null, marks: null, sig: '' }; const c2 = cv.cloneNode(false); cv.replaceWith(c2); }
+    function gpuDown(){ if(!gfx) return; try{ if(net) net.stop(); if(st) st.free(); if(scr) scr.clear(); if(cells) cells.clear(); if(dyn.plots) gfx.free(dyn.plots); if(dyn.marks) gfx.free(dyn.marks); ocean = null; gfx.destroy(); }catch(e){} if(fx) fx.clear(); if(flashEl){ flashEl.remove(); flashEl = null; flashO = 0; } fx = fxA = fxD = null; dmgMap.clear(); gfx = st = net = scr = npcs = cells = null; S.cell = null; S.room = null; S.busy = false; P.inside = false; closeDialog(true); dyn = { plots: null, marks: null, sig: '' }; const c2 = cv.cloneNode(false); cv.replaceWith(c2); }
 
     /* ---------------- spawn / travel ---------------- */
     const homePose = () => { const h = OS.homes.home && OS.homes.home(); if(!h || !h.g) return null; const p = RW.Nav.housePose(+String(h.id).slice(1)); return p ? Object.assign({ n: 'Home · ' + p.name }, p) : null; };
@@ -580,8 +619,11 @@
         S.props = st.drawProps(...propRange()); }                      // trees, lamps, benches: one instanced call per kind
       if(cells.cells.size){ gfx.env = RW.Env.INDOOR; gfx.startWorld(); cells.draw(); gfx.env = e; if(S.cell){ scr.tick(P.x, P.z, t); scr.draw(); } }   // insides: only loaded ones, indoor light
       drawActorsAll();
+      if(fx){ fx.step(dt, T.height, cam.pos);
+        if(fx.count() && !S.room){ const r = fx.fill(fxA, fxD), sc = cv.height / (2 * Math.tan(cam.fov / 2)); gfx.fx(fxA, r.na, false, sc, 1 - 0.65 * (e.night || 0)); gfx.fx(fxD, r.nd, true, sc, 1); }
+        if(flashEl){ const o = Math.round(Math.min(0.85, fx.flash * 0.85) * 100) / 100; if(o !== flashO){ flashO = o; flashEl.style.opacity = o; } } }
       if(S.cell){ const ni = fillInside(); if(ni){ gfx.env = RW.Env.INDOOR; drawPeople(inBuf, ni); gfx.env = e; } }
-      const fx = grade && grade.fx; if(fx && !P.inside && (fx.kind === 'snow' || fx.kind === 'embers')) gfx.particles(fx, cv.height * 0.9);
+      const sky = grade && grade.fx; if(sky && !P.inside && (sky.kind === 'snow' || sky.kind === 'embers')) gfx.particles(sky, cv.height * 0.9);
       labels(); minimap(t); compass(t); hud(t);
     }
     function loop(t){
@@ -618,6 +660,6 @@
     /* vehicles: public read-only view + the door to the driving controller (startDrive / endDrive) */
     const vehicles = { list: () => V.list.slice(), mine: () => V.list.filter(q => q.slot), canDrive: () => VH.canDrive(), enter: slot => { const q = V.list.find(x => x.slot === slot); return !!(q && VH.canDrive() && startDrive(q)); }, exit: () => { if(dv) endDrive(); return !dv; }, _drive: q => startDrive(q),   /* _drive = test hook (tests/e2e-drive.test.js drives the showcase plane, which nobody can afford with the $100k grant) */ driving: () => dv ? { kind: dv.kind, id: dv.m.id, slot: dv.q.slot, engine: dv.engine !== false, speed: dv.s.speed, x: dv.s.x, z: dv.s.z, yaw: dv.s.yaw, alt: dv.s.alt || 0, onGround: dv.kind === 'car' ? true : dv.s.onGround } : null,
       at: id => { const p = L.poi(id); return !!(S.running && p && Math.hypot(p.x - P.x, p.z - P.z) < 48); } };
-    return { enter, exit, phone, vehicles, active: () => S.running, inPhone: () => S.phone, teleport, travelTo, hold, openMap, drive: slot => { const q = V.list.find(x => x.slot === slot); return q ? startDrive(q) : false; }, driveState: () => dv ? { kind: dv.kind, id: dv.m.id, engine: dv.engine !== false, stolen: !!dv.q.stolen, x: dv.s.x, z: dv.s.z, y: dv.s.y, speed: dv.s.speed, onGround: dv.s.onGround, crashed: dv.s.crashed, throttle: dv.s.throttle, yaw: dv.s.yaw } : null, driveSet: o => { if(dv) Object.assign(dv.s, o); }, unstuck, cycleQuality, quality: () => ({ level: Q.level, auto: Q.auto, shadows: !!(gfx && gfx.shadowOn), tier: QN[Q.level] }), state: () => ({ x: P.x, y: P.y, z: P.z, yaw: P.yaw, mode: S.mode, fps: S.fps, scale: S.scale, radius: st && st.radius, chunks: st && st.chunks.size, calls: gfx && gfx.calls, tris: gfx && Math.round(gfx.tris), built: st && st.built, bots: botList.length, others: net ? net.others.size : 0, loading: S.loading, drawn: S.drawn, props: S.props, inside: S.cell ? S.cell.name : null, cells: cells ? cells.cells.size : 0, nh: S.nh }), _P: P, _S: S, _dv: () => dv, _st: () => st, _cells: () => cells };
+    return { enter, exit, phone, vehicles, active: () => S.running, inPhone: () => S.phone, teleport, travelTo, hold, openMap, drive: slot => { const q = V.list.find(x => x.slot === slot); return q ? startDrive(q) : false; }, driveState: () => dv ? { kind: dv.kind, id: dv.m.id, engine: dv.engine !== false, stolen: !!dv.q.stolen, x: dv.s.x, z: dv.s.z, y: dv.s.y, speed: dv.s.speed, onGround: dv.s.onGround, crashed: dv.s.crashed, throttle: dv.s.throttle, yaw: dv.s.yaw, wreck: !!dv.wreck, dmg: dv.dmg || 0 } : null, driveSet: o => { if(dv) Object.assign(dv.s, o); }, unstuck, cycleQuality, quality: () => ({ level: Q.level, auto: Q.auto, shadows: !!(gfx && gfx.shadowOn), tier: QN[Q.level] }), state: () => ({ x: P.x, y: P.y, z: P.z, yaw: P.yaw, mode: S.mode, fps: S.fps, scale: S.scale, radius: st && st.radius, chunks: st && st.chunks.size, calls: gfx && gfx.calls, tris: gfx && Math.round(gfx.tris), built: st && st.built, bots: botList.length, others: net ? net.others.size : 0, loading: S.loading, drawn: S.drawn, props: S.props, inside: S.cell ? S.cell.name : null, cells: cells ? cells.cells.size : 0, nh: S.nh }), _P: P, _S: S, _fx: () => fx, _dv: () => dv, _st: () => st, _cells: () => cells };
   };
 })(typeof self !== 'undefined' ? self : this);

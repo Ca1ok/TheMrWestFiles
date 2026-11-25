@@ -37,6 +37,7 @@ Trees, street lamps and benches are **instanced**: the chunk worker only emits 3
 | `cells.js` | seamless interiors: place a room into the real building, load/unload by distance |
 | `props.js` | instanced scenery templates (tree, lamp, bench) + LOD rules |
 | `drive.js` | vehicle physics: cars (tyre-grip model) and planes (thrust, lift, stall, ground mode, crashes) — pure, `tests/drive.test.js` |
+| `fx.js` | crash effects: explosion, sparks, debris, smoke and burning-wreck emitters (particle pool, pure, `tests/fx.test.js`); drawn by `gfx.js` `G.fx` |
 | `glb.js` | `.glb` reader + `assets/world/manifest.json` loader (props, cars, people, furniture on the main thread; buildings in the worker) |
 | `models.js` | registry of the baked Kenney **building** models; `pick()` chooses one that fits a footprint (null = procedural building) |
 | `nav.js` | districts, nearest place, safe landing spots, arrival poses — shared by the game and WestMap (pure) |
