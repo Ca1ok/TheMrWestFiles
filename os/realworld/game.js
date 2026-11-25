@@ -4,7 +4,7 @@
  * RealWorld.start(K) is called once by boot.js the first time the player steps outside; it returns the public API (enter / exit / phone / travel …). */
 (function(root){
   const RW = root.RealWorld, Phys = RW.Phys, G = root.WorldGen, BG = root.BuildGen, T = root.RWTerrain, M = root.RWMesh, L = root.RWLayout;
-  const cfg = RW.config = Object.assign({ radius: 10, perfRadius: 5, fov: 72, walk: 4.4, run: 8.4, jump: 5.6, grav: 17, eye: 1.55, pr: 0.36, sens: 0.0022, far: 1700, npcRange: 230, carRange: 480, minScale: 0.55 }, RW.config || {});
+  const cfg = RW.config = Object.assign({ radius: 28, perfRadius: 10, startRadius: 12, perfStart: 5, fov: 72, walk: 4.4, run: 8.4, jump: 5.6, grav: 17, eye: 1.55, pr: 0.36, sens: 0.0022, far: 4400, npcRange: 230, carRange: 480, minScale: 0.55 }, RW.config || {});
   /* landmark id (WorldGen.POIS) → the interior to build when you walk in. Add a line + RealWorld.Interiors.register('<kind>', …) for a new public building. */
   const BUILDINGS = RW.buildings = { bank: { kind: 'bank', name: 'Bank' }, exchange: { kind: 'exchange', name: 'Stock Exchange' }, shop: { kind: 'shop', name: 'WestShop' }, arcade: { kind: 'arcade', name: 'Arcade' }, agency: { kind: 'agency', name: 'Estate Agency' }, hall: { kind: 'hall', name: 'Council Hall' },
     dealer: { kind: 'dealer', name: 'Car Dealership' }, airport: { kind: 'airport', name: 'Private Airport' }, uni: { kind: 'uni', name: 'University Library' }, lab: { kind: 'lab', name: 'Research Institute' }, ind: { kind: 'ind', name: 'Freight Depot' }, plant: { kind: 'plant', name: 'Power Plant' }, police: { kind: 'police', name: 'Police Station' } };
@@ -101,6 +101,8 @@
     }
     /* THE OPEN SEA: one huge flat plane just under the sea level of the chunks (which only cover ~1.3 km around you), so water runs to the horizon instead of ending where chunks stop. */
     let ocean = null;
+    /* open sea far from the player needs no chunk: the ocean plane already covers a seabed deeper than 10 m (9 samples per chunk, cached by the streamer) */
+    function farSea(cx, cz){ const x0 = cx * 128, z0 = cz * 128; for(let i = 0; i <= 2; i++) for(let j = 0; j <= 2; j++) if(T.land(x0 + i * 64, z0 + j * 64) > -10) return false; return true; }
     function makeOcean(){ const mb = new M.MB(16 * 16 * 4 + 8), c = [16, 70, 126], n = 16, w = 1000, o = -n * w / 2; for(let a = 0; a < n; a++) for(let b = 0; b < n; b++){ const x0 = o + a * w, z0 = o + b * w, k = mb.n; mb.v(x0, -0.4, z0, 0, 1, 0, c, 253); mb.v(x0 + w, -0.4, z0, 0, 1, 0, c, 253); mb.v(x0 + w, -0.4, z0 + w, 0, 1, 0, c, 253); mb.v(x0, -0.4, z0 + w, 0, 1, 0, c, 253); mb.tri(k, k + 2, k + 1); mb.tri(k, k + 3, k + 2); } return gfx.upload(mb.finish()); }   // 16 × 16 tiles of 1 km: huge triangles lose depth precision
     /* UNSTUCK (key U / the Unstuck button): finds the nearest spot where you — or your car / plane — overlap nothing and puts you there, level and at a standstill (same heading).
      * Searches rings out to 90 m; nothing free → a vehicle goes back to its parking spot, a walker to home / the town square. Works on foot, in a car and on the ground in a plane. */
@@ -217,7 +219,7 @@
     /* ---------------- setup / teardown of the GPU side (created on first enter, freed on exit so a closed world costs nothing) ---------------- */
     function gpuUp(){
       if(gfx) return true; gfx = RW.GFX.create(cv, { aa: !perfLow() }); if(!gfx) return false; S.nh = nh(); S.nd = G.districtCount(S.nh); L.setup(S.nh); T.setup(L.radius()); scr = RW.Screens.manager(gfx); npcs = RW.NPC.create(G, L);
-      st = RW.Streamer.create(gfx, { nh: S.nh, radius: perfLow() ? cfg.perfRadius : cfg.radius, base: 'os/realworld/' }); initQuality(); gfx.onRestore = () => { st.free(); st = RW.Streamer.create(gfx, { nh: S.nh, radius: cfg.radius }); };
+      st = RW.Streamer.create(gfx, { nh: S.nh, radius: perfLow() ? cfg.perfStart : cfg.startRadius, base: 'os/realworld/', skip: farSea }); initQuality(); gfx.onRestore = () => { st.free(); st = RW.Streamer.create(gfx, { nh: S.nh, radius: perfLow() ? cfg.perfStart : cfg.startRadius, skip: farSea }); initQuality(); };
       net = RW.Net.create(K); cells = RW.Cells.create(gfx); if(RW.Assets && !RW.Assets.tried){ RW.Assets.tried = true; RW.Assets.load('assets/world/').catch(() => {}); } return true;
     }
     function gpuDown(){ if(!gfx) return; try{ if(net) net.stop(); if(st) st.free(); if(scr) scr.clear(); if(cells) cells.clear(); if(dyn.plots) gfx.free(dyn.plots); if(dyn.marks) gfx.free(dyn.marks); ocean = null; gfx.destroy(); }catch(e){} gfx = st = net = scr = npcs = cells = null; S.cell = null; S.room = null; S.busy = false; P.inside = false; closeDialog(true); dyn = { plots: null, marks: null, sig: '' }; const c2 = cv.cloneNode(false); cv.replaceWith(c2); }
@@ -535,7 +537,7 @@
     function setLevel(n, why){
       n = Math.max(0, Math.min(3, n | 0)); Q.level = n; S.q = n; let eff = n;
       try{ const got = gfx.setQuality(n >= 3 ? 2 : n >= 2 ? 1 : 0, { size: 2048 }); if(n >= 3 && got < 2){ eff = 2; Q.level = S.q = 2; Q.ceil = Math.min(Q.ceil, 2); } }catch(e){ if(K.diag) K.diag.error('realworld.quality', e); }
-      if(st) st.maxRadius = (perfLow() ? cfg.perfRadius : cfg.radius) + (eff >= 3 ? 2 : 0); if(st && st.radius > st.maxRadius) st.radius = st.maxRadius;
+      if(st) st.maxRadius = Math.round(perfLow() ? cfg.perfRadius : cfg.radius * [0.5, 0.75, 1, 1.15][eff]); if(st && st.radius > st.maxRadius) st.radius = st.maxRadius;
       if(why) toast('Graphics: ' + QN[eff] + (Q.auto ? ' (auto)' : '') + (why === true ? '' : ' — ' + why)); return eff;
     }
     function initQuality(){ let p = null; try{ p = OS.prefs.get('rwQuality'); }catch(e){} const idx = ['low', 'medium', 'high', 'ultra'].indexOf(p);

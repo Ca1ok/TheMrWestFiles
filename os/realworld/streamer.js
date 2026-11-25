@@ -11,13 +11,15 @@
   const RW = root.RealWorld = root.RealWorld || {}, CH = 128, PALETTE = [0x3d7a45, 0x4a8a4e, 0x5a9a52, 0x2f6b3d, 0x6a9f4a, 0x3a8060, 0x7aa84e];
   function create(gfx, opt){
     const S = { chunks: new Map(), nh: opt.nh || 64, radius: opt.radius || 8, LOD_AT: opt.LOD_AT || [2.6, 4.6, 7.2], cap: opt.cap || 0, pending: 0, built: 0, bytes: 0, frame: 0, propsDirty: true, propTris: 0 };
-    const queue = [], ready = [], workers = []; let nextId = 1, fallback = false, base = opt.base || 'os/realworld/';
+    const queue = [], ready = [], workers = [], skipC = new Map(); let lcx = 1e9, lcz = 1e9, lR = -1, idle = 0; let nextId = 1, fallback = false, base = opt.base || 'os/realworld/';
     const key = (cx, cz) => cx + ',' + cz;
     function startWorkers(){ const n = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 2) - 1)); try{ for(let i = 0; i < n; i++){ const w = new Worker(base + 'worker.js'); w.busy = 0; w.onmessage = e => { w.busy = 0; const m = e.data; if(m.t === 'chunk') ready.push(m); else if(m.t === 'error'){ console.warn('[realworld] chunk error', m.msg); const c = S.chunks.get(key(m.cx, m.cz)); if(c) c.req = -1; } }; w.onerror = e => { console.warn('[realworld] worker failed', e.message); fallback = true; }; workers.push(w); } }catch(e){ fallback = true; } if(!workers.length) fallback = true; }
     startWorkers();
     /* the level of detail for a distance (chunk-widths); hysteresis only when LOSING detail, so a boundary never flickers */
     const lodFor = (d, cur) => { const A = S.LOD_AT; let l = A.length; for(let i = 0; i < A.length; i++) if(d < A[i]){ l = i; break; } if(cur != null && l > cur && d < A[Math.max(0, l - 1)] + 0.35) l = cur; return l; };
-    S.setNH = nh => { if(nh !== S.nh){ S.nh = nh; S.chunks.forEach(c => { c.req = -1; }); } };
+    S.setNH = nh => { if(nh !== S.nh){ S.nh = nh; skipC.clear(); S.chunks.forEach(c => { c.req = -1; }); } };
+    /* chunks of open deep sea (opt.skip) are never built beyond 6 chunks from the player: cached per chunk */
+    const skipped = (cx, cz) => { if(!opt.skip) return false; const k = key(cx, cz); let v = skipC.get(k); if(v === undefined){ v = !!opt.skip(cx, cz); skipC.set(k, v); } return v; };
     function want(cx, cz, d){
       const k = key(cx, cz); let c = S.chunks.get(k);
       if(!c){ c = { cx, cz, k, lod: -1, cur: null, old: null, fade: 1, cols: null, props: null, doors: [], req: -1, d, x0: cx * CH, z0: cz * CH, seen: S.frame }; S.chunks.set(k, c); }
@@ -34,7 +36,9 @@
     /* WALK mode */
     S.update = function(px, pz){
       S.frame++; const pcx = Math.floor(px / CH), pcz = Math.floor(pz / CH), R = S.radius;
-      for(let dz = -R; dz <= R; dz++) for(let dx = -R; dx <= R; dx++){ const cx = pcx + dx, cz = pcz + dz, d = Math.hypot((cx + 0.5) * CH - px, (cz + 0.5) * CH - pz) / CH; if(d > R + 0.4) continue; want(cx, cz, d); }
+      // a big radius is thousands of chunks: re-evaluate them when you cross a chunk edge, the radius changes, or every 8th frame (cheap otherwise)
+      if(pcx === lcx && pcz === lcz && R === lR && ++idle < 8){ pump(); return; } idle = 0; lcx = pcx; lcz = pcz; lR = R;
+      for(let dz = -R; dz <= R; dz++) for(let dx = -R; dx <= R; dx++){ const cx = pcx + dx, cz = pcz + dz, d = Math.hypot((cx + 0.5) * CH - px, (cz + 0.5) * CH - pz) / CH; if(d > R + 0.4) continue; if(d > 6 && skipped(cx, cz)) continue; want(cx, cz, d); }
       S.chunks.forEach((c, k) => { if(Math.hypot((c.cx + 0.5) * CH - px, (c.cz + 0.5) * CH - pz) / CH > R + 1.6) drop(k, c); });
       pump();
     };

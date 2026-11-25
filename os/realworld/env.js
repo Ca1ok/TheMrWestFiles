@@ -18,7 +18,7 @@
     if(grade){ const k = (grade.k == null ? 0.6 : grade.k) * 0.55, lin = c => [Math.pow(c[0], 2.2), Math.pow(c[1], 2.2), Math.pow(c[2], 2.2)];
       const gf = lin(grade.fog || grade.bg || hor), gs = lin(grade.sky || sky), gg = lin(grade.ground || gnd), gd = lin(grade.dir || sunCol);
       fog = mix(fog, mul(gf, 1.3), k); hor = mix(hor, mul(gf, 1.3), k); zen = mix(zen, mul(lin(grade.bg || zen), 1.1), k * 0.8); sky = mix(sky, mul(gs, 0.55), k); gnd = mix(gnd, mul(gg, 0.4), k); sunCol = mix(sunCol, mul(gd, 1.1), k * 0.5); disc = mix(disc, mul(gd, 4), k * 0.5); }
-    return { sunDir: dir, sunCol, sunDisc: disc, sky, ground: gnd, fog, zenith: zen, horizon: hor, fogD: 0.0011 + 0.0006 * nightAmt, night: nightAmt, phase: ph, isDay: day, cloud };
+    return { sunDir: dir, sunCol, sunDisc: disc, sky, ground: gnd, fog, zenith: zen, horizon: hor, fogD: 0.00042 + 0.0003 * nightAmt, night: nightAmt, phase: ph, isDay: day, cloud };
   }
   /* indoors: warm, flat and a little dim; "glowing" surfaces (lamps, screens, neon) are always on */
   const INDOOR = { sunDir: [0.2, 1, 0.1], sunCol: [0.45, 0.42, 0.38], sunDisc: [0, 0, 0], sky: [0.52, 0.48, 0.44], ground: [0.26, 0.23, 0.2], fog: [0.04, 0.035, 0.03], zenith: [0, 0, 0], horizon: [0, 0, 0], fogD: 0.016, night: 1, phase: 0, isDay: false, cloud: 0 };
