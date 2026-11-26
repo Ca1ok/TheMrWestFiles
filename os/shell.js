@@ -212,6 +212,7 @@
     if(e.button > 0) return; const itemEl = e.target.closest('.item'); if(e.target.closest('.rmbtn,.sz')) return;
     const st = { x: e.clientX, y: e.clientY, t: Date.now(), el: itemEl, id: e.pointerId, moved: false, timer: null };
     if(itemEl){ itemEl.classList.add('pressed'); if(editing) beginDrag(st, e); }
+    if(e.pointerType !== 'touch' && !editing) st.sw = { sl: pagesEl.scrollLeft, p0: curPage, on: false, vx: 0, lx: e.clientX, lt: performance.now() };   // mouse / pen: drag the page sideways (touch scrolls natively)
     desk._press = st;
   });
   function beginDrag(st, e){
@@ -235,6 +236,9 @@
   }
   window.addEventListener('pointermove', e => {
     const st = desk._press; if(st && (Math.abs(e.clientX - st.x) > 6 || Math.abs(e.clientY - st.y) > 6)){ st.moved = true; if(st.el && !drag) st.el.classList.remove('pressed'); }
+    const sg = st && st.sw; if(sg && !drag && !editing){ const dx = e.clientX - st.x, now = performance.now();
+      if(!sg.on && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(e.clientY - st.y) * 1.2){ sg.on = true; pagesEl.style.scrollSnapType = 'none'; pagesEl.style.scrollBehavior = 'auto'; }
+      if(sg.on){ pagesEl.scrollLeft = sg.sl - dx; const dt = Math.max(1, now - sg.lt); sg.vx = 0.8 * sg.vx + 0.2 * (e.clientX - sg.lx) / dt; sg.lx = e.clientX; sg.lt = now; return; } }
     if(!drag) return;
     const pr = pageRect(), x = e.clientX - pr.left - drag.dx, y = e.clientY - pr.top - drag.dy;
     drag.el.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0)';
@@ -250,6 +254,8 @@
   }
   function endPress(e){
     const st = desk._press; desk._press = null; if(!st) return; if(st.el) st.el.classList.remove('pressed');
+    if(st.sw && st.sw.on){ const sw = st.sw, w = Math.max(1, pagesEl.clientWidth); let np = Math.round(pagesEl.scrollLeft / w); if(Math.abs(sw.vx) > 0.35) np = sw.vx < 0 ? sw.p0 + 1 : sw.p0 - 1; np = Math.max(0, Math.min(pageCount - 1, np));
+      pagesEl.style.scrollSnapType = ''; pagesEl.style.scrollBehavior = ''; pagesEl.scrollTo({ left: np * w, behavior: reduceMotion() ? 'auto' : 'smooth' }); return; }
     if(drag){ clearTimeout(drag.edgeT); const el = drag.el, d = drag; drag = null; dragPages = 0; d.ghost.remove(); if(d.target) d.rec.it.pos = d.target; el.classList.remove('dragging'); try{ el.releasePointerCapture(st.id); }catch(_){} pagesEl.style.overflowX = 'auto'; const pn = Math.min(curPage, Math.max(0, (d.target ? d.target.p : curPage))); relayoutHome(true); pagesEl.scrollTo({ left: Math.min(pageCount - 1, pn) * pagesEl.clientWidth }); saveLayout(); return; }
     if(!st.moved && !editing && Date.now() - st.t < 600){
       const a = e.target.closest && e.target.closest('[data-app]'); if(a){ openApp(a.dataset.app, $('.tile', a)); return; }
