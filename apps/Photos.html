@@ -21,9 +21,9 @@ const A = Kit.app({ title: 'Photos', right: OS.auth.isAdmin() ? [{ icon: 'plus',
   }
   function paintGate(){
     gate.innerHTML = ''; if(G.canOpen()) return;
-    gate.appendChild(h('div', { class: 'card', style: { marginTop: '12px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' } }, h('div', { style: { flex: 1, minWidth: '180px', font: '500 14px/1.4 var(--font)' } }, 'You’re viewing low-quality previews. Sign in to open, expand and download photos.'), h('button', { class: 'btn sm', onclick: () => OS.open('Settings') }, 'Sign in')));
+    gate.appendChild(h('div', { class: 'card', style: { marginTop: '12px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' } }, h('div', { style: { flex: 1, minWidth: '180px', font: '500 14px/1.4 var(--font)' } }, 'You’re viewing low-quality previews. Sign in to open, expand and download photos.'), h('button', { class: 'btn sm', onclick: () => OS.open('Settings', { page: 'account' }) }, 'Sign in')));
   }
-  function tapTile(list, i){ if(!G.canOpen()){ Kit.toast('Sign in to open and download photos'); OS.open('Settings'); return; } open(list, i); }
+  function tapTile(list, i){ if(!G.canOpen()){ Kit.toast('Sign in to open and download photos'); OS.open('Settings', { page: 'account' }); return; } open(list, i); }
   function paint(){
     paintGate(); grid.innerHTML = ''; info.innerHTML = ''; const list = items.filter(m => filter === 'all' || m.type === filter);
     if(!G.budgetOk()) info.appendChild(h('div', { class: 'card', style: { marginTop: '12px', background: 'var(--tint-dim)', color: 'var(--tint)', fontWeight: 500, fontSize: '14px' } }, 'The monthly photo-data budget has been reached. Photos you’ve already viewed still work; others return next month.'));

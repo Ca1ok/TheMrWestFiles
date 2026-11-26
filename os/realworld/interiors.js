@@ -86,7 +86,7 @@
   register('agency', c => { const r = new Room(18, 14, 3.8, { name: 'Estate Agency', floor: '#c6b08e', wall: '#f1dfc8', base: '#8f5f3f' });
     for(let i = 0; i < 6; i++) for(let j = 0; j < 4; j++){ const h = 0.2 + ((i * 5 + j * 3) % 5) * 0.12; r.mb.boxAA(6 + i * 0.9, 0.9, 3.4 + j * 0.9, 6.7 + i * 0.9, 0.9 + h, 4.1 + j * 0.9, J(i + j), J(i + j)); } r.box(5.6, 3, 5.8, 4, 0.9, '#6b4b32', '#8a6a48');
     r.screen('listings', 0.04, 1.5, 7, 3.4, 1.9, 'e'); r.screen('listings', 17.96, 1.5, 7, 3.4, 1.9, 'w');
-    r.npc(9, 10.3, Math.PI, 'Agent Quinn', 'Looking to buy, rent or sell? I know every house in town.', '#c98a62', null, [{ label: 'Browse properties', app: 'RealEstate' }, { label: 'Show me the map', app: 'WestMap' }]); r.plant(1.2, 1.2); r.plant(16.8, 12.8); return r; });
+    r.npc(9, 10.3, Math.PI, 'Agent Quinn', 'Looking to buy, rent or sell? I know every house in town.', '#c98a62', null, [{ label: 'Homes for sale', app: 'WestMap', link: { filter: 'sale' } }, { label: 'My assets', app: 'RealEstate' }, { label: 'Show me the map', app: 'WestMap', link: { me: true } }]); r.plant(1.2, 1.2); r.plant(16.8, 12.8); return r; });
   /* car dealership + private airport: a clerk sells through the Assets app (tab opens on cars / planes), a wall screen lists the catalogue. Buying itself is gated on standing here (OS.realworld.at). */
   register('dealer', c => { const r = new Room(24, 18, 4.8, { name: 'Car Dealership', floor: '#d9d6cf', floor2: '#c9c5bc', wall: '#f3efe6', base: '#a63c36' });
     r.box(8, 12.2, 8, 1.1, 1.1, '#5e5a52', '#7a756a'); r.box(3, 3, 6.5, 3.2, 0.12, '#2b2c30', '#3a3b40'); r.box(14.5, 3, 6.5, 3.2, 0.12, '#2b2c30', '#3a3b40');

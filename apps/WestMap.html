@@ -335,6 +335,9 @@ function paintFeed(p){
     p.append(h('div', { class: 'ev', onclick: () => focus(e.h) }, h('div', { class: 'dot', style: { background: c } }, e.k === 'fire' ? '▲' : e.k === 'police' ? '★' : '+'), h('div', null, h('b', null, t), h('div', { class: 'sub' }, e.d + ' · ' + Kit.ago(e.t))))); });
 }
 function takeFocus(){ try{ const id = localStorage.getItem('westmap_focus'); if(id){ localStorage.removeItem('westmap_focus'); if(byId[id]) focus(id); else { pendingFocus = id; } } }catch(e){} }
+/* links: { house: id (select it, open its listing), xy: [x, z] (centre there), me: true (centre on yourself), filter: 'sale'|'rent'|'mine' } */
+Kit.onLink(l => { if(l.filter){ filter = { mine: 0, sale: 0, rent: 0, fire: 0 }; if(filter.hasOwnProperty(l.filter === 'mine' ? 'mine' : l.filter)) filter[l.filter] = 1; need = true; paintBar && paintBar(); }
+  if(l.house){ if(byId[l.house]) focus(l.house); else pendingFocus = l.house; } else if(l.xy){ focusXY(l.xy[0], l.xy[1], 3.8); } else if(l.me){ const p = playerXY(me, performance.now()); if(p) focusXY(p.x, p.y, 3.8); } });
 let pendingFocus = null; addEventListener('storage', e => { if(e.key === 'westmap_focus') takeFocus(); });
 (async function init(){ me = H.uid(); resize(); paintBar(); paintSide(); H.watch(); H.watchMap(true); rebuild(); events(); takeFocus(); loadBots(); setInterval(loadBots, 180000); setInterval(() => { need = true; mapData(); if(tab === 'me') paintSide(); }, 30000); OS.on('auth', () => { me = H.uid(); rebuild(); });
   const off = () => { try{ H.watchMap(false); }catch(e){} }; addEventListener('pagehide', off); addEventListener('beforeunload', off); })();

@@ -40,7 +40,6 @@ const A = Kit.app({ title: 'Leaderboard', right: [{ icon: 'refresh', label: 'Ref
   const seg = Kit.seg([{ id: 'rank', label: 'Rankings' }, { id: 'games', label: 'Mini-games' }, { id: 'all', label: 'All players' }], view, v => { view = v; paint(); load(false); });
   const guest = h('div'), cats = h('div', { class: 'cats' }), hero = h('div'), pod = h('div', { class: 'pod' }), list = h('div'), tableBox = h('div'), foot = h('div', { class: 'foot upd' });
   body.append(seg, h('div', { style: { height: '12px' } }), guest, cats, hero, pod, list, tableBox, foot);
-  const hint = () => { try{ const v = sessionStorage.getItem('westos_lb_view'); if(!v) return; sessionStorage.removeItem('westos_lb_view'); const [vw, id] = v.split(':'); if(vw === 'games'){ view = 'games'; if(GIDS.includes(id)) gcat = id; seg.set('games'); paint(); load(false); } }catch(_){} };
   OS.on('focus', hint);
   const me = () => OS.auth.user();
   const current = () => CATS.find(c => c.id === cat);
@@ -56,8 +55,8 @@ const A = Kit.app({ title: 'Leaderboard', right: [{ icon: 'refresh', label: 'Ref
   }
   function paintGuest(){
     guest.innerHTML = ''; const u = me();
-    if(!u) guest.appendChild(h('div', { class: 'guest', onclick: () => OS.open('Settings') }, h('span', { html: Kit.icon('cloudOff', 22, 2) }), h('span', null, 'Sign in and pick a display name to get on the leaderboard.')));
-    else if(!OS.auth.name()) guest.appendChild(h('div', { class: 'guest', onclick: () => OS.open('Settings') }, h('span', { html: Kit.icon('user', 22, 2) }), h('span', null, 'Choose a display name in Settings to appear on the board.')));
+    if(!u) guest.appendChild(h('div', { class: 'guest', onclick: () => OS.open('Settings', { page: 'account' }) }, h('span', { html: Kit.icon('cloudOff', 22, 2) }), h('span', null, 'Sign in and pick a display name to get on the leaderboard.')));
+    else if(!OS.auth.name()) guest.appendChild(h('div', { class: 'guest', onclick: () => OS.open('Settings', { page: 'account' }) }, h('span', { html: Kit.icon('user', 22, 2) }), h('span', null, 'Choose a display name in Settings to appear on the board.')));
   }
   /* ---- player detail: every stat, with the player's rank in each ---- */
   function openPlayer(p){
@@ -121,6 +120,7 @@ const A = Kit.app({ title: 'Leaderboard', right: [{ icon: 'refresh', label: 'Ref
   ['cash', 'inv', 'stock', 'props', 'lab', 'factory', 'games'].forEach(e => Kit.live(e, soft));
   const tick = setInterval(() => { if(!document.hidden && (loadedAt || allAt)) paint(); }, 5000); window.addEventListener('pagehide', () => clearInterval(tick));
   Kit.live('auth', () => { paintGuest(); load(true); });
-  paintGuest(); hint(); paint(); load(false);
+  Kit.onLink(l => { if(l.view === 'games'){ view = 'games'; if(GIDS.includes(l.game)) gcat = l.game; seg.set('games'); paint(); load(false); } else if(l.view){ view = l.view; seg.set(view); paint(); load(false); } });          // link: { view: 'rank'|'games'|'all', game?: id }
+  paintGuest(); paint(); load(false);
 } });
 </script></body></html>

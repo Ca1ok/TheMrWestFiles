@@ -78,5 +78,6 @@ const A = Kit.app({ title: 'News', build: (body) => {
     } });
   }
   paintChips(); paint(); loadImgs(); setInterval(() => paint(), 30000);
+  Kit.onLink(l => { if(l.article){ const a = OS.world.articles(200).find(x => x.id === l.article); if(a) openArticle(a, thumbFor(a, 0)); } });          // link: { article: id }
 } });
 </script></body></html>

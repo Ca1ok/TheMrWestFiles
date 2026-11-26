@@ -37,7 +37,7 @@ const A = Kit.app({ title: 'Messages', right: [{ icon: 'check', label: 'Mark all
         msgs.forEach(m => {
           const d = new Date(m.t).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' }); if(d !== day){ day = d; th.appendChild(h('div', { class: 'daystamp' }, d)); }
           const bub = h('div', { class: 'bub ' + (m.kind || '') }, m.subj ? h('b', null, m.subj) : null, h('p', null, m.body), h('div', { class: 'tm' }, new Date(m.t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })));
-          if(m.act) bub.appendChild(h('button', { class: 'btn sm go', onclick: () => OS.open(m.act.app) }, m.act.label || 'Open'));
+          if(m.act) bub.appendChild(h('button', { class: 'btn sm go', onclick: () => OS.open(m.act.app, m.act.link) }, m.act.label || 'Open'));
           th.appendChild(bub); OS.mail.read(m.id);
         });
         if(!msgs.length) A.pop();

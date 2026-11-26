@@ -31,7 +31,7 @@ function preview(x){ const BG = H.gen.BuildGen, g = x.g; if(!BG || !window.House
     b.append(cv, h('div', { class: 'sub', style: { textAlign: 'center', margin: '6px 0 10px' } }, S.fl + ' floor' + (S.fl === 1 ? '' : 's') + ' · drag to turn, scroll to zoom'));
     v = House3D.create(cv, S, { dark: () => document.documentElement.dataset.theme !== 'light' }); v.set({ forSale: x.a > 0, mine: true });
     b.append(group(row({ title: g.typeName + (g.beds ? ' · ' + g.beds + ' bed' : ''), sub: g.district }), row({ title: 'Value', sub: money(x.v / 100, { dp: 0 }) }), row({ title: 'Status', sub: x.t ? 'Rented to ' + (x.tn || 'a tenant') : x.a > 0 ? 'For sale' : x.rh > 0 ? 'For rent ' + money(x.rh * 24 / 100, { dp: 2 }) + '/day' : 'Yours to live in' })));
-    b.append(h('button', { class: 'cta', onclick: () => { try{ localStorage.setItem('westmap_focus', x.id); }catch(e){} OS.open('WestMap'); api.close(); } }, 'Show on WestMap')); } }); }
+    b.append(h('button', { class: 'cta', onclick: () => { OS.open('WestMap', { house: x.id }); api.close(); } }, 'Show on WestMap')); } }); }
 
 const leftTxt = t => { const ms = Math.max(0, t - OS.now()), h = Math.floor(ms / 3600000), m = Math.floor(ms % 3600000 / 60000); return h + ' h ' + String(m).padStart(2, '0') + ' min'; };
 /* ---------- one of your vehicles ---------- */
@@ -67,7 +67,7 @@ function showroom(kind, after){
 
 const TABS = [{ id: 'overview', label: 'Overview' }, { id: 'houses', label: 'Houses' }, { id: 'cars', label: 'Cars' }, { id: 'planes', label: 'Planes' }];
 Kit.app({ title: 'Assets', build: (body) => {
-  let tab = 'overview'; try{ const t = sessionStorage.getItem('assets_tab'); sessionStorage.removeItem('assets_tab'); if(t) tab = t === 'garage' ? 'overview' : t; }catch(e){}
+  let tab = 'overview';
   if(!TABS.some(x => x.id === tab)) tab = 'overview';
   const bar = Kit.seg(TABS, tab, t => { tab = t; paint(); }), box = h('div'); body.append(bar, box);
   const owned = k => H.garage().filter(v => v.model.kind === k), vrows = list => list.map(v => row({ title: v.model.name, sub: v.rental ? v.model.tag + ' · rental, ' + leftTxt(v.expires) + ' left' : v.model.tag + ' · worth ' + money(v.value, { dp: 0 }), chev: true, onClick: () => vehicleSheet(v, paint) }));
@@ -98,6 +98,9 @@ Kit.app({ title: 'Assets', build: (body) => {
       box.append(h('div', { class: 'card' }, h('b', null, 'Good to know'), h('p', { class: 'sub', style: { margin: '6px 0 0' } }, 'The dealer buys a ' + (k === 'car' ? 'car' : 'plane') + ' back at ' + (VD.SELL_BP / 100) + '% of what you paid. Up to ' + VD.MAX_SLOTS + ' vehicles in total. ' + (k === 'car' ? 'Your first two cars park outside your home; the rest in the dealership’s lot.' : 'Your planes stand on the apron behind the terminal.') + ' Walk up to your own vehicle in WestCountry and press E to drive or fly it.')));
     }
   }
+  /* links: { tab: 'overview'|'houses'|'cars'|'planes'|'garage', vehicle: model id | garage id (opens that vehicle's sheet), house: id (opens the listing on WestMap) } */
+  Kit.onLink(l => { if(l.house){ OS.open('WestMap', { house: l.house }); return; } if(l.tab) tab = TABS.some(x => x.id === l.tab) ? l.tab : 'overview'; paint();
+    if(l.vehicle){ const v = H.ready() && H.garage().find(g => g.id === l.vehicle || g.model.id === l.vehicle); if(v){ tab = v.model.kind === 'plane' ? 'planes' : 'cars'; paint(); vehicleSheet(v, paint); } } });
   paint(); ['props', 'home', 'cash', 'world', 'garage'].forEach(e => Kit.live(e, Kit.debounce(paint, 200))); setInterval(paint, 60000);
 } });
 </script></body></html>

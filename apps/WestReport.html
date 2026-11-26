@@ -75,7 +75,7 @@ const A = Kit.app({ title: 'WestReport', build: (body) => {
   /* ---------------- file a bug / suggest a feature ---------------- */
   function paintForm(k){
     const feat = k === 'feature';
-    if(!OS.auth.signedIn()){ main.appendChild(h('div', { class: 'card', style: { marginTop: '16px', padding: '18px' } }, h('b', { style: { display: 'block', font: '700 17px var(--font)', marginBottom: '6px' } }, 'Sign in to send ' + (feat ? 'a suggestion' : 'a report')), h('p', { class: 'sub', style: { margin: '0 0 12px' } }, 'Reports are tied to your account so spam stays out and I can follow up with you.'), h('button', { class: 'btn', onclick: () => OS.open('Settings') }, 'Open Settings'))); return; }
+    if(!OS.auth.signedIn()){ main.appendChild(h('div', { class: 'card', style: { marginTop: '16px', padding: '18px' } }, h('b', { style: { display: 'block', font: '700 17px var(--font)', marginBottom: '6px' } }, 'Sign in to send ' + (feat ? 'a suggestion' : 'a report')), h('p', { class: 'sub', style: { margin: '0 0 12px' } }, 'Reports are tied to your account so spam stays out and I can follow up with you.'), h('button', { class: 'btn', onclick: () => OS.open('Settings', { page: 'account' }) }, 'Open Settings'))); return; }
     main.appendChild(h('div', { class: 'note ' + (feat ? 'feat' : 'bugn') }, feat ? 'Feature requests are only ideas. They are reviewed by the site owner and nothing is added unless he approves it.' : 'Bug reports are for things that are broken or behave wrongly. For new ideas, use “Suggest a feature”.'));
     const ctx = OS.reportContext(), guess = APP_AREA[ctx.app] || 'Desktop / menu bar';
     const area = h('select', { class: 'field' }, ...AREAS.map(a => h('option', { value: a }, a))); area.value = guess;

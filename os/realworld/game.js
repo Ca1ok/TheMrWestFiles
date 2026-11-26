@@ -303,7 +303,7 @@
     }
     function doorInfo(d){
       const sp = cellSpec(d); if(sp) return { label: d.k === 'poi' ? (d.name || (BUILDINGS[d.id] || {}).name) + ' · press E' : d.k === 'house' ? d.addr + (sp.own ? ' (yours)' : ' (rented)') + ' · press E' : 'Your ' + sp.name + ' · press E', enter: true, spec: sp };
-      if(d.k === 'house'){ const r = homeRec(d.id), sale = r.o === 'bank' || r.a > 0, who = r.o === 'bank' ? 'City-owned' : r.on ? 'Owned by ' + r.on : 'Private'; return { label: d.addr + ' · ' + d.type + ' · ' + who + (sale ? ' · for sale — E to view' : ' · locked'), go: () => sale ? OS.open('RealEstate') : toast('This home is private.') }; }
+      if(d.k === 'house'){ const r = homeRec(d.id), sale = r.o === 'bank' || r.a > 0, who = r.o === 'bank' ? 'City-owned' : r.on ? 'Owned by ' + r.on : 'Private'; return { label: d.addr + ' · ' + d.type + ' · ' + who + (sale ? ' · for sale — E to view' : ' · locked'), go: () => sale ? OS.open('WestMap', { house: d.id }) : toast('This home is private.') }; }
       if(d.k === 'plot'){ const lab = d.kind === 'l'; return { label: 'Private ' + (lab ? 'laboratory' : 'factory'), go: () => toast('Only the owner can go in.') }; }
       return null;
     }
@@ -576,16 +576,16 @@
     function openDialog(n){
       S.dialog = n; if(locked()) document.exitPointerLock(); setPrompt(null); const d = $('#rwDlg');
       d.innerHTML = '<div class="n">' + esc(n.name) + '</div><div class="l">' + esc(n.line) + '</div>' + (n.opts || []).map((o, i) => '<button data-i="' + i + '">' + esc(o.label) + '</button>').join('') + '<button class="bye">' + ((n.opts || []).length ? 'Goodbye' : 'Wave goodbye') + '</button>'; d.classList.add('show');
-      d.querySelectorAll('button[data-i]').forEach(b => { b.onclick = () => { const o = n.opts[+b.dataset.i]; closeDialog(); if(o.act){ try{ crime.act(o.act); }catch(e){ toast('Not available right now.'); } return; } try{ if(o.tab) sessionStorage.setItem('assets_tab', o.tab); OS.open(o.app); }catch(e){} }; });
+      d.querySelectorAll('button[data-i]').forEach(b => { b.onclick = () => { const o = n.opts[+b.dataset.i]; closeDialog(); if(o.act){ try{ crime.act(o.act); }catch(e){ toast('Not available right now.'); } return; } try{ OS.open(o.app, o.link || (o.tab ? { tab: o.tab } : undefined)); }catch(e){} }; });
       d.querySelector('.bye').onclick = () => { closeDialog(); if(!touch.on){ try{ cv.requestPointerLock(); }catch(e){} } };
     }
     function closeDialog(){ S.dialog = null; const d = rootEl && rootEl.querySelector('#rwDlg'); if(d) d.classList.remove('show'); }
     /* M / the Map button: WestMap (the same engine, seen from above) — pick a spot, click again, you are there */
-    function openMap(){ if(!S.running || S.loading) return; if(locked()) document.exitPointerLock(); closeDialog(true); try{ OS.open('WestMap'); }catch(e){} }
+    function openMap(){ if(!S.running || S.loading) return; if(locked()) document.exitPointerLock(); closeDialog(true); try{ OS.open('WestMap', { me: true }); }catch(e){} }
 
     /* ---------------- interaction ---------------- */
     function interact(){ if(!S.running || S.loading || S.dialog) return; if(dv){ exitDrive(); return; } if(uiOpen()) return; if(curNpc){ openDialog(curNpc); return; } if(curDoor && curDoor.exit){ exitRoom(); return; }
-      if(!curDoor && V.look){ const q = V.look; if(q.slot || q.stolen){ if(!startDrive(q)) toast('You cannot get in right now.'); } else if(q.npc != null){ toast('Locked. Press F to break in — it is a crime.'); } else if(q.cop){ /* nothing to see */ } else { try{ sessionStorage.setItem('assets_tab', q.kind === 'plane' ? 'planes' : 'cars'); OS.open('RealEstate'); }catch(e){} } return; }
+      if(!curDoor && V.look){ const q = V.look; if(q.slot || q.stolen){ if(!startDrive(q)) toast('You cannot get in right now.'); } else if(q.npc != null){ toast('Locked. Press F to break in — it is a crime.'); } else if(q.cop){ /* nothing to see */ } else { try{ OS.open('RealEstate', { tab: q.kind === 'plane' ? 'planes' : 'cars', vehicle: q.id }); }catch(e){} } return; }
       if(curDoor && curDoor.info){ if(curDoor.info.enter) enterRoom(curDoor.d, curDoor.info.spec); else if(curDoor.info.go) curDoor.info.go(); } }
     function findInteraction(){
       curNpc = null; curDoor = null; const fx = Math.sin(P.yaw), fz = -Math.cos(P.yaw);
@@ -657,7 +657,7 @@
     function cycleQuality(){ const cur = GP.ORDER.indexOf(Q.p), nx = GP.ORDER[(cur + 1) % GP.ORDER.length];
       try{ OS.prefs.set('rwGfx', { p: nx, o: Q.custom }); }catch(e){} loadGfx(true); }
     /* the top-bar Graphics button: the full settings, in a WestOS window (Settings → Real World graphics) */
-    function openGfx(){ if(!S.running || S.loading) return; if(locked()) document.exitPointerLock(); closeDialog(true); try{ sessionStorage.setItem('westos.settingsPage', 'graphics'); }catch(e){} try{ OS.open('Settings'); }catch(e){} }
+    function openGfx(){ if(!S.running || S.loading) return; if(locked()) document.exitPointerLock(); closeDialog(true); try{ OS.open('Settings', { page: 'graphics' }); }catch(e){} }
     if(OS.on) OS.on('prefs', k => { if((k !== 'rwGfx' && k !== '*') || !gfx || !st) return; const p = OS.prefs.get('rwGfx'); if(JSON.stringify(p) === JSON.stringify({ p: Q.p, o: Q.custom })) return; loadGfx(false); });
     /* ---------------- render ---------------- */
     const propRange = () => [Math.round(Q.o.props * 0.72), Q.o.props];

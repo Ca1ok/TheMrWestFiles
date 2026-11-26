@@ -26,6 +26,7 @@ html[data-theme=light] #menubar{ background:rgba(250,244,230,.6); color:var(--la
 .mbtn{ height:24px; padding:0 9px; border-radius:6px; color:inherit; font:500 13px/24px var(--font); display:inline-flex; align-items:center; gap:6px; transition:background .15s,transform .2s var(--spring); white-space:nowrap; }
 .mbtn:hover{ background:rgba(255,255,255,.18); } html[data-theme=light] .mbtn:hover{ background:rgba(60,42,20,.1); } .mbtn:active{ transform:scale(.95); }
 .mbtn.accent{ background:var(--tint); color:#fff; font-weight:600; } .mbtn.accent:hover{ background:var(--tint2); }
+.mbtn.armed{ background:var(--bad,#d9534f); color:#fff; font-weight:600; }
 .mbtn .gl{ opacity:.9; } .mb-cash{ font-variant-numeric:tabular-nums; font-weight:600; } .mb-cash.bump{ animation:bump .5s var(--spring); }
 @keyframes bump{ 40%{ transform:scale(1.14); } }
 .mb-sync.err{ color:var(--bad); } .mb-sync.busy{ animation:pulse 1s ease-in-out infinite; } @keyframes pulse{ 50%{ opacity:.35; } }

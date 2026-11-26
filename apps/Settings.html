@@ -16,12 +16,23 @@
 .th-card .bd{ position:absolute; top:16px; right:16px; background:var(--tint); color:#fff; font:700 10.5px var(--font); letter-spacing:.04em; text-transform:uppercase; padding:3px 7px; border-radius:9px; }
 .ac-row{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:12px 16px; } .ac-dot{ width:34px; height:34px; border-radius:50%; box-shadow:inset 0 0 0 2px rgba(255,255,255,.25),0 0 0 1px var(--sep); transition:transform .2s var(--spring); } .ac-dot:active{ transform:scale(.9); } .ac-dot.on{ box-shadow:inset 0 0 0 2px #fff,0 0 0 3px var(--tint); }
 .ac-pick{ width:34px; height:34px; padding:0; border:0; border-radius:50%; background:none; cursor:pointer; overflow:hidden; } .ac-pick::-webkit-color-swatch-wrapper{ padding:0; } .ac-pick::-webkit-color-swatch{ border:0; border-radius:50%; }
+.ssplit{ display:flex; gap:22px; align-items:flex-start; } .snav{ width:200px; flex:none; position:sticky; top:0; display:flex; flex-direction:column; gap:2px; padding:4px 0 12px; } .spane{ flex:1; min-width:0; } .spane>.ptitle{ font:700 22px var(--font); margin:6px 4px 2px; letter-spacing:-.01em; }
+.snv{ display:flex; align-items:center; gap:10px; padding:7px 10px; border-radius:10px; font:500 14.5px var(--font); text-align:left; width:100%; transition:background .15s; } .snv:hover{ background:var(--fill); } .snv.on{ background:var(--tint); color:#fff; } .snv .ti{ width:26px; height:26px; border-radius:7px; display:grid; place-items:center; color:#fff; flex:none; }
+.snav .sep{ height:.5px; background:var(--sep); margin:8px 6px; }
+@media (max-width:640px){ .ssplit{ flex-direction:column; gap:8px; } .snav{ width:100%; position:static; flex-direction:row; overflow-x:auto; padding:2px 0 8px; gap:6px; } .snv{ width:auto; flex:none; white-space:nowrap; background:var(--card); } .snv .ti{ display:none; } .snav .sep{ display:none; } }
 </style></head><body><div id="app"></div>
 <script src="../os/icons.js"></script><script src="../os/app/kit.js"></script><script src="../os/realworld/gfxprefs.js"></script>
 <script>
 const { h, row, group, money, esc, toggle, seg } = Kit, P_ = OS.prefs;
 const A = Kit.app({ title: 'Settings', build: (body) => {
-  const acct = h('div'), rest = h('div'); body.append(acct, rest);
+  /* macOS-style layout: a sidebar of categories on the left, the selected category on the right. paintAcct / paintRest below build into per-category containers via rest.cat('<id>'). */
+  const CATS = [['account', 'Account', 'user', '#4a8de0'], ['appearance', 'Appearance', 'brush', '#d6457a'], ['desktop', 'Desktop & Dock', 'grid', '#4a6fa8'], ['display', 'Display', 'sun', '#e08a2e'], ['realworld', 'Real World', 'map', '#4fb88a'], ['performance', 'Performance', 'bolt', '#8a5cd6'], ['storage', 'Data & Storage', 'layers', '#7b7468'], ['about', 'About', 'info', '#5a6b86']];
+  const pageEls = {}, pageEl = k => pageEls[k] || (pageEls[k] = h('div')); let curCat = 'account', building = 'account';
+  const acct = pageEl('account'), rest = { reset(){ Object.keys(pageEls).forEach(k => { if(k !== 'account') pageEls[k].innerHTML = ''; }); building = 'appearance'; }, cat(k){ building = k; }, appendChild(x){ return pageEl(building).appendChild(x); } };
+  const nav = h('div', { class: 'snav', role: 'tablist' }), pane = h('div', { class: 'spane' }); body.append(h('div', { class: 'ssplit' }, nav, pane));
+  function paintNav(){ nav.innerHTML = ''; const list = CATS.concat(OS.auth.isAdmin() ? [['admin', 'Administrator', 'key', '#8a5cd6']] : []);
+    list.forEach(([id, label, ic, col], i) => { if(id === 'about' || id === 'admin') { if(id === 'about') nav.appendChild(h('div', { class: 'sep' })); } nav.appendChild(h('button', { class: 'snv' + (id === curCat ? ' on' : ''), role: 'tab', 'aria-selected': id === curCat, onclick: () => show(id) }, h('span', { class: 'ti', style: { background: col }, html: Kit.icon(ic, 15, 2.2) }), label)); }); }
+  function show(k){ curCat = k; const lab = (CATS.find(c => c[0] === k) || [k, 'Administrator'])[1]; pane.innerHTML = ''; pane.append(h('div', { class: 'ptitle' }, lab), pageEl(k)); paintNav(); }
 
   /* ---------- Real World graphics (every setting + presets; the game applies them live — see os/realworld/gfxprefs.js) ---------- */
   const GFX = () => window.RealWorld && window.RealWorld.GfxPrefs;
@@ -54,7 +65,8 @@ const A = Kit.app({ title: 'Settings', build: (body) => {
       paint();
     } });
   }
-  function takeDeepLink(){ let k = null; try{ k = sessionStorage.getItem('westos.settingsPage'); if(k) sessionStorage.removeItem('westos.settingsPage'); }catch(e){} if(k === 'graphics') openGfx(); }
+  /* links: { page: 'account'|'appearance'|'desktop'|'display'|'realworld'|'performance'|'storage'|'about'|'admin'|'graphics' (= Real World → graphics) | 'themes' | 'wallpapers' | 'dock' } */
+  function takeLink(l){ const k = l.page; if(k === 'graphics'){ show('realworld'); openGfx(); } else if(k === 'themes'){ show('appearance'); openThemes(); } else if(k === 'wallpapers'){ show('appearance'); openWallpapers(); } else if(k === 'dock'){ show('desktop'); openDock(); } else if(pageEls[k] || k === 'admin') show(k); }
 
   /* ---------- account ---------- */
   function paintAcct(){
@@ -90,42 +102,41 @@ const A = Kit.app({ title: 'Settings', build: (body) => {
 
   /* ---------- everything else ---------- */
   function paintRest(){
-    rest.innerHTML = '';
+    rest.reset(); rest.cat('appearance');
     // Appearance
-    rest.appendChild(h('div', { class: 'cap' }, 'Appearance'));
     const themeSeg = seg([{ id: 'auto', label: 'Auto' }, { id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }], P_.get('theme'), v => P_.set('theme', v));
     rest.appendChild(group(h('div', { class: 'row' }, h('div', { class: 'tx' }, h('b', null, 'Theme'), h('small', null, (OS.skin() && OS.skin().mode) ? 'Set by the “' + OS.skin().name + '” theme' : 'Auto follows your device')), h('div', { style: { width: '190px' } }, themeSeg)),
       row({ glyph: 'brush', color: '#d6457a', title: 'Themes', sub: themeSummary(), chev: true, onClick: openThemes }),
       row({ glyph: 'image', color: '#c0563a', title: 'Wallpapers', sub: 'Pick a photo for light and dark mode', chev: true, onClick: openWallpapers })));
-    rest.appendChild(h('div', { class: 'cap' }, 'Display'));
+    rest.cat('display');
     rest.appendChild(group(
       row({ title: 'Show lock screen on start', sub: 'A clock screen you click to enter', right: toggle(P_.get('lock') === true, v => P_.set('lock', v)) }), row({ title: 'Notification banners', right: toggle(P_.get('banners') !== false, v => P_.set('banners', v)) }),
       row({ title: 'Reduce motion', sub: 'Skips zoom and slide animations', right: toggle(!!P_.get('reduceMotion'), v => P_.set('reduceMotion', v)) }), row({ title: 'Reduce transparency', sub: 'Turns off blur — faster on older devices', right: toggle(!!P_.get('reduceTransparency'), v => P_.set('reduceTransparency', v)) })));
     // Desktop
-    rest.appendChild(h('div', { class: 'cap' }, 'Desktop'));
+    rest.cat('desktop');
     rest.appendChild(group(row({ glyph: 'grid', color: '#4a6fa8', title: 'Dock apps', sub: (OS.prefs.get('dock') || []).length ? OS.prefs.get('dock').join(', ') : OS.shell.defaultDock().join(', '), chev: true, onClick: openDock }),
-      row({ glyph: 'refresh', color: '#7b7468', title: 'Reset layout', sub: 'Restore the default desktop, dock and window sizes', onClick: async () => { if(await Kit.confirm({ title: 'Reset the desktop?', ok: 'Reset', destructive: true })){ OS.shell.resetLayout(); Kit.toast('Desktop reset'); } } })));
+      row({ glyph: 'refresh', color: '#7b7468', title: 'Reset to default layout', sub: 'Restore the default desktop arrangement, dock and window sizes', onClick: async () => { if(await Kit.confirm({ title: 'Reset the desktop?', ok: 'Reset', destructive: true })){ OS.shell.resetLayout(); Kit.toast('Desktop reset'); } } })));
     rest.appendChild(group(
       h('div', { class: 'row' }, h('div', { class: 'tx' }, h('b', null, 'Dock position'), h('small', { class: 'wrap' }, 'Low pushes the dock down flush with the bottom edge. Auto-hide tucks it away; touch the bottom edge to bring it back. Windows and the desktop use the freed space.')), h('div', { style: { width: '260px' } }, seg([{ id: 'float', label: 'Floating' }, { id: 'low', label: 'Low' }, { id: 'hide', label: 'Auto-hide' }], P_.get('dockMode') || 'float', v => P_.set('dockMode', v)))),
       h('div', { class: 'row' }, h('div', { class: 'tx' }, h('b', null, 'Icon size'), h('small', null, 'App icons on the desktop')), h('div', { style: { width: '210px' } }, seg([{ id: 'small', label: 'Small' }, { id: 'medium', label: 'Medium' }, { id: 'large', label: 'Large' }], P_.get('iconSize') || 'medium', v => P_.set('iconSize', v)))),
       row({ title: '24-hour clock', sub: 'Used by the Clock widget', right: toggle(!!P_.get('clock24'), v => P_.set('clock24', v)) }),
       row({ title: 'Show seconds on the clock', right: toggle(!!P_.get('clockSeconds'), v => P_.set('clockSeconds', v)) })));
-    rest.appendChild(h('div', { class: 'cap' }, 'Performance'));
+    rest.cat('performance');
     rest.appendChild(group(h('div', { class: 'row' }, h('div', { class: 'tx' }, h('b', null, 'Live update speed'), h('small', { class: 'wrap' }, 'How often prices and widgets refresh. Saver is lighter on batteries and older computers.')), h('div', { style: { width: '230px' } }, seg([{ id: 'saver', label: 'Saver' }, { id: 'balanced', label: 'Balanced' }, { id: 'smooth', label: 'Smooth' }], P_.get('updateSpeed') || 'balanced', v => P_.set('updateSpeed', v))))));
     rest.appendChild(group(h('div', { class: 'row' }, h('div', { class: 'tx' }, h('b', null, 'Graphics'), h('small', { class: 'wrap' }, 'Auto switches to Performance by itself if windows lag when you drag them. Performance turns off blur and heavy shadows.' + (P_.get('perfAuto') && (P_.get('perfMode') || 'auto') === 'auto' ? ' Currently using Performance.' : ''))), h('div', { style: { width: '250px' } }, seg([{ id: 'auto', label: 'Auto' }, { id: 'quality', label: 'Quality' }, { id: 'performance', label: 'Performance' }], P_.get('perfMode') || 'auto', v => { P_.set('perfMode', v); if(v === 'auto') P_.set('perfAuto', false); paintRest(); })))));
-    rest.appendChild(h('div', { class: 'cap' }, 'News'));
+    rest.cat('realworld');
     rest.appendChild(group(row({ glyph: 'map', color: '#4fb88a', title: 'Real World graphics', sub: gfxSummary(), wrap: true, chev: true, onClick: openGfx })));
     rest.appendChild(group(row({ glyph: 'news', color: '#a2321f', title: 'Open the Wanted poster', sub: 'Shows it in the Preview app', chev: true, onClick: () => OS.preview({ kind: 'poster' }) })));
-    rest.appendChild(h('div', { class: 'foot' }, 'Tip: click “Edit desktop” (top left) to add widgets, resize them and drag them around. Drag a window by its title bar; the green button maximizes.'));
+    rest.cat('desktop'); rest.appendChild(h('div', { class: 'foot' }, 'Tip: click “Edit desktop” (top left) to add widgets, resize them and drag them around. Drag a window by its title bar; the green button maximizes.'));
     // Data
-    rest.appendChild(h('div', { class: 'cap' }, 'Data & storage'));
+    rest.cat('storage');
     const u = OS.usage(), kb = n => n > 1e6 ? (n / 1e6).toFixed(2) + ' MB' : Math.max(0, Math.round(n / 1e3)) + ' KB';
     rest.appendChild(group(row({ title: 'Downloaded this session', right: kb(u.bytes) }), row({ title: 'Database reads / saves', right: u.reads + ' / ' + u.writes }), row({ glyph: 'trash', color: '#7b7468', title: 'Clear saved photos', sub: 'Frees the space photos use on this device', onClick: async () => { const n = await OS.gallery.cacheSize(); if(await Kit.confirm({ title: 'Clear saved photos?', msg: (n / 1e6).toFixed(1) + ' MB will be removed. Photos download again when you next open them.', ok: 'Clear', destructive: true })){ await OS.gallery.clearCache(); Kit.toast('Cleared', 'good'); } } }), row({ title: 'Saving', sub: OS.auth.signedIn() ? 'Money and items are saved within a few seconds; everything else in small batches.' : 'Off — sign in to save progress.', wrap: true })));
     rest.appendChild(h('div', { class: 'foot' }, 'WestOS is built to stay inside Firebase’s free limits: prices are computed on your device, photos are cached after the first view, and only changed data is saved.'));
     // About
-    rest.appendChild(h('div', { class: 'cap' }, 'About'));
+    rest.cat('about');
     rest.appendChild(group(row({ title: 'WestOS', right: 'Version ' + OS.version })));
-    if(OS.auth.isAdmin()) rest.appendChild(h('div', null, h('div', { class: 'cap' }, 'Administrator'), group(row({ glyph: 'key', color: '#8a5cd6', title: 'Open apps without buying', sub: 'Admin only. Lets you open WestFactory and WestLab without buying a plot. Nothing is charged; it only skips the check on this device.', wrap: true, right: toggle(P_.get('adminBypass') === true, v => { P_.set('adminBypass', v); Kit.toast(v ? 'Admin bypass ON — apps open without a plot' : 'Admin bypass off', v ? 'good' : undefined); }) }), row({ glyph: 'hammer', color: '#e6a93a', title: 'Maintenance mode', sub: maintSummary(), chev: true, onClick: openMaintenance }), row({ glyph: 'coin', color: '#2f9e6e', title: 'Economy', sub: 'Start / reset, taxes, audit', chev: true, onClick: openEconomy }), row({ glyph: 'bolt', color: '#c23b3b', title: 'Admin tools', sub: 'Market, messages, photos, players', chev: true, onClick: openAdmin }), row({ title: 'Administrator account', sub: 'Only this verified account has admin rights. To change it, edit os/config.js and database.rules.json.', wrap: true, right: OS.cfg.adminEmail }))));
+    rest.cat('admin'); if(OS.auth.isAdmin()) rest.appendChild(h('div', null, group(row({ glyph: 'key', color: '#8a5cd6', title: 'Open apps without buying', sub: 'Admin only. Lets you open WestFactory and WestLab without buying a plot. Nothing is charged; it only skips the check on this device.', wrap: true, right: toggle(P_.get('adminBypass') === true, v => { P_.set('adminBypass', v); Kit.toast(v ? 'Admin bypass ON — apps open without a plot' : 'Admin bypass off', v ? 'good' : undefined); }) }), row({ glyph: 'hammer', color: '#e6a93a', title: 'Maintenance mode', sub: maintSummary(), chev: true, onClick: openMaintenance }), row({ glyph: 'coin', color: '#2f9e6e', title: 'Economy', sub: 'Start / reset, taxes, audit', chev: true, onClick: openEconomy }), row({ glyph: 'bolt', color: '#c23b3b', title: 'Admin tools', sub: 'Market, messages, photos, players', chev: true, onClick: openAdmin }), row({ title: 'Administrator account', sub: 'Only this verified account has admin rights. To change it, edit os/config.js and database.rules.json.', wrap: true, right: OS.cfg.adminEmail }))));
   }
   function wallPicker(mode){
     A.push({ title: mode === 'dark' ? 'Dark wallpaper' : 'Light wallpaper', backLabel: 'Wallpapers', build: async (b) => {
@@ -257,6 +268,6 @@ const A = Kit.app({ title: 'Settings', build: (body) => {
       b.append(h('div', { class: 'cap' }, 'More'), group(row({ glyph: 'files', color: '#2d6bb8', title: 'Players & server data', sub: 'Open the Files app', chev: true, onClick: () => OS.open('Files') }), row({ glyph: 'photos', color: '#c23b6b', title: 'Photo archive', sub: 'Upload and manage in Photos', chev: true, onClick: () => OS.open('Photos') })));
     } });
   }
-  paintAcct(); paintRest(); setTimeout(takeDeepLink, 60); Kit.live('focus', takeDeepLink); Kit.live('auth', () => { paintAcct(); paintRest(); }); Kit.live('prefs', Kit.debounce(() => {}, 100));
+  paintAcct(); paintRest(); show('account'); Kit.onLink(takeLink); Kit.live('auth', () => { paintAcct(); paintRest(); paintNav(); }); Kit.live('prefs', Kit.debounce(() => {}, 100));
 } });
 </script></body></html>

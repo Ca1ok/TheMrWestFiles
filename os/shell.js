@@ -51,7 +51,7 @@
   { let lastNote = 0, notes = 0;                                   // a logged script error lights the "Report a bug" button (and says so once in a while) — it never fails silently
     if(K.diag) K.diag.on(lvl => { const n = K.diag.unseen(); reportBtn.classList.toggle('has-err', n > 0); reportBtn.title = n > 0 ? n + ' script error' + (n === 1 ? '' : 's') + ' logged — click to report (details are attached automatically)' : 'Report a bug or suggest a feature';
       if(lvl === 'error' && notes < 3 && Date.now() - lastNote > 45000){ lastNote = Date.now(); notes++; toast('Something went wrong and was logged — use “Report a bug” and it is attached automatically'); } }); }
-  const editBtn = $('#editBtn'), doneBtn = $('#doneBtn'), mbApp = $('#mbApp'), syncBtn = $('#syncIc'), bellBtn = $('#bell'), cashBtn = $('#mbCash');
+  const editBtn = $('#editBtn'), doneBtn = $('#doneBtn'), resetBtn = $('#resetBtn'), mbApp = $('#mbApp'), syncBtn = $('#syncIc'), bellBtn = $('#bell'), cashBtn = $('#mbCash');
   function paintMenuRight(){
     const si = K.cloud.signedIn(); syncBtn.innerHTML = osIcon(si ? 'cloud' : 'cloudOff', 16, 2); syncBtn.title = si ? 'Progress is saved to your account' : 'Not signed in — progress is not saved (click to sign in)';
     const n = OS.mail.unread(); bellBtn.innerHTML = osIcon('bell', 16, 2) + (n ? '<i>' + (n > 99 ? '99+' : n) + '</i>' : ''); bellBtn.title = n ? n + ' unread message' + (n === 1 ? '' : 's') : 'Messages';
@@ -76,13 +76,19 @@
   const szLabel = z => SIZES[z][0] + '×' + SIZES[z][1];
   const wk = () => 'w' + Math.random().toString(36).slice(2, 8);
   /* The stock desktop (cells are page/row/col on a ~10×5 grid; smaller screens clamp or first-fit via pack()). Apps listed here that are also in the dock are skipped by loadLayout. */
-  const DEFAULT_APPS = [['Stocks', 0, 0], ['WestShop', 0, 1], ['WestLab', 0, 2], ['WestFactory', 0, 3], ['Bank', 1, 0], ['RealEstate', 1, 1], ['Photos', 1, 2], ['Notes', 1, 3],
-    ['Games', 2, 0], ['Arcade', 2, 1], ['Leaderboard', 2, 2], ['Preview', 2, 3], ['WestReport', 3, 3]];
-  const DEFAULT_WIDGETS = [['stocks', 'x3', 3, 0], ['news', 's', 0, 4], ['element', 'h', 2, 4], ['realestate', 'h', 3, 4], ['bank', 'h', 4, 3], ['messages', 'h', 4, 5], ['games', 'xs', 4, 7], ['wanted', 'l', 0, 6]];
+  /* Roomy screens (≥ 10 × 5 cells) get a designed home page: a 4×3 block of app icons on the left, then a column of widgets, the Wanted poster on the right and a strip along the bottom — nothing overlaps, every edge lines up.
+   * Smaller screens (phones, short windows) get the same items in reading order and pack() first-fits them over as many pages as needed. */
+  const BLOCK = ['Stocks', 'WestShop', 'WestLab', 'WestFactory', 'Bank', 'RealEstate', 'Photos', 'Preview', 'Games', 'Arcade', 'Leaderboard', 'Notes'];
+  const ROOMY = { apps: [['WestReport', 3, 3]], wids: [['stocks', 'x3', 3, 0], ['news', 's', 0, 4], ['element', 'h', 2, 4], ['realestate', 's', 3, 4], ['wanted', 'l', 0, 6], ['bank', 'h', 4, 6], ['messages', 'h', 4, 8]] };
+  const NARROW = [['a', 'Stocks', 0, 0], ['a', 'WestShop', 0, 1], ['a', 'Bank', 0, 2], ['a', 'Games', 0, 3], ['a', 'WestLab', 1, 0], ['a', 'WestFactory', 1, 1], ['a', 'Photos', 1, 2], ['a', 'Arcade', 1, 3], ['w', 'news', 's', 2, 0], ['w', 'realestate', 's', 2, 2], ['w', 'bank', 'h', 4, 0], ['w', 'messages', 'h', 4, 2],
+    ['a', 'Notes', 0, 0, 1], ['a', 'Leaderboard', 0, 1, 1], ['a', 'Preview', 0, 2, 1], ['a', 'WestReport', 0, 3, 1], ['w', 'stocks', 'x3', 1, 0, 1], ['w', 'games', 'xs', 1, 3, 1], ['w', 'element', 'h', 3, 0, 1]];     // phones / short windows: two pages, [kind, id, (size,) row, col, (page)]
   function defaultLayout(){
-    const apps = DEFAULT_APPS.filter(([id]) => APP(id)).map(([id, r, c]) => ({ t: 'a', id, k: 'a-' + id, pos: { p: 0, r, c } }));
-    const wids = DEFAULT_WIDGETS.filter(([id]) => WIDGETS.find(w => w.id === id)).map(([id, size, r, c]) => ({ t: 'w', id, size, k: wk(), pos: { p: 0, r, c } }));
-    return apps.concat(wids);
+    const m = S.w ? metrics() : { cols: 10, rows: 6 }, hasW = id => WIDGETS.find(w => w.id === id), A = (id, r, c) => ({ t: 'a', id, k: 'a-' + id, pos: { p: 0, r, c } }), Wd = (id, size, r, c) => ({ t: 'w', id, size, k: wk(), pos: { p: 0, r, c } });
+    if(m.cols >= 10 && m.rows >= 5){
+      const out = []; BLOCK.forEach((id, i) => { if(APP(id)) out.push(A(id, Math.floor(i / 4), i % 4)); });
+      ROOMY.apps.forEach(([id, r, c]) => { if(APP(id)) out.push(A(id, r, c)); }); ROOMY.wids.forEach(([id, size, r, c]) => { if(hasW(id)) out.push(Wd(id, size, r, c)); }); return out;
+    }
+    return NARROW.filter(n => n[0] === 'a' ? APP(n[1]) : hasW(n[1])).map(n => n[0] === 'a' ? { t: 'a', id: n[1], k: 'a-' + n[1], pos: { p: n[4] || 0, r: n[2], c: n[3] } } : { t: 'w', id: n[1], size: n[2], k: wk(), pos: { p: n[5] || 0, r: n[3], c: n[4] } });
   }
   /* Apps added after a player saved their dock/desktop are appended once, so new apps (WestReport) show up for existing accounts. */
   const NEW_APPS = ['WestReport', 'Leaderboard', 'Preview', 'Arcade', 'WestFactory', 'WestMap'];
@@ -198,8 +204,10 @@
   /* ================= edit mode + dragging ================= */
   function setEditing(on){
     editing = on; desk.classList.toggle('editing', on);
-    editBtn.className = 'mbtn' + (on ? ' accent' : ''); editBtn.innerHTML = on ? osIcon('plus', 14, 2.8) + '<span>Add widget or app</span>' : osIcon('edit', 14, 2.2) + '<span>Edit desktop</span>'; doneBtn.style.display = on ? '' : 'none';
+    editBtn.className = 'mbtn' + (on ? ' accent' : ''); editBtn.innerHTML = on ? osIcon('plus', 14, 2.8) + '<span>Add widget or app</span>' : osIcon('edit', 14, 2.2) + '<span>Edit desktop</span>'; doneBtn.style.display = on ? '' : 'none'; resetBtn.style.display = on ? '' : 'none'; if(!on) armReset(false);
   }
+  let resetT = 0; function armReset(on){ clearTimeout(resetT); resetBtn.classList.toggle('armed', on); resetBtn.textContent = on ? 'Click again to reset' : 'Reset to default'; if(on) resetT = setTimeout(() => armReset(false), 3500); }
+  resetBtn.addEventListener('click', () => { if(!resetBtn.classList.contains('armed')) return armReset(true); armReset(false); OS.shell.resetLayout(); setEditing(false); OS.toast && OS.toast('Desktop reset to default'); });
   editBtn.addEventListener('click', () => { if(!editing) setEditing(true); else openGallery(); });
   doneBtn.addEventListener('click', () => { setEditing(false); saveLayout(); });
   desk.addEventListener('click', e => {
@@ -259,7 +267,7 @@
     if(drag){ clearTimeout(drag.edgeT); const el = drag.el, d = drag; drag = null; dragPages = 0; d.ghost.remove(); if(d.target) d.rec.it.pos = d.target; el.classList.remove('dragging'); try{ el.releasePointerCapture(st.id); }catch(_){} pagesEl.style.overflowX = 'auto'; const pn = Math.min(curPage, Math.max(0, (d.target ? d.target.p : curPage))); relayoutHome(true); pagesEl.scrollTo({ left: Math.min(pageCount - 1, pn) * pagesEl.clientWidth }); saveLayout(); return; }
     if(!st.moved && !editing && Date.now() - st.t < 600){
       const a = e.target.closest && e.target.closest('[data-app]'); if(a){ openApp(a.dataset.app, $('.tile', a)); return; }
-      const w = e.target.closest && e.target.closest('.widget'); if(w){ const def = WIDGETS.find(x => x.id === w.dataset.w); if(def && def.preview){ OS.preview(def.preview); } else if(def && def.url){ window.open(def.url, '_blank', 'noopener'); } else if(def) openApp(def.app, w); }
+      const w = e.target.closest && e.target.closest('.widget'); if(w){ const def = WIDGETS.find(x => x.id === w.dataset.w); if(def && def.preview){ OS.preview(def.preview); } else if(def && def.url){ window.open(def.url, '_blank', 'noopener'); } else if(def){ let lk = null; try{ const rec = items.get(w.closest('.item').dataset.k); lk = def.link && def.link(rec && rec.inst); }catch(e){} if(lk) OS.open(def.app, lk); else openApp(def.app, w); } }
     }
   }
   window.addEventListener('pointerup', endPress); window.addEventListener('pointercancel', endPress);
@@ -513,7 +521,11 @@
   K.on('maint', paintMaint); K.on('auth', paintMaint); K.on('loaded', paintMaint); paintMaint();
 
   /* ================= facade additions + boot ================= */
-  OS.open = id => { if(APP(id)){ if(editing) setEditing(false); openApp(id, null); } };
+  /* DEEP LINKS: OS.open('RealEstate', { tab: 'cars' }) opens the app AT that place. The link is a small plain object the app understands (see Kit.onLink in os/app/kit.js; every app lists its
+   * link keys at its top). It is parked here until the app asks for it (an app that is still loading asks ~80 ms after it is built) and 'link' is emitted so an app that is already open reacts at once. */
+  const pendingLink = new Map();
+  OS.open = (id, link) => { if(APP(id)){ if(editing) setEditing(false); if(link && typeof link === 'object') pendingLink.set(id, link); openApp(id, null); if(link) K.emit('link', id); } };
+  OS.takeLink = id => { const l = pendingLink.get(id); pendingLink.delete(id); return l || null; };
   OS.close = id => closeApp(id || focusId);
   OS.home = () => { [...wins.keys()].forEach(minimizeWin); };           // "show desktop"
   OS.focused = () => focusId; OS.openApps = () => [...wins.keys()];
@@ -527,7 +539,7 @@
   let previewItem = null;
   OS.preview = item => { previewItem = item; if(wins.has('Preview')){ K.emit('preview'); openApp('Preview', null); } else openApp('Preview', null); };
   OS.previewTake = () => { const p = previewItem; previewItem = null; return p; };
-  OS.toast = toast; OS.openPage = url => window.open(url, '_blank', 'noopener'); OS.apps = () => OS_APPS.map(a => ({ id: a.id, name: a.name, g: a.g, glyph: a.glyph }));
+  OS.toast = toast; OS.openPage = url => window.open(url, '_blank', 'noopener'); OS.apps = () => OS_APPS.map(a => ({ id: a.id, name: a.name, g: a.g, glyph: a.glyph, file: a.file }));
   OS.shell = { defaultDock: () => DEFAULT_DOCK.slice(), resetLayout(){ K.setPref('layout', null); K.setPref('dock', []); K.setPref('winGeom', {}); loadLayout(); relayoutHome(true); }, relayout: () => { loadLayout(); relayoutHome(true); } };
   let dockT = null; const dockZone = document.createElement('div'); dockZone.id = 'dockZone'; screen.appendChild(dockZone);
   function applyDockMode(){ const m = dockMode(); screen.dataset.dock = m; dockEl.classList.remove('peek'); if(S.w){ relayoutHome(true); fitWindows(); } }

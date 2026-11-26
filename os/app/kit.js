@@ -20,6 +20,9 @@
   function applyEnv(){ applySkin(); root.dataset.theme = OS.theme(); const sc = OS.screen(); root.style.setProperty('--sat', (sc.sat || 0) + 'px'); root.style.setProperty('--sab', (sc.sab || 0) + 'px'); root.classList.toggle('reduce-motion', !!OS.prefs.get('reduceMotion')); root.classList.toggle('reduce-transparency', !!OS.prefs.get('reduceTransparency')); }
   applyEnv();
   const live = (evt, fn) => { const off = OS.on(evt, fn); subs.push(off); return off; };
+  /* Deep links (OS.open(appId, link)): fn(link) is called with the link this app was opened with — once it has been built, and again whenever it is already open and something links to it. */
+  const onLink = fn => { let id = null; try{ const f = location.pathname.split('/').pop(); const a = (OS.apps ? OS.apps() : []).find(x => x.file === f); id = a && a.id; }catch(e){} if(!id) return;
+    const take = () => { const l = OS.takeLink && OS.takeLink(id); if(l){ try{ fn(l); }catch(e){ console.error('[link]', e); } } }; setTimeout(take, 80); live('link', a => { if(a === id) take(); }); };
   live('theme', applyEnv); live('screen', applyEnv); live('prefs', applyEnv);
   window.addEventListener('pagehide', () => subs.splice(0).forEach(f => { try{ f(); }catch(e){} }));
 
@@ -130,5 +133,5 @@
   let p3d = null;
   const use3D = () => p3d || (p3d = (async () => { if(window.GL3D && window.GL3DAssets) return true; const base = location.pathname.indexOf('/games/') > -1 ? '../../os/lib/' : '../os/lib/';
     for(const f of ['gl3d.js', 'gl3d-assets.js', 'arcade-3d.js']){ if(f === 'gl3d-assets.js' && window.GL3DAssets) continue; if(f === 'gl3d.js' && window.GL3D) continue; await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = base + f; sc.onload = res; sc.onerror = () => rej(new Error('Couldn’t load ' + f)); document.head.appendChild(sc); }); } return !!window.GL3D.supported(); })());
-  window.Kit = { use3D, row, group, OS, $, $$, h, esc, money, num, ago, icon, tile, ico, toast, confirm, alert, sheet, seg, toggle, app, cashChip, spark, live, debounce, raf };
+  window.Kit = { use3D, row, group, OS, $, $$, h, esc, money, num, ago, icon, tile, ico, toast, confirm, alert, sheet, seg, toggle, app, cashChip, spark, live, onLink, debounce, raf };
 })();
