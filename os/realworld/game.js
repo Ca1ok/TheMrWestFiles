@@ -368,7 +368,8 @@
     function stepNPCs(t, dt){
       if(t - npcAt >= 100){ const now = OS.now(), nhh = S.nh; npcAt = t; for(const q of botList){ let s; try{ s = npcs.state(q.b, q.home, now, nhh); }catch(e){ continue; } const dtt = Math.max(0.05, (t - q.t) / 1000);
         if(!q.init){ q.init = 1; q.vx = q.vz = 0; q.yaw = s.yaw; } else { q.vx += ((s.x - q.tx) / dtt - q.vx) * 0.6; q.vz += ((s.z - q.tz) / dtt - q.vz) * 0.6; } q.tx = s.x; q.tz = s.z; q.t = t; q.moving = s.moving; q.route = s.route; q.f = s.f; q.why = s.why; q.dest = s.dest; if(!s.moving){ q.vx = q.vz = 0; } } }
-      for(const q of botList){ if(!q.init){ q.vis = false; continue; } const e = Math.min(0.25, (t - q.t) / 1000); q.x = q.tx + q.vx * e; q.z = q.tz + q.vz * e; const sp = Math.hypot(q.vx, q.vz); q.sp = sp; q.vis = !!q.moving; if(sp > 0.4){ q.yaw += wrapA(Math.atan2(q.vx, -q.vz) - q.yaw) * Math.min(1, dt * 8); } q.mv = clamp(sp / 4, 0, 1.3); q.ph += dt * sp * 2.4; q.isCar = q.vis && (q.isCar ? sp > 5 : sp > 8); if(q.cs && q.cs.linger > 0 && !q.vis){ q.vis = true; q.isCar = true; q.sp = Math.abs(q.cs.s.u); } }
+      for(const q of botList){ if(!q.init){ q.vis = false; continue; } const e = Math.min(0.25, (t - q.t) / 1000); q.x = q.tx + q.vx * e; q.z = q.tz + q.vz * e; const sp = Math.hypot(q.vx, q.vz); q.sp = sp; q.vis = !!q.moving; if(sp > 0.4){ q.yaw += wrapA(Math.atan2(q.vx, -q.vz) - q.yaw) * Math.min(1, dt * 8); } q.mv = clamp(sp / 4, 0, 1.3); q.ph += dt * sp * 2.4; q.isCar = q.vis && (q.isCar ? sp > 5 : sp > 8);
+        if(q.isCar && q.route && Tr && !(q.cs && q.cs.linger > 0 && !q.vis)){ const kp = Tr.pose(q.route, q.n, q.f || 0, q.kp || (q.kp = {})); if(q.kRoute !== q.route || q.kyaw == null){ q.kRoute = q.route; q.kyaw = kp.yaw; } else q.kyaw += wrapA(kp.yaw - q.kyaw) * Math.min(1, dt * 7); q.kx = kp.x; q.kz = kp.z; } else q.kRoute = null; if(q.cs && q.cs.linger > 0 && !q.vis){ q.vis = true; q.isCar = true; q.sp = Math.abs(q.cs.s.u); } }
       npcCars(dt, t);
     }
     /* ---- NPC drivers: every car within NCP_R m of you is a real drive.js car (the same tyre / suspension model as yours and the cops') steered at its timetable position, so it brakes, dives, leans
@@ -413,7 +414,10 @@
         let c = q.cs;
         if(!c){ const m = pool[G.h32(q.n, 31) % Math.min(pool.length, 4)], ap = Tr.create(q.route, q.n, m), pose = Tr.seed(ap, q.f || 0), s = Dr.car(m, { x: pose.x, z: pose.z, yaw: pose.yaw }); s.y = T.height(pose.x, pose.z); s.u = (q.f || 0) < 0.03 ? 0 : Math.min(ap.vc, q.sp || 0);
           c = q.cs = { s, ap, m, linger: 0, get x(){ return s.x; }, get z(){ return s.z; }, get y(){ return s.y; }, get yaw(){ return s.yaw; }, get pitch(){ return s.pitch; }, get roll(){ return s.roll; } }; }
-        else if(c.ap.route !== q.route){ c.ap = Tr.create(q.route, q.n, c.m); if(Tr.attach(c.ap, c.s.x, c.s.z) > 25){ const pose = Tr.seed(c.ap, q.f || 0); c.s.x = pose.x; c.s.z = pose.z; c.s.yaw = pose.yaw; } c.linger = 0; }
+        else if(c.ap.route !== q.route){ c.ap = Tr.create(q.route, q.n, c.m); const off = Tr.attach(c.ap, c.s.x, c.s.z);
+          /* the driver changed its mind (new trip): the car just drives on from where it is, onto the new lane (a U-turn, a swing round a corner, pulling over — it may do it badly, but it never teleports or flips its heading).
+           * Only a car that is out of sight (> 70 m) or hopelessly far from its new route (> 120 m) is put on the new lane directly. */
+          if(off > 120 || (off > 25 && d2 > 70 * 70)){ const pose = Tr.seed(c.ap, q.f || 0); c.s.x = pose.x; c.s.z = pose.z; c.s.yaw = pose.yaw; c.s.v = 0; c.s.r = 0; } c.linger = 0; }
         const ap = c.ap, tp = (q.f || 0) * ap.L.len;
         if(q.isCar || q.moving) c.linger = 0; else if(!c.linger) c.linger = 15;
         if(c.linger > 0 && !q.moving){ c.linger -= dt; if(d2 > 120 * 120 || ap.done || ap.d > ap.L.len - 6){ c.linger = 0; q.cs = null; continue; } }
@@ -444,7 +448,7 @@
       const grow = (buf, n) => (n * 8 + 8 > buf.length) ? (() => { const b = new Float32Array(buf.length * 2); b.set(buf); return b; })() : buf;
       lookNpc = null; let best = 0.985; const fx = Math.sin(P.yaw) * Math.cos(P.pitch), fz = -Math.cos(P.yaw) * Math.cos(P.pitch), fy = Math.sin(P.pitch);
       for(const q of botList){ if(!q.vis) continue; const dx = q.x - px, dz = q.z - pz, d2 = dx * dx + dz * dz, car = q.isCar; if(d2 > (car ? cfg.carRange : cfg.npcRange) ** 2) continue; const y = T.height(q.x, q.z) + (car ? 0.1 : 0);
-        if(car){ carBuf = grow(carBuf, nc); const c = q.cs; if(c) put(carBuf, nc++, c.x, c.y + 0.1, c.z, c.yaw, c.pitch, c.roll, q.shirt, q.pants); else put(carBuf, nc++, q.x, y, q.z, q.yaw, 0, 0, q.shirt, q.pants); } else { actorBuf = grow(actorBuf, np); put(actorBuf, np++, q.x, y, q.z, q.yaw, q.ph, q.mv, q.shirt, q.pants); }
+        if(car){ carBuf = grow(carBuf, nc); const c = q.cs; if(c) put(carBuf, nc++, c.x, c.y + 0.1, c.z, c.yaw, c.pitch, c.roll, q.shirt, q.pants); else if(q.kRoute === q.route && q.kRoute) put(carBuf, nc++, q.kx, T.height(q.kx, q.kz) + 0.1, q.kz, q.kyaw, 0, 0, q.shirt, q.pants); else put(carBuf, nc++, q.x, y, q.z, q.yaw, 0, 0, q.shirt, q.pants); } else { actorBuf = grow(actorBuf, np); put(actorBuf, np++, q.x, y, q.z, q.yaw, q.ph, q.mv, q.shirt, q.pants); }
         if(d2 < 400){ const d = Math.sqrt(d2), dot = (dx * fx + dz * fz + (y + 1.2 - (P.y + cfg.eye)) * fy) / d; if(dot > best){ best = dot; lookNpc = q; } } }
       if(net) net.others.forEach(o => { if(o.inside || o.v) return; const dx = o.x - px, dz = o.z - pz; if(dx * dx + dz * dz > cfg.npcRange ** 2) return; const h = G.h32(G.hash(o.uid), 5) % 360; actorBuf = grow(actorBuf, np); put(actorBuf, np++, o.x, T.height(o.x, o.z), o.z, o.yaw, o.ph, o.mv, pack(hsl(h, 70, 50)), pack(hsl(h, 20, 25))); });
       carFilled = nc; kvN = 0; return [np, nc];

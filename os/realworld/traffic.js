@@ -82,6 +82,12 @@
   /* snap a driver onto its lane at the car's current position (a new trip began): returns how far off the lane the car is */
   function attach(ap, x, z){ const pr = project(ap.L, x, z, 0, ap.L.n - 2); ap.i = pr.i; ap.d = pr.d; ap.shift = ap.tgtShift = 0; ap.done = false; return pr.dist; }
 
+  /* the lane a driver with this seed uses (the SAME lane create() gives it: same two random draws) — so a far-away car that is only drawn (no physics yet) already rides on the lane, with the lane's rounded
+   * corners, and the physical car that takes over when you get near starts exactly where the drawn one was (no sideways pop, no sudden turn). */
+  function laneFor(route, seed){ const R = rng(seed * 7919 + 13); R(); return lane(route, 1.45 + 0.3 * R()); }
+  /* where (and which way) a car with this seed is at fraction f (0 … 1) of its route, on its own lane → { x, z, yaw } */
+  function pose(route, seed, f, out){ const L = laneFor(route, seed), p = at(L, clamp(f, 0, 1) * L.len, out || {}); p.yaw = Math.atan2(p.tx, -p.tz); return p; }
+
   /* what is ahead? bodies = other cars { s, hl, hw, fixed } → sets ap.gap (bumper to bumper, m), ap.lead (its speed along our lane), ap.tgtShift (sideways shift to pass parked cars) */
   function sense(ap, s, bodies, t){
     const L = ap.L, f0 = Math.sin(s.yaw), f1 = -Math.cos(s.yaw), i0 = Math.max(0, ap.i - 1), i1 = idxAt(L, ap.d + 48) + 1, shiftNow = ap.shift + ap.lat;
@@ -119,6 +125,8 @@
     let v0 = ap.vc * (1 + 0.05 * Math.sin(ap.tm * 0.21 + ap.ph[2])); if(env.tp != null){ v0 *= clamp(1 + (env.tp - ap.d) / 90, 0.6, 1.35); }
     const j1 = idxAt(L, ap.d + 90) + 1; for(let j = ap.i + 1; j <= j1 && j < L.n; j++){ const x = Math.max(0, L.cum[j] - ap.d), vc = Math.sqrt(L.vlim[j] * L.vlim[j] + 2 * ap.b * x); if(vc < v0) v0 = vc; }
     if(ap.detour > 0) v0 = Math.min(v0, 3.8);
+    // not lined up with the lane yet (a new route that points another way, a long way off it): turn at walking pace instead of ploughing on at cruise speed
+    { const hd = Math.abs(wrapA(s.yaw - L.th[clamp(ap.i, 0, L.n - 1)])); if(hd > 0.7 && ap.d < L.len - 5) v0 = Math.min(v0, Math.max(2.4, 6.2 - hd * 1.3)); if(pr.dist > 3.5) v0 = Math.min(v0, 4 + Math.max(0, 8 - pr.dist) * 0.4); }
     ap.vWant = v0; const v = Math.max(0, s.u);
     let gap = ap.gap, lead = ap.lead; const toEnd = L.len - ap.d - ap.hl - 0.6; if(env.stopAtEnd !== false && toEnd < gap){ gap = Math.max(0.1, toEnd); lead = 0; }
     // IDM: free-road acceleration  a·(1 − (v/v0)⁴)  minus the interaction term  a·(s*/gap)²
@@ -142,7 +150,9 @@
     // steering: pure pursuit on a point `Ld` ahead on the lane, shifted sideways by the pass-parked-cars shift and the wander, plus a human wobble
     const Ld = clamp(3 + 0.55 * Math.abs(s.u), 4.5, 16), p = at(L, ap.d + Ld), lat = ap.shift + ap.lat, tx = p.x - p.tz * lat, tz = p.z + p.tx * lat, dx = tx - s.x, dz = tz - s.z;
     const fw = dx * Math.sin(s.yaw) - dz * Math.cos(s.yaw), lt = dx * Math.cos(s.yaw) + dz * Math.sin(s.yaw), err = Math.atan2(lt, fw);
-    const steer = clamp(err * 1.9 + ap.sn * (0.6 * Math.sin(ap.tm * 0.9 + ap.ph[3]) + 0.4 * Math.sin(ap.tm * 2.3 + ap.ph[0])), -1, 1);
+    // a (near) U-turn: the target is straight behind, so the sign of the error is a coin toss and the wheel would flip left/right. Commit to ONE direction — towards the lane — until the car has come round.
+    if(Math.abs(err) > 2.3 && ap.d + Ld < L.len - 0.5){ if(!ap.uDir) ap.uDir = pr.off >= 0 ? -1 : 1; } else if(Math.abs(err) < 1.5 || ap.d + Ld >= L.len - 0.5) ap.uDir = 0;
+    const steer = ap.uDir ? ap.uDir : clamp(err * 1.9 + ap.sn * (0.6 * Math.sin(ap.tm * 0.9 + ap.ph[3]) + 0.4 * Math.sin(ap.tm * 2.3 + ap.ph[0])), -1, 1);
     const hold = ap.done || (v < 0.15 && aDes < 0);
     return { thr: ap.thr < 0.02 ? 0 : ap.thr, steer, brake: hold ? 1 : (ap.brk < 0.02 ? 0 : ap.brk), hand: ap.done ? 1 : 0 };
   }
@@ -177,5 +187,5 @@
   /* the bodies as stride-8 colliders [0, x, z, halfWidth, halfLength, cos, sin, top] for people on foot; returns how many were written (out must hold 8 floats per body) */
   function boxes(bodies, out, ground){ let n = 0; for(const b of bodies){ if((n + 1) * 8 > out.length) break; const s = b.s, o = n * 8, y = ground ? ground(s.x, s.z) : 0; out[o] = 0; out[o + 1] = s.x; out[o + 2] = s.z; out[o + 3] = b.hw + 0.05; out[o + 4] = b.hl + 0.05; out[o + 5] = Math.cos(s.yaw); out[o + 6] = Math.sin(s.yaw); out[o + 7] = y + 1.5; n++; } return n; }
 
-  return { lane, at, project, create, seed, attach, control, sense, collideCars, boxes, rng };
+  return { lane, laneFor, pose, at, project, create, seed, attach, control, sense, collideCars, boxes, rng };
 });

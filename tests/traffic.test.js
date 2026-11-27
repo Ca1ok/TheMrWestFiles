@@ -77,4 +77,22 @@ for(const m of cars){
 
 // 8 ── colliders for people on foot
 { const out = new Float32Array(16), n = TR.boxes([{ s: { x: 10, z: 20, yaw: 0.5 }, hl: 2.2, hw: 0.9 }], out, () => 3); assert(n === 1 && out[1] === 10 && out[2] === 20 && Math.abs(out[3] - 0.95) < 1e-6 && Math.abs(out[4] - 2.25) < 1e-6 && Math.abs(out[7] - 4.5) < 1e-6, 'box format'); }
+
+// 9 ── a driver changes its mind: the car drives on from where it is onto the new lane. It never teleports or flips its heading (only the physics turns it), it slows down to take the turn, and it ends up on the new lane.
+{ const wrap = a => Math.atan2(Math.sin(a), Math.cos(a)), A = [[0, 0], [600, 0]], m = VD.CARS[1];
+  const cases = { 'turns right': s => [[s.x, s.z], [s.x, s.z + 600]], 'turns left': s => [[s.x, s.z], [s.x, s.z - 600]], 'U-turn': s => [[s.x + 30, s.z], [s.x - 570, s.z]], 'starts 20 m behind': s => [[s.x - 20, 0], [s.x - 20, 400]] };
+  for(const name of Object.keys(cases)){
+    let ap = TR.create(A, 5, m); const p = TR.seed(ap, 0.3), s = Dr.car(m, { x: p.x, z: p.z, yaw: p.yaw }); s.u = 11; for(let t = 0; t < 4; t += DT) Dr.stepCar(s, TR.control(ap, s, DT, t, { bodies: [], stopAtEnd: false }), DT, world);
+    ap = TR.create(cases[name](s), 5, m); const off0 = TR.attach(ap, s.x, s.z); let prev = s.yaw, maxStep = 0, maxOff = 0, minU = 99, settled = -1;
+    for(let t = 0; t < 26; t += DT){ Dr.stepCar(s, TR.control(ap, s, DT, t, { bodies: [], stopAtEnd: false }), DT, world); maxStep = Math.max(maxStep, Math.abs(wrap(s.yaw - prev))); prev = s.yaw; minU = Math.min(minU, s.u);
+      const pr = TR.project(ap.L, s.x, s.z, 0, ap.L.n - 2); maxOff = Math.max(maxOff, Math.abs(pr.off)); if(settled < 0 && Math.abs(pr.off) < 1 && Math.abs(wrap(s.yaw - ap.L.th[pr.i])) < 0.2) settled = t; }
+    const pr = TR.project(ap.L, s.x, s.z, 0, ap.L.n - 2);
+    assert(maxStep < 3 * Math.PI / 180, name + ': the heading only ever changes by the physics (max ' + (maxStep * 57.3).toFixed(1) + '°/frame)'); assert(settled >= 0 && settled < 12, name + ': back on the new lane within 12 s (' + settled.toFixed(1) + ')'); assert(Math.abs(pr.off) < 1.2, name + ': on the lane at the end (' + pr.off.toFixed(2) + ' m)'); assert(maxOff < off0 + 12, name + ': never strays far beyond where it started (' + maxOff.toFixed(1) + ' m, started ' + off0.toFixed(1) + ' m off)'); assert(s.u > 6, name + ': carries on afterwards'); }
+  console.log('  ✓ a driver that changes its mind turns round / turns off without snapping'); }
+// 10 ── a car that is only DRAWN (far away, no physics) rides the very lane the physical car takes over on: same spot, same heading, rounded corners
+{ const route = [[0, 0], [120, 0], [120, 80], [0, 80]]; let worst = 0, worstYaw = 0;
+  for(const seedN of [1, 5, 9, 31, 77]) for(const f of [0, 0.2, 0.5, 0.8, 1]){ const ap = TR.create(route, seedN, cars[1]), a = TR.seed(ap, f), b = TR.pose(route, seedN, f); worst = Math.max(worst, Math.hypot(a.x - b.x, a.z - b.z)); worstYaw = Math.max(worstYaw, Math.abs(Math.atan2(Math.sin(a.yaw - b.yaw), Math.cos(a.yaw - b.yaw)))); }
+  assert(worst < 1e-3 && worstYaw < 1e-3, 'drawn pose = physical spawn pose (' + worst + ' m, ' + worstYaw + ' rad)');
+  const Ln = TR.laneFor(route, 5); let prevY = null, maxTurn = 0; for(let d = 0; d < Ln.len; d += 0.5){ const q = TR.at(Ln, d), y = Math.atan2(q.tx, -q.tz); if(prevY !== null) maxTurn = Math.max(maxTurn, Math.abs(Math.atan2(Math.sin(y - prevY), Math.cos(y - prevY)))); prevY = y; }
+  assert(maxTurn < 50 * Math.PI / 180, 'a 90° junction is turned in steps (' + (maxTurn * 57.3).toFixed(0) + '° per 0.5 m), not in one jump'); console.log('  ✓ far cars ride the lane: same pose as the physical car, corners rounded'); }
 console.log('traffic.test.js: all passed');

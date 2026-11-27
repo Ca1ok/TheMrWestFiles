@@ -164,14 +164,39 @@
       }
       if(parked.size > 400) for(const [n, v] of parked) if(t - v.t > 20 * 60000) parked.delete(n);
     }
+    /* NO TWO PARKED CARS SHARE A SPOT. Everybody who lives in one house used to get the SAME kerb spot, and everybody who finished a trip at the same door parked at the same point, so the cars sat inside each
+     * other. Now a parked car is only put where its box (turned by its heading) touches no other parked car, no showroom / lot car, none of your own vehicles and no stolen car: if its first choice is taken it
+     * tries the second kerb spot of the house, then slides along the kerb (alternately forwards and backwards) one car-length at a time; if the whole stretch is full the car is simply not there.
+     * A car that already has a spot keeps it (spotCache) while it is still free, so nothing hops when somebody walks into range. */
+    const boxHit = (a, b, pad) => {            // two boxes { x, z, yaw, hl (half length, along the heading), hw (half width) }: separating-axis test
+      for(let pass = 0; pass < 2; pass++){ const P = pass ? b : a, Q = pass ? a : b, pf = [Math.sin(P.yaw), -Math.cos(P.yaw)], pr = [Math.cos(P.yaw), Math.sin(P.yaw)], qf = [Math.sin(Q.yaw), -Math.cos(Q.yaw)], qr = [Math.cos(Q.yaw), Math.sin(Q.yaw)], dx = Q.x - P.x, dz = Q.z - P.z;
+        for(let k = 0; k < 2; k++){ const ax = k ? pr : pf, d = Math.abs(dx * ax[0] + dz * ax[1]), rQ = Q.hl * Math.abs(qf[0] * ax[0] + qf[1] * ax[1]) + Q.hw * Math.abs(qr[0] * ax[0] + qr[1] * ax[1]); if(d > (k ? P.hw : P.hl) + rQ + pad) return false; } }
+      return true;
+    };
+    const spotCache = new Map();
     function refreshNpcCars(){
-      const bots = ctx.bots(), out = [], R2 = 170 * 170;
-      for(const b of bots){ if(out.length >= 24) break; if(Math.hypot(b.vx || 0, b.vz || 0) > 1 || b.vis || G.h32(b.n, 76) % 3 === 0) continue; if(gone.get('n' + b.n) > now()) continue;
-        let x, z, yaw; const pk = parked.get(b.n);
+      const bots = ctx.bots(), R2 = 170 * 170, cand = [];
+      for(const b of bots){ if(Math.hypot(b.vx || 0, b.vz || 0) > 1 || b.vis || G.h32(b.n, 76) % 3 === 0) continue; if(gone.get('n' + b.n) > now()) continue;
+        let x, z, yaw, g = null; const pk = parked.get(b.n);
         if(pk && now() - pk.t < 20 * 60000){ x = pk.x; z = pk.z; yaw = pk.yaw; }
-        else { if(!b.home) continue; let h; try{ h = L.house(b.home.i != null ? b.home.i : +String(b.home.id).slice(1)); }catch(e){ h = null; } if(!h || !h.g) continue; let k; try{ k = L.kerbSpot(h.g, 0); }catch(e){ continue; } if(!k) continue; x = k.x; z = k.z; yaw = k.yaw; }
-        const dx = x - P.x, dz = z - P.z; if(dx * dx + dz * dz > R2) continue; const m = modelFor(b.n), d = m.drive;
-        out.push({ id: m.id, style: m.style, kind: 'car', speed: 0, col: G.h32(b.n, 78) % VD.COLORS.length, x, z, yaw, hl: d.len / 2, hw: d.wid / 2, npc: b.n, ownerName: (G.bot(b.n) || {}).name || 'a local' }); }
+        else { if(!b.home) continue; let h; try{ h = L.house(b.home.i != null ? b.home.i : +String(b.home.id).slice(1)); }catch(e){ h = null; } if(!h || !h.g) continue; let k; try{ k = L.kerbSpot(h.g, 0); }catch(e){ continue; } if(!k) continue; x = k.x; z = k.z; yaw = k.yaw; g = h.g; }
+        const dx = x - P.x, dz = z - P.z, d2 = dx * dx + dz * dz; if(d2 > R2) continue; cand.push({ b, x, z, yaw, g, d2, m: modelFor(b.n) }); }
+      cand.sort((a, c) => a.b.n - c.b.n);
+      const fixed = V.list.filter(q => q.npc == null && !q.cop && q.hl != null), taken = [], spot = new Map();
+      const free = (x, z, yaw, hl, hw) => { const bx = { x, z, yaw, hl, hw }; for(const f of fixed) if(boxHit(bx, f, 0.4)) return false; for(const t of taken) if(boxHit(bx, t, 0.4)) return false; return true; };
+      const claim = (c, x, z, yaw) => { const d = c.m.drive; taken.push({ x, z, yaw, hl: d.len / 2, hw: d.wid / 2 }); spot.set(c.b.n, { x, z, yaw }); spotCache.set(c.b.n, { bx: Math.round(c.x * 10), bz: Math.round(c.z * 10), x, z, yaw }); };
+      for(const c of cand){ const k = spotCache.get(c.b.n), d = c.m.drive; if(k && k.bx === Math.round(c.x * 10) && k.bz === Math.round(c.z * 10) && free(k.x, k.z, k.yaw, d.len / 2, d.wid / 2)) claim(c, k.x, k.z, k.yaw); }          // 1st: cars that already have a spot keep it
+      for(const c of cand){ if(spot.has(c.b.n)) continue; const d = c.m.drive, hl = d.len / 2, hw = d.wid / 2, tries = [[c.x, c.z, c.yaw]];
+        if(c.g){ try{ const k1 = L.kerbSpot(c.g, 1); tries.push([k1.x, k1.z, k1.yaw]); }catch(e){} }
+        const fx = Math.sin(c.yaw), fz = -Math.cos(c.yaw), st = d.len + 1;
+        for(let i = 1; i <= 4; i++) for(const sg of [1, -1]) tries.push([c.x + fx * st * i * sg, c.z + fz * st * i * sg, c.yaw]);
+        for(const t of tries) if(free(t[0], t[1], t[2], hl, hw)){ claim(c, t[0], t[1], t[2]); break; } }
+      if(spotCache.size > 600) spotCache.clear();
+      const out = []; cand.sort((a, c) => a.d2 - c.d2);
+      for(const c of cand){ if(out.length >= 24) break; const sp = spot.get(c.b.n); if(!sp) continue; const d = c.m.drive;
+        out.push({ id: c.m.id, style: c.m.style, kind: 'car', speed: 0, col: G.h32(c.b.n, 78) % VD.COLORS.length, x: sp.x, z: sp.z, yaw: sp.yaw, hl: d.len / 2, hw: d.wid / 2, npc: c.b.n, ownerName: (G.bot(c.b.n) || {}).name || 'a local' }); }
+      out.sort((a, c) => a.npc - c.npc);
+
       const sig = out.map(q => q.npc + '@' + Math.round(q.x)).join(); if(sig !== npcCars._sig){ npcCars = out; npcCars._sig = sig; bump(); }
     }
 

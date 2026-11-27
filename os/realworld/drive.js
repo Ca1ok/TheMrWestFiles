@@ -93,11 +93,11 @@
       // kerb kick: a wheel that climbs a kerb jolts the body up and rocks it (more at speed); a car sliding sideways into a kerb trips
       const rise = i => Math.max(0, k[i] - kp[i]), rF = (rise(0) + rise(1)) / 2, rB = (rise(2) + rise(3)) / 2, rRt = (rise(0) + rise(2)) / 2, rLt = (rise(1) + rise(3)) / 2;
       if(rF + rB + rRt + rLt > 0){ s.hv += (rF + rB) * au2 * 0.9; s.pv += (rF - rB) * au2 * 0.6 / L2; s.rv -= (rRt - rLt) * au2 * 0.6 / W2; if(au2 > 3){ s.u *= 1 - (rF + rB) * 0.35; }
-        if(Math.abs(s.v) > 3.5 && (s.v > 0 ? rRt : rLt) > 0) s.rv += sgn(s.v) * (Math.abs(s.v) - 1.5) * (s.v > 0 ? rRt : rLt) * 24; }
+        if(Math.abs(s.v) > 3.5 && (s.v > 0 ? rRt : rLt) > 0) s.rv += sgn(s.v) * (Math.abs(s.v) - 1.5) * (s.v > 0 ? rRt : rLt) * 28; }
       for(let i = 0; i < 4; i++) s.kp[i] = k[i];
       // over-driven: lateral load vs what the track and centre of gravity can resist (SSF) — only matters fast and when the tyres are really working
       const ssf = D.grip * (0.88 + 0.12 * (D.wid / D.hgt - 1)), ti = Math.abs(s.ay) / (G * ssf), gate = sm(17, 30, au2) * sm(0.6, 0.9, Math.abs(s.steer));
-      let trT = Math.atan2(hR - hL, 2 * W2) - clamp(s.ay / G, -1.4, 1.4) * 0.13 * (0.8 + D.hgt * 0.25) * soft - sgn(s.ay) * 0.9 * sm(0.86, 1.08, ti) * gate;
+      let trT = -Math.atan2(hR - hL, 2 * W2) - clamp(s.ay / G, -1.4, 1.4) * 0.13 * (0.8 + D.hgt * 0.25) * soft - sgn(s.ay) * 0.9 * sm(0.86, 1.08, ti) * gate;
       let tpT = Math.atan2(hF - hB, 2 * L2) + clamp(s.ax / G, -1.2, 1.2) * 0.06 * soft;
       const hT = ((hF + hB) / 2 + (hR + hL) / 2) / 2 - gc;
       if(!s.flip){
