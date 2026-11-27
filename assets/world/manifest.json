@@ -1012,6 +1012,720 @@
    "d": 1.53,
    "h": 2.09,
    "tris": 730
+  },
+  "loungeSofaLong": {
+   "glb": "kenney/furn_loungeSofaLong.glb",
+   "w": 1.96,
+   "d": 1.64,
+   "h": 0.92,
+   "tris": 186
+  },
+  "loungeSofaCorner": {
+   "glb": "kenney/furn_loungeSofaCorner.glb",
+   "w": 1.96,
+   "d": 1.96,
+   "h": 0.92,
+   "tris": 190
+  },
+  "loungeChair": {
+   "glb": "kenney/furn_loungeChair.glb",
+   "w": 0.98,
+   "d": 0.82,
+   "h": 0.92,
+   "tris": 128
+  },
+  "loungeChairRelax": {
+   "glb": "kenney/furn_loungeChairRelax.glb",
+   "w": 0.98,
+   "d": 1.35,
+   "h": 1.26,
+   "tris": 188
+  },
+  "loungeDesignSofa": {
+   "glb": "kenney/furn_loungeDesignSofa.glb",
+   "w": 2.24,
+   "d": 0.82,
+   "h": 0.8,
+   "tris": 116
+  },
+  "loungeDesignChair": {
+   "glb": "kenney/furn_loungeDesignChair.glb",
+   "w": 1.46,
+   "d": 0.82,
+   "h": 0.8,
+   "tris": 116
+  },
+  "loungeSofaOttoman": {
+   "glb": "kenney/furn_loungeSofaOttoman.glb",
+   "w": 0.88,
+   "d": 0.9,
+   "h": 0.46,
+   "tris": 84
+  },
+  "tableCoffee": {
+   "glb": "kenney/furn_tableCoffee.glb",
+   "w": 1.32,
+   "d": 0.8,
+   "h": 0.46,
+   "tris": 124
+  },
+  "tableCoffeeGlass": {
+   "glb": "kenney/furn_tableCoffeeGlass.glb",
+   "w": 1.32,
+   "d": 0.8,
+   "h": 0.46,
+   "tris": 140
+  },
+  "sideTable": {
+   "glb": "kenney/furn_sideTable.glb",
+   "w": 1.07,
+   "d": 0.44,
+   "h": 0.77,
+   "tris": 118
+  },
+  "sideTableDrawers": {
+   "glb": "kenney/furn_sideTableDrawers.glb",
+   "w": 1.07,
+   "d": 0.44,
+   "h": 0.77,
+   "tris": 238
+  },
+  "cabinetTelevision": {
+   "glb": "kenney/furn_cabinetTelevision.glb",
+   "w": 1.6,
+   "d": 0.5,
+   "h": 0.62,
+   "tris": 154
+  },
+  "cabinetTelevisionDoors": {
+   "glb": "kenney/furn_cabinetTelevisionDoors.glb",
+   "w": 1.6,
+   "d": 0.52,
+   "h": 0.62,
+   "tris": 210
+  },
+  "televisionModern": {
+   "glb": "kenney/furn_televisionModern.glb",
+   "w": 1.37,
+   "d": 0.26,
+   "h": 0.91,
+   "tris": 72
+  },
+  "televisionVintage": {
+   "glb": "kenney/furn_televisionVintage.glb",
+   "w": 0.82,
+   "d": 0.54,
+   "h": 0.54,
+   "tris": 280
+  },
+  "bookcaseClosed": {
+   "glb": "kenney/furn_bookcaseClosed.glb",
+   "w": 0.8,
+   "d": 0.5,
+   "h": 1.7,
+   "tris": 372
+  },
+  "bookcaseClosedWide": {
+   "glb": "kenney/furn_bookcaseClosedWide.glb",
+   "w": 1.6,
+   "d": 0.5,
+   "h": 1.58,
+   "tris": 372
+  },
+  "bookcaseClosedDoors": {
+   "glb": "kenney/furn_bookcaseClosedDoors.glb",
+   "w": 0.8,
+   "d": 0.5,
+   "h": 1.7,
+   "tris": 296
+  },
+  "bookcaseOpen": {
+   "glb": "kenney/furn_bookcaseOpen.glb",
+   "w": 0.8,
+   "d": 0.5,
+   "h": 1.76,
+   "tris": 320
+  },
+  "bookcaseOpenLow": {
+   "glb": "kenney/furn_bookcaseOpenLow.glb",
+   "w": 0.8,
+   "d": 0.5,
+   "h": 0.8,
+   "tris": 184
+  },
+  "books": {
+   "glb": "kenney/furn_books.glb",
+   "w": 0.3,
+   "d": 0.19,
+   "h": 0.21,
+   "tris": 62
+  },
+  "rugRectangle": {
+   "glb": "kenney/furn_rugRectangle.glb",
+   "w": 3.14,
+   "d": 1.84,
+   "h": 0.02,
+   "tris": 28
+  },
+  "rugRound": {
+   "glb": "kenney/furn_rugRound.glb",
+   "w": 1.84,
+   "d": 1.84,
+   "h": 0.02,
+   "tris": 188
+  },
+  "rugRounded": {
+   "glb": "kenney/furn_rugRounded.glb",
+   "w": 3.14,
+   "d": 1.84,
+   "h": 0.02,
+   "tris": 204
+  },
+  "rugSquare": {
+   "glb": "kenney/furn_rugSquare.glb",
+   "w": 1.81,
+   "d": 1.84,
+   "h": 0.02,
+   "tris": 28
+  },
+  "rugDoormat": {
+   "glb": "kenney/furn_rugDoormat.glb",
+   "w": 0.86,
+   "d": 0.47,
+   "h": 0.02,
+   "tris": 204
+  },
+  "lampRoundFloor": {
+   "glb": "kenney/furn_lampRoundFloor.glb",
+   "w": 0.3,
+   "d": 0.35,
+   "h": 1.72,
+   "tris": 76
+  },
+  "lampSquareFloor": {
+   "glb": "kenney/furn_lampSquareFloor.glb",
+   "w": 0.24,
+   "d": 0.24,
+   "h": 1.72,
+   "tris": 60
+  },
+  "lampRoundTable": {
+   "glb": "kenney/furn_lampRoundTable.glb",
+   "w": 0.3,
+   "d": 0.35,
+   "h": 0.63,
+   "tris": 76
+  },
+  "lampSquareTable": {
+   "glb": "kenney/furn_lampSquareTable.glb",
+   "w": 0.24,
+   "d": 0.24,
+   "h": 0.58,
+   "tris": 60
+  },
+  "lampSquareCeiling": {
+   "glb": "kenney/furn_lampSquareCeiling.glb",
+   "w": 0.24,
+   "d": 0.24,
+   "h": 0.46,
+   "tris": 60
+  },
+  "lampWall": {
+   "glb": "kenney/furn_lampWall.glb",
+   "w": 0.45,
+   "d": 0.3,
+   "h": 0.19,
+   "tris": 42
+  },
+  "speaker": {
+   "glb": "kenney/furn_speaker.glb",
+   "w": 0.3,
+   "d": 0.3,
+   "h": 1.27,
+   "tris": 228
+  },
+  "speakerSmall": {
+   "glb": "kenney/furn_speakerSmall.glb",
+   "w": 0.3,
+   "d": 0.27,
+   "h": 0.6,
+   "tris": 220
+  },
+  "radio": {
+   "glb": "kenney/furn_radio.glb",
+   "w": 0.63,
+   "d": 0.2,
+   "h": 0.46,
+   "tris": 432
+  },
+  "plantSmall1": {
+   "glb": "kenney/furn_plantSmall1.glb",
+   "w": 0.19,
+   "d": 0.19,
+   "h": 0.28,
+   "tris": 102
+  },
+  "plantSmall2": {
+   "glb": "kenney/furn_plantSmall2.glb",
+   "w": 0.19,
+   "d": 0.19,
+   "h": 0.28,
+   "tris": 158
+  },
+  "plantSmall3": {
+   "glb": "kenney/furn_plantSmall3.glb",
+   "w": 0.2,
+   "d": 0.17,
+   "h": 0.29,
+   "tris": 98
+  },
+  "pillow": {
+   "glb": "kenney/furn_pillow.glb",
+   "w": 0.46,
+   "d": 0.18,
+   "h": 0.44,
+   "tris": 50
+  },
+  "pillowBlue": {
+   "glb": "kenney/furn_pillowBlue.glb",
+   "w": 0.46,
+   "d": 0.13,
+   "h": 0.26,
+   "tris": 50
+  },
+  "coatRack": {
+   "glb": "kenney/furn_coatRack.glb",
+   "w": 0.9,
+   "d": 0.27,
+   "h": 0.56,
+   "tris": 132
+  },
+  "coatRackStanding": {
+   "glb": "kenney/furn_coatRackStanding.glb",
+   "w": 0.55,
+   "d": 0.55,
+   "h": 1.54,
+   "tris": 190
+  },
+  "trashcan": {
+   "glb": "kenney/furn_trashcan.glb",
+   "w": 0.42,
+   "d": 0.47,
+   "h": 0.86,
+   "tris": 68
+  },
+  "ceilingFan": {
+   "glb": "kenney/furn_ceilingFan.glb",
+   "w": 0.91,
+   "d": 1.05,
+   "h": 0.27,
+   "tris": 214
+  },
+  "kitchenCabinet": {
+   "glb": "kenney/furn_kitchenCabinet.glb",
+   "w": 0.86,
+   "d": 0.9,
+   "h": 0.9,
+   "tris": 114
+  },
+  "kitchenCabinetDrawer": {
+   "glb": "kenney/furn_kitchenCabinetDrawer.glb",
+   "w": 0.86,
+   "d": 0.9,
+   "h": 0.9,
+   "tris": 174
+  },
+  "kitchenCabinetUpper": {
+   "glb": "kenney/furn_kitchenCabinetUpper.glb",
+   "w": 0.86,
+   "d": 0.44,
+   "h": 0.78,
+   "tris": 80
+  },
+  "kitchenCabinetUpperDouble": {
+   "glb": "kenney/furn_kitchenCabinetUpperDouble.glb",
+   "w": 0.86,
+   "d": 0.44,
+   "h": 0.78,
+   "tris": 234
+  },
+  "kitchenCabinetCornerInner": {
+   "glb": "kenney/furn_kitchenCabinetCornerInner.glb",
+   "w": 0.92,
+   "d": 0.92,
+   "h": 0.9,
+   "tris": 54
+  },
+  "kitchenFridge": {
+   "glb": "kenney/furn_kitchenFridge.glb",
+   "w": 0.86,
+   "d": 0.58,
+   "h": 1.84,
+   "tris": 250
+  },
+  "kitchenFridgeLarge": {
+   "glb": "kenney/furn_kitchenFridgeLarge.glb",
+   "w": 1.04,
+   "d": 0.81,
+   "h": 1.84,
+   "tris": 436
+  },
+  "kitchenFridgeSmall": {
+   "glb": "kenney/furn_kitchenFridgeSmall.glb",
+   "w": 0.86,
+   "d": 0.58,
+   "h": 1.2,
+   "tris": 152
+  },
+  "kitchenFridgeBuiltIn": {
+   "glb": "kenney/furn_kitchenFridgeBuiltIn.glb",
+   "w": 0.86,
+   "d": 0.9,
+   "h": 1.74,
+   "tris": 268
+  },
+  "kitchenSink": {
+   "glb": "kenney/furn_kitchenSink.glb",
+   "w": 0.86,
+   "d": 0.9,
+   "h": 0.98,
+   "tris": 318
+  },
+  "kitchenStove": {
+   "glb": "kenney/furn_kitchenStove.glb",
+   "w": 0.86,
+   "d": 0.9,
+   "h": 0.9,
+   "tris": 830
+  },
+  "kitchenStoveElectric": {
+   "glb": "kenney/furn_kitchenStoveElectric.glb",
+   "w": 0.86,
+   "d": 0.9,
+   "h": 0.9,
+   "tris": 338
+  },
+  "kitchenMicrowave": {
+   "glb": "kenney/furn_kitchenMicrowave.glb",
+   "w": 0.58,
+   "d": 0.46,
+   "h": 0.36,
+   "tris": 152
+  },
+  "kitchenCoffeeMachine": {
+   "glb": "kenney/furn_kitchenCoffeeMachine.glb",
+   "w": 0.38,
+   "d": 0.48,
+   "h": 0.35,
+   "tris": 166
+  },
+  "kitchenBar": {
+   "glb": "kenney/furn_kitchenBar.glb",
+   "w": 0.86,
+   "d": 0.42,
+   "h": 0.84,
+   "tris": 76
+  },
+  "kitchenBarEnd": {
+   "glb": "kenney/furn_kitchenBarEnd.glb",
+   "w": 0.2,
+   "d": 0.42,
+   "h": 0.84,
+   "tris": 152
+  },
+  "hoodModern": {
+   "glb": "kenney/furn_hoodModern.glb",
+   "w": 0.86,
+   "d": 0.57,
+   "h": 0.8,
+   "tris": 28
+  },
+  "hoodLarge": {
+   "glb": "kenney/furn_hoodLarge.glb",
+   "w": 0.86,
+   "d": 0.57,
+   "h": 0.74,
+   "tris": 36
+  },
+  "toaster": {
+   "glb": "kenney/furn_toaster.glb",
+   "w": 0.38,
+   "d": 0.2,
+   "h": 0.26,
+   "tris": 220
+  },
+  "kitchenBlender": {
+   "glb": "kenney/furn_kitchenBlender.glb",
+   "w": 0.27,
+   "d": 0.22,
+   "h": 0.46,
+   "tris": 246
+  },
+  "table": {
+   "glb": "kenney/furn_table.glb",
+   "w": 1.68,
+   "d": 0.89,
+   "h": 0.65,
+   "tris": 120
+  },
+  "tableRound": {
+   "glb": "kenney/furn_tableRound.glb",
+   "w": 1.39,
+   "d": 1.6,
+   "h": 0.73,
+   "tris": 80
+  },
+  "tableCloth": {
+   "glb": "kenney/furn_tableCloth.glb",
+   "w": 1.68,
+   "d": 0.89,
+   "h": 0.65,
+   "tris": 144
+  },
+  "tableGlass": {
+   "glb": "kenney/furn_tableGlass.glb",
+   "w": 1.68,
+   "d": 0.89,
+   "h": 0.65,
+   "tris": 144
+  },
+  "chair": {
+   "glb": "kenney/furn_chair.glb",
+   "w": 0.4,
+   "d": 0.4,
+   "h": 0.94,
+   "tris": 170
+  },
+  "chairCushion": {
+   "glb": "kenney/furn_chairCushion.glb",
+   "w": 0.4,
+   "d": 0.4,
+   "h": 0.92,
+   "tris": 198
+  },
+  "chairModernCushion": {
+   "glb": "kenney/furn_chairModernCushion.glb",
+   "w": 0.4,
+   "d": 0.4,
+   "h": 0.92,
+   "tris": 92
+  },
+  "chairRounded": {
+   "glb": "kenney/furn_chairRounded.glb",
+   "w": 0.4,
+   "d": 0.4,
+   "h": 0.91,
+   "tris": 280
+  },
+  "stoolBar": {
+   "glb": "kenney/furn_stoolBar.glb",
+   "w": 0.53,
+   "d": 0.46,
+   "h": 0.87,
+   "tris": 176
+  },
+  "stoolBarSquare": {
+   "glb": "kenney/furn_stoolBarSquare.glb",
+   "w": 0.31,
+   "d": 0.3,
+   "h": 0.81,
+   "tris": 142
+  },
+  "benchCushion": {
+   "glb": "kenney/furn_benchCushion.glb",
+   "w": 0.8,
+   "d": 0.4,
+   "h": 0.92,
+   "tris": 196
+  },
+  "bench": {
+   "glb": "kenney/furn_bench.glb",
+   "w": 0.8,
+   "d": 0.4,
+   "h": 0.94,
+   "tris": 170
+  },
+  "bedSingle": {
+   "glb": "kenney/furn_bedSingle.glb",
+   "w": 1.14,
+   "d": 2.25,
+   "h": 0.75,
+   "tris": 214
+  },
+  "bedBunk": {
+   "glb": "kenney/furn_bedBunk.glb",
+   "w": 1.14,
+   "d": 2.19,
+   "h": 1.7,
+   "tris": 580
+  },
+  "cabinetBed": {
+   "glb": "kenney/furn_cabinetBed.glb",
+   "w": 0.53,
+   "d": 0.43,
+   "h": 0.47,
+   "tris": 72
+  },
+  "cabinetBedDrawer": {
+   "glb": "kenney/furn_cabinetBedDrawer.glb",
+   "w": 0.53,
+   "d": 0.43,
+   "h": 0.53,
+   "tris": 182
+  },
+  "cabinetBedDrawerTable": {
+   "glb": "kenney/furn_cabinetBedDrawerTable.glb",
+   "w": 0.53,
+   "d": 0.43,
+   "h": 0.53,
+   "tris": 140
+  },
+  "desk": {
+   "glb": "kenney/furn_desk.glb",
+   "w": 1.47,
+   "d": 0.78,
+   "h": 0.77,
+   "tris": 198
+  },
+  "deskCorner": {
+   "glb": "kenney/furn_deskCorner.glb",
+   "w": 1.95,
+   "d": 1.95,
+   "h": 0.77,
+   "tris": 250
+  },
+  "chairDesk": {
+   "glb": "kenney/furn_chairDesk.glb",
+   "w": 0.67,
+   "d": 0.63,
+   "h": 1.22,
+   "tris": 588
+  },
+  "computerScreen": {
+   "glb": "kenney/furn_computerScreen.glb",
+   "w": 0.79,
+   "d": 0.21,
+   "h": 0.59,
+   "tris": 72
+  },
+  "computerKeyboard": {
+   "glb": "kenney/furn_computerKeyboard.glb",
+   "w": 0.56,
+   "d": 0.24,
+   "h": 0.06,
+   "tris": 32
+  },
+  "laptop": {
+   "glb": "kenney/furn_laptop.glb",
+   "w": 0.53,
+   "d": 0.48,
+   "h": 0.32,
+   "tris": 68
+  },
+  "bear": {
+   "glb": "kenney/furn_bear.glb",
+   "w": 0.78,
+   "d": 0.5,
+   "h": 0.9,
+   "tris": 134
+  },
+  "bathroomSink": {
+   "glb": "kenney/furn_bathroomSink.glb",
+   "w": 0.68,
+   "d": 0.58,
+   "h": 1.12,
+   "tris": 316
+  },
+  "bathroomSinkSquare": {
+   "glb": "kenney/furn_bathroomSinkSquare.glb",
+   "w": 0.86,
+   "d": 0.6,
+   "h": 1.16,
+   "tris": 234
+  },
+  "toilet": {
+   "glb": "kenney/furn_toilet.glb",
+   "w": 0.63,
+   "d": 0.95,
+   "h": 0.9,
+   "tris": 230
+  },
+  "toiletSquare": {
+   "glb": "kenney/furn_toiletSquare.glb",
+   "w": 0.61,
+   "d": 0.77,
+   "h": 0.9,
+   "tris": 228
+  },
+  "bathtub": {
+   "glb": "kenney/furn_bathtub.glb",
+   "w": 2.38,
+   "d": 1.12,
+   "h": 0.84,
+   "tris": 602
+  },
+  "shower": {
+   "glb": "kenney/furn_shower.glb",
+   "w": 1.12,
+   "d": 1.16,
+   "h": 2.19,
+   "tris": 810
+  },
+  "showerRound": {
+   "glb": "kenney/furn_showerRound.glb",
+   "w": 1.12,
+   "d": 1.12,
+   "h": 2.19,
+   "tris": 960
+  },
+  "bathroomMirror": {
+   "glb": "kenney/furn_bathroomMirror.glb",
+   "w": 0.6,
+   "d": 0.29,
+   "h": 0.87,
+   "tris": 72
+  },
+  "bathroomCabinet": {
+   "glb": "kenney/furn_bathroomCabinet.glb",
+   "w": 0.46,
+   "d": 0.26,
+   "h": 0.78,
+   "tris": 64
+  },
+  "washer": {
+   "glb": "kenney/furn_washer.glb",
+   "w": 0.78,
+   "d": 0.78,
+   "h": 0.94,
+   "tris": 720
+  },
+  "dryer": {
+   "glb": "kenney/furn_dryer.glb",
+   "w": 0.78,
+   "d": 0.76,
+   "h": 0.94,
+   "tris": 262
+  },
+  "washerDryerStacked": {
+   "glb": "kenney/furn_washerDryerStacked.glb",
+   "w": 0.78,
+   "d": 0.78,
+   "h": 1.88,
+   "tris": 992
+  },
+  "cardboardBoxClosed": {
+   "glb": "kenney/furn_cardboardBoxClosed.glb",
+   "w": 0.42,
+   "d": 0.42,
+   "h": 0.56,
+   "tris": 60
+  },
+  "cardboardBoxOpen": {
+   "glb": "kenney/furn_cardboardBoxOpen.glb",
+   "w": 0.74,
+   "d": 0.42,
+   "h": 0.56,
+   "tris": 60
   }
  },
  "peoplePivot": {

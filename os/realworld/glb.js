@@ -53,12 +53,13 @@
       const man = await Assets.manifest(base); if(!man) return 0; let n = 0; const P = RW.Props;
       const get = async (file, opt) => { const r = await fetch(base + file); if(!r.ok) throw new Error('HTTP ' + r.status); return parse(await r.arrayBuffer(), opt); };
       const both = async (d, opt) => { const out = [null, null]; for(const [lod, key] of [[0, 'glb'], [1, 'lod1']]){ if(!d[key]) continue; try{ out[lod] = await get(d[key], opt); n++; Assets.loaded[d[key]] = 1; }catch(e){ console.warn('[realworld] model ' + d[key] + ' not used: ' + e.message); } } return out; };
+      const furn = {}, furnP = Promise.all(Object.keys(man.furniture || {}).map(async id => { try{ const d = man.furniture[id]; furn[id] = { m: await get(d.glb, { ground: false }), w: d.w, d: d.d, h: d.h }; n++; }catch(e){ console.warn('[realworld] furniture ' + id + ' not used: ' + e.message); } }));   // ~100 small files, fetched in parallel with everything else
       for(const name of Object.keys(man.props || {})){ const d = man.props[name], vs = d.variants || [d];
         for(let vi = 0; vi < vs.length; vi++){ const ms = await both(vs[vi], { height: vs[vi].height, ground: vs[vi].ground }); if(ms[0]) P.set(name, 0, ms[0], vi); if(ms[1] && ms[0]) P.set(name, 1, ms[1], vi); } }
       const cars = [], people = [];
       for(const id of Object.keys(man.cars || {})){ const ms = await both(man.cars[id], { ground: false }); if(ms[0]) cars.push({ id, m0: ms[0], m1: ms[1] || ms[0], length: man.cars[id].length }); }
       for(const id of Object.keys(man.people || {})){ try{ people.push({ id, m: await get(man.people[id].glb, { ground: false }) }); n++; }catch(e){ console.warn('[realworld] person ' + id + ' not used: ' + e.message); } }
-      const furn = {}; for(const id of Object.keys(man.furniture || {})){ try{ const d = man.furniture[id]; furn[id] = { m: await get(d.glb, { ground: false }), w: d.w, d: d.d, h: d.h }; n++; }catch(e){ console.warn('[realworld] furniture ' + id + ' not used: ' + e.message); } } if(Object.keys(furn).length){ P.furn = furn; P.rev++; }
+      await furnP; if(Object.keys(furn).length){ P.furn = furn; P.rev++; }
       if(cars.length){ P.cars = cars; P.rev++; } if(people.length){ P.people = people; P.pivot = man.peoplePivot || null; P.rev++; }
       return n;
     },

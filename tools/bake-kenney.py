@@ -255,8 +255,16 @@ def bake_all():
 
 
     # ---- interior furniture (Room.model in os/realworld/interiors.js): kit faces +Z -> turned so the front faces -Z like everything else
+    # the Furniture Kit pieces the interiors use (name -> kit file; the baked name is furn_<name>.glb and Room.model('<name>') places it). One scale for the whole kit (K) keeps the pieces in proportion to each other.
+    K = 2.0; KIT = ['loungeSofaLong', 'loungeSofaCorner', 'loungeChair', 'loungeChairRelax', 'loungeDesignSofa', 'loungeDesignChair', 'loungeSofaOttoman', 'tableCoffee', 'tableCoffeeGlass', 'sideTable', 'sideTableDrawers',
+      'cabinetTelevision', 'cabinetTelevisionDoors', 'televisionModern', 'televisionVintage', 'bookcaseClosed', 'bookcaseClosedWide', 'bookcaseClosedDoors', 'bookcaseOpen', 'bookcaseOpenLow', 'books', 'rugRectangle', 'rugRound', 'rugRounded', 'rugSquare', 'rugDoormat',
+      'lampRoundFloor', 'lampSquareFloor', 'lampRoundTable', 'lampSquareTable', 'lampSquareCeiling', 'lampWall', 'speaker', 'speakerSmall', 'radio', 'plantSmall1', 'plantSmall2', 'plantSmall3', 'pillow', 'pillowBlue', 'coatRack', 'coatRackStanding', 'trashcan', 'ceilingFan',
+      'kitchenCabinet', 'kitchenCabinetDrawer', 'kitchenCabinetUpper', 'kitchenCabinetUpperDouble', 'kitchenCabinetCornerInner', 'kitchenFridge', 'kitchenFridgeLarge', 'kitchenFridgeSmall', 'kitchenFridgeBuiltIn', 'kitchenSink', 'kitchenStove', 'kitchenStoveElectric',
+      'kitchenMicrowave', 'kitchenCoffeeMachine', 'kitchenBar', 'kitchenBarEnd', 'hoodModern', 'hoodLarge', 'toaster', 'kitchenBlender', 'table', 'tableRound', 'tableCloth', 'tableGlass', 'chair', 'chairCushion', 'chairModernCushion', 'chairRounded', 'stoolBar', 'stoolBarSquare', 'benchCushion', 'bench',
+      'bedSingle', 'bedBunk', 'cabinetBed', 'cabinetBedDrawer', 'cabinetBedDrawerTable', 'desk', 'deskCorner', 'chairDesk', 'computerScreen', 'computerKeyboard', 'laptop', 'bear',
+      'bathroomSink', 'bathroomSinkSquare', 'toilet', 'toiletSquare', 'bathtub', 'shower', 'showerRound', 'bathroomMirror', 'bathroomCabinet', 'washer', 'dryer', 'washerDryerStacked', 'cardboardBoxClosed', 'cardboardBoxOpen']
     for name, rel, k in [('plant', f'{FURNITURE}/{FURN}/pottedPlant.glb', 2.3), ('sofa', f'{FURNITURE}/{FURN}/loungeSofa.glb', 2.04), ('bed', f'{FURNITURE}/{FURN}/bedDouble.glb', 2.0),
-                         ('arcade', f'{ARC}/{GLB}/arcade-machine.glb', 2.5), ('claw', f'{ARC}/{GLB}/claw-machine.glb', 2.2)]:
+                         ('arcade', f'{ARC}/{GLB}/arcade-machine.glb', 2.5), ('claw', f'{ARC}/{GLB}/claw-machine.glb', 2.2)] + [(n, f'{FURNITURE}/{FURN}/{n}.glb', K) for n in KIT]:
         m = load_model(rel); yaw_rot(m, 180); fit(m, scale=k); lo, hi = m.bbox(); total += write_glb(f'{BAKED}/furn_{name}.glb', m)
         manifest['furniture'][name] = dict(glb=f'kenney/furn_{name}.glb', w=round(float(hi[0] - lo[0]), 2), d=round(float(hi[2] - lo[2]), 2), h=round(float(hi[1]), 2), tris=m.tris)
 
