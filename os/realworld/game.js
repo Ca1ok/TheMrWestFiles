@@ -40,9 +40,24 @@
       V.list = VH.showcase('dealer').concat(VH.showcase('airport'), VH.owned(garage, hg || null)); applyParking(garage); V.list = V.list.filter(crime.keep).concat(crime.extra()); V.cols = V.list.length ? Float32Array.from(VH.colliders(V.list, T.height)) : null; V.bufs = null;
     }
     const vehBufs = {};
+    /* STOLEN CARS wear the same detailed Kenney models as the NPC cars (the ones you steal ARE NPC cars / showroom cars, they should not turn into plain boxes the moment you break in).
+     * They are appended to carBuf right after the NPC cars (carFilled) and drawn by drawCars in the same call. The models carry baked colours, so the body-colour index is not applied.
+     * style → model: the closest Kenney body for each procedural style; scaled so its length matches the car's collision box (drive.len). No models loaded = false = the old procedural body. */
+    let carFilled = 0, kvN = 0;
+    const KSTYLE = { hatch: 'hatchback-sports', sedan: 'sedan', pickup: 'delivery', suv: 'suv', coupe: 'sedan-sports' }, KBYID = { apex: 'sedan-sports', vesper: 'suv-luxury' };
+    function kenneyStolen(q){
+      const cs = RW.Props && RW.Props.cars; if(!cs || !cs.length) return false;
+      const want = KBYID[q.id] || KSTYLE[q.style] || 'sedan', ix = Math.max(0, cs.findIndex(c => c.id === want)), k = cs[ix], m = VD.get(q.id);
+      const sc = k.length && m && m.drive ? clamp(m.drive.len / k.length, 0.9, 1.25) : 1;
+      let n = carFilled + kvN; if(n * 8 + 8 > carBuf.length){ const nb = new Float32Array(Math.max(carBuf.length * 2, (n + 1) * 8)); nb.set(carBuf); carBuf = nb; }
+      const o = n * 8; carBuf[o] = q.x; carBuf[o + 1] = q.y != null ? q.y : T.height(q.x, q.z) + 0.1; carBuf[o + 2] = q.z; carBuf[o + 3] = q.yaw; carBuf[o + 4] = q.pitch || 0; carBuf[o + 5] = q.roll || 0; carBuf[o + 6] = 0; carBuf[o + 7] = ix + sc / 2;      // slot 7 = model index + (scale / 2) as the fraction; NPC cars put a whole packed colour there (fraction 0 = scale 1)
+      kvN++; return true;
+    }
     function fillVehicles(){
       const out = {}, px = P.x, pz = P.z, hexOf = i => VD.colorHex(i);
-      for(const q of V.list){ if(dv && dv.wreck && dv.q === q) continue; const dx = q.x - px, dz = q.z - pz; if(dx * dx + dz * dz > cfg.npcRange ** 2) continue; const b = vehBufs[q.style] || (vehBufs[q.style] = new Float32Array(8 * 16)); let o = out[q.style]; if(!o) o = out[q.style] = { buf: b, n: 0 };
+      for(const q of V.list){ if(dv && dv.wreck && dv.q === q) continue; const dx = q.x - px, dz = q.z - pz; if(dx * dx + dz * dz > cfg.npcRange ** 2) continue;
+        if(q.stolen && q.kind === 'car' && kenneyStolen(q)) continue;      // drawn below with the NPC cars' detailed models (drawCars) — not as the plain procedural body
+        const b = vehBufs[q.style] || (vehBufs[q.style] = new Float32Array(8 * 16)); let o = out[q.style]; if(!o) o = out[q.style] = { buf: b, n: 0 };
         if(o.n * 8 + 8 > o.buf.length){ const nb = new Float32Array(o.buf.length * 2); nb.set(o.buf); o.buf = vehBufs[q.style] = nb; } const rgb = q.rgb || M.rgb(hexOf(q.col)), i = o.n++ * 8, f = o.buf; f[i] = q.x; f[i + 1] = q.y != null ? q.y : T.height(q.x, q.z) + (q.kind === 'plane' ? 0.05 : 0.1); f[i + 2] = q.z; f[i + 3] = q.yaw; f[i + 4] = q.pitch || 0; f[i + 5] = q.roll || 0; f[i + 6] = pack(rgb); f[i + 7] = (q.acc != null ? q.acc : pack(rgb.map(c => c * 0.5))) + (q.driven && dv && dv.q === q && !dv.car && dv.s.throttle > 0.03 ? 0.5 : 0); }   // +0.5 on the accent colour = "engine running": the actor shader spins the propeller blades
       if(net) net.others.forEach(o => { if(!o.v || o.inside) return; const m = VD.ALL[o.v - 1]; if(!m) return; const dx = o.x - px, dz = o.z - pz; if(dx * dx + dz * dz > cfg.carRange ** 2) return; const style = m.style, b = vehBufs[style] || (vehBufs[style] = new Float32Array(8 * 16)); let e = out[style]; if(!e) e = out[style] = { buf: b, n: 0 };
         if(e.n * 8 + 8 > e.buf.length){ const nb = new Float32Array(e.buf.length * 2); nb.set(e.buf); e.buf = vehBufs[style] = nb; } const rgb = M.rgb(hexOf(o.c || 0)), i = e.n++ * 8, f = e.buf, plane = m.kind === 'plane';
@@ -422,7 +437,7 @@
     function drawPeople(buf, n){ const nv = PL.names.length; if(!nv){ gfx.actors('person', buf, n); return; } PL.bufs.forEach(b => { b.n = 0; });
       for(let i = 0; i < n; i++) push8(PL.bufs[Math.abs(buf[i * 8 + 6] | 0) % nv], buf, i * 8); PL.bufs.forEach((b, v) => { if(b.n) gfx.actors(PL.names[v], b.a, b.n); }); }
     function drawCars(buf, n){ const cs = RW.Props.cars, nv = cs.length; if(!nv){ gfx.actors('car', buf, n); return; } CARS.bufs.forEach(b => { b.n = 0; }); const px = P.x, pz = P.z, tmp = new Float32Array(8);
-      for(let i = 0; i < n; i++){ const o = i * 8, v = Math.abs(buf[o + 7] | 0) % nv, dx = buf[o] - px, dz = buf[o + 2] - pz; tmp[0] = buf[o]; tmp[1] = buf[o + 1]; tmp[2] = buf[o + 2]; tmp[3] = buf[o + 3]; tmp[4] = 1; tmp[5] = 0xffffff; tmp[6] = buf[o + 4]; tmp[7] = buf[o + 5]; push8(CARS.bufs[v * 2 + (dx * dx + dz * dz > CAR_NEAR * CAR_NEAR ? 1 : 0)], tmp, 0); }
+      for(let i = 0; i < n; i++){ const o = i * 8, v = Math.abs(buf[o + 7] | 0) % nv, dx = buf[o] - px, dz = buf[o + 2] - pz; tmp[0] = buf[o]; tmp[1] = buf[o + 1]; tmp[2] = buf[o + 2]; tmp[3] = buf[o + 3]; { const f7 = buf[o + 7], fr = f7 - Math.floor(f7); tmp[4] = fr > 0.01 ? fr * 2 : 1; } tmp[5] = 0xffffff; tmp[6] = buf[o + 4]; tmp[7] = buf[o + 5]; push8(CARS.bufs[v * 2 + (dx * dx + dz * dz > CAR_NEAR * CAR_NEAR ? 1 : 0)], tmp, 0); }
       CARS.bufs.forEach((b, k) => { if(!b.n) return; const m = cs[k >> 1][(k & 1) ? 'm1' : 'm0']; let h = CARS.h.get(m); if(!h){ h = gfx.propUpload(m); CARS.h.set(m, h); } gfx.props(h, b.a, b.n, true, cfg.carRange * 0.85, cfg.carRange, true); }); }
     function fillActors(){
       let np = 0, nc = 0; const px = P.x, pz = P.z, put = (buf, i, x, y, z, yaw, ph, mv, sh, pa) => { const o = i * 8; buf[o] = x; buf[o + 1] = y; buf[o + 2] = z; buf[o + 3] = yaw; buf[o + 4] = ph; buf[o + 5] = mv; buf[o + 6] = sh; buf[o + 7] = pa; };
@@ -432,7 +447,7 @@
         if(car){ carBuf = grow(carBuf, nc); const c = q.cs; if(c) put(carBuf, nc++, c.x, c.y + 0.1, c.z, c.yaw, c.pitch, c.roll, q.shirt, q.pants); else put(carBuf, nc++, q.x, y, q.z, q.yaw, 0, 0, q.shirt, q.pants); } else { actorBuf = grow(actorBuf, np); put(actorBuf, np++, q.x, y, q.z, q.yaw, q.ph, q.mv, q.shirt, q.pants); }
         if(d2 < 400){ const d = Math.sqrt(d2), dot = (dx * fx + dz * fz + (y + 1.2 - (P.y + cfg.eye)) * fy) / d; if(dot > best){ best = dot; lookNpc = q; } } }
       if(net) net.others.forEach(o => { if(o.inside || o.v) return; const dx = o.x - px, dz = o.z - pz; if(dx * dx + dz * dz > cfg.npcRange ** 2) return; const h = G.h32(G.hash(o.uid), 5) % 360; actorBuf = grow(actorBuf, np); put(actorBuf, np++, o.x, T.height(o.x, o.z), o.z, o.yaw, o.ph, o.mv, pack(hsl(h, 70, 50)), pack(hsl(h, 20, 25))); });
-      return [np, nc];
+      carFilled = nc; kvN = 0; return [np, nc];
     }
     /* the clerks of the cell you are standing in (drawn with indoor lighting) */
     function fillInside(){ let n = 0; if(S.cell) S.cell.npcs.forEach(q => { if(n * 8 + 8 > inBuf.length){ const b = new Float32Array(inBuf.length * 2); b.set(inBuf); inBuf = b; } const o = n++ * 8; inBuf[o] = q.x; inBuf[o + 1] = q.y; inBuf[o + 2] = q.z; inBuf[o + 3] = q.yaw; inBuf[o + 4] = 0; inBuf[o + 5] = 0; inBuf[o + 6] = pack(M.rgb(q.shirt)); inBuf[o + 7] = pack(M.rgb(q.pants)); }); return n; }
@@ -670,7 +685,7 @@
       if(t - botsAt > 90000){ botsAt = t; loadBots(); } stepNPCs(t, dt);
       const e = env, bob = Math.sin(P.bob * 2.2) * 0.03 * P.mv, cam = dv ? dv.cam : { pos: [P.x, P.cy + cfg.eye + bob, P.z], yaw: P.yaw, pitch: P.pitch, fov: cfg.fov * Math.PI / 180, near: 0.25, far: cfg.far };
       gfx.begin(cam, e, t / 1000);
-      ensureModels(); const [np, nc] = fillActors(), vb = VD ? fillVehicles() : null, drawActorsAll = () => { drawPeople(actorBuf, np); if(nc) drawCars(carBuf, nc); if(vb) for(const k in vb) gfx.actors(k, vb[k].buf, vb[k].n, 0.9); };
+      ensureModels(); const [np, nc] = fillActors(), vb = VD ? fillVehicles() : null, drawActorsAll = () => { drawPeople(actorBuf, np); if(nc + kvN) drawCars(carBuf, nc + kvN); if(vb) for(const k in vb) gfx.actors(k, vb[k].buf, vb[k].n, 0.9); };
       if(gfx.shadowOn && !S.room && !S.cell){                       // ULTRA: sun shadows — the same buffers drawn once from the sun into a depth map
         const R = dv ? 110 : 80, f = gfx.V.f, fx = cam.pos[0] + f[0] * R * 0.45, fz = cam.pos[2] + f[2] * R * 0.45;
         if(gfx.beginShadow([fx, T.height(fx, fz) + 1, fz], R)){ gfx.startWorld(); st.draw(P.x, P.z, cfg.far); if(dyn.plots) gfx.draw(dyn.plots, 1, 1); st.drawProps(...propRange()); drawActorsAll(); gfx.endShadow(); } }
