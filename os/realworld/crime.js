@@ -126,7 +126,7 @@
   /* ======================= RUNTIME ======================= */
   function create(ctx){
     const { OS, P, T, L, G, VD, VH, Dr, V, el, toast } = ctx, $ = s => el.querySelector(s), esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-    const W = newWanted(), A = { t: 0 }; let rec = newRec(), ver = 0, cops = [], npcCars = [], stolen = [], gone = new Map(), mg = null, hw = null, panel = false, bustedUntil = 0, report_ = null, npcAt = 0, copAt = 0, hudAt = 0, saveT = 0, evadeNote = 0, caught = false, lastBust = 0, dispT = null, dispatched = false;
+    const W = newWanted(), A = { t: 0 }; let rec = newRec(), ver = 0, cops = [], npcCars = [], stolen = [], gone = new Map(), poke = false, mg = null, hw = null, panel = false, bustedUntil = 0, report_ = null, npcAt = 0, copAt = 0, hudAt = 0, saveT = 0, evadeNote = 0, caught = false, lastBust = 0, dispT = null, dispatched = false;
     const GONE_MS = 10 * 60000, econ = () => { try{ return clamp(OS.econ() || 1, 1, 4); }catch(e){ return 1; } }, now = () => Date.now();
     try{ const r = OS.prefs.get('rwCrime'); if(r && Array.isArray(r.o) && r.n) rec = { o: r.o.slice(0, MAX_REC), n: Object.assign(newRec().n, r.n) }; }catch(e){}
     const save = () => { clearTimeout(saveT); saveT = setTimeout(() => { try{ OS.prefs.set('rwCrime', rec); }catch(e){} }, 1500); };
@@ -176,10 +176,8 @@
     const spotCache = new Map();
     function refreshNpcCars(){
       const bots = ctx.bots(), R2 = 170 * 170, cand = [];
-      for(const b of bots){ if(Math.hypot(b.vx || 0, b.vz || 0) > 1 || b.vis || G.h32(b.n, 76) % 3 === 0) continue; if(gone.get('n' + b.n) > now()) continue;
-        let x, z, yaw, g = null; const pk = parked.get(b.n);
-        if(pk && now() - pk.t < 20 * 60000){ x = pk.x; z = pk.z; yaw = pk.yaw; }
-        else { if(!b.home) continue; let h; try{ h = L.house(b.home.i != null ? b.home.i : +String(b.home.id).slice(1)); }catch(e){ h = null; } if(!h || !h.g) continue; let k; try{ k = L.kerbSpot(h.g, 0); }catch(e){ continue; } if(!k) continue; x = k.x; z = k.z; yaw = k.yaw; g = h.g; }
+      for(const b of bots){ const r = b.rest; if(!r || b.cs) continue; if(gone.get('n' + b.n) > now()) continue;       // EVERY citizen owns a car: it stands where the timetable says (npcs.js `rest`), except while it is on the road or still pulling up (b.cs)
+        const x = r.x, z = r.z, yaw = r.yaw, g = null;
         const dx = x - P.x, dz = z - P.z, d2 = dx * dx + dz * dz; if(d2 > R2) continue; cand.push({ b, x, z, yaw, g, d2, m: modelFor(b.n) }); }
       cand.sort((a, c) => a.b.n - c.b.n);
       const fixed = V.list.filter(q => q.npc == null && !q.cop && q.hl != null), taken = [], spot = new Map();
@@ -193,7 +191,7 @@
         for(const t of tries) if(free(t[0], t[1], t[2], hl, hw)){ claim(c, t[0], t[1], t[2]); break; } }
       if(spotCache.size > 600) spotCache.clear();
       const out = []; cand.sort((a, c) => a.d2 - c.d2);
-      for(const c of cand){ if(out.length >= 24) break; const sp = spot.get(c.b.n); if(!sp) continue; const d = c.m.drive;
+      for(const c of cand){ if(out.length >= 60) break; const sp = spot.get(c.b.n); if(!sp) continue; const d = c.m.drive;
         out.push({ id: c.m.id, style: c.m.style, kind: 'car', speed: 0, col: G.h32(c.b.n, 78) % VD.COLORS.length, x: sp.x, z: sp.z, yaw: sp.yaw, hl: d.len / 2, hw: d.wid / 2, npc: c.b.n, ownerName: (G.bot(c.b.n) || {}).name || 'a local' }); }
       out.sort((a, c) => a.npc - c.npc);
 
@@ -243,7 +241,7 @@
       crime(plane ? 'aircraft' : 'breakin', seen);
       if(seen){ crime(showroom ? 'theftDealer' : 'theft', true); }
       else { setTimeout(() => ownerReport(q), 70000 + Math.random() * 40000); toast('Clean. Nobody saw you — but keep moving.'); crime0Theft(); }
-      const car = Object.assign({}, q, { stolen: true, wired: false, driven: false, from: showroom ? 'dealer' : 'npc', taken: now() }); delete car.npc; car.hot = true; car.owner = q.ownerName || ''; car.rgb = null;
+      const car = Object.assign({}, q, { stolen: true, wired: false, driven: false, from: showroom ? 'dealer' : 'npc', taken: now() }); car.kv = q.npc; delete car.npc; car.hot = true; car.owner = q.ownerName || ''; car.rgb = null;
       if(showroom) gone.set(vkey(q), now() + GONE_MS); else gone.set('n' + q.npc, now() + GONE_MS); stolen.push(car); bump(); ctx.rebuild(); const real = V.list.find(x => x === car) || car;
       if(!ctx.startDrive(real)) toast('You cannot get in right now.');     // startDrive opens the hotwire minigame (crime.hotwire) because the stolen vehicle is not wired yet
     }
@@ -383,8 +381,7 @@
     function update(dt, t){
       if(hw){ if(ctx.drivingState() !== hw.d) hotClose(); else { hotStep(hw.s, dt); if(hw.flash > 0) hw.flash -= dt; if(hw.s.state === 'fail') hotFail(); else hotDraw(); } }
       if(mg){ lockStep(mg.s, dt); if(mg.flash > 0) mg.flash -= dt; if(mg.s.state === 'fail' && mg.s.last === 'timeout'){ finish(false); } else drawLock(); }
-      try{ trackBots(); }catch(e){}
-      if(t - npcAt > 1100 && !ctx.inside()){ npcAt = t; try{ refreshNpcCars(); }catch(e){} }
+      if((poke || t - npcAt > 1100) && !ctx.inside()){ poke = false; npcAt = t; try{ refreshNpcCars(); }catch(e){} }
       // restock showroom cars / forget old stolen-car heat
       if(gone.size){ const n = now(); let ch = false; gone.forEach((v, k) => { if(v <= n){ gone.delete(k); ch = true; } }); if(ch) bump(); }
       if(!cops.length && W.stars <= 0 && !ctx.driving() && stolen.length === 0){ hud.classList.remove('on'); return; }
@@ -433,7 +430,7 @@
     const view = () => ({ stars: W.stars, owed: owed(rec), arrests: rec.n.arrests, recent: rec.o.slice(0, 5) });
     function resetSession(){ lastSeen.t = 0; dispT = null; dispatched = false; cops.length = 0; W.heat = 0; W.stars = 0; W.coolT = 0; A.t = 0; mg = null; lock.classList.remove('show'); hotClose(); hideReport(); bump(); }
     root.RealWorld = root.RealWorld || {}; root.RealWorld.crimeView = view; root.RealWorld.crimeState = () => ({ lock: mg ? mg.s : null, hot: hw ? hw.s : null, wanted: W, cops: cops.length, copPos: cops.map(c => [Math.round(c.s.x), Math.round(c.s.z)]), copInfo: cops.map(c => [Math.round(c.s.u), c.los ? 1 : 0, Math.round(Math.hypot(c.s.x - P.x, c.s.z - P.z)), c.unstuck || 0, c.avT > 0 ? 1 : 0, c.goal ? Math.round(Math.hypot(c.s.x - c.goal.x, c.s.z - c.goal.z)) : -1]), stolen: stolen.length, npcCars: npcCars.length, rec, caught });   // read-only snapshot for tests / debugging
-    return { bodies: () => cops.map(c => ({ s: c.s, hl: c.q.hl, hw: c.q.hw })), update, keep, extra, prompt, kindOf, breakIn, hotwire, toggleReport, act, busy, ver: () => ver, cols: () => copColsArr, park, impound, reset: resetSession, view, wanted: wantedNow, record: () => rec };
+    return { modelFor, poke: () => { poke = true; }, carGone: n => gone.get('n' + n) > now(), bodies: () => cops.map(c => ({ s: c.s, hl: c.q.hl, hw: c.q.hw })), update, keep, extra, prompt, kindOf, breakIn, hotwire, toggleReport, act, busy, ver: () => ver, cols: () => copColsArr, park, impound, reset: resetSession, view, wanted: wantedNow, record: () => rec };
   }
   return { Logic, create };
 });

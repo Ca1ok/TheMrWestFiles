@@ -84,7 +84,8 @@
 
   /* the lane a driver with this seed uses (the SAME lane create() gives it: same two random draws) — so a far-away car that is only drawn (no physics yet) already rides on the lane, with the lane's rounded
    * corners, and the physical car that takes over when you get near starts exactly where the drawn one was (no sideways pop, no sudden turn). */
-  function laneFor(route, seed){ const R = rng(seed * 7919 + 13); R(); return lane(route, 1.45 + 0.3 * R()); }
+  const laneOffOf = seed => { const R = rng(seed * 7919 + 13); R(); return 1.45 + 0.3 * R(); };                  // how far right of the centre line this driver keeps (m)
+  function laneFor(route, seed){ return lane(route, laneOffOf(seed)); }
   /* where (and which way) a car with this seed is at fraction f (0 … 1) of its route, on its own lane → { x, z, yaw } */
   function pose(route, seed, f, out){ const L = laneFor(route, seed), p = at(L, clamp(f, 0, 1) * L.len, out || {}); p.yaw = Math.atan2(p.tx, -p.tz); return p; }
 
@@ -187,5 +188,5 @@
   /* the bodies as stride-8 colliders [0, x, z, halfWidth, halfLength, cos, sin, top] for people on foot; returns how many were written (out must hold 8 floats per body) */
   function boxes(bodies, out, ground){ let n = 0; for(const b of bodies){ if((n + 1) * 8 > out.length) break; const s = b.s, o = n * 8, y = ground ? ground(s.x, s.z) : 0; out[o] = 0; out[o + 1] = s.x; out[o + 2] = s.z; out[o + 3] = b.hw + 0.05; out[o + 4] = b.hl + 0.05; out[o + 5] = Math.cos(s.yaw); out[o + 6] = Math.sin(s.yaw); out[o + 7] = y + 1.5; n++; } return n; }
 
-  return { lane, laneFor, pose, at, project, create, seed, attach, control, sense, collideCars, boxes, rng };
+  return { lane, laneFor, laneOffOf, pose, at, project, create, seed, attach, control, sense, collideCars, boxes, rng };
 });

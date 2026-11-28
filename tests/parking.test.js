@@ -18,16 +18,16 @@ function world(bots, fixedList){
 }
 const parked = C => C.extra().filter(q => q.npc != null);
 function assertNoStack(list, label){ for(let i = 0; i < list.length; i++) for(let j = i + 1; j < list.length; j++) assert(!hit(boxOf(list[i]), boxOf(list[j])), label + ': cars ' + i + ' and ' + j + ' overlap at (' + list[i].x.toFixed(1) + ', ' + list[i].z.toFixed(1) + ')'); }
-// 1 ── five bots live in the same house (all want kerb spot 0)
-{ const bots = []; for(let n = 1; n <= 5; n++) bots.push({ n, vx: 0, vz: 0, vis: false, init: true, home: { i: 0 } });
+// 1 ── five citizens whose timetable parks them on EXACTLY the same spot (same house / same door)
+{ const bots = []; for(let n = 1; n <= 5; n++) bots.push({ n, vx: 0, vz: 0, vis: false, init: true, rest: { x: kerb(house, 0).x, z: kerb(house, 0).z, yaw: Math.PI / 2 } });
   const w = world(bots.filter(b => h32(b.n, 76) % 3 !== 0 || true)); let t = 0; for(let k = 0; k < 4; k++){ t += 1200; w.C.update(0.1, t); } w.V.list = w.C.extra();
   const cars = parked(w.C); assert(cars.length >= 2, 'several of them are parked (' + cars.length + ')'); assertNoStack(cars, 'one house'); console.log('✓ ' + cars.length + ' cars from one house, none overlapping'); }
 // 2 ── the kerb is taken by YOUR car: nobody parks inside it
-{ const bots = []; for(let n = 10; n <= 16; n++) bots.push({ n, vx: 0, vz: 0, vis: false, init: true, home: { i: 0 } }); const d = VD.get('alder').drive;
+{ const bots = []; for(let n = 10; n <= 16; n++) bots.push({ n, vx: 0, vz: 0, vis: false, init: true, rest: { x: kerb(house, 0).x, z: kerb(house, 0).z, yaw: Math.PI / 2 } }); const d = VD.get('alder').drive;
   const mine = { id: 'alder', kind: 'car', slot: 'v1', x: kerb(house, 0).x, z: kerb(house, 0).z, yaw: Math.PI / 2, hl: d.len / 2, hw: d.wid / 2 };
   const w = world(bots, [mine]); for(let k = 1; k <= 4; k++) w.C.update(0.1, k * 1200); const cars = parked(w.C); assert(cars.length >= 1);
   for(const q of cars) assert(!hit(boxOf(q), boxOf(mine)), 'an NPC car parked inside the player\'s car'); assertNoStack(cars, 'beside player car'); console.log('✓ ' + cars.length + ' NPC cars keep clear of the player\'s own car'); }
 // 3 ── a stable layout: the same cars stay exactly where they were between refreshes
-{ const bots = []; for(let n = 20; n <= 27; n++) bots.push({ n, vx: 0, vz: 0, vis: false, init: true, home: { i: 0 } }); const w = world(bots); w.C.update(0.1, 1200); const a = parked(w.C).map(q => q.npc + ':' + q.x.toFixed(2) + ',' + q.z.toFixed(2));
+{ const bots = []; for(let n = 20; n <= 27; n++) bots.push({ n, vx: 0, vz: 0, vis: false, init: true, rest: { x: kerb(house, 0).x, z: kerb(house, 0).z, yaw: Math.PI / 2 } }); const w = world(bots); w.C.update(0.1, 1200); const a = parked(w.C).map(q => q.npc + ':' + q.x.toFixed(2) + ',' + q.z.toFixed(2));
   w.C.update(0.1, 2600); w.C.update(0.1, 4000); const b = parked(w.C).map(q => q.npc + ':' + q.x.toFixed(2) + ',' + q.z.toFixed(2)); assert.deepStrictEqual(b, a, 'parked cars do not hop between refreshes'); console.log('✓ parked cars stay put between refreshes'); }
 console.log('parking.test.js: all passed');

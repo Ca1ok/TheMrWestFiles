@@ -81,6 +81,7 @@ layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(locatio
 uniform mat4 uVP; uniform vec2 uPiv; uniform vec2 uVeh; out vec3 vN; out vec3 vC; out vec3 vWP; out float vG;
 uniform float uTime;
 vec3 unpackC(float p){ return vec3(floor(p / 65536.0), floor(mod(p, 65536.0) / 256.0), mod(p, 256.0)) / 255.0; }
+vec3 hairC(float k){ return k < 0.30 ? vec3(0.06, 0.05, 0.045) : k < 0.55 ? vec3(0.17, 0.10, 0.06) : k < 0.74 ? vec3(0.33, 0.20, 0.10) : k < 0.86 ? vec3(0.66, 0.50, 0.24) : k < 0.93 ? vec3(0.42, 0.16, 0.08) : vec3(0.62, 0.62, 0.63); }   // black, dark brown, brown, blond, auburn, grey
 void main(){ vec3 p = aPos, n = aNrm; float part = aMeta.x, sw = sin(iAn.x) * iAn.y, ang = 0.0, pv = uPiv.x;
   if(part > 7.5){ vec2 hub = vec2(aBake.r * 255.0 - 128.0, aBake.g * 255.0) / 16.0; float run = step(0.25, fract(iAn.w)); float a = run * (uTime * 52.0 + hub.x * 2.0) + (1.0 - run) * 0.5; float c = cos(a), s = sin(a); vec2 d = p.xy - hub; p.xy = hub + vec2(d.x * c - d.y * s, d.x * s + d.y * c); n.xy = vec2(n.x * c - n.y * s, n.x * s + n.y * c); }   // propeller blades (part 8): spin about the hub baked into the vertex while the engine runs
   if(part > 0.5 && part < 1.5) ang = sw * 0.75; else if(part < 2.5 && part > 1.5) ang = -sw * 0.75; else if(part < 3.5 && part > 2.5){ ang = -sw * 0.6; pv = uPiv.y; } else if(part < 4.5 && part > 3.5){ ang = sw * 0.6; pv = uPiv.y; }
@@ -89,7 +90,7 @@ void main(){ vec3 p = aPos, n = aNrm; float part = aMeta.x, sw = sin(iAn.x) * iA
   else p.y += abs(sin(iAn.x)) * iAn.y * 0.05 * step(part, 4.5);
   float th = -iPos.w, ct = cos(th), st = sin(th); p = vec3(p.x * ct + p.z * st, p.y, -p.x * st + p.z * ct); n = vec3(n.x * ct + n.z * st, n.y, -n.x * st + n.z * ct);
   vec3 shirt = unpackC(iAn.z), pants = unpackC(iAn.w), skin = mix(vec3(0.95, 0.76, 0.62), vec3(0.45, 0.30, 0.22), fract(iAn.z * 0.000173)); float sl = aMeta.y;
-  vC = sl < 0.5 ? skin : sl < 1.5 ? shirt : sl < 2.5 ? pants : sl < 3.5 ? vec3(0.13, 0.1, 0.08) * (0.6 + fract(iAn.w * 0.00031)) : sl < 4.5 ? vec3(0.07) : sl < 5.5 ? shirt : vec3(0.3, 0.42, 0.55);
+  vC = sl < 0.5 ? skin : sl < 1.5 ? shirt : sl < 2.5 ? pants : sl < 3.5 ? (uVeh.x > 0.5 ? vec3(0.13, 0.1, 0.08) * (0.6 + fract(iAn.w * 0.00031)) : hairC(fract(iAn.w * 0.00031))) : sl < 4.5 ? vec3(0.07) : sl < 5.5 ? shirt : vec3(0.3, 0.42, 0.55);
   if(sl > 6.5) vC = aBake.rgb;   /* slot 7 = a baked model colour (Kenney people) */
   vG = uVeh.x > 0.5 ? (sl > 5.5 && sl < 6.5 ? 1.0 : ((sl > 1.5 && sl < 2.5) || (sl > 4.5 && sl < 5.5) ? 0.65 : 0.0)) : 0.0;   // glossy paint + glass on vehicles
   vC *= aMeta.z / 255.0; vN = n; vWP = p + iPos.xyz; gl_Position = uVP * vec4(vWP, 1.0); }`;
@@ -139,6 +140,47 @@ precision mediump float; in vec2 vUV; uniform sampler2D uTex; out vec4 oCol; voi
     box(P, -0.17, 0.08, -0.09, -0.03, 0.9, 0.09, 1, 2); box(P, 0.03, 0.08, -0.09, 0.17, 0.9, 0.09, 2, 2); box(P, -0.18, 0, -0.14, -0.02, 0.09, 0.1, 1, 4); box(P, 0.02, 0, -0.14, 0.18, 0.09, 0.1, 2, 4);
     box(P, -0.22, 0.9, -0.12, 0.22, 1.45, 0.12, 0, 1); box(P, -0.33, 1.1, -0.07, -0.22, 1.43, 0.07, 3, 1); box(P, 0.22, 1.1, -0.07, 0.33, 1.43, 0.07, 4, 1); box(P, -0.33, 0.9, -0.06, -0.23, 1.1, 0.06, 3, 0); box(P, 0.23, 0.9, -0.06, 0.33, 1.1, 0.06, 4, 0);
     box(P, -0.11, 1.45, -0.11, 0.11, 1.7, 0.1, 0, 0); box(P, -0.12, 1.62, -0.12, 0.12, 1.74, 0.11, 0, 3);
+    /* PEOPLE, eight of them: the same limbs, pivots and colour slots as the plain figure (slot 0 skin, 1 shirt, 2 trousers, 3 hair, 4 shoes / belt / eyes, 5 = the shirt colour again (caps), 6 glass), but each with its own
+     * build, outfit, hair, face and extras: a nose, ears, eyes and brows; sleeves, jackets with a collar and tie, a hoodie, a dress, a skirt, shorts; short / long / ponytail / bun / cap / bald-and-bearded hair;
+     * glasses, a backpack, a satchel. Which one somebody is comes from their colour seed (game.js drawPeople), so a person always looks the same. */
+    const PEOPLE = [
+      { top: 'tee',    bot: 'trousers', hair: 'short', x: [] },
+      { top: 'jacket', bot: 'trousers', hair: 'long',  x: ['satchel'], w: 0.92 },
+      { top: 'tee',    bot: 'dress',    hair: 'pony',  x: [], w: 0.9 },
+      { top: 'hoodie', bot: 'trousers', hair: 'cap',   x: [] },
+      { top: 'tee',    bot: 'shorts',   hair: 'short', x: ['pack'] },
+      { top: 'jacket', bot: 'trousers', hair: 'short', x: ['glasses', 'tie'], w: 1.04 },
+      { top: 'longtee', bot: 'trousers', hair: 'bald', x: ['beard'], w: 1.12 },
+      { top: 'jacket', bot: 'skirt',    hair: 'bun',   x: ['glasses'], w: 0.9 } ];
+    const personV = o => { const M = mk(), w = o.w || 1, B = (x0, y0, z0, x1, y1, z1, part, slot) => box(M, x0 * w, y0, z0, x1 * w, y1, z1, part, slot), H = (x0, y0, z0, x1, y1, z1, slot) => box(M, x0, y0, z0, x1, y1, z1, 0, slot);
+      const long = o.top === 'jacket' || o.top === 'hoodie' || o.top === 'longtee', legSlot = o.bot === 'dress' ? 0 : 2;
+      for(const sd of [-1, 1]){ const part = sd < 0 ? 1 : 2, a = sd * 0.03, b = sd * 0.17, x0 = Math.min(a, b), x1 = Math.max(a, b);
+        if(o.bot === 'shorts'){ B(x0, 0.5, -0.09, x1, 0.9, 0.09, part, 2); B(x0 + 0.01, 0.08, -0.08, x1 - 0.01, 0.5, 0.08, part, 0); } else B(x0, 0.08, -0.09, x1, 0.9, 0.09, part, legSlot);
+        B(x0 - 0.01, 0, -0.14, x1 + 0.01, 0.09, 0.1, part, 4);                                                  // shoes
+        const ax0 = sd < 0 ? -0.33 : 0.22, ax1 = sd < 0 ? -0.22 : 0.33, part2 = sd < 0 ? 3 : 4;               // arm: sleeve, forearm, hand
+        B(ax0, long ? 0.92 : 1.1, -0.07, ax1, 1.43, 0.07, part2, 1); if(!long) B(ax0 + 0.01, 0.9, -0.06, ax1 - 0.01, 1.1, 0.06, part2, 0); B(ax0 + 0.01, 0.82, -0.055, ax1 - 0.01, 0.92, 0.055, part2, 0); }
+      B(-0.22, 0.9, -0.12, 0.22, 1.45, 0.12, 0, 1);                                                             // torso
+      if(o.bot === 'dress') B(-0.25, 0.52, -0.15, 0.25, 0.92, 0.15, 0, 1); if(o.bot === 'skirt') B(-0.25, 0.58, -0.15, 0.25, 0.93, 0.15, 0, 2);
+      if(o.bot === 'trousers' || o.bot === 'shorts') B(-0.225, 0.88, -0.125, 0.225, 0.94, 0.125, 0, 4);        // belt
+      if(o.top === 'jacket'){ B(-0.07, 0.95, -0.127, 0.07, 1.42, -0.12, 0, 6); B(-0.23, 1.4, -0.13, -0.05, 1.47, 0.12, 0, 1); B(0.05, 1.4, -0.13, 0.23, 1.47, 0.12, 0, 1); }   // shirt front, collar
+      if(o.x.includes('tie')) B(-0.022, 0.98, -0.131, 0.022, 1.38, -0.126, 0, 4);
+      if(o.top === 'hoodie'){ B(-0.14, 1.43, 0.06, 0.14, 1.56, 0.17, 0, 1); B(-0.2, 0.9, -0.13, 0.2, 0.99, -0.12, 0, 1); }                                 // hood, front pocket
+      H(-0.05, 1.43, -0.05, 0.05, 1.5, 0.05, 0);                                                                // neck
+      H(-0.1, 1.5, -0.1, 0.1, 1.72, 0.1, 0); H(-0.115, 1.57, -0.02, -0.1, 1.65, 0.03, 0); H(0.1, 1.57, -0.02, 0.115, 1.65, 0.03, 0); H(-0.014, 1.565, -0.128, 0.014, 1.615, -0.1, 0);       // head, ears, nose
+      for(const sd of [-1, 1]){ H(sd * 0.03 - 0.016, 1.625, -0.106, sd * 0.03 + 0.016, 1.655, -0.1, 4); H(sd * 0.05 - 0.028, 1.668, -0.105, sd * 0.05 + 0.028, 1.678, -0.1, 3); }                    // eyes, brows
+      H(-0.03, 1.54, -0.104, 0.03, 1.555, -0.1, 3);                                                             // mouth
+      const top = () => H(-0.11, 1.69, -0.11, 0.11, 1.765, 0.105, 3), back = (y) => H(-0.105, y, 0.085, 0.105, 1.72, 0.115, 3);
+      if(o.hair === 'short'){ top(); back(1.57); H(-0.112, 1.62, -0.07, -0.1, 1.72, 0.09, 3); H(0.1, 1.62, -0.07, 0.112, 1.72, 0.09, 3); H(-0.1, 1.7, -0.115, 0.1, 1.735, -0.1, 3); }
+      else if(o.hair === 'long'){ top(); H(-0.115, 1.3, 0.07, 0.115, 1.72, 0.13, 3); H(-0.122, 1.42, -0.03, -0.1, 1.7, 0.1, 3); H(0.1, 1.42, -0.03, 0.122, 1.7, 0.1, 3); H(-0.1, 1.7, -0.115, 0.1, 1.74, -0.1, 3); }
+      else if(o.hair === 'pony'){ top(); back(1.58); H(-0.1, 1.7, -0.115, 0.1, 1.735, -0.1, 3); H(-0.03, 1.36, 0.115, 0.03, 1.68, 0.17, 3); H(-0.04, 1.66, 0.1, 0.04, 1.7, 0.13, 3); }
+      else if(o.hair === 'bun'){ top(); back(1.58); H(-0.1, 1.7, -0.115, 0.1, 1.735, -0.1, 3); H(-0.045, 1.74, -0.01, 0.045, 1.83, 0.08, 3); }
+      else if(o.hair === 'cap'){ H(-0.115, 1.69, -0.115, 0.115, 1.78, 0.11, 5); H(-0.1, 1.685, -0.21, 0.1, 1.71, -0.115, 5); back(1.62); }
+      if(o.x.includes('beard')){ H(-0.105, 1.5, -0.118, 0.105, 1.575, -0.09, 3); H(-0.045, 1.575, -0.112, 0.045, 1.595, -0.1, 3); }
+      if(o.x.includes('glasses')) H(-0.098, 1.618, -0.112, 0.098, 1.665, -0.105, 6);
+      if(o.x.includes('pack')){ H(-0.17, 0.98, 0.12, 0.17, 1.4, 0.27, 2); H(-0.15, 1.02, -0.13, -0.11, 1.4, -0.12, 2); H(0.11, 1.02, -0.13, 0.15, 1.4, -0.12, 2); }
+      if(o.x.includes('satchel')){ H(-0.3, 0.82, 0.06, -0.19, 1.06, 0.2, 2); H(-0.23, 1.0, -0.13, 0.23, 1.04, 0.13, 2); }
+      return M; };
+    const PV = {}; PEOPLE.forEach((o, i) => { PV['personV' + i] = personV(o); });
     const Cr = mk(); // car, facing -z
     box(Cr, -0.95, 0.3, -2.1, 0.95, 0.95, 2.1, 0, 5); box(Cr, -0.8, 0.95, -0.9, 0.8, 1.5, 1.5, 0, 6); box(Cr, -0.76, 1.48, -0.8, 0.76, 1.54, 1.4, 0, 5);
     [[-0.95, -1.35], [0.8, -1.35], [-0.95, 1.3], [0.8, 1.3]].forEach(w => box(Cr, w[0], 0, w[1] - 0.32, w[0] + 0.15, 0.62, w[1] + 0.32, 0, 4));
@@ -211,8 +253,8 @@ precision mediump float; in vec2 vUV; uniform sampler2D uTex; out vec4 oCol; voi
       [-1, 1].forEach(sd => { wing(M, sd, 0, 1.45, -1.2, 4.2, 8.5, 3.6, 1.4, 0.6, 0.4, 0.13, 5, 2); wing(M, sd, 0, 6.05, 7.0, 1.6, 3.6, 1.3, 0.8, 0.1, 0.12, 0.07, 5, 2); fin(M, sd * 8.5, 2.0, 2.5, 1.2, 1.2, 0.5, 0.5, 0.08, 2);
         loft(M, [[-1.6, 0.5, 1.0, 0.5], [-1.0, 0.68, 1.0, 0.66], [1.0, 0.66, 1.0, 0.62], [2.0, 0.34, 1.0, 0.34]], POD, sd * 3.6, 4, 4); strut(M, [sd * 3.6, 1.2, 0.3], [sd * 3.6, 1.8, 0.3], 0.1, 5); });
       fin(M, 0, 2.9, 5.4, 4.0, 3.2, 2.6, 1.4, 0.18, 2); gearSet(M, [0, 1.1, -7.2], [1.4, 1.1, 0.0], 0.42, 0.48); return M; };
-    return { person: P, car: Cr, sedan: carM(4.5, 1.8, 0.95, 1.3, 3.4, 0.55, 0), hatch: carM(3.7, 1.7, 1.0, 1.0, 3.5, 0.6, 0), coupe: carM(4.5, 1.9, 0.8, 1.7, 3.3, 0.45, 0), suv: carM(4.9, 2.0, 1.15, 1.0, 4.6, 0.7, 0), pickup: carM(5.4, 2.0, 1.1, 1.0, 2.9, 0.65, 2.0),
-      prop: skylarkM(), turbo: kestrelM(), jet: falconM(), long: zenithM() };
+    return Object.assign({ person: P, car: Cr, sedan: carM(4.5, 1.8, 0.95, 1.3, 3.4, 0.55, 0), hatch: carM(3.7, 1.7, 1.0, 1.0, 3.5, 0.6, 0), coupe: carM(4.5, 1.9, 0.8, 1.7, 3.3, 0.45, 0), suv: carM(4.9, 2.0, 1.15, 1.0, 4.6, 0.7, 0), pickup: carM(5.4, 2.0, 1.1, 1.0, 2.9, 0.65, 2.0),
+      prop: skylarkM(), turbo: kestrelM(), jet: falconM(), long: zenithM() }, PV);
   }
 
   /* ---------------- the engine ---------------- */
@@ -335,5 +377,5 @@ precision mediump float; in vec2 vUV; uniform sampler2D uTex; out vec4 oCol; voi
     G.destroy = function(){ try{ const x = gl.getExtension('WEBGL_lose_context'); if(x) x.loseContext(); }catch(e){} };
     return G;
   }
-  RW.GFX = { create, m4, planes };
+  RW.GFX = { create, m4, planes, actorMeshes, PEOPLE_N: 8 };
 })(typeof self !== 'undefined' ? self : this);

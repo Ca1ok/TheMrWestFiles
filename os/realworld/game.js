@@ -44,19 +44,25 @@
      * They are appended to carBuf right after the NPC cars (carFilled) and drawn by drawCars in the same call. The models carry baked colours, so the body-colour index is not applied.
      * style → model: the closest Kenney body for each procedural style; scaled so its length matches the car's collision box (drive.len). No models loaded = false = the old procedural body. */
     let carFilled = 0, kvN = 0;
-    const KSTYLE = { hatch: 'hatchback-sports', sedan: 'sedan', pickup: 'delivery', suv: 'suv', coupe: 'sedan-sports' }, KBYID = { apex: 'sedan-sports', vesper: 'suv-luxury' };
+    const KSTYLE = { hatch: 'hatchback-sports', sedan: 'sedan', pickup: 'delivery', suv: 'suv', coupe: 'sedan-sports' }, KBYID = { apex: 'sedan-sports', vesper: 'suv-luxury' }, kMemo = new Map();
+    /* a car model → the code drawCars reads from slot 7: the Kenney body (index) + the scale that fits its length to the collision box, as the fraction (scale / 2). 0 when no models are loaded. */
+    function kCode(m, n){
+      const cs = RW.Props && RW.Props.cars; if(!cs || !cs.length || !m) return 0; n = n | 0; const key = m.id + '|' + cs.length + '|' + (n % 42); let v = kMemo.get(key); if(v !== undefined) return v;
+      /* the same body style does not mean the same car: a few sedans are taxis, pickups are vans or delivery trucks, some SUVs are the luxury one (by citizen, so a car always looks the same) */
+      let want = KBYID[m.id] || KSTYLE[m.style] || 'sedan'; if(m.style === 'sedan' && n % 7 === 0) want = 'taxi'; else if(m.style === 'pickup') want = n % 2 ? 'van' : 'delivery'; else if(m.style === 'suv' && n % 3 === 0) want = 'suv-luxury';
+      const ix = Math.max(0, cs.findIndex(c => c.id === want)), k = cs[ix], sc = k.length && m.drive ? clamp(m.drive.len / k.length, 0.9, 1.25) : 1; v = ix + sc / 2; kMemo.set(key, v); return v;
+    }
+    /* parked / stolen cars (V.list) are drawn with the same detailed models as the cars on the road: appended to carBuf right after the NPC cars (carFilled) and drawn by drawCars in the same call */
     function kenneyStolen(q){
-      const cs = RW.Props && RW.Props.cars; if(!cs || !cs.length) return false;
-      const want = KBYID[q.id] || KSTYLE[q.style] || 'sedan', ix = Math.max(0, cs.findIndex(c => c.id === want)), k = cs[ix], m = VD.get(q.id);
-      const sc = k.length && m && m.drive ? clamp(m.drive.len / k.length, 0.9, 1.25) : 1;
+      const m = VD.get(q.id), code = kCode(m, q.npc != null ? q.npc : q.kv); if(!code) return false;
       let n = carFilled + kvN; if(n * 8 + 8 > carBuf.length){ const nb = new Float32Array(Math.max(carBuf.length * 2, (n + 1) * 8)); nb.set(carBuf); carBuf = nb; }
-      const o = n * 8; carBuf[o] = q.x; carBuf[o + 1] = q.y != null ? q.y : T.height(q.x, q.z) + 0.1; carBuf[o + 2] = q.z; carBuf[o + 3] = q.yaw; carBuf[o + 4] = q.pitch || 0; carBuf[o + 5] = q.roll || 0; carBuf[o + 6] = 0; carBuf[o + 7] = ix + sc / 2;      // slot 7 = model index + (scale / 2) as the fraction; NPC cars put a whole packed colour there (fraction 0 = scale 1)
+      const o = n * 8; carBuf[o] = q.x; carBuf[o + 1] = q.y != null ? q.y : T.height(q.x, q.z) + 0.1; carBuf[o + 2] = q.z; carBuf[o + 3] = q.yaw; carBuf[o + 4] = q.pitch || 0; carBuf[o + 5] = q.roll || 0; carBuf[o + 6] = 0; carBuf[o + 7] = code;
       kvN++; return true;
     }
     function fillVehicles(){
       const out = {}, px = P.x, pz = P.z, hexOf = i => VD.colorHex(i);
       for(const q of V.list){ if(dv && dv.wreck && dv.q === q) continue; const dx = q.x - px, dz = q.z - pz; if(dx * dx + dz * dz > cfg.npcRange ** 2) continue;
-        if(q.stolen && q.kind === 'car' && kenneyStolen(q)) continue;      // drawn below with the NPC cars' detailed models (drawCars) — not as the plain procedural body
+        if((q.stolen || q.npc != null) && q.kind === 'car' && kenneyStolen(q)) continue;      // drawn below with the NPC cars' detailed models (drawCars) — not as the plain procedural body
         const b = vehBufs[q.style] || (vehBufs[q.style] = new Float32Array(8 * 16)); let o = out[q.style]; if(!o) o = out[q.style] = { buf: b, n: 0 };
         if(o.n * 8 + 8 > o.buf.length){ const nb = new Float32Array(o.buf.length * 2); nb.set(o.buf); o.buf = vehBufs[q.style] = nb; } const rgb = q.rgb || M.rgb(hexOf(q.col)), i = o.n++ * 8, f = o.buf; f[i] = q.x; f[i + 1] = q.y != null ? q.y : T.height(q.x, q.z) + (q.kind === 'plane' ? 0.05 : 0.1); f[i + 2] = q.z; f[i + 3] = q.yaw; f[i + 4] = q.pitch || 0; f[i + 5] = q.roll || 0; f[i + 6] = pack(rgb); f[i + 7] = (q.acc != null ? q.acc : pack(rgb.map(c => c * 0.5))) + (q.driven && dv && dv.q === q && !dv.car && dv.s.throttle > 0.03 ? 0.5 : 0); }   // +0.5 on the accent colour = "engine running": the actor shader spins the propeller blades
       if(net) net.others.forEach(o => { if(!o.v || o.inside) return; const m = VD.ALL[o.v - 1]; if(!m) return; const dx = o.x - px, dz = o.z - pz; if(dx * dx + dz * dz > cfg.carRange ** 2) return; const style = m.style, b = vehBufs[style] || (vehBufs[style] = new Float32Array(8 * 16)); let e = out[style]; if(!e) e = out[style] = { buf: b, n: 0 };
@@ -276,7 +282,7 @@
 
     /* ---------------- setup / teardown of the GPU side (created on first enter, freed on exit so a closed world costs nothing) ---------------- */
     function gpuUp(){
-      if(gfx) return true; gfx = RW.GFX.create(cv, { aa: (() => { let s = null; try{ s = GP.read(OS.prefs.get('rwGfx'), OS.prefs.get('rwQuality')); }catch(e){} return !perfLow() && (!s || s.p !== 'custom' || !!s.o.aa); })() }); if(!gfx) return false; S.nh = nh(); S.nd = G.districtCount(S.nh); L.setup(S.nh); T.setup(L.radius()); scr = RW.Screens.manager(gfx); npcs = RW.NPC.create(G, L);
+      if(gfx) return true; gfx = RW.GFX.create(cv, { aa: (() => { let s = null; try{ s = GP.read(OS.prefs.get('rwGfx'), OS.prefs.get('rwQuality')); }catch(e){} return !perfLow() && (!s || s.p !== 'custom' || !!s.o.aa); })() }); if(!gfx) return false; S.nh = nh(); S.nd = G.districtCount(S.nh); L.setup(S.nh); T.setup(L.radius()); scr = RW.Screens.manager(gfx); npcs = RW.NPC.create(G, L, BG);
       st = RW.Streamer.create(gfx, { nh: S.nh, radius: perfLow() ? cfg.perfStart : cfg.startRadius, base: 'os/realworld/', skip: farSea }); initQuality(); gfx.onRestore = () => { st.free(); st = RW.Streamer.create(gfx, { nh: S.nh, radius: perfLow() ? cfg.perfStart : cfg.startRadius, skip: farSea }); initQuality(); };
       net = RW.Net.create(K); cells = RW.Cells.create(gfx); if(RW.FX){ fx = RW.FX.create(); fxA = new Float32Array(RW.FX.MAX * 8); fxD = new Float32Array(RW.FX.MAX * 8); } if(RW.Assets && !RW.Assets.tried){ RW.Assets.tried = true; RW.Assets.ready = RW.Assets.load('assets/world/').catch(() => {}); } return true;
     }
@@ -366,10 +372,21 @@
     /* ---------------- people & cars ---------------- */
     async function loadBots(){ try{ const m = await (RW.botSource ? RW.botSource() : OS.homes.bots()); botList = Object.keys(m || {}).map(id => { const r = m[id], n = +id.slice(1); return { id, n, b: { n, job: r.j || 'baker', thrift: typeof r.th === 'number' ? r.th : 0.5 }, home: r.h ? G.house(+String(r.h).slice(1)) : null, shirt: pack(hsl(G.h32(n, 19) % 360, 55, 52)), pants: pack(hsl(G.h32(n, 21) % 360, 30, 24)), init: 0, x: 0, z: 0, tx: 0, tz: 0, vx: 0, vz: 0, yaw: 0, ph: 0, mv: 0, vis: false, t: 0 }; }); }catch(e){} }
     function stepNPCs(t, dt){
-      if(t - npcAt >= 100){ const now = OS.now(), nhh = S.nh; npcAt = t; for(const q of botList){ let s; try{ s = npcs.state(q.b, q.home, now, nhh); }catch(e){ continue; } const dtt = Math.max(0.05, (t - q.t) / 1000);
-        if(!q.init){ q.init = 1; q.vx = q.vz = 0; q.yaw = s.yaw; } else { q.vx += ((s.x - q.tx) / dtt - q.vx) * 0.6; q.vz += ((s.z - q.tz) / dtt - q.vz) * 0.6; } q.tx = s.x; q.tz = s.z; q.t = t; q.moving = s.moving; q.route = s.route; q.f = s.f; q.why = s.why; q.dest = s.dest; if(!s.moving){ q.vx = q.vz = 0; } } }
-      for(const q of botList){ if(!q.init){ q.vis = false; continue; } const e = Math.min(0.25, (t - q.t) / 1000); q.x = q.tx + q.vx * e; q.z = q.tz + q.vz * e; const sp = Math.hypot(q.vx, q.vz); q.sp = sp; q.vis = !!q.moving; if(sp > 0.4){ q.yaw += wrapA(Math.atan2(q.vx, -q.vz) - q.yaw) * Math.min(1, dt * 8); } q.mv = clamp(sp / 4, 0, 1.3); q.ph += dt * sp * 2.4; q.isCar = q.vis && (q.isCar ? sp > 5 : sp > 8);
-        if(q.isCar && q.route && Tr && !(q.cs && q.cs.linger > 0 && !q.vis)){ const kp = Tr.pose(q.route, q.n, q.f || 0, q.kp || (q.kp = {})); if(q.kRoute !== q.route || q.kyaw == null){ q.kRoute = q.route; q.kyaw = kp.yaw; } else q.kyaw += wrapA(kp.yaw - q.kyaw) * Math.min(1, dt * 7); q.kx = kp.x; q.kz = kp.z; } else q.kRoute = null; if(q.cs && q.cs.linger > 0 && !q.vis){ q.vis = true; q.isCar = true; q.sp = Math.abs(q.cs.s.u); } }
+      if(t - npcAt >= 100){ const now = OS.now(), nhh = S.nh; npcAt = t;
+        for(const q of botList){ let s; try{ s = npcs.state(q.b, q.home, now, nhh, 0); }catch(e){ continue; }
+          /* the car is still arriving when the timetable says it has (a real car lags a little): whoever drives it steps out only once it has stopped (≤ 30 s) — the walk to the door starts then */
+          if(q.lagRoute !== s.route){ q.lag = 0; q.lagRoute = s.route; q.lagFrozen = false; }
+          if(q.cs && !q.lagFrozen && s.tArr && now > s.tArr){ if(q.cs.ap.done && Math.abs(q.cs.s.u) < 0.5) q.lagFrozen = true; else if(now - s.tArr < 30000) q.lag = now - s.tArr; else q.lagFrozen = true; }
+          if(q.lag > 0) try{ s = npcs.state(q.b, q.home, now, nhh, q.lag); }catch(e){}
+          const dtt = Math.max(0.05, (t - q.t) / 1000);
+          if(!q.init || q.phase !== s.ph){ q.init = 1; q.vx = q.vz = 0; q.yaw = s.yaw; q.x = s.x; q.z = s.z; }        // a new phase (out of the door, out of the car …): start from where it begins, no speed carried over
+          else { q.vx += ((s.x - q.tx) / dtt - q.vx) * 0.6; q.vz += ((s.z - q.tz) / dtt - q.vz) * 0.6; }
+          q.tx = s.x; q.tz = s.z; q.tyaw = s.yaw; q.t = t; q.phase = s.ph; q.moving = s.moving; q.route = s.route; q.f = s.f; q.why = s.why; q.dest = s.dest; q.rest = s.rest; if(s.rest) q.lastRest = s.rest; if(!s.moving){ q.vx = q.vz = 0; } } }
+      for(const q of botList){ if(!q.init){ q.vis = false; continue; } const e = Math.min(0.25, (t - q.t) / 1000); q.x = q.tx + q.vx * e; q.z = q.tz + q.vz * e; const sp = Math.hypot(q.vx, q.vz); q.sp = sp; q.vis = !!q.moving;
+        q.isCar = q.phase === 2; if(q.isCar && crime.carGone && crime.carGone(q.n)){ q.vis = false; q.isCar = false; }          // its car was stolen: nobody drives it
+        if(q.isCar){ if(sp > 0.4) q.yaw += wrapA(Math.atan2(q.vx, -q.vz) - q.yaw) * Math.min(1, dt * 8); } else q.yaw += wrapA(q.tyaw - q.yaw) * Math.min(1, dt * 8);      // on foot they face the way they walk (door → car → door)
+        q.mv = clamp(sp / 4, 0, 1.3); q.ph += dt * sp * 2.4;
+        if(q.isCar && q.route && Tr){ const kp = Tr.pose(q.route, q.n, q.f || 0, q.kp || (q.kp = {})); if(q.kRoute !== q.route || q.kyaw == null){ q.kRoute = q.route; q.kyaw = kp.yaw; } else q.kyaw += wrapA(kp.yaw - q.kyaw) * Math.min(1, dt * 7); q.kx = kp.x; q.kz = kp.z; } else q.kRoute = null; }
       npcCars(dt, t);
     }
     /* ---- NPC drivers: every car within NCP_R m of you is a real drive.js car (the same tyre / suspension model as yours and the cops') steered at its timetable position, so it brakes, dives, leans
@@ -383,12 +400,14 @@
       st.nearCols(x, z, take); if(dynColsA) take(dynColsA); if(V.cols) take(V.cols); const cc = crime.cols(); if(cc) take(cc);
       c.loc = { x, z, t: performance.now(), sets: [{ a: Float32Array.from(rows), st: 8 }] }; return c.loc.sets;
     }
-    const carModelOf = id => { const m = VD.get(id); return m && m.kind === 'car' ? m : null; }, modelIdx = new Map(); const idxOf = id => { if(!modelIdx.size) VD.ALL.forEach((v, i) => modelIdx.set(v.id, i)); return modelIdx.get(id); };
+    const carModelOf = n => (crime.modelFor ? crime.modelFor(n) : VD.CARS[G.h32(n, 31) % Math.min(VD.CARS.length, 4)]);      /* a citizen's car: ONE model, parked or on the road (crime.js picks it) */
+    const carModelById = id => { const m = VD.get(id); return m && m.kind === 'car' ? m : null; }, modelIdx = new Map(); const idxOf = id => { if(!modelIdx.size) VD.ALL.forEach((v, i) => modelIdx.set(v.id, i)); return modelIdx.get(id); };
     let fixedBodies = [], fixedAt = 0, npcBodies = [], footBuf = new Float32Array(8 * 96), footN = 0, footA = null;
     /* every car that is not simulated by the NPC loop but is in the way: parked / showroom cars (fixed) */
     function refreshFixed(t){
       if(t - fixedAt < 1000) return; fixedAt = t; fixedBodies = [];
-      for(const q of V.list){ if(q.driven || q.kind !== 'car' || (q.x - P.x) ** 2 + (q.z - P.z) ** 2 > 260 * 260) continue; fixedBodies.push({ s: { x: q.x, z: q.z, yaw: q.yaw, u: 0, v: 0, r: 0 }, hl: q.hl, hw: q.hw, fixed: true }); }
+      const own = new Set(); for(const b of botList) if(b.cs) own.add(b.n);
+      for(const q of V.list){ if(q.driven || q.kind !== 'car' || (q.npc != null && own.has(q.npc)) || (q.x - P.x) ** 2 + (q.z - P.z) ** 2 > 260 * 260) continue; fixedBodies.push({ s: { x: q.x, z: q.z, yaw: q.yaw, u: 0, v: 0, r: 0 }, hl: q.hl, hw: q.hw, fixed: true }); }
     }
     /* other players' cars: kinematic bodies (they never move because of us — each client simulates only its own car) */
     function remoteBodies(){
@@ -405,27 +424,28 @@
     }
     function npcCars(dt, t){
       if(!Dr || !VD || !Tr || S.room){ for(const q of botList) q.cs = null; npcBodies = []; return; }
-      refreshFixed(t); const dis = cells.disabled(), pool = VD.CARS, sense = fixedBodies.concat(remoteBodies(), crime.bodies ? crime.bodies() : []); let n = 0; npcBodies = [];
+      refreshFixed(t); let hadCs = 0; for(const q of botList) if(q.cs) hadCs++; const dis = cells.disabled(), pool = VD.CARS, sense = fixedBodies.concat(remoteBodies(), crime.bodies ? crime.bodies() : []); let n = 0; npcBodies = [];
       if(dv && dv.car) sense.push({ s: dv.s, hl: dv.m.drive.len / 2, hw: dv.m.drive.wid / 2 });
       const act = [];
       for(const q of botList){
         const d2 = (q.x - P.x) ** 2 + (q.z - P.z) ** 2, keep = q.cs && d2 < (NCP_R * 1.3) ** 2;
-        if(!q.isCar && !(q.cs && q.cs.linger > 0) || !q.route || n >= NCP_MAX || (!keep && (d2 > NCP_R * NCP_R || q.sp < 2))){ q.cs = null; continue; } n++;
+        /* a physical car exists while its driver is driving AND until it has pulled up and stopped (it then hands over to the parked car, which stands at the same kerb) */
+        if(!(q.isCar || q.cs) || !q.route || n >= NCP_MAX || (!q.cs && (d2 > NCP_R * NCP_R || (q.sp < 2 && (q.f || 0) > 0.05))) || (q.cs && !keep)){ q.cs = null; continue; } n++;
         let c = q.cs;
-        if(!c){ const m = pool[G.h32(q.n, 31) % Math.min(pool.length, 4)], ap = Tr.create(q.route, q.n, m), pose = Tr.seed(ap, q.f || 0), s = Dr.car(m, { x: pose.x, z: pose.z, yaw: pose.yaw }); s.y = T.height(pose.x, pose.z); s.u = (q.f || 0) < 0.03 ? 0 : Math.min(ap.vc, q.sp || 0);
+        if(!c){ const m = carModelOf(q.n), ap = Tr.create(q.route, q.n, m), pose = (q.f || 0) < 0.05 && q.lastRest ? q.lastRest : Tr.seed(ap, q.f || 0), s = Dr.car(m, { x: pose.x, z: pose.z, yaw: pose.yaw }); s.y = T.height(pose.x, pose.z); s.u = (q.f || 0) < 0.03 ? 0 : Math.min(ap.vc, q.sp || 0);
           c = q.cs = { s, ap, m, linger: 0, get x(){ return s.x; }, get z(){ return s.z; }, get y(){ return s.y; }, get yaw(){ return s.yaw; }, get pitch(){ return s.pitch; }, get roll(){ return s.roll; } }; }
         else if(c.ap.route !== q.route){ c.ap = Tr.create(q.route, q.n, c.m); const off = Tr.attach(c.ap, c.s.x, c.s.z);
           /* the driver changed its mind (new trip): the car just drives on from where it is, onto the new lane (a U-turn, a swing round a corner, pulling over — it may do it badly, but it never teleports or flips its heading).
            * Only a car that is out of sight (> 70 m) or hopelessly far from its new route (> 120 m) is put on the new lane directly. */
           if(off > 120 || (off > 25 && d2 > 70 * 70)){ const pose = Tr.seed(c.ap, q.f || 0); c.s.x = pose.x; c.s.z = pose.z; c.s.yaw = pose.yaw; c.s.v = 0; c.s.r = 0; } c.linger = 0; }
         const ap = c.ap, tp = (q.f || 0) * ap.L.len;
-        if(q.isCar || q.moving) c.linger = 0; else if(!c.linger) c.linger = 15;
-        if(c.linger > 0 && !q.moving){ c.linger -= dt; if(d2 > 120 * 120 || ap.done || ap.d > ap.L.len - 6){ c.linger = 0; q.cs = null; continue; } }
-        if(q.moving && (Math.abs(tp - ap.d) > 90 || ap.lost) && d2 > 55 * 55){ const pose = Tr.seed(ap, q.f || 0); c.s.x = pose.x; c.s.z = pose.z; c.s.yaw = pose.yaw; c.s.u = Math.min(ap.vc, q.sp || 0); c.s.v = 0; c.s.r = 0; ap.lost = false; ap.lostN = 0; }
+        if(!q.isCar){ c.after = (c.after || 0) + dt; c.settle = (ap.done && Math.abs(c.s.u) < 0.3) ? (c.settle || 0) + dt : 0; if(c.settle > 1.2 || c.after > 45 || d2 > 120 * 120){ q.cs = null; continue; } } else { c.after = 0; c.settle = 0; }   // after the drive: until it stands, then the parked car takes its place
+        if(q.isCar && (Math.abs(tp - ap.d) > 90 || ap.lost) && d2 > 55 * 55){ const pose = Tr.seed(ap, q.f || 0); c.s.x = pose.x; c.s.z = pose.z; c.s.yaw = pose.yaw; c.s.u = Math.min(ap.vc, q.sp || 0); c.s.v = 0; c.s.r = 0; ap.lost = false; ap.lostN = 0; }
         const sx = c.s.x, sz = c.s.z, sets = localSets(c, sx, sz), world = { ground: T.height, lift: kerbLift, push: (x, z, y, r) => { const o = Phys.resolve(x, z, y, sets, dis, r); return { x: o.x, z: o.z }; } };
-        c.s.bump = 0; const inp = Tr.control(ap, c.s, dt, t / 1000, { bodies: sense.concat(act.map(a => a.body)), tp: q.moving ? tp : null, stopAtEnd: true });
+        c.s.bump = 0; const inp = Tr.control(ap, c.s, dt, t / 1000, { bodies: sense.concat(act.map(a => a.body)), tp: q.isCar ? tp : null, stopAtEnd: true });
         Dr.stepCar(c.s, inp, dt, world); const d = c.m.drive, body = { s: c.s, hl: d.len / 2, hw: d.wid / 2 }; c.body = body; act.push(c); npcBodies.push(body);
       }
+      { let nowCs = 0; for(const q of botList) if(q.cs) nowCs++; if(nowCs !== hadCs && crime.poke) crime.poke(); }          // a car became physical / parked: refresh the parked cars at once
       const all = allBodies(); Tr.collideCars(all); footN = Tr.boxes(npcBodies.concat(remoteBodies()), footBuf, T.height); footA = footN ? footBuf.subarray(0, footN * 8) : null;
     }
     const outLine = q => { const w = G.WHY[q.why] || 'out and about'; return ['Hello! I am ' + w + '.', 'Lovely day in WestCountry, isn\u2019t it?', q.dest ? 'I am heading to ' + q.dest + '.' : 'Just passing through.'][G.h32(q.n, Math.floor(OS.now() / 30000)) % 3]; };
@@ -438,7 +458,11 @@
       PL.names = (KENNEY_PEOPLE ? Pr.people : []).map((p, i) => { gfx.setActorModel('person' + i, p.m, Pr.pivot); return 'person' + i; }); PL.bufs = PL.names.map(() => ({ a: new Float32Array(8 * 64), n: 0 }));
       CARS.h.forEach(h => gfx.propFree(h)); CARS.h = new Map(); CARS.bufs = Pr.cars.flatMap(() => [{ a: new Float32Array(8 * 32), n: 0 }, { a: new Float32Array(8 * 32), n: 0 }]); }
     const push8 = (b, src, o) => { if(b.n * 8 + 8 > b.a.length){ const na = new Float32Array(b.a.length * 2); na.set(b.a); b.a = na; } b.a.set(src.subarray(o, o + 8), b.n++ * 8); };
-    function drawPeople(buf, n){ const nv = PL.names.length; if(!nv){ gfx.actors('person', buf, n); return; } PL.bufs.forEach(b => { b.n = 0; });
+    /* the eight procedural people (gfx.js PEOPLE): the outfit / hair / face a person has comes from their shirt colour seed, so somebody always looks the same */
+    const PV_N = (RW.GFX && RW.GFX.PEOPLE_N) || 0, PVB = Array.from({ length: PV_N }, () => ({ a: new Float32Array(8 * 64), n: 0 })), variantOf = sh => (Math.imul(sh | 0, 2654435761 | 0) >>> 11) % PV_N;
+    function drawPeople(buf, n){ const nv = PL.names.length;
+      if(!nv && PV_N){ PVB.forEach(b => { b.n = 0; }); for(let i = 0; i < n; i++) push8(PVB[variantOf(buf[i * 8 + 6])], buf, i * 8); PVB.forEach((b, v) => { if(b.n) gfx.actors('personV' + v, b.a, b.n); }); return; }
+      if(!nv){ gfx.actors('person', buf, n); return; } PL.bufs.forEach(b => { b.n = 0; });
       for(let i = 0; i < n; i++) push8(PL.bufs[Math.abs(buf[i * 8 + 6] | 0) % nv], buf, i * 8); PL.bufs.forEach((b, v) => { if(b.n) gfx.actors(PL.names[v], b.a, b.n); }); }
     function drawCars(buf, n){ const cs = RW.Props.cars, nv = cs.length; if(!nv){ gfx.actors('car', buf, n); return; } CARS.bufs.forEach(b => { b.n = 0; }); const px = P.x, pz = P.z, tmp = new Float32Array(8);
       for(let i = 0; i < n; i++){ const o = i * 8, v = Math.abs(buf[o + 7] | 0) % nv, dx = buf[o] - px, dz = buf[o + 2] - pz; tmp[0] = buf[o]; tmp[1] = buf[o + 1]; tmp[2] = buf[o + 2]; tmp[3] = buf[o + 3]; { const f7 = buf[o + 7], fr = f7 - Math.floor(f7); tmp[4] = fr > 0.01 ? fr * 2 : 1; } tmp[5] = 0xffffff; tmp[6] = buf[o + 4]; tmp[7] = buf[o + 5]; push8(CARS.bufs[v * 2 + (dx * dx + dz * dz > CAR_NEAR * CAR_NEAR ? 1 : 0)], tmp, 0); }
@@ -447,8 +471,9 @@
       let np = 0, nc = 0; const px = P.x, pz = P.z, put = (buf, i, x, y, z, yaw, ph, mv, sh, pa) => { const o = i * 8; buf[o] = x; buf[o + 1] = y; buf[o + 2] = z; buf[o + 3] = yaw; buf[o + 4] = ph; buf[o + 5] = mv; buf[o + 6] = sh; buf[o + 7] = pa; };
       const grow = (buf, n) => (n * 8 + 8 > buf.length) ? (() => { const b = new Float32Array(buf.length * 2); b.set(buf); return b; })() : buf;
       lookNpc = null; let best = 0.985; const fx = Math.sin(P.yaw) * Math.cos(P.pitch), fz = -Math.cos(P.yaw) * Math.cos(P.pitch), fy = Math.sin(P.pitch);
-      for(const q of botList){ if(!q.vis) continue; const dx = q.x - px, dz = q.z - pz, d2 = dx * dx + dz * dz, car = q.isCar; if(d2 > (car ? cfg.carRange : cfg.npcRange) ** 2) continue; const y = T.height(q.x, q.z) + (car ? 0.1 : 0);
-        if(car){ carBuf = grow(carBuf, nc); const c = q.cs; if(c) put(carBuf, nc++, c.x, c.y + 0.1, c.z, c.yaw, c.pitch, c.roll, q.shirt, q.pants); else if(q.kRoute === q.route && q.kRoute) put(carBuf, nc++, q.kx, T.height(q.kx, q.kz) + 0.1, q.kz, q.kyaw, 0, 0, q.shirt, q.pants); else put(carBuf, nc++, q.x, y, q.z, q.yaw, 0, 0, q.shirt, q.pants); } else { actorBuf = grow(actorBuf, np); put(actorBuf, np++, q.x, y, q.z, q.yaw, q.ph, q.mv, q.shirt, q.pants); }
+      for(const q of botList){ if(q.cs && !q.isCar){ const c = q.cs, cdx = c.x - px, cdz = c.z - pz; if(cdx * cdx + cdz * cdz <= cfg.carRange ** 2){ carBuf = grow(carBuf, nc); put(carBuf, nc++, c.x, c.y + 0.1, c.z, c.yaw, c.pitch, c.roll, 0, kCode(c.m, q.n)); } }          // a car that has just arrived and is still pulling up
+        if(!q.vis) continue; const dx = q.x - px, dz = q.z - pz, d2 = dx * dx + dz * dz, car = q.isCar; if(d2 > (car ? cfg.carRange : cfg.npcRange) ** 2) continue; const y = T.height(q.x, q.z) + (car ? 0.1 : 0);
+        if(car){ carBuf = grow(carBuf, nc); const c = q.cs; if(c) put(carBuf, nc++, c.x, c.y + 0.1, c.z, c.yaw, c.pitch, c.roll, 0, kCode(c.m, q.n)); else if(q.kRoute === q.route && q.kRoute) put(carBuf, nc++, q.kx, T.height(q.kx, q.kz) + 0.1, q.kz, q.kyaw, 0, 0, 0, kCode(carModelOf(q.n), q.n)); else put(carBuf, nc++, q.x, y, q.z, q.yaw, 0, 0, 0, kCode(carModelOf(q.n), q.n)); } else { actorBuf = grow(actorBuf, np); put(actorBuf, np++, q.x, y, q.z, q.yaw, q.ph, q.mv, q.shirt, q.pants); }
         if(d2 < 400){ const d = Math.sqrt(d2), dot = (dx * fx + dz * fz + (y + 1.2 - (P.y + cfg.eye)) * fy) / d; if(dot > best){ best = dot; lookNpc = q; } } }
       if(net) net.others.forEach(o => { if(o.inside || o.v) return; const dx = o.x - px, dz = o.z - pz; if(dx * dx + dz * dz > cfg.npcRange ** 2) return; const h = G.h32(G.hash(o.uid), 5) % 360; actorBuf = grow(actorBuf, np); put(actorBuf, np++, o.x, T.height(o.x, o.z), o.z, o.yaw, o.ph, o.mv, pack(hsl(h, 70, 50)), pack(hsl(h, 20, 25))); });
       carFilled = nc; kvN = 0; return [np, nc];
@@ -738,6 +763,6 @@
     /* vehicles: public read-only view + the door to the driving controller (startDrive / endDrive) */
     const vehicles = { list: () => V.list.slice(), mine: () => V.list.filter(q => q.slot), canDrive: () => VH.canDrive(), enter: slot => { const q = V.list.find(x => x.slot === slot); return !!(q && VH.canDrive() && startDrive(q)); }, exit: () => { if(dv) endDrive(); return !dv; }, _drive: q => startDrive(q),   /* _drive = test hook (tests/e2e-drive.test.js drives the showcase plane, which nobody can afford with the $100k grant) */ driving: () => dv ? { kind: dv.kind, id: dv.m.id, slot: dv.q.slot, engine: dv.engine !== false, speed: dv.s.speed, x: dv.s.x, z: dv.s.z, yaw: dv.s.yaw, alt: dv.s.alt || 0, onGround: dv.kind === 'car' ? true : dv.s.onGround } : null,
       at: id => { const p = L.poi(id); return !!(S.running && p && Math.hypot(p.x - P.x, p.z - P.z) < 48); } };
-    return { _exitRoom: () => exitRoom(), _room: (kind, ctx) => enterRoom({ x: P.x, z: P.z, nx: 0, nz: 1, y: 0 }, { key: 't-' + kind, kind, ctx: ctx || {} }), enter, exit, phone, vehicles, active: () => S.running, inPhone: () => S.phone, teleport, travelTo, hold, openMap, drive: slot => { const q = V.list.find(x => x.slot === slot); return q ? startDrive(q) : false; }, driveState: () => dv ? { kind: dv.kind, id: dv.m.id, engine: dv.engine !== false, stolen: !!dv.q.stolen, x: dv.s.x, z: dv.s.z, y: dv.s.y, speed: dv.s.speed, onGround: dv.s.onGround, crashed: dv.s.crashed, throttle: dv.s.throttle, yaw: dv.s.yaw, wreck: !!dv.wreck, dmg: dv.dmg || 0 } : null, driveSet: o => { if(dv) Object.assign(dv.s, o); }, unstuck, cycleQuality, quality: () => ({ level: Q.level, auto: Q.auto, shadows: !!(gfx && gfx.shadowOn), tier: QN[Q.level] }), state: () => ({ x: P.x, y: P.y, z: P.z, yaw: P.yaw, mode: S.mode, fps: S.fps, scale: S.scale, radius: st && st.radius, chunks: st && st.chunks.size, calls: gfx && gfx.calls, tris: gfx && Math.round(gfx.tris), built: st && st.built, bots: botList.length, others: net ? net.others.size : 0, loading: S.loading, drawn: S.drawn, props: S.props, inside: S.cell ? S.cell.name : null, cells: cells ? cells.cells.size : 0, nh: S.nh }), _P: P, _S: S, _fx: () => fx, _bots: () => botList, _net: () => net, _traffic: () => ({ bodies: npcBodies.length, fixed: fixedBodies.length }), _dv: () => dv, _st: () => st, _cells: () => cells };
+    return { _V: () => V, _exitRoom: () => exitRoom(), _room: (kind, ctx) => enterRoom({ x: P.x, z: P.z, nx: 0, nz: 1, y: 0 }, { key: 't-' + kind, kind, ctx: ctx || {} }), enter, exit, phone, vehicles, active: () => S.running, inPhone: () => S.phone, teleport, travelTo, hold, openMap, drive: slot => { const q = V.list.find(x => x.slot === slot); return q ? startDrive(q) : false; }, driveState: () => dv ? { kind: dv.kind, id: dv.m.id, engine: dv.engine !== false, stolen: !!dv.q.stolen, x: dv.s.x, z: dv.s.z, y: dv.s.y, speed: dv.s.speed, onGround: dv.s.onGround, crashed: dv.s.crashed, throttle: dv.s.throttle, yaw: dv.s.yaw, wreck: !!dv.wreck, dmg: dv.dmg || 0 } : null, driveSet: o => { if(dv) Object.assign(dv.s, o); }, unstuck, cycleQuality, quality: () => ({ level: Q.level, auto: Q.auto, shadows: !!(gfx && gfx.shadowOn), tier: QN[Q.level] }), state: () => ({ x: P.x, y: P.y, z: P.z, yaw: P.yaw, mode: S.mode, fps: S.fps, scale: S.scale, radius: st && st.radius, chunks: st && st.chunks.size, calls: gfx && gfx.calls, tris: gfx && Math.round(gfx.tris), built: st && st.built, bots: botList.length, others: net ? net.others.size : 0, loading: S.loading, drawn: S.drawn, props: S.props, inside: S.cell ? S.cell.name : null, cells: cells ? cells.cells.size : 0, nh: S.nh }), _P: P, _S: S, _fx: () => fx, _bots: () => botList, _net: () => net, _traffic: () => ({ bodies: npcBodies.length, fixed: fixedBodies.length }), _dv: () => dv, _st: () => st, _cells: () => cells };
   };
 })(typeof self !== 'undefined' ? self : this);
